@@ -3,108 +3,379 @@
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <parent>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-parent</artifactId>
-    <version>4.1.0</version>
-    <relativePath/> <!-- lookup parent from repository -->
-  </parent>
+
   <groupId>io.skis</groupId>
-  <artifactId>skis</artifactId>
+  <artifactId>skis-parent</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <name>skis</name>
-  <description>skis</description>
-  <url/>
-  <licenses>
-    <license/>
-  </licenses>
-  <developers>
-    <developer/>
-  </developers>
-  <scm>
-    <connection/>
-    <developerConnection/>
-    <tag/>
-    <url/>
-  </scm>
+  <packaging>pom</packaging>
+
+  <name>SKIS Parent</name>
+  <description>SKIS ORM reactor and build configuration</description>
+
+  <modules>
+    <module>skis-bom</module>
+
+    <module>skis-annotations</module>
+    <module>skis-core</module>
+    <module>skis-metadata</module>
+    <module>skis-processor</module>
+    <module>skis-sql-ast</module>
+    <module>skis-dialect-api</module>
+    <module>skis-optimizer</module>
+    <module>skis-mapping</module>
+    <module>skis-jdbc</module>
+    <module>skis-query</module>
+    <module>skis-mutation</module>
+    <module>skis-graph</module>
+    <module>skis-runtime</module>
+
+    <module>skis-dialect-postgresql</module>
+    <module>skis-dialect-mysql</module>
+    <module>skis-dialect-h2</module>
+    <module>skis-dialect-sqlserver</module>
+    <module>skis-dialect-oracle</module>
+    <module>skis-dialect-db2</module>
+    <module>skis-dialect-sqlite</module>
+    <module>skis-dialect-mariadb</module>
+
+    <module>skis-cache-api</module>
+    <module>skis-cache-caffeine</module>
+    <module>skis-cache-redis</module>
+    <module>skis-multitenancy</module>
+    <module>skis-data-permission</module>
+    <module>skis-datasource-routing</module>
+    <module>skis-encryption</module>
+    <module>skis-audit</module>
+    <module>skis-observability</module>
+    <module>skis-schema</module>
+    <module>skis-codegen</module>
+
+    <module>skis-spring</module>
+    <module>skis-spring-boot</module>
+    <module>skis-spring-boot-starter</module>
+    <module>skis-spring-boot-actuator</module>
+    <module>skis-spring-boot-starter-test</module>
+
+    <module>skis-test-support</module>
+    <module>skis-test-model</module>
+    <module>skis-integration-tests</module>
+    <module>skis-benchmark</module>
+    <module>skis-examples</module>
+  </modules>
+
   <properties>
     <java.version>21</java.version>
-  </properties>
-  <dependencies>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jdbc</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-webmvc</artifactId>
-    </dependency>
+    <maven.compiler.release>${java.version}</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-    <dependency>
-      <groupId>org.postgresql</groupId>
-      <artifactId>postgresql</artifactId>
-      <scope>runtime</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.projectlombok</groupId>
-      <artifactId>lombok</artifactId>
-      <optional>true</optional>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-jdbc-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-webmvc-test</artifactId>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
+    <spring-boot.version>4.1.0</spring-boot.version>
+    <jspecify.version>1.0.0</jspecify.version>
+
+    <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
+    <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
+    <maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
+    <license-maven-plugin.version>4.6.0</license-maven-plugin.version>
+    <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+    <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
+    <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+    <maven-release-plugin.version>3.1.1</maven-release-plugin.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.jspecify</groupId>
+        <artifactId>jspecify</artifactId>
+        <version>${jspecify.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-annotations</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-metadata</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-processor</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-sql-ast</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-optimizer</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-mapping</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-jdbc</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-query</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-mutation</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-graph</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-runtime</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-postgresql</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-mysql</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-h2</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-sqlserver</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-oracle</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-db2</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-sqlite</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-dialect-mariadb</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-cache-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-cache-caffeine</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-cache-redis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-multitenancy</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-data-permission</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-datasource-routing</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-encryption</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-audit</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-observability</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-schema</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-codegen</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-spring</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-spring-boot</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-spring-boot-starter</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-spring-boot-actuator</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-spring-boot-starter-test</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-test-support</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.skis</groupId>
+        <artifactId>skis-test-model</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${maven-compiler-plugin.version}</version>
+          <configuration>
+            <release>${maven.compiler.release}</release>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${maven-surefire-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-failsafe-plugin</artifactId>
+          <version>${maven-surefire-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>${maven-enforcer-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>license-maven-plugin</artifactId>
+          <version>${license-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-javadoc-plugin</artifactId>
+          <version>${maven-javadoc-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-source-plugin</artifactId>
+          <version>${maven-source-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-gpg-plugin</artifactId>
+          <version>${maven-gpg-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-release-plugin</artifactId>
+          <version>${maven-release-plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
     <plugins>
       <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-      </plugin>
-      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
+        <artifactId>maven-enforcer-plugin</artifactId>
         <executions>
           <execution>
-            <id>default-compile</id>
-            <phase>compile</phase>
+            <id>enforce-build-baseline</id>
             <goals>
-              <goal>compile</goal>
+              <goal>enforce</goal>
             </goals>
             <configuration>
-              <annotationProcessorPaths>
-                <path>
-                  <groupId>org.projectlombok</groupId>
-                  <artifactId>lombok</artifactId>
-                </path>
-              </annotationProcessorPaths>
-            </configuration>
-          </execution>
-          <execution>
-            <id>default-testCompile</id>
-            <phase>test-compile</phase>
-            <goals>
-              <goal>testCompile</goal>
-            </goals>
-            <configuration>
-              <annotationProcessorPaths>
-                <path>
-                  <groupId>org.projectlombok</groupId>
-                  <artifactId>lombok</artifactId>
-                </path>
-              </annotationProcessorPaths>
+              <rules>
+                <requireJavaVersion>
+                  <version>[21,)</version>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.9,)</version>
+                </requireMavenVersion>
+              </rules>
             </configuration>
           </execution>
         </executions>
       </plugin>
     </plugins>
   </build>
-
 </project>
