@@ -9,8 +9,7 @@ import java.lang.annotation.Target;
 /**
  * Maps an entity property to a database column.
  *
- * <p>An empty name means that the annotation processor should apply the configured naming
- * strategy.
+ * <p>An empty name means that the annotation processor should apply the configured naming strategy.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

@@ -1,4 +1,4 @@
-/** Immutable entity, property, table, column, and key metadata used throughout SKIS. */
+/** Immutable entity, property, table, column, key, and version metadata used throughout SKIS. */
 @NullMarked
 package io.skis.metadata;
 

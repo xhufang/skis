@@ -24,6 +24,7 @@ public final class EntityMeta<E> {
   private final List<PropertyMeta<E, ?>> properties;
   private final Map<String, PropertyMeta<E, ?>> propertiesByName;
   private final @Nullable PrimaryKeyMeta<E> primaryKey;
+  private final @Nullable VersionMeta<E, ?> version;
   private final boolean readOnly;
 
   /**
@@ -35,6 +36,7 @@ public final class EntityMeta<E> {
    * @param table physical table identity
    * @param properties ordered persistent properties; each ordinal must match its list index
    * @param primaryKey primary key, or {@code null} for a read-only entity without one
+   * @param version optimistic-version metadata, or {@code null} when versioning is disabled
    * @param readOnly whether mutation APIs must reject the entity
    */
   public EntityMeta(
@@ -44,6 +46,7 @@ public final class EntityMeta<E> {
       TableMeta table,
       List<PropertyMeta<E, ?>> properties,
       @Nullable PrimaryKeyMeta<E> primaryKey,
+      @Nullable VersionMeta<E, ?> version,
       boolean readOnly) {
     this.javaType = Objects.requireNonNull(javaType, "javaType");
     this.entityName = requireEntityName(entityName);
@@ -53,13 +56,27 @@ public final class EntityMeta<E> {
     this.propertiesByName = indexProperties(this.properties);
     validateColumnMappings(this.properties);
     this.primaryKey = primaryKey;
+    this.version = version;
     this.readOnly = readOnly;
 
     validatePrimaryKey(primaryKey);
+    validateVersion(version);
     if (!readOnly && primaryKey == null) {
       throw new IllegalArgumentException(
           "writable entity '" + entityName + "' requires a primary key");
     }
+  }
+
+  /** Creates validated entity metadata without optimistic versioning. */
+  public EntityMeta(
+      Class<E> javaType,
+      String entityName,
+      EntityMode mode,
+      TableMeta table,
+      List<PropertyMeta<E, ?>> properties,
+      @Nullable PrimaryKeyMeta<E> primaryKey,
+      boolean readOnly) {
+    this(javaType, entityName, mode, table, properties, primaryKey, null, readOnly);
   }
 
   /** Creates metadata for a simple class or record entity. */
@@ -69,6 +86,17 @@ public final class EntityMeta<E> {
       List<PropertyMeta<E, ?>> properties,
       @Nullable PrimaryKeyMeta<E> primaryKey,
       boolean readOnly) {
+    return simple(javaType, table, properties, primaryKey, null, readOnly);
+  }
+
+  /** Creates metadata for a versioned simple class or record entity. */
+  public static <E> EntityMeta<E> simple(
+      Class<E> javaType,
+      TableMeta table,
+      List<PropertyMeta<E, ?>> properties,
+      @Nullable PrimaryKeyMeta<E> primaryKey,
+      @Nullable VersionMeta<E, ?> version,
+      boolean readOnly) {
     return new EntityMeta<>(
         javaType,
         javaType.getSimpleName(),
@@ -76,6 +104,7 @@ public final class EntityMeta<E> {
         table,
         properties,
         primaryKey,
+        version,
         readOnly);
   }
 
@@ -101,6 +130,10 @@ public final class EntityMeta<E> {
 
   public Optional<PrimaryKeyMeta<E>> primaryKey() {
     return Optional.ofNullable(primaryKey);
+  }
+
+  public Optional<VersionMeta<E, ?>> version() {
+    return Optional.ofNullable(version);
   }
 
   public boolean readOnly() {
@@ -198,6 +231,35 @@ public final class EntityMeta<E> {
                 + entityName
                 + "'");
       }
+    }
+  }
+
+  private void validateVersion(@Nullable VersionMeta<E, ?> candidateVersion) {
+    if (candidateVersion == null) {
+      return;
+    }
+
+    PropertyMeta<E, ?> property = candidateVersion.property();
+    PropertyMeta<E, ?> entityProperty = propertiesByName.get(property.name());
+    if (entityProperty == null || !entityProperty.equals(property)) {
+      throw new IllegalArgumentException(
+          "version property '"
+              + property.name()
+              + "' does not belong to entity '"
+              + entityName
+              + "'");
+    }
+    if (readOnly) {
+      throw new IllegalArgumentException(
+          "read-only entity '" + entityName + "' must not declare a version property");
+    }
+    if (primaryKey != null && primaryKey.properties().contains(property)) {
+      throw new IllegalArgumentException(
+          "version property '"
+              + property.name()
+              + "' must not be part of the primary key on entity '"
+              + entityName
+              + "'");
     }
   }
 

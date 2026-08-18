@@ -9,8 +9,8 @@ import java.lang.annotation.Target;
 /**
  * Declares the database table mapped by an entity.
  *
- * <p>An empty name means that the annotation processor should apply the configured naming
- * strategy. Catalog and schema are optional qualifiers.
+ * <p>An empty name means that the annotation processor should apply the configured naming strategy.
+ * Catalog and schema are optional qualifiers.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
