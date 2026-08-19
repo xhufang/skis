@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.skis</groupId>
+    <artifactId>skis-parent</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>skis-sql-ast</artifactId>
+  <name>SKIS SQL AST</name>
+  <description>SQL abstract syntax tree, expressions, and statements</description>
+  <dependencies>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-metadata</artifactId>
+    </dependency>
+  </dependencies>
+</project>

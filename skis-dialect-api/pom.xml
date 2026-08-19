@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.skis</groupId>
+    <artifactId>skis-parent</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>skis-dialect-api</artifactId>
+  <name>SKIS Dialect API</name>
+  <description>Database dialect capabilities, types, lowering, and rendering SPIs</description>
+  <dependencies>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-sql-ast</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-mapping</artifactId>
+    </dependency>
+  </dependencies>
+</project>

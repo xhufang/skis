@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.skis</groupId>
+    <artifactId>skis-parent</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>skis-multitenancy</artifactId>
+  <name>SKIS Multitenancy</name>
+  <description>Row, schema, and database tenant strategies</description>
+  <dependencies>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-sql-ast</artifactId>
+    </dependency>
+  </dependencies>
+</project>

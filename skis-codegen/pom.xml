@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.skis</groupId>
+    <artifactId>skis-parent</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>skis-codegen</artifactId>
+  <name>SKIS Codegen</name>
+  <description>Database-to-entity skeleton and metadata generation</description>
+  <dependencies>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-schema</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-annotations</artifactId>
+    </dependency>
+  </dependencies>
+</project>

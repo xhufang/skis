@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.skis</groupId>
+    <artifactId>skis-parent</artifactId>
+    <version>0.0.2-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+  <artifactId>skis-spring-boot</artifactId>
+  <name>SKIS Spring Boot</name>
+  <description>Spring Boot auto-configuration, configuration properties, and runtime hints
+  </description>
+  <dependencies>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-spring</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-autoconfigure-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+  </dependencies>
+</project>
