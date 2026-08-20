@@ -1,0 +1,2 @@
+io.skis.processor.SkisEntityProcessor,isolating
+io.skis.processor.SkisEntityIndexProcessor,aggregating
