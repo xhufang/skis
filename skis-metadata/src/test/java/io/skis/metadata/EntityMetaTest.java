@@ -1,11 +1,14 @@
 package io.skis.metadata;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -89,6 +92,20 @@ class EntityMetaTest {
   }
 
   @Test
+  void rejectsStructurallyEqualButNonCanonicalPrimaryKeyProperty() {
+    PropertyMeta<Book, Long> entityId = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Book, Long> copiedId = property(0, "id", Long.class, "id", false);
+    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(copiedId));
+
+    assertEquals(entityId, copiedId);
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            EntityMeta.simple(
+                Book.class, TableMeta.of("book"), List.of(entityId), primaryKey, false));
+  }
+
+  @Test
   void rejectsNullablePrimaryKey() {
     PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", true);
 
@@ -154,6 +171,34 @@ class EntityMetaTest {
   }
 
   @Test
+  void rejectsFloatingPointVersionTypes() {
+    PropertyMeta<Book, Float> floatVersion =
+        property(0, "version", Float.class, "version", false);
+    PropertyMeta<Book, Double> doubleVersion =
+        property(0, "version", Double.class, "version", false);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new VersionMeta<>(floatVersion, VersionStrategy.NUMERIC_INCREMENT));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new VersionMeta<>(doubleVersion, VersionStrategy.NUMERIC_INCREMENT));
+  }
+
+  @Test
+  void acceptsExactNumericVersionTypes() {
+    PropertyMeta<Book, BigInteger> integerVersion =
+        property(0, "version", BigInteger.class, "version", false);
+    PropertyMeta<Book, BigDecimal> decimalVersion =
+        property(0, "version", BigDecimal.class, "version", false);
+
+    assertDoesNotThrow(
+        () -> new VersionMeta<>(integerVersion, VersionStrategy.NUMERIC_INCREMENT));
+    assertDoesNotThrow(
+        () -> new VersionMeta<>(decimalVersion, VersionStrategy.NUMERIC_INCREMENT));
+  }
+
+  @Test
   void validatesColumnRequirementsDeclaredByVersionStrategy() {
     PropertyMeta<Book, Long> version =
         new PropertyMeta<>(
@@ -174,6 +219,28 @@ class EntityMetaTest {
     VersionMeta<Book, Long> versionMeta =
         new VersionMeta<>(differentVersion, VersionStrategy.NUMERIC_INCREMENT);
 
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            EntityMeta.simple(
+                Book.class,
+                TableMeta.of("book"),
+                List.of(id, entityVersion),
+                primaryKey,
+                versionMeta,
+                false));
+  }
+
+  @Test
+  void rejectsStructurallyEqualButNonCanonicalVersionProperty() {
+    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Book, Long> entityVersion = property(1, "version", Long.class, "version", false);
+    PropertyMeta<Book, Long> copiedVersion = property(1, "version", Long.class, "version", false);
+    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(id));
+    VersionMeta<Book, Long> versionMeta =
+        new VersionMeta<>(copiedVersion, VersionStrategy.NUMERIC_INCREMENT);
+
+    assertEquals(entityVersion, copiedVersion);
     assertThrows(
         IllegalArgumentException.class,
         () ->

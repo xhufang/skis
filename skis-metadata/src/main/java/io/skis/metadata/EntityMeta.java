@@ -35,8 +35,10 @@ public final class EntityMeta<E> {
    * @param mode entity representation mode
    * @param table physical table identity
    * @param properties ordered persistent properties; each ordinal must match its list index
-   * @param primaryKey primary key, or {@code null} for a read-only entity without one
-   * @param version optimistic-version metadata, or {@code null} when versioning is disabled
+   * @param primaryKey primary key built from the same property instances, or {@code null} for a
+   *     read-only entity without one
+   * @param version optimistic-version metadata built from the same property instance, or {@code
+   *     null} when versioning is disabled
    * @param readOnly whether mutation APIs must reject the entity
    */
   public EntityMeta(
@@ -223,7 +225,7 @@ public final class EntityMeta<E> {
     }
     for (PropertyMeta<E, ?> property : candidatePrimaryKey.properties()) {
       PropertyMeta<E, ?> entityProperty = propertiesByName.get(property.name());
-      if (entityProperty == null || !entityProperty.equals(property)) {
+      if (entityProperty != property) {
         throw new IllegalArgumentException(
             "primary-key property '"
                 + property.name()
@@ -241,7 +243,7 @@ public final class EntityMeta<E> {
 
     PropertyMeta<E, ?> property = candidateVersion.property();
     PropertyMeta<E, ?> entityProperty = propertiesByName.get(property.name());
-    if (entityProperty == null || !entityProperty.equals(property)) {
+    if (entityProperty != property) {
       throw new IllegalArgumentException(
           "version property '"
               + property.name()
@@ -253,7 +255,8 @@ public final class EntityMeta<E> {
       throw new IllegalArgumentException(
           "read-only entity '" + entityName + "' must not declare a version property");
     }
-    if (primaryKey != null && primaryKey.properties().contains(property)) {
+    if (primaryKey != null
+        && primaryKey.properties().stream().anyMatch(keyProperty -> keyProperty == property)) {
       throw new IllegalArgumentException(
           "version property '"
               + property.name()

@@ -19,7 +19,13 @@ public @interface Column {
   /** Returns the physical column name, or an empty string to use the naming strategy. */
   String name() default "";
 
-  /** Whether the database column accepts SQL {@code NULL}. */
+  /**
+   * Whether the database column accepts SQL {@code NULL}.
+   *
+   * <p>{@link Id} and {@link Version} properties are implicitly non-null. Omitting this attribute
+   * for either role produces a non-null column; explicitly setting it to {@code true} is a
+   * compile-time error.
+   */
   boolean nullable() default true;
 
   /** Whether the column participates in generated insert statements. */

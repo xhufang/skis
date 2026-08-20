@@ -9,8 +9,9 @@ import java.lang.annotation.Target;
 /**
  * Marks an entity property as part of its primary key.
  *
- * <p>Multiple {@code Id} properties are reserved for an explicitly supported composite primary key.
- * The annotation processor is responsible for rejecting ambiguous declarations.
+ * <p>An identifier property is implicitly mapped to a non-null column. Multiple {@code Id}
+ * properties are reserved for an explicitly supported composite primary key. The annotation
+ * processor is responsible for rejecting ambiguous declarations.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

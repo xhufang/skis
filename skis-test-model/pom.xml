@@ -15,5 +15,40 @@
       <groupId>io.skis</groupId>
       <artifactId>skis-annotations</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-metadata</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-mapping</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-sql-ast</artifactId>
+    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <proc>full</proc>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>io.skis</groupId>
+              <artifactId>skis-processor</artifactId>
+              <version>${project.version}</version>
+            </path>
+          </annotationProcessorPaths>
+          <annotationProcessors>
+            <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
+            <annotationProcessor>io.skis.processor.SkisEntityIndexProcessor</annotationProcessor>
+          </annotationProcessors>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

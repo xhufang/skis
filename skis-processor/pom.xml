@@ -18,6 +18,35 @@
     <dependency>
       <groupId>io.skis</groupId>
       <artifactId>skis-metadata</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-mapping</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.skis</groupId>
+      <artifactId>skis-sql-ast</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <!-- The processor must not try to load itself while its own classes are compiling. -->
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <proc>none</proc>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

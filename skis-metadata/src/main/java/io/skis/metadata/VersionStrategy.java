@@ -1,12 +1,21 @@
 package io.skis.metadata;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+
 /** Defines how mutation plans initialize and advance a version property. */
 public enum VersionStrategy {
-  /** Initializes a numeric version to zero and advances it by one. */
+  /** Initializes an exact numeric counter to zero and advances it by one. */
   NUMERIC_INCREMENT {
     @Override
     boolean supportsJavaType(Class<?> javaType) {
-      return Number.class.isAssignableFrom(boxed(javaType));
+      Class<?> boxedType = boxed(javaType);
+      return boxedType == Byte.class
+          || boxedType == Short.class
+          || boxedType == Integer.class
+          || boxedType == Long.class
+          || boxedType == BigInteger.class
+          || boxedType == BigDecimal.class;
     }
 
     @Override

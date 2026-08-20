@@ -6,7 +6,11 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Marks the property used for optimistic concurrency control. */
+/**
+ * Marks the property used for optimistic concurrency control.
+ *
+ * <p>A version property is implicitly mapped to a non-null column.
+ */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.FIELD, ElementType.METHOD, ElementType.RECORD_COMPONENT})
