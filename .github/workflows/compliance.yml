@@ -1,0 +1,72 @@
+name: Compliance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compliance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Dependency vulnerability review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+
+  licenses-and-sbom:
+    name: Licenses and SBOM
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Check required project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in LICENSE NOTICE README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md; do
+            test -s "${file}" || {
+              echo "Required project file is missing or empty: ${file}"
+              exit 1
+            }
+          done
+          grep -Fq '<name>Apache License, Version 2.0</name>' pom.xml
+          grep -Fq '<url>https://github.com/xhufang/skis</url>' pom.xml
+
+      - name: Check dependency licenses and generate SBOM
+        shell: bash
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp -DskipTests -Pcompliance verify
+
+      - name: Upload compliance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compliance-artifacts
+          path: |
+            **/target/generated-resources/licenses/THIRD-PARTY.txt
+            target/sbom/*.json
+            target/sbom/*.xml
+          if-no-files-found: error

@@ -1,0 +1,8 @@
+SKIS
+Copyright 2026 The SKIS Authors
+
+This product is licensed under the Apache License, Version 2.0.
+
+Third-party dependencies and their licenses are listed in the generated
+THIRD-PARTY.txt file and CycloneDX software bill of materials produced by the
+Maven compliance profile.

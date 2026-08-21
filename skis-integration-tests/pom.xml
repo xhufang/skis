@@ -2,9 +2,9 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.skis</groupId>
+    <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.3-SNAPSHOT</version>
+    <version>0.0.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-integration-tests</artifactId>
@@ -12,27 +12,27 @@
   <description>Dialect and transaction integration-test module</description>
   <dependencies>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-runtime</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-postgresql</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-mysql</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-h2</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-test-support</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-test-model</artifactId>
     </dependency>
     <dependency>

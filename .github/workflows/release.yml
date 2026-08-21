@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to Maven Central and GitHub
+    runs-on: ubuntu-latest
+    environment: maven-central
+    steps:
+      - name: Check out tagged revision
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java and publishing credentials
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Validate tag, version, and changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x mvnw
+          project_version="$(./mvnw -q -N help:evaluate -Dexpression=project.version -DforceStdout)"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ "${project_version}" == *-SNAPSHOT ]]; then
+            echo "Release POM version must not be a SNAPSHOT: ${project_version}"
+            exit 1
+          fi
+          if [[ "${project_version}" != "${tag_version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match POM version ${project_version}"
+            exit 1
+          fi
+          grep -Fq "## [${project_version}]" CHANGELOG.md || {
+            echo "CHANGELOG.md has no section for ${project_version}"
+            exit 1
+          }
+
+      - name: Verify, sign, and publish
+        shell: bash
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: ./mvnw -B -ntp -Pcompliance,release deploy
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find target/central-publishing target/sbom -type f \( -name '*.zip' -o -name '*.json' -o -name '*.xml' \) 2>/dev/null | sort)
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            if (( ${#assets[@]} > 0 )); then
+              gh release upload "${GITHUB_REF_NAME}" "${assets[@]}" --clobber
+            fi
+          else
+            gh release create "${GITHUB_REF_NAME}" "${assets[@]}" \
+              --verify-tag \
+              --generate-notes \
+              --title "SKIS ${GITHUB_REF_NAME#v}"
+          fi
