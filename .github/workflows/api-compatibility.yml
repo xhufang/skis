@@ -1,0 +1,96 @@
+name: API Compatibility
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      baseline_ref:
+        description: Git ref used as the API baseline
+        required: false
+        default: HEAD^
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  japicmp:
+    name: Compare public API
+    runs-on: ubuntu-latest
+    env:
+      API_BASELINE_VERSION: 0.0.0-api-baseline
+      BASELINE_REF: ${{ github.event.pull_request.base.sha || inputs.baseline_ref || 'HEAD^' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build and install API baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_dir="${RUNNER_TEMP}/skis-api-baseline"
+          git worktree add --detach "${baseline_dir}" "${BASELINE_REF}"
+          cd "${baseline_dir}"
+          chmod +x mvnw
+          ./mvnw -B -ntp \
+            org.codehaus.mojo:versions-maven-plugin:2.19.1:set \
+            -DnewVersion="${API_BASELINE_VERSION}" \
+            -DgenerateBackupPoms=false \
+            -DprocessAllModules=true
+          ./mvnw -B -ntp -DskipTests install
+
+      - name: Reject removed reactor modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          baseline_dir="${RUNNER_TEMP}/skis-api-baseline"
+          find "${baseline_dir}" -mindepth 2 -name pom.xml -not -path '*/target/*' -printf '%P\n' \
+            | grep -Ev '^(skis-benchmark|skis-integration-tests|skis-examples)(/|$)' \
+            | sort > "${RUNNER_TEMP}/old-modules.txt"
+          find "${GITHUB_WORKSPACE}" -mindepth 2 -name pom.xml -not -path '*/target/*' -printf '%P\n' \
+            | grep -Ev '^(skis-benchmark|skis-integration-tests|skis-examples)(/|$)' \
+            | sort > "${RUNNER_TEMP}/new-modules.txt"
+          removed="$(comm -23 "${RUNNER_TEMP}/old-modules.txt" "${RUNNER_TEMP}/new-modules.txt")"
+          if [[ -n "${removed}" ]]; then
+            echo "Removed modules require an explicit compatibility decision:"
+            echo "${removed}"
+            exit 1
+          fi
+
+      - name: Run japicmp
+        shell: bash
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp -DskipTests \
+            -Papi-compatibility \
+            -Dapi.previous.version="${API_BASELINE_VERSION}" \
+            verify
+
+      - name: Upload API reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: japicmp-reports
+          path: "**/target/japicmp/**"
+          if-no-files-found: ignore
+
+      - name: Remove baseline worktree
+        if: always()
+        shell: bash
+        run: |
+          baseline_dir="${RUNNER_TEMP}/skis-api-baseline"
+          if [[ -d "${baseline_dir}" ]]; then
+            git worktree remove --force "${baseline_dir}"
+          fi

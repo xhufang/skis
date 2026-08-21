@@ -2,9 +2,9 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.skis</groupId>
+    <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.3-SNAPSHOT</version>
+    <version>0.0.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-jdbc</artifactId>
@@ -12,15 +12,15 @@
   <description>JDBC data source, connection, statement, and result-set execution</description>
   <dependencies>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-core</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-mapping</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-api</artifactId>
     </dependency>
   </dependencies>

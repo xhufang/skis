@@ -4,13 +4,46 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>io.skis</groupId>
+  <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.0.3-SNAPSHOT</version>
+  <version>0.0.4-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
   <description>SKIS ORM reactor and build configuration</description>
+  <url>https://github.com/xhufang/skis</url>
+  <inceptionYear>2026</inceptionYear>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>xhufang</id>
+      <name>xhufang</name>
+      <url>https://github.com/xhufang</url>
+      <roles>
+        <role>maintainer</role>
+      </roles>
+    </developer>
+  </developers>
+
+  <scm>
+    <connection>scm:git:https://github.com/xhufang/skis.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/xhufang/skis.git</developerConnection>
+    <url>https://github.com/xhufang/skis</url>
+    <tag>HEAD</tag>
+  </scm>
+
+  <issueManagement>
+    <system>GitHub</system>
+    <url>https://github.com/xhufang/skis/issues</url>
+  </issueManagement>
 
   <modules>
     <module>skis-bom</module>
@@ -75,7 +108,10 @@
     <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
     <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
     <maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
-    <license-maven-plugin.version>4.6.0</license-maven-plugin.version>
+    <license-maven-plugin.version>2.7.1</license-maven-plugin.version>
+    <cyclonedx-maven-plugin.version>2.9.3</cyclonedx-maven-plugin.version>
+    <japicmp-maven-plugin.version>0.26.1</japicmp-maven-plugin.version>
+    <central-publishing-maven-plugin.version>0.11.0</central-publishing-maven-plugin.version>
     <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
     <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
     <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
@@ -98,201 +134,201 @@
       </dependency>
 
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-annotations</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-core</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-metadata</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-processor</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-sql-ast</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-api</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-optimizer</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-mapping</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-jdbc</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-query</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-mutation</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-graph</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-runtime</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-postgresql</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-mysql</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-h2</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-sqlserver</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-oracle</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-db2</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-sqlite</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-mariadb</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-cache-api</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-cache-caffeine</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-cache-redis</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-multitenancy</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-data-permission</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-datasource-routing</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-encryption</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-audit</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-observability</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-schema</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-codegen</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-spring</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-spring-boot</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-spring-boot-starter</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-spring-boot-actuator</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-spring-boot-starter-test</artifactId>
         <version>${project.version}</version>
       </dependency>
 
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-test-support</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>io.skis</groupId>
+        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-test-model</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -329,6 +365,21 @@
           <groupId>org.codehaus.mojo</groupId>
           <artifactId>license-maven-plugin</artifactId>
           <version>${license-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.cyclonedx</groupId>
+          <artifactId>cyclonedx-maven-plugin</artifactId>
+          <version>${cyclonedx-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>com.github.siom79.japicmp</groupId>
+          <artifactId>japicmp-maven-plugin</artifactId>
+          <version>${japicmp-maven-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.sonatype.central</groupId>
+          <artifactId>central-publishing-maven-plugin</artifactId>
+          <version>${central-publishing-maven-plugin.version}</version>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -378,4 +429,178 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>api-compatibility</id>
+      <properties>
+        <api.previous.version>0.0.3-SNAPSHOT</api.previous.version>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.github.siom79.japicmp</groupId>
+            <artifactId>japicmp-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>check-public-api</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>cmp</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <oldVersion>
+                <dependency>
+                  <groupId>${project.groupId}</groupId>
+                  <artifactId>${project.artifactId}</artifactId>
+                  <version>${api.previous.version}</version>
+                  <type>jar</type>
+                </dependency>
+              </oldVersion>
+              <newVersion>
+                <file>
+                  <path>${project.build.directory}/${project.artifactId}-${project.version}.jar</path>
+                </file>
+              </newVersion>
+              <parameter>
+                <accessModifier>public</accessModifier>
+                <onlyModified>true</onlyModified>
+                <includeSynthetic>false</includeSynthetic>
+                <ignoreMissingClasses>true</ignoreMissingClasses>
+                <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
+                <skipPomModules>true</skipPomModules>
+                <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
+                <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+                <reportOnlyFilename>true</reportOnlyFilename>
+                <excludeModules>
+                  <excludeModule>skis-benchmark</excludeModule>
+                  <excludeModule>skis-integration-tests</excludeModule>
+                  <excludeModule>skis-examples</excludeModule>
+                  <excludeModule>skis-example-.*</excludeModule>
+                </excludeModules>
+              </parameter>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>compliance</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>license-maven-plugin</artifactId>
+            <inherited>false</inherited>
+            <executions>
+              <execution>
+                <id>check-third-party-licenses</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>aggregate-add-third-party</goal>
+                </goals>
+                <configuration>
+                  <excludedScopes>test,system</excludedScopes>
+                  <failOnMissing>true</failOnMissing>
+                  <includeOptional>true</includeOptional>
+                  <includeTransitiveDependencies>true</includeTransitiveDependencies>
+                  <outputDirectory>${project.build.directory}/generated-resources/licenses</outputDirectory>
+                  <thirdPartyFilename>THIRD-PARTY.txt</thirdPartyFilename>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.cyclonedx</groupId>
+            <artifactId>cyclonedx-maven-plugin</artifactId>
+            <inherited>false</inherited>
+            <executions>
+              <execution>
+                <id>make-aggregate-sbom</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>makeAggregateBom</goal>
+                </goals>
+                <configuration>
+                  <projectType>library</projectType>
+                  <schemaVersion>1.6</schemaVersion>
+                  <includeBomSerialNumber>true</includeBomSerialNumber>
+                  <includeTestScope>false</includeTestScope>
+                  <outputFormat>all</outputFormat>
+                  <outputDirectory>${project.build.directory}/sbom</outputDirectory>
+                  <outputName>skis-${project.version}-bom</outputName>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-source-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <configuration>
+              <passphrase>${env.MAVEN_GPG_PASSPHRASE}</passphrase>
+            </configuration>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <extensions>true</extensions>
+            <inherited>false</inherited>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+              <ignorePublishedComponents>true</ignorePublishedComponents>
+              <excludeArtifacts>skis-benchmark,skis-integration-tests,skis-examples,skis-example-spring-boot</excludeArtifacts>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

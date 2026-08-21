@@ -2,9 +2,9 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.skis</groupId>
+    <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.3-SNAPSHOT</version>
+    <version>0.0.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-test-model</artifactId>
@@ -12,20 +12,25 @@
   <description>Complex model shared by tests across modules</description>
   <dependencies>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-annotations</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-metadata</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-mapping</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-sql-ast</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-processor</artifactId>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
 
@@ -38,7 +43,7 @@
           <proc>full</proc>
           <annotationProcessorPaths>
             <path>
-              <groupId>io.skis</groupId>
+              <groupId>io.github.xhufang</groupId>
               <artifactId>skis-processor</artifactId>
               <version>${project.version}</version>
             </path>

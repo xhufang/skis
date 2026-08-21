@@ -2,9 +2,9 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.skis</groupId>
+    <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.3-SNAPSHOT</version>
+    <version>0.0.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-data-permission</artifactId>
@@ -12,7 +12,7 @@
   <description>AST-level row and field permission policies</description>
   <dependencies>
     <dependency>
-      <groupId>io.skis</groupId>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-sql-ast</artifactId>
     </dependency>
   </dependencies>
