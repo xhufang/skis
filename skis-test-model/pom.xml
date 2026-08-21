@@ -27,6 +27,11 @@
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-sql-ast</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-processor</artifactId>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
 
   <build>
