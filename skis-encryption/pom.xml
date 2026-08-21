@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-encryption</artifactId>
-  <name>SKIS Encryption</name>
+  <name>skis-encryption</name>
   <description>Field encryption, key versioning, and rotation SPIs</description>
   <dependencies>
     <dependency>

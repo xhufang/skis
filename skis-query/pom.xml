@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-query</artifactId>
-  <name>SKIS Query</name>
+  <name>skis-query</name>
   <description>Query DSL, pagination, streaming, and native SQL entry points</description>
   <dependencies>
     <dependency>

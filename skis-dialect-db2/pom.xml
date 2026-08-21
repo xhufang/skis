@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-dialect-db2</artifactId>
-  <name>SKIS DB2 Dialect</name>
+  <name>skis-dialect-db2</name>
   <description>IBM Db2 SQL dialect</description>
   <dependencies>
     <dependency>

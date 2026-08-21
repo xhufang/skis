@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-spring-boot-actuator</artifactId>
-  <name>SKIS Spring Boot Actuator</name>
+  <name>skis-spring-boot-actuator</name>
   <description>Optional SKIS health indicators and Actuator endpoint</description>
   <dependencies>
     <dependency>

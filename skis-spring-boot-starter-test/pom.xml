@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-spring-boot-starter-test</artifactId>
-  <name>SKIS Spring Boot Starter Test</name>
+  <name>skis-spring-boot-starter-test</name>
   <description>Spring Boot auto-configuration and application test support</description>
   <dependencies>
     <dependency>

@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-core</artifactId>
-  <name>SKIS Core</name>
+  <name>skis-core</name>
   <description>Public types, exceptions, contexts, SPIs, and lifecycle contracts</description>
   <dependencies>
     <dependency>

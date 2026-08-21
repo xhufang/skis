@@ -6,10 +6,10 @@
 
   <groupId>io.skis</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.0.2-SNAPSHOT</version>
+  <version>0.0.3-SNAPSHOT</version>
   <packaging>pom</packaging>
 
-  <name>SKIS Parent</name>
+  <name>skis-parent</name>
   <description>SKIS ORM reactor and build configuration</description>
 
   <modules>

@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-processor</artifactId>
-  <name>SKIS Processor</name>
+  <name>skis-processor</name>
   <description>Java annotation processor for generated metadata and codecs</description>
   <dependencies>
     <dependency>

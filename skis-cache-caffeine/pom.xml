@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-cache-caffeine</artifactId>
-  <name>SKIS Caffeine Cache</name>
+  <name>skis-cache-caffeine</name>
   <description>Optional local cache adapter</description>
   <dependencies>
     <dependency>

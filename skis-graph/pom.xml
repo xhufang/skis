@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-graph</artifactId>
-  <name>SKIS Graph</name>
+  <name>skis-graph</name>
   <description>Fetch plans, association loading, and recursive data graphs</description>
   <dependencies>
     <dependency>

@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-spring-boot-starter</artifactId>
-  <name>SKIS Spring Boot Starter</name>
+  <name>skis-spring-boot-starter</name>
   <description>Dependency-only Spring Boot entry point for SKIS</description>
   <dependencies>
     <dependency>

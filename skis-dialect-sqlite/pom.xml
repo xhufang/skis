@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-dialect-sqlite</artifactId>
-  <name>SKIS SQLite Dialect</name>
+  <name>skis-dialect-sqlite</name>
   <description>SQLite SQL dialect</description>
   <dependencies>
     <dependency>

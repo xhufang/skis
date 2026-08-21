@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-observability</artifactId>
-  <name>SKIS Observability</name>
+  <name>skis-observability</name>
   <description>Optional observation, metrics, and tracing adapters</description>
   <dependencies>
     <dependency>

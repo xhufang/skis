@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-dialect-api</artifactId>
-  <name>SKIS Dialect API</name>
+  <name>skis-dialect-api</name>
   <description>Database dialect capabilities, types, lowering, and rendering SPIs</description>
   <dependencies>
     <dependency>

@@ -7,13 +7,13 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>skis-bom</artifactId>
   <packaging>pom</packaging>
-  <name>SKIS BOM</name>
+  <name>skis-bom</name>
   <description>Dependency versions for published SKIS modules</description>
 
   <dependencyManagement>

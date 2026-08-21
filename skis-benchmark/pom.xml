@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-benchmark</artifactId>
-  <name>SKIS Benchmark</name>
+  <name>skis-benchmark</name>
   <description>JMH and real-database benchmark module</description>
   <dependencies>
     <dependency>

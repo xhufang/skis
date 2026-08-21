@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-runtime</artifactId>
-  <name>SKIS Runtime</name>
+  <name>skis-runtime</name>
   <description>Default non-Spring SKIS runtime aggregation</description>
   <dependencies>
     <dependency>

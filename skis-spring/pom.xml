@@ -4,11 +4,11 @@
   <parent>
     <groupId>io.skis</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.2-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-spring</artifactId>
-  <name>SKIS Spring</name>
+  <name>skis-spring</name>
   <description>Spring Framework transactions, resource binding, and exception translation
   </description>
   <dependencies>
