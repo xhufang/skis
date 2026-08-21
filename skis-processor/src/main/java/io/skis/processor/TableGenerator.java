@@ -17,7 +17,8 @@ final class TableGenerator implements EntitySourceGenerator {
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
     source.append("import io.skis.sql.ast.ColumnExpression;\n");
     source.append("import io.skis.sql.ast.Identifier;\n");
-    source.append("import io.skis.sql.ast.TableExpression;\n\n");
+    source.append("import io.skis.sql.ast.TableExpression;\n");
+    source.append("import org.jspecify.annotations.NonNull;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);
     source.append("public final class ")
         .append(className)
@@ -51,7 +52,7 @@ final class TableGenerator implements EntitySourceGenerator {
         .append("  }\n\n")
         .append("  private ")
         .append(className)
-        .append("(Identifier alias) {\n")
+        .append("(@NonNull Identifier alias) {\n")
         .append("    super(")
         .append(metaName)
         .append(".ENTITY, alias);\n")
@@ -72,7 +73,7 @@ final class TableGenerator implements EntitySourceGenerator {
     source.append("  @Override\n")
         .append("  public ")
         .append(className)
-        .append(" as(String alias) {\n")
+        .append(" as(@NonNull String alias) {\n")
         .append("    return new ")
         .append(className)
         .append("(Identifier.of(alias));\n")
@@ -80,7 +81,7 @@ final class TableGenerator implements EntitySourceGenerator {
         .append("  @Override\n")
         .append("  public ")
         .append(className)
-        .append(" as(Identifier alias) {\n")
+        .append(" as(@NonNull Identifier alias) {\n")
         .append("    return new ")
         .append(className)
         .append("(alias);\n")

@@ -4,6 +4,7 @@ package samples.skis;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.TableExpression;
+import org.jspecify.annotations.NonNull;
 
 @javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 1")
 public final class BookTable extends TableExpression<samples.Book> {
@@ -18,7 +19,7 @@ public final class BookTable extends TableExpression<samples.Book> {
     super(BookMeta.ENTITY);
   }
 
-  private BookTable(Identifier alias) {
+  private BookTable(@NonNull Identifier alias) {
     super(BookMeta.ENTITY, alias);
   }
 
@@ -35,12 +36,12 @@ public final class BookTable extends TableExpression<samples.Book> {
   }
 
   @Override
-  public BookTable as(String alias) {
+  public BookTable as(@NonNull String alias) {
     return new BookTable(Identifier.of(alias));
   }
 
   @Override
-  public BookTable as(Identifier alias) {
+  public BookTable as(@NonNull Identifier alias) {
     return new BookTable(alias);
   }
 }

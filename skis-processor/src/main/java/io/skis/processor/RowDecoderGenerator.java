@@ -65,22 +65,44 @@ final class RowDecoderGenerator implements EntitySourceGenerator {
         .append("  @Override\n")
         .append("  public ")
         .append(entityType)
-        .append(" decode(ResultSet resultSet, RowReadContext context) throws SQLException {\n")
-        .append("    return new ")
-        .append(entityType)
-        .append("(\n");
-    for (int index = 0; index < model.components().size(); index++) {
-      RecordComponentModel component = model.components().get(index);
-      source.append("        ");
-      if (component.property() == null) {
-        source.append(component.transientDefaultExpression());
-      } else {
-        source.append(readExpression(component.property()));
-      }
-      source.append(index + 1 == model.components().size() ? ");\n" : ",\n");
+        .append(" decode(ResultSet resultSet, RowReadContext context) throws SQLException {\n");
+    switch (model.instantiation().kind()) {
+      case RECORD_CONSTRUCTOR -> appendRecordConstruction(source, model);
+      case BEAN -> appendBeanConstruction(source, model);
     }
     source.append("  }\n").append("}\n");
     return source.toString();
+  }
+
+  private static void appendRecordConstruction(StringBuilder source, EntityModel model) {
+    source.append("    return new ").append(model.entityTypeName()).append("(\n");
+    var arguments = model.instantiation().constructorArguments();
+    for (int index = 0; index < arguments.size(); index++) {
+      EntityInstantiationModel.ConstructorArgument argument = arguments.get(index);
+      source.append("        ");
+      if (argument.property() == null) {
+        source.append(argument.defaultExpression());
+      } else {
+        source.append(readExpression(argument.property()));
+      }
+      source.append(index + 1 == arguments.size() ? ");\n" : ",\n");
+    }
+  }
+
+  private static void appendBeanConstruction(StringBuilder source, EntityModel model) {
+    source
+        .append("    ")
+        .append(model.entityTypeName())
+        .append(" entity = new ")
+        .append(model.entityTypeName())
+        .append("();\n");
+    for (PropertyModel property : model.properties()) {
+      source
+          .append("    ")
+          .append(property.access().writeEntityStatement(readExpression(property)))
+          .append("\n");
+    }
+    source.append("    return entity;\n");
   }
 
   private static String indexField(PropertyModel property) {

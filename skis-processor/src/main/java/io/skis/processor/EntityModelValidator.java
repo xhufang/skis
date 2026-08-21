@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.lang.model.element.Element;
-import javax.lang.model.element.Modifier;
 
 final class EntityModelValidator {
 
@@ -130,17 +129,6 @@ final class EntityModelValidator {
       problems.add(
           problem(
               "SKIS015", "a read-only entity must not declare a @Version property", model.type()));
-    }
-    for (RecordComponentModel component : model.components()) {
-      if (!component.element().getAccessor().getModifiers().contains(Modifier.PUBLIC)) {
-        problems.add(
-            problem(
-                "SKIS025",
-                "the generated row decoder cannot access record component '"
-                    + component.name()
-                    + "'",
-                component.element()));
-      }
     }
     return List.copyOf(problems);
   }

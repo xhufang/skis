@@ -81,7 +81,7 @@ final class BinderGenerator implements EntitySourceGenerator {
         .append("      throws SQLException {\n")
         .append("    int index = firstIndex;\n");
     for (PropertyModel property : properties) {
-      String valueExpression = "entity." + property.name() + "()";
+      String valueExpression = property.access().readEntityExpression();
       if (!property.primitive() && !property.column().nullable()) {
         valueExpression = "JdbcCodecs.requireBindValue(" + valueExpression + ", index)";
       }

@@ -14,4 +14,5 @@ record PropertyModel(
     ColumnModel column,
     boolean id,
     boolean version,
+    PropertyAccessModel access,
     Element element) {}

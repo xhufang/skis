@@ -43,6 +43,517 @@ class SkisEntityProcessorTest {
   }
 
   @Test
+  void generatesBeanEntitySourcesUsingHandwrittenAccessors() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.BeanBook",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            @Table(name = "book")
+            public class BeanBook {
+              @Id private Long id;
+              @Column(name = "book_name") private String name;
+              @Version private Long version;
+              @Transient private String displayLabel;
+
+              public BeanBook() {}
+              public Long getId() { return id; }
+              public void setId(Long id) { this.id = id; }
+              public String getName() { return name; }
+              public void setName(String name) { this.name = name; }
+              public Long getVersion() { return version; }
+              public void setVersion(Long version) { this.version = version; }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("bean-book"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String meta = generatedSource(result, "BeanBookMeta.java");
+    String decoder = generatedSource(result, "BeanBookRowDecoder.java");
+    String binder = generatedSource(result, "BeanBookBinder.java");
+    assertTrue(meta.contains("new ColumnMeta(\"book_name\""), meta);
+    assertFalse(meta.contains("displayLabel"), meta);
+    assertTrue(decoder.contains("samples.BeanBook entity = new samples.BeanBook();"), decoder);
+    assertTrue(decoder.contains("entity.setId("), decoder);
+    assertTrue(decoder.contains("entity.setName("), decoder);
+    assertTrue(decoder.contains("entity.setVersion("), decoder);
+    assertTrue(binder.contains("entity.getId()"), binder);
+    assertTrue(binder.contains("entity.getName()"), binder);
+    assertTrue(binder.contains("entity.getVersion()"), binder);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void supportsGetterAnnotationsFluentAccessorsAndPublicFields() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.FlexibleBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            public class FlexibleBean {
+              private Long id;
+              public String description;
+
+              public FlexibleBean() {}
+              @Id public Long id() { return id; }
+              public FlexibleBean id(Long id) { this.id = id; return this; }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("flexible-bean"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String decoder = generatedSource(result, "FlexibleBeanRowDecoder.java");
+    String binder = generatedSource(result, "FlexibleBeanBinder.java");
+    assertTrue(decoder.contains("entity.id("), decoder);
+    assertTrue(decoder.contains("entity.description = "), decoder);
+    assertTrue(binder.contains("entity.id()"), binder);
+    assertTrue(binder.contains("entity.description"), binder);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void selectsUsableAccessorsAcrossBeanAndFluentCandidates() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.AlternativeAccessBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            public class AlternativeAccessBean {
+              @Id private Long id;
+              @Column(nullable = false) private boolean active;
+              @Column(nullable = false) private boolean enabled;
+
+              public AlternativeAccessBean() {}
+              public Long getId() { return id; }
+              private void setId(Long id) { this.id = id; }
+              public AlternativeAccessBean id(Long id) { this.id = id; return this; }
+              private boolean isActive() { return active; }
+              public boolean getActive() { return active; }
+              public void setActive(boolean active) { this.active = active; }
+              public String isEnabled() { return Boolean.toString(enabled); }
+              public boolean getEnabled() { return enabled; }
+              public void setEnabled(String enabled) { this.enabled = Boolean.parseBoolean(enabled); }
+              public AlternativeAccessBean enabled(boolean enabled) {
+                this.enabled = enabled;
+                return this;
+              }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("alternative-accessors"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String decoder = generatedSource(result, "AlternativeAccessBeanRowDecoder.java");
+    String binder = generatedSource(result, "AlternativeAccessBeanBinder.java");
+    assertTrue(decoder.contains("entity.id("), decoder);
+    assertTrue(decoder.contains("entity.setActive("), decoder);
+    assertTrue(decoder.contains("entity.enabled("), decoder);
+    assertTrue(binder.contains("entity.getId()"), binder);
+    assertTrue(binder.contains("entity.getActive()"), binder);
+    assertTrue(binder.contains("entity.getEnabled()"), binder);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void supportsLombokStyleBooleanIsPrefixAccessors() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.BooleanPrefixBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            public class BooleanPrefixBean {
+              @Id private Long id;
+              private boolean isActive;
+
+              public BooleanPrefixBean() {}
+              public Long getId() { return id; }
+              public void setId(Long id) { this.id = id; }
+              @Column(nullable = false) public boolean isActive() { return isActive; }
+              public void setActive(boolean active) { isActive = active; }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("boolean-prefix"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String decoder = generatedSource(result, "BooleanPrefixBeanRowDecoder.java");
+    String binder = generatedSource(result, "BooleanPrefixBeanBinder.java");
+    assertTrue(decoder.contains("RowLayout.contiguous(2, firstColumnIndex)"), decoder);
+    assertTrue(decoder.contains("entity.setActive("), decoder);
+    assertTrue(binder.contains("entity.isActive()"), binder);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void allowsSqlExceptionFromGeneratedBeanInvocationPoints() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.SqlExceptionBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import java.sql.SQLException;
+            @SkisEntity
+            public class SqlExceptionBean {
+              @Id private Long id;
+
+              public SqlExceptionBean() throws SQLException {}
+              public Long getId() throws SQLException { return id; }
+              public void setId(Long id) throws SQLException { this.id = id; }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("sql-exception-bean"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void waitsOneRoundForOptionalLombokShapeTransformationWithoutDependingOnLombok()
+      throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "lombok.Getter",
+            """
+            package lombok;
+            import java.lang.annotation.*;
+            @Target({ElementType.TYPE, ElementType.FIELD})
+            @Retention(RetentionPolicy.SOURCE)
+            public @interface Getter {}
+            """,
+            "samples.LombokStyleBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @lombok.Getter
+            @SkisEntity
+            public class LombokStyleBean {
+              @Id private Long id;
+              public LombokStyleBean() {}
+              public Long getId() { return id; }
+              public void setId(Long id) { this.id = id; }
+            }
+            """);
+    String processors =
+        SkisEntityProcessor.class.getName()
+            + ","
+            + RoundForcingProcessor.class.getName();
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("lombok-round"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    assertTrue(
+        Files.exists(result.generatedSources().resolve("samples/skis/LombokStyleBeanMeta.java")),
+        "SKIS did not retry the Lombok-shaped entity");
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void doesNotDeferForLombokAccessorsAnnotationAlone() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "lombok.experimental.Accessors",
+            """
+            package lombok.experimental;
+            import java.lang.annotation.*;
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.SOURCE)
+            public @interface Accessors {
+              boolean fluent() default false;
+            }
+            """,
+            "samples.AccessorsOnlyBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @lombok.experimental.Accessors(fluent = true)
+            @SkisEntity
+            public class AccessorsOnlyBean {
+              @Id private Long id;
+              public AccessorsOnlyBean() {}
+              public Long id() { return id; }
+              public AccessorsOnlyBean id(Long id) { this.id = id; return this; }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("accessors-only"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void reportsMissingPublicNoArgsConstructorForClassEntity() throws Exception {
+    assertProcessingError(
+        "SKIS033",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public class Invalid {
+          @Id private Long id;
+          public Invalid(Long id) { this.id = id; }
+          public Long getId() { return id; }
+          public void setId(Long id) { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsIncompatibleCheckedExceptionFromNoArgsConstructor() throws Exception {
+    assertProcessingError(
+        "SKIS039",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        import java.io.IOException;
+        @SkisEntity
+        public class Invalid {
+          @Id public Long id;
+          public Invalid() throws IOException {}
+        }
+        """);
+  }
+
+  @Test
+  void reportsMissingReadableClassProperty() throws Exception {
+    assertProcessingError(
+        "SKIS034",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public class Invalid {
+          @Id private Long id;
+          public Invalid() {}
+          public void setId(Long id) { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsMissingWritableClassProperty() throws Exception {
+    assertProcessingError(
+        "SKIS035",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public class Invalid {
+          @Id private Long id;
+          public Invalid() {}
+          public Long getId() { return id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsConflictingFieldAndGetterColumnMappings() throws Exception {
+    assertProcessingError(
+        "SKIS036",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public class Invalid {
+          @Id @Column(name = "field_id") private Long id;
+          public Invalid() {}
+          @Column(name = "getter_id") public Long getId() { return id; }
+          public void setId(Long id) { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsClassEntityInheritanceBeforeItCanSilentlyLoseProperties() throws Exception {
+    assertProcessingError(
+        "SKIS032",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        class Base { protected String inherited; }
+        @SkisEntity
+        public class Invalid extends Base {
+          @Id public Long id;
+          public Invalid() {}
+        }
+        """);
+  }
+
+  @Test
+  void reportsAbstractClassEntity() throws Exception {
+    assertProcessingError(
+        "SKIS031",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public abstract class Invalid {
+          @Id private Long id;
+          public Invalid() {}
+          public Long getId() { return id; }
+          public void setId(Long id) { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsAccessorTypeMismatch() throws Exception {
+    assertProcessingError(
+        "SKIS037",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public class Invalid {
+          @Id private Long id;
+          public Invalid() {}
+          public String getId() { return id == null ? null : id.toString(); }
+          public void setId(Long id) { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsIncompatibleCheckedExceptionFromGetter() throws Exception {
+    assertProcessingError(
+        "SKIS040",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        import java.io.IOException;
+        @SkisEntity
+        public class Invalid {
+          @Id private Long id;
+          public Invalid() {}
+          public Long getId() throws IOException { return id; }
+          public void setId(Long id) { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsIncompatibleCheckedExceptionFromSetter() throws Exception {
+    assertProcessingError(
+        "SKIS040",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        import java.io.IOException;
+        @SkisEntity
+        public class Invalid {
+          @Id private Long id;
+          public Invalid() {}
+          public Long getId() { return id; }
+          public void setId(Long id) throws IOException { this.id = id; }
+        }
+        """);
+  }
+
+  @Test
+  void reportsLombokShapeThatNeverSettles() throws Exception {
+    CompilationResult result =
+        process(
+            Map.of(
+                "lombok.Getter",
+                """
+                package lombok;
+                import java.lang.annotation.*;
+                @Target(ElementType.TYPE)
+                @Retention(RetentionPolicy.SOURCE)
+                public @interface Getter {}
+                """,
+                "samples.Invalid",
+                """
+                package samples;
+                import io.skis.annotations.*;
+                @lombok.Getter
+                @SkisEntity
+                public class Invalid {
+                  @Id private Long id;
+                  public Invalid() {}
+                  public Long getId() { return id; }
+                  public void setId(Long id) { this.id = id; }
+                }
+                """),
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("SKIS038"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS038]"), result.diagnosticsText());
+  }
+
+  @Test
+  void reportsLombokBuilderShapeThatNeverSettles() throws Exception {
+    CompilationResult result =
+        process(
+            Map.of(
+                "lombok.Builder",
+                """
+                package lombok;
+                import java.lang.annotation.*;
+                @Target(ElementType.TYPE)
+                @Retention(RetentionPolicy.SOURCE)
+                public @interface Builder {}
+                """,
+                "samples.Invalid",
+                """
+                package samples;
+                import io.skis.annotations.*;
+                @lombok.Builder
+                @SkisEntity
+                public class Invalid {
+                  @Id public Long id;
+                }
+                """),
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("lombok-builder-SKIS038"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS038]"), result.diagnosticsText());
+  }
+
+  @Test
   void reportsVersionPrimaryKeyAtCompileTime() throws Exception {
     assertProcessingError(
         "SKIS024",

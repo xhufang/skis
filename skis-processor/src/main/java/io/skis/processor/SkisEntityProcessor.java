@@ -32,8 +32,9 @@ public final class SkisEntityProcessor extends AbstractProcessor {
   private Filer filer;
   private List<EntitySourceGenerator> generators;
   private final Set<String> settledEntities = new HashSet<>();
+  private final Set<String> lombokSettlementDeferred = new HashSet<>();
   private final Set<String> pendingEntities = new TreeSet<>();
-  private final Map<String, String> deferredReasons = new HashMap<>();
+  private final Map<String, DeferredProblem> deferredProblems = new HashMap<>();
 
   @Override
   public synchronized void init(ProcessingEnvironment environment) {
@@ -67,13 +68,15 @@ public final class SkisEntityProcessor extends AbstractProcessor {
     for (String entityName : new ArrayList<>(pendingEntities)) {
       TypeElement type = processingEnv.getElementUtils().getTypeElement(entityName);
       if (type == null) {
-        deferredReasons.put(entityName, "the entity type is not available in this round");
+        deferredProblems.put(
+            entityName,
+            new DeferredProblem("SKIS097", "the entity type is not available in this round"));
         continue;
       }
       ProcessingResult result = processEntity(type);
       if (result != ProcessingResult.DEFERRED) {
         pendingEntities.remove(entityName);
-        deferredReasons.remove(entityName);
+        deferredProblems.remove(entityName);
         settledEntities.add(entityName);
       }
     }
@@ -83,6 +86,14 @@ public final class SkisEntityProcessor extends AbstractProcessor {
 
   private ProcessingResult processEntity(TypeElement type) {
     String entityName = type.getQualifiedName().toString();
+    if (LombokShapeDetector.isPresent(type) && lombokSettlementDeferred.add(entityName)) {
+      deferredProblems.put(
+          entityName,
+          new DeferredProblem(
+              "SKIS038",
+              "Lombok may still be changing the entity structure; waiting for its next annotation-processing round"));
+      return ProcessingResult.DEFERRED;
+    }
     try {
       EntityModel model = scanner.scan(type);
       List<ProcessingProblem> problems = validator.validate(model);
@@ -95,40 +106,44 @@ public final class SkisEntityProcessor extends AbstractProcessor {
       }
       return ProcessingResult.GENERATED;
     } catch (EntityScanDeferredException deferred) {
-      deferredReasons.put(entityName, deferred.getMessage());
+      deferredProblems.put(
+          entityName, new DeferredProblem("SKIS097", deferred.getMessage()));
       return ProcessingResult.DEFERRED;
     } catch (EntityScanException failure) {
       error(failure.code(), failure.getMessage(), failure.element());
       return ProcessingResult.FAILED;
     } catch (IOException exception) {
-      error(
-          "SKIS099",
-          "cannot generate sources for '" + entityName + "': " + exception,
-          type);
+      error("SKIS099", "cannot generate sources for '" + entityName + "': " + exception, type);
       return ProcessingResult.FAILED;
     }
   }
 
   private void reportUnresolvedEntities() {
     for (String entityName : pendingEntities) {
-      String reason =
-          deferredReasons.getOrDefault(entityName, "the entity type remained unresolved");
+      DeferredProblem problem =
+          deferredProblems.getOrDefault(
+              entityName,
+              new DeferredProblem("SKIS097", "the entity type remained unresolved"));
+      String resolution =
+          "SKIS038".equals(problem.code())
+              ? "; ensure Lombok is enabled as an annotation processor and can request its follow-up round"
+              : "; ensure the referenced type is generated before processing ends";
       String message =
           "cannot generate sources for '"
               + entityName
               + "' because "
-              + reason
-              + "; ensure the referenced type is generated before processing ends";
+              + problem.reason()
+              + resolution;
       TypeElement type = processingEnv.getElementUtils().getTypeElement(entityName);
       if (type == null) {
-        messager.printMessage(Diagnostic.Kind.ERROR, "[SKIS097] " + message);
+        messager.printMessage(Diagnostic.Kind.ERROR, "[" + problem.code() + "] " + message);
       } else {
-        error("SKIS097", message, type);
+        error(problem.code(), message, type);
       }
     }
     settledEntities.addAll(pendingEntities);
     pendingEntities.clear();
-    deferredReasons.clear();
+    deferredProblems.clear();
   }
 
   private void error(String code, String message, Element element) {
@@ -140,4 +155,6 @@ public final class SkisEntityProcessor extends AbstractProcessor {
     FAILED,
     DEFERRED
   }
+
+  private record DeferredProblem(String code, String reason) {}
 }
