@@ -12,31 +12,31 @@ class AnnotationContractTest {
 
   @Test
   void retainsEntityAndTableDeclarations() {
-    SkisEntity entity = Book.class.getAnnotation(SkisEntity.class);
-    Table table = Book.class.getAnnotation(Table.class);
+    SkisEntity entity = Pet.class.getAnnotation(SkisEntity.class);
+    Table table = Pet.class.getAnnotation(Table.class);
 
     assertFalse(entity.readOnly());
-    assertEquals("book", table.name());
-    assertEquals("inventory", table.schema());
+    assertEquals("pet", table.name());
+    assertEquals("shelter", table.schema());
   }
 
   @Test
   void supportsRecordComponentMappings() {
-    RecordComponent id = Book.class.getRecordComponents()[0];
-    RecordComponent displayName = Book.class.getRecordComponents()[1];
-    RecordComponent version = Book.class.getRecordComponents()[2];
+    RecordComponent id = Pet.class.getRecordComponents()[0];
+    RecordComponent displayName = Pet.class.getRecordComponents()[1];
+    RecordComponent version = Pet.class.getRecordComponents()[2];
 
     assertTrue(id.isAnnotationPresent(Id.class));
-    assertEquals("book_id", id.getAnnotation(Column.class).name());
+    assertEquals("pet_id", id.getAnnotation(Column.class).name());
     assertTrue(displayName.isAnnotationPresent(Transient.class));
     assertTrue(version.isAnnotationPresent(Version.class));
   }
 
   /** Test entity used to verify record-component annotation mappings. */
   @SkisEntity
-  @Table(name = "book", schema = "inventory")
-  private record Book(
-      @Id @Column(name = "book_id", nullable = false) Long id,
+  @Table(name = "pet", schema = "shelter")
+  private record Pet(
+      @Id @Column(name = "pet_id", nullable = false) Long id,
       @Transient String displayName,
       @Version @Column(nullable = false) long version) {}
 }

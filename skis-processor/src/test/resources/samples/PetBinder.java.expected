@@ -8,18 +8,18 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 @javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 1")
-public final class BookBinder {
+public final class PetBinder {
 
-  private BookBinder() {}
+  private PetBinder() {}
 
-  public static final ParameterBinder<samples.Book> INSERT = BookBinder::bindInsert;
-  public static final ParameterBinder<samples.Book> UPSERT = INSERT;
-  public static final ParameterBinder<samples.Book> UPDATE_BY_ID = BookBinder::bindUpdateById;
+  public static final ParameterBinder<samples.Pet> INSERT = PetBinder::bindInsert;
+  public static final ParameterBinder<samples.Pet> UPSERT = INSERT;
+  public static final ParameterBinder<samples.Pet> UPDATE_BY_ID = PetBinder::bindUpdateById;
 
   private static int bindInsert(
       PreparedStatement statement,
       int firstIndex,
-      samples.Book entity,
+      samples.Pet entity,
       JdbcWriteContext context)
       throws SQLException {
     int index = firstIndex;
@@ -35,7 +35,7 @@ public final class BookBinder {
   private static int bindUpdateById(
       PreparedStatement statement,
       int firstIndex,
-      samples.Book entity,
+      samples.Pet entity,
       JdbcWriteContext context)
       throws SQLException {
     int index = firstIndex;

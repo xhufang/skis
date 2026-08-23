@@ -18,17 +18,17 @@ class EntityMetaTest {
 
   @Test
   void createsSimpleEntityMetadataWithStablePropertyLookup() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, String> name = property(1, "name", String.class, "book_name", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(id));
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, String> name = property(1, "name", String.class, "pet_name", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(id));
 
-    EntityMeta<Book> metadata =
-        EntityMeta.simple(Book.class, TableMeta.of("book"), List.of(id, name), primaryKey, false);
+    EntityMeta<Pet> metadata =
+        EntityMeta.simple(Pet.class, TableMeta.of("pet"), List.of(id, name), primaryKey, false);
 
-    assertEquals(Book.class, metadata.javaType());
-    assertEquals("Book", metadata.entityName());
+    assertEquals(Pet.class, metadata.javaType());
+    assertEquals("Pet", metadata.entityName());
     assertEquals(EntityMode.SIMPLE, metadata.mode());
-    assertEquals(TableMeta.of("book"), metadata.table());
+    assertEquals(TableMeta.of("pet"), metadata.table());
     assertEquals(List.of(id, name), metadata.properties());
     assertSame(name, metadata.property("name"));
     assertSame(primaryKey, metadata.primaryKey().orElseThrow());
@@ -38,15 +38,15 @@ class EntityMetaTest {
 
   @Test
   void defensivelyCopiesPropertiesAndPrimaryKeyParts() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
-    List<PropertyMeta<Book, ?>> properties = new ArrayList<>();
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
+    List<PropertyMeta<Pet, ?>> properties = new ArrayList<>();
     properties.add(id);
-    List<PropertyMeta<Book, ?>> keyParts = new ArrayList<>();
+    List<PropertyMeta<Pet, ?>> keyParts = new ArrayList<>();
     keyParts.add(id);
 
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(keyParts);
-    EntityMeta<Book> metadata =
-        EntityMeta.simple(Book.class, TableMeta.of("book"), properties, primaryKey, false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(keyParts);
+    EntityMeta<Pet> metadata =
+        EntityMeta.simple(Pet.class, TableMeta.of("pet"), properties, primaryKey, false);
     properties.clear();
     keyParts.clear();
 
@@ -57,10 +57,10 @@ class EntityMetaTest {
 
   @Test
   void permitsReadOnlyEntityWithoutPrimaryKey() {
-    PropertyMeta<BookView, String> name = property(0, "name", String.class, "book_name", true);
+    PropertyMeta<PetView, String> name = property(0, "name", String.class, "pet_name", true);
 
-    EntityMeta<BookView> metadata =
-        EntityMeta.simple(BookView.class, TableMeta.of("book_view"), List.of(name), null, true);
+    EntityMeta<PetView> metadata =
+        EntityMeta.simple(PetView.class, TableMeta.of("pet_view"), List.of(name), null, true);
 
     assertTrue(metadata.readOnly());
     assertTrue(metadata.primaryKey().isEmpty());
@@ -68,84 +68,84 @@ class EntityMetaTest {
 
   @Test
   void rejectsWritableEntityWithoutPrimaryKey() {
-    PropertyMeta<Book, String> name = property(0, "name", String.class, "book_name", false);
+    PropertyMeta<Pet, String> name = property(0, "name", String.class, "pet_name", false);
 
     IllegalArgumentException exception =
         assertThrows(
             IllegalArgumentException.class,
-            () -> EntityMeta.simple(Book.class, TableMeta.of("book"), List.of(name), null, false));
+            () -> EntityMeta.simple(Pet.class, TableMeta.of("pet"), List.of(name), null, false));
 
     assertTrue(exception.getMessage().contains("requires a primary key"));
   }
 
   @Test
   void rejectsPrimaryKeyPropertyFromAnotherEntityMetadataSet() {
-    PropertyMeta<Book, Long> entityId = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, Long> differentId = property(0, "id", Long.class, "book_id", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(differentId));
+    PropertyMeta<Pet, Long> entityId = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, Long> differentId = property(0, "id", Long.class, "pet_id", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(differentId));
 
     assertThrows(
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Book.class, TableMeta.of("book"), List.of(entityId), primaryKey, false));
+                Pet.class, TableMeta.of("pet"), List.of(entityId), primaryKey, false));
   }
 
   @Test
   void rejectsStructurallyEqualButNonCanonicalPrimaryKeyProperty() {
-    PropertyMeta<Book, Long> entityId = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, Long> copiedId = property(0, "id", Long.class, "id", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(copiedId));
+    PropertyMeta<Pet, Long> entityId = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, Long> copiedId = property(0, "id", Long.class, "id", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(copiedId));
 
     assertEquals(entityId, copiedId);
     assertThrows(
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Book.class, TableMeta.of("book"), List.of(entityId), primaryKey, false));
+                Pet.class, TableMeta.of("pet"), List.of(entityId), primaryKey, false));
   }
 
   @Test
   void rejectsNullablePrimaryKey() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", true);
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", true);
 
     assertThrows(IllegalArgumentException.class, () -> new PrimaryKeyMeta<>(List.of(id)));
   }
 
   @Test
   void rejectsDuplicateWritableColumnMappings() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, String> duplicate = property(1, "externalId", String.class, "id", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(id));
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, String> duplicate = property(1, "externalId", String.class, "id", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(id));
 
     assertThrows(
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Book.class, TableMeta.of("book"), List.of(id, duplicate), primaryKey, false));
+                Pet.class, TableMeta.of("pet"), List.of(id, duplicate), primaryKey, false));
   }
 
   @Test
   void identifiesCompositePrimaryKey() {
-    PropertyMeta<Book, Long> tenantId = property(0, "tenantId", Long.class, "tenant_id", false);
-    PropertyMeta<Book, Long> id = property(1, "id", Long.class, "id", false);
+    PropertyMeta<Pet, Long> tenantId = property(0, "tenantId", Long.class, "tenant_id", false);
+    PropertyMeta<Pet, Long> id = property(1, "id", Long.class, "id", false);
 
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(tenantId, id));
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(tenantId, id));
 
     assertTrue(primaryKey.composite());
   }
 
   @Test
   void modelsNumericVersionMetadata() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, Long> version = property(1, "version", Long.class, "version", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(id));
-    VersionMeta<Book, Long> versionMeta =
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, Long> version = property(1, "version", Long.class, "version", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(id));
+    VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(version, VersionStrategy.NUMERIC_INCREMENT);
 
-    EntityMeta<Book> metadata =
+    EntityMeta<Pet> metadata =
         EntityMeta.simple(
-            Book.class, TableMeta.of("book"), List.of(id, version), primaryKey, versionMeta, false);
+            Pet.class, TableMeta.of("pet"), List.of(id, version), primaryKey, versionMeta, false);
 
     assertSame(versionMeta, metadata.version().orElseThrow());
     assertSame(version, metadata.version().orElseThrow().property());
@@ -154,7 +154,7 @@ class EntityMetaTest {
 
   @Test
   void rejectsNullableVersionProperty() {
-    PropertyMeta<Book, Long> version = property(0, "version", Long.class, "version", true);
+    PropertyMeta<Pet, Long> version = property(0, "version", Long.class, "version", true);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -163,7 +163,7 @@ class EntityMetaTest {
 
   @Test
   void rejectsVersionTypeUnsupportedByStrategy() {
-    PropertyMeta<Book, String> version = property(0, "version", String.class, "version", false);
+    PropertyMeta<Pet, String> version = property(0, "version", String.class, "version", false);
 
     assertThrows(
         IllegalArgumentException.class,
@@ -172,9 +172,9 @@ class EntityMetaTest {
 
   @Test
   void rejectsFloatingPointVersionTypes() {
-    PropertyMeta<Book, Float> floatVersion =
+    PropertyMeta<Pet, Float> floatVersion =
         property(0, "version", Float.class, "version", false);
-    PropertyMeta<Book, Double> doubleVersion =
+    PropertyMeta<Pet, Double> doubleVersion =
         property(0, "version", Double.class, "version", false);
 
     assertThrows(
@@ -187,9 +187,9 @@ class EntityMetaTest {
 
   @Test
   void acceptsExactNumericVersionTypes() {
-    PropertyMeta<Book, BigInteger> integerVersion =
+    PropertyMeta<Pet, BigInteger> integerVersion =
         property(0, "version", BigInteger.class, "version", false);
-    PropertyMeta<Book, BigDecimal> decimalVersion =
+    PropertyMeta<Pet, BigDecimal> decimalVersion =
         property(0, "version", BigDecimal.class, "version", false);
 
     assertDoesNotThrow(
@@ -200,7 +200,7 @@ class EntityMetaTest {
 
   @Test
   void validatesColumnRequirementsDeclaredByVersionStrategy() {
-    PropertyMeta<Book, Long> version =
+    PropertyMeta<Pet, Long> version =
         new PropertyMeta<>(
             0, "version", Long.class, new ColumnMeta("version", false, false, true, 0, 0, 0, ""));
 
@@ -211,20 +211,20 @@ class EntityMetaTest {
 
   @Test
   void rejectsVersionPropertyOutsideEntityMetadata() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, Long> entityVersion = property(1, "version", Long.class, "version", false);
-    PropertyMeta<Book, Long> differentVersion =
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, Long> entityVersion = property(1, "version", Long.class, "version", false);
+    PropertyMeta<Pet, Long> differentVersion =
         property(1, "version", Long.class, "lock_version", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(id));
-    VersionMeta<Book, Long> versionMeta =
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(id));
+    VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(differentVersion, VersionStrategy.NUMERIC_INCREMENT);
 
     assertThrows(
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Book.class,
-                TableMeta.of("book"),
+                Pet.class,
+                TableMeta.of("pet"),
                 List.of(id, entityVersion),
                 primaryKey,
                 versionMeta,
@@ -233,11 +233,11 @@ class EntityMetaTest {
 
   @Test
   void rejectsStructurallyEqualButNonCanonicalVersionProperty() {
-    PropertyMeta<Book, Long> id = property(0, "id", Long.class, "id", false);
-    PropertyMeta<Book, Long> entityVersion = property(1, "version", Long.class, "version", false);
-    PropertyMeta<Book, Long> copiedVersion = property(1, "version", Long.class, "version", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(id));
-    VersionMeta<Book, Long> versionMeta =
+    PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
+    PropertyMeta<Pet, Long> entityVersion = property(1, "version", Long.class, "version", false);
+    PropertyMeta<Pet, Long> copiedVersion = property(1, "version", Long.class, "version", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(id));
+    VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(copiedVersion, VersionStrategy.NUMERIC_INCREMENT);
 
     assertEquals(entityVersion, copiedVersion);
@@ -245,8 +245,8 @@ class EntityMetaTest {
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Book.class,
-                TableMeta.of("book"),
+                Pet.class,
+                TableMeta.of("pet"),
                 List.of(id, entityVersion),
                 primaryKey,
                 versionMeta,
@@ -255,16 +255,16 @@ class EntityMetaTest {
 
   @Test
   void rejectsVersionPropertyOnReadOnlyEntity() {
-    PropertyMeta<BookView, Long> version = property(0, "version", Long.class, "version", false);
-    VersionMeta<BookView, Long> versionMeta =
+    PropertyMeta<PetView, Long> version = property(0, "version", Long.class, "version", false);
+    VersionMeta<PetView, Long> versionMeta =
         new VersionMeta<>(version, VersionStrategy.NUMERIC_INCREMENT);
 
     assertThrows(
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                BookView.class,
-                TableMeta.of("book_view"),
+                PetView.class,
+                TableMeta.of("pet_view"),
                 List.of(version),
                 null,
                 versionMeta,
@@ -273,17 +273,17 @@ class EntityMetaTest {
 
   @Test
   void rejectsVersionPropertyInPrimaryKey() {
-    PropertyMeta<Book, Long> version = property(0, "version", Long.class, "version", false);
-    PrimaryKeyMeta<Book> primaryKey = new PrimaryKeyMeta<>(List.of(version));
-    VersionMeta<Book, Long> versionMeta =
+    PropertyMeta<Pet, Long> version = property(0, "version", Long.class, "version", false);
+    PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(version));
+    VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(version, VersionStrategy.NUMERIC_INCREMENT);
 
     assertThrows(
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Book.class,
-                TableMeta.of("book"),
+                Pet.class,
+                TableMeta.of("pet"),
                 List.of(version),
                 primaryKey,
                 versionMeta,
@@ -296,8 +296,8 @@ class EntityMetaTest {
   }
 
   /** Test entity used by writable metadata scenarios. */
-  private record Book(Long id, String name) {}
+  private record Pet(Long id, String name) {}
 
   /** Read-only projection used by metadata validation tests. */
-  private record BookView(String name) {}
+  private record PetView(String name) {}
 }

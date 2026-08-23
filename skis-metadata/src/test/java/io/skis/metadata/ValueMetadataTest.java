@@ -12,8 +12,8 @@ class ValueMetadataTest {
 
   @Test
   void representsQualifiedAndUnqualifiedTables() {
-    TableMeta qualified = new TableMeta("catalog", "inventory", "book");
-    TableMeta unqualified = TableMeta.of("book");
+    TableMeta qualified = new TableMeta("catalog", "shelter", "pet");
+    TableMeta unqualified = TableMeta.of("pet");
 
     assertTrue(qualified.hasCatalog());
     assertTrue(qualified.hasSchema());
@@ -29,9 +29,9 @@ class ValueMetadataTest {
 
   @Test
   void createsDefaultColumnMetadata() {
-    ColumnMeta column = ColumnMeta.of("book_name", false);
+    ColumnMeta column = ColumnMeta.of("pet_name", false);
 
-    assertEquals("book_name", column.name());
+    assertEquals("pet_name", column.name());
     assertFalse(column.nullable());
     assertTrue(column.insertable());
     assertTrue(column.updatable());

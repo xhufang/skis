@@ -7,8 +7,8 @@ import io.skis.annotations.Table;
 import io.skis.annotations.Version;
 
 @SkisEntity
-@Table(name = "book", schema = "inventory")
-public record Book(
+@Table(name = "pet", schema = "shelter")
+public record Pet(
     @Id @Column(name = "id", nullable = false) Long id,
-    @Column(name = "book_name") String name,
+    @Column(name = "pet_name") String name,
     @Version @Column(name = "version", nullable = false) Long version) {}

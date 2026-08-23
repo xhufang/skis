@@ -11,6 +11,10 @@ for production use.
 - Java 21+
 - Maven 3.9+
 
+## Documentation
+
+- [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)
+
 ## License
 
 Licensed under the [Apache License 2.0](LICENSE).

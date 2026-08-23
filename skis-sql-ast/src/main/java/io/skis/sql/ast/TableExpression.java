@@ -6,7 +6,12 @@ import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable typed reference to an entity table in a SQL statement. */
+/**
+ * Immutable typed reference to an entity table in a SQL statement.
+ *
+ * <p>Generated entity metadata is a canonical symbol. Table equality therefore combines the
+ * generated table-expression class, metadata identity, and optional alias.
+ */
 public abstract class TableExpression<E> {
 
   private final EntityMeta<E> entity;
@@ -47,9 +52,28 @@ public abstract class TableExpression<E> {
     int ordinal = property.ordinal();
     if (ordinal >= entity.properties().size() || entity.properties().get(ordinal) != property) {
       throw new IllegalArgumentException(
-          "property '" + property.name() + "' does not belong to entity '" + entity.entityName() + "'");
+          "property '"
+              + property.name()
+              + "' does not belong to entity '"
+              + entity.entityName()
+              + "'");
     }
     return new ColumnExpression<>(this, property);
   }
 
+  @Override
+  public boolean equals(Object other) {
+    return this == other
+        || other != null
+            && getClass() == other.getClass()
+            && entity == ((TableExpression<?>) other).entity
+            && Objects.equals(alias, ((TableExpression<?>) other).alias);
+  }
+
+  @Override
+  public int hashCode() {
+    int result = getClass().hashCode();
+    result = 31 * result + System.identityHashCode(entity);
+    return 31 * result + Objects.hashCode(alias);
+  }
 }
