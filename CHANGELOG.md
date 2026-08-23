@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- 添加 `ConnectionProvider`、`ExecutionContext` 和默认 `DataSourceConnectionProvider`，明确连接获取与归还边界。
+- 添加所有公共框架异常的统一非受检基类 `SkisException`。
+- 添加无运行时参数值的基础 SQL AST：参数槽、等值谓词和单表 SELECT。
+- 添加方言能力、标识符规则、渲染结果和基础 SQL Renderer SPI。
+- 添加 PostgreSQL 与 H2 基础方言及单表 SELECT SQL golden tests。
+- 添加无需依赖 PostgreSQL JDBC 驱动专有类型的 JSON/JSONB 文本 Codec。
+
+### Changed
+
+- 测试示例、共享测试模型和 APT golden 统一由 `Book` 更名为 `Pet`。
+- 明确 `skis-test-model` 仅供仓库内部测试使用，不进入公共 BOM、API 兼容检查或 Maven Central 发布内容。
+- 同一 SQL AST 逻辑参数序号重复出现时，必须使用一致的 Java 类型和 nullability。
+
 ## [0.0.4] - 2026-08-21
 
 ### Added

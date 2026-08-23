@@ -13,11 +13,28 @@
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-metadata</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-sql-ast</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-mapping</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>

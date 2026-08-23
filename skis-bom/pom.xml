@@ -212,11 +212,6 @@
         <artifactId>skis-test-support</artifactId>
         <version>${project.version}</version>
       </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-test-model</artifactId>
-        <version>${project.version}</version>
-      </dependency>
     </dependencies>
   </dependencyManagement>
 </project>

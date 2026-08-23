@@ -28,15 +28,15 @@ class SkisEntityProcessorTest {
 
   @Test
   void generatesStableRecordSourcesAndTheyCompileWithoutWarnings() throws Exception {
-    Map<String, String> sources = Map.of("samples.Book", resource("/samples/Book.java"));
+    Map<String, String> sources = Map.of("samples.Pet", resource("/samples/Pet.java"));
     CompilationResult result =
-        process(sources, SkisEntityProcessor.class.getName(), temporaryDirectory.resolve("book"));
+        process(sources, SkisEntityProcessor.class.getName(), temporaryDirectory.resolve("pet"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    assertGeneratedEquals(result, "BookMeta.java");
-    assertGeneratedEquals(result, "BookTable.java");
-    assertGeneratedEquals(result, "BookRowDecoder.java");
-    assertGeneratedEquals(result, "BookBinder.java");
+    assertGeneratedEquals(result, "PetMeta.java");
+    assertGeneratedEquals(result, "PetTable.java");
+    assertGeneratedEquals(result, "PetRowDecoder.java");
+    assertGeneratedEquals(result, "PetBinder.java");
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -46,19 +46,19 @@ class SkisEntityProcessorTest {
   void generatesBeanEntitySourcesUsingHandwrittenAccessors() throws Exception {
     Map<String, String> sources =
         Map.of(
-            "samples.BeanBook",
+            "samples.BeanPet",
             """
             package samples;
             import io.skis.annotations.*;
             @SkisEntity
-            @Table(name = "book")
-            public class BeanBook {
+            @Table(name = "pet")
+            public class BeanPet {
               @Id private Long id;
-              @Column(name = "book_name") private String name;
+              @Column(name = "pet_name") private String name;
               @Version private Long version;
               @Transient private String displayLabel;
 
-              public BeanBook() {}
+              public BeanPet() {}
               public Long getId() { return id; }
               public void setId(Long id) { this.id = id; }
               public String getName() { return name; }
@@ -71,15 +71,15 @@ class SkisEntityProcessorTest {
         process(
             sources,
             SkisEntityProcessor.class.getName(),
-            temporaryDirectory.resolve("bean-book"));
+            temporaryDirectory.resolve("bean-pet"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String meta = generatedSource(result, "BeanBookMeta.java");
-    String decoder = generatedSource(result, "BeanBookRowDecoder.java");
-    String binder = generatedSource(result, "BeanBookBinder.java");
-    assertTrue(meta.contains("new ColumnMeta(\"book_name\""), meta);
+    String meta = generatedSource(result, "BeanPetMeta.java");
+    String decoder = generatedSource(result, "BeanPetRowDecoder.java");
+    String binder = generatedSource(result, "BeanPetBinder.java");
+    assertTrue(meta.contains("new ColumnMeta(\"pet_name\""), meta);
     assertFalse(meta.contains("displayLabel"), meta);
-    assertTrue(decoder.contains("samples.BeanBook entity = new samples.BeanBook();"), decoder);
+    assertTrue(decoder.contains("samples.BeanPet entity = new samples.BeanPet();"), decoder);
     assertTrue(decoder.contains("entity.setId("), decoder);
     assertTrue(decoder.contains("entity.setName("), decoder);
     assertTrue(decoder.contains("entity.setVersion("), decoder);

@@ -479,6 +479,7 @@
                   <excludeModule>skis-integration-tests</excludeModule>
                   <excludeModule>skis-examples</excludeModule>
                   <excludeModule>skis-example-.*</excludeModule>
+                  <excludeModule>skis-test-model</excludeModule>
                 </excludeModules>
               </parameter>
             </configuration>
@@ -596,7 +597,7 @@
               <autoPublish>true</autoPublish>
               <waitUntil>published</waitUntil>
               <ignorePublishedComponents>true</ignorePublishedComponents>
-              <excludeArtifacts>skis-benchmark,skis-integration-tests,skis-examples,skis-example-spring-boot</excludeArtifacts>
+              <excludeArtifacts>skis-benchmark,skis-integration-tests,skis-examples,skis-example-spring-boot,skis-test-model</excludeArtifacts>
             </configuration>
           </plugin>
         </plugins>

@@ -10,6 +10,9 @@
   <artifactId>skis-test-model</artifactId>
   <name>skis-test-model</name>
   <description>Complex model shared by tests across modules</description>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
