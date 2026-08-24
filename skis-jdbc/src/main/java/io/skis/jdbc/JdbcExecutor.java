@@ -116,9 +116,7 @@ public final class JdbcExecutor {
   }
 
   private <R, P> R withConnection(
-      CompiledQueryPlan<?, P> plan,
-      ExecutionContext executionContext,
-      SqlWork<R> work) {
+      CompiledQueryPlan<?, P> plan, ExecutionContext executionContext, SqlWork<R> work) {
     Connection connection = null;
     Throwable pendingFailure = null;
     try {

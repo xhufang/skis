@@ -8,8 +8,7 @@ import java.util.Set;
 /** Immutable set of SQL features supported by a dialect. */
 public final class DialectCapabilities {
 
-  private static final DialectCapabilities NONE =
-      new DialectCapabilities(Collections.emptySet());
+  private static final DialectCapabilities NONE = new DialectCapabilities(Collections.emptySet());
 
   private final Set<DialectFeature> features;
 

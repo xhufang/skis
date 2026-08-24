@@ -33,9 +33,7 @@ class DialectValueTypesTest {
     assertTrue(capabilities.supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertFalse(capabilities.supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertThrows(UnsupportedOperationException.class, () -> capabilities.features().clear());
-    assertEquals(
-        capabilities,
-        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
+    assertEquals(capabilities, DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
   }
 
   @Test

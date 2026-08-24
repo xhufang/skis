@@ -22,6 +22,7 @@ Applications keep one thread-safe executor as a constructor-injected dependency:
 
 ```java
 public final class PetService {
+
   private final SkisExecutor skisExecutor;
 
   public PetService(SkisExecutor skisExecutor) {

@@ -28,10 +28,7 @@ public final class PropertyRuntime<E, V> {
 
   /** Binds a dynamically supplied value after checking it against generated property metadata. */
   public void bind(
-      PreparedStatement statement,
-      int index,
-      @Nullable Object value,
-      JdbcWriteContext context)
+      PreparedStatement statement, int index, @Nullable Object value, JdbcWriteContext context)
       throws SQLException {
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(context, "context");

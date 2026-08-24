@@ -47,8 +47,9 @@ public record ParameterSlot<T>(int ordinal, Class<T> javaType, boolean nullable)
           case "float" -> Float.class;
           case "double" -> Double.class;
           case "char" -> Character.class;
-          default -> throw new IllegalArgumentException(
-              "unsupported primitive parameter Java type " + javaType.getTypeName());
+          default ->
+              throw new IllegalArgumentException(
+                  "unsupported primitive parameter Java type " + javaType.getTypeName());
         };
     return (Class<T>) boxedType;
   }

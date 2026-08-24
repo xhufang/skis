@@ -80,9 +80,7 @@ class SkisExecutorReadSliceTest {
       return proxy(
           PreparedStatement.class,
           (ignored, method, arguments) -> {
-            if (method.getName().startsWith("set")
-                && arguments != null
-                && arguments.length >= 2) {
+            if (method.getName().startsWith("set") && arguments != null && arguments.length >= 2) {
               boundValues.add(arguments[1]);
               return null;
             }

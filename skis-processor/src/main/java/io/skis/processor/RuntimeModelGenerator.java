@@ -22,9 +22,12 @@ final class RuntimeModelGenerator implements EntitySourceGenerator {
     source.append("import io.skis.mapping.PropertyRuntime;\n");
     source.append("import java.util.List;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);
-    source.append("public final class ").append(className)
+    source
+        .append("public final class ")
+        .append(className)
         .append(" implements EntityRuntimeModelProvider {\n\n");
-    source.append("  public static final EntityRuntimeModel<")
+    source
+        .append("  public static final EntityRuntimeModel<")
         .append(entityType)
         .append("> MODEL = new EntityRuntimeModel<>(\n")
         .append("      ")
@@ -36,7 +39,8 @@ final class RuntimeModelGenerator implements EntitySourceGenerator {
         .append("      List.of(\n");
     for (int index = 0; index < model.properties().size(); index++) {
       PropertyModel property = model.properties().get(index);
-      source.append("          new PropertyRuntime<>(")
+      source
+          .append("          new PropertyRuntime<>(")
           .append(metaName)
           .append('.')
           .append(property.fieldName())
@@ -45,7 +49,10 @@ final class RuntimeModelGenerator implements EntitySourceGenerator {
           .append(')');
       source.append(index + 1 == model.properties().size() ? "));\n\n" : ",\n");
     }
-    source.append("  public ").append(className).append("() {}\n\n")
+    source
+        .append("  public ")
+        .append(className)
+        .append("() {}\n\n")
         .append("  @Override\n")
         .append("  public EntityRuntimeModel<")
         .append(entityType)

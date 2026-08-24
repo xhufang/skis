@@ -461,7 +461,8 @@
               </oldVersion>
               <newVersion>
                 <file>
-                  <path>${project.build.directory}/${project.artifactId}-${project.version}.jar</path>
+                  <path>${project.build.directory}/${project.artifactId}-${project.version}.jar
+                  </path>
                 </file>
               </newVersion>
               <parameter>
@@ -471,8 +472,10 @@
                 <ignoreMissingClasses>true</ignoreMissingClasses>
                 <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                 <skipPomModules>true</skipPomModules>
-                <breakBuildOnBinaryIncompatibleModifications>true</breakBuildOnBinaryIncompatibleModifications>
-                <breakBuildOnSourceIncompatibleModifications>true</breakBuildOnSourceIncompatibleModifications>
+                <breakBuildOnBinaryIncompatibleModifications>true
+                </breakBuildOnBinaryIncompatibleModifications>
+                <breakBuildOnSourceIncompatibleModifications>true
+                </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
                 <excludeModules>
                   <excludeModule>skis-benchmark</excludeModule>
@@ -508,7 +511,8 @@
                   <failOnMissing>true</failOnMissing>
                   <includeOptional>true</includeOptional>
                   <includeTransitiveDependencies>true</includeTransitiveDependencies>
-                  <outputDirectory>${project.build.directory}/generated-resources/licenses</outputDirectory>
+                  <outputDirectory>${project.build.directory}/generated-resources/licenses
+                  </outputDirectory>
                   <thirdPartyFilename>THIRD-PARTY.txt</thirdPartyFilename>
                 </configuration>
               </execution>
@@ -597,7 +601,9 @@
               <autoPublish>true</autoPublish>
               <waitUntil>published</waitUntil>
               <ignorePublishedComponents>true</ignorePublishedComponents>
-              <excludeArtifacts>skis-benchmark,skis-integration-tests,skis-examples,skis-example-spring-boot,skis-test-model</excludeArtifacts>
+              <excludeArtifacts>
+                skis-benchmark,skis-integration-tests,skis-examples,skis-example-spring-boot,skis-test-model
+              </excludeArtifacts>
             </configuration>
           </plugin>
         </plugins>

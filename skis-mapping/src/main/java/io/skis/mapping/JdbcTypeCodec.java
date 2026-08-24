@@ -12,10 +12,6 @@ public interface JdbcTypeCodec<T> {
   @Nullable T read(ResultSet resultSet, int index, JdbcReadContext context) throws SQLException;
 
   /** Binds a value by one-based JDBC parameter index. */
-  void bind(
-      PreparedStatement statement,
-      int index,
-      @Nullable T value,
-      JdbcWriteContext context)
+  void bind(PreparedStatement statement, int index, @Nullable T value, JdbcWriteContext context)
       throws SQLException;
 }

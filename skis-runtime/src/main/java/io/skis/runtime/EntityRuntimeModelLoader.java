@@ -113,7 +113,8 @@ final class EntityRuntimeModelLoader {
         }
       }
     } catch (IOException failure) {
-      throw new SkisConfigurationException("cannot read generated entity index " + resource, failure);
+      throw new SkisConfigurationException(
+          "cannot read generated entity index " + resource, failure);
     }
     if (!abiSeen) {
       throw new SkisConfigurationException(
@@ -126,8 +127,7 @@ final class EntityRuntimeModelLoader {
       GeneratedModelAbi.requireCompatible(Integer.parseInt(value));
     } catch (NumberFormatException failure) {
       throw new SkisConfigurationException(
-          "invalid generated-model ABI '" + value + "' at " + resource + ":" + lineNumber,
-          failure);
+          "invalid generated-model ABI '" + value + "' at " + resource + ":" + lineNumber, failure);
     } catch (IncompatibleClassChangeError failure) {
       throw new SkisConfigurationException(
           "incompatible generated-model ABI '" + value + "' at " + resource + ":" + lineNumber,

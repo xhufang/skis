@@ -28,11 +28,7 @@ class EntityRuntimeModelLoaderTest {
       new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
   private static final EntityMeta<Pet> PET =
       EntityMeta.simple(
-          Pet.class,
-          TableMeta.of("pet"),
-          List.of(ID),
-          new PrimaryKeyMeta<>(List.of(ID)),
-          false);
+          Pet.class, TableMeta.of("pet"), List.of(ID), new PrimaryKeyMeta<>(List.of(ID)), false);
   private static final EntityRuntimeModel<Pet> MODEL =
       new EntityRuntimeModel<>(
           PET,
@@ -43,10 +39,7 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void loadsGeneratedProvidersFromIndexWithoutClasspathScanning() throws Exception {
-    writeIndex(
-        "# skis-generated-abi=2\n"
-            + TestProvider.class.getName()
-            + "\n");
+    writeIndex("# skis-generated-abi=2\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {

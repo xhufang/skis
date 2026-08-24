@@ -75,8 +75,7 @@ class DataSourceConnectionProviderTest {
   void rejectsBrokenDataSourceThatReturnsNull() throws Exception {
     DataSource dataSource =
         proxy(
-            DataSource.class,
-            (ignored, method, arguments) -> defaultValue(method.getReturnType()));
+            DataSource.class, (ignored, method, arguments) -> defaultValue(method.getReturnType()));
     ConnectionProvider provider = new DataSourceConnectionProvider(dataSource);
 
     SQLException failure =
@@ -110,8 +109,7 @@ class DataSourceConnectionProviderTest {
 
     SQLException thrown =
         assertThrows(
-            SQLException.class,
-            () -> provider.release(connection, ExecutionContext.EMPTY));
+            SQLException.class, () -> provider.release(connection, ExecutionContext.EMPTY));
 
     assertSame(failure, thrown);
     assertEquals("08006", thrown.getSQLState());
@@ -135,8 +133,7 @@ class DataSourceConnectionProviderTest {
     ConnectionProvider provider = new DataSourceConnectionProvider(dataSource);
 
     assertThrows(NullPointerException.class, () -> provider.acquire(null));
-    assertThrows(
-        NullPointerException.class, () -> provider.release(null, ExecutionContext.EMPTY));
+    assertThrows(NullPointerException.class, () -> provider.release(null, ExecutionContext.EMPTY));
     assertThrows(NullPointerException.class, () -> provider.release(connection, null));
   }
 

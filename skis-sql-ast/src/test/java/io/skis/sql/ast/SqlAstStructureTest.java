@@ -37,9 +37,7 @@ class SqlAstStructureTest {
     ParameterSlot<Long> equivalentSlot = new ParameterSlot<>(0, Long.class, false);
     SelectStatement first =
         new SelectStatement(
-            List.of(firstTable.id(), firstTable.name()),
-            firstTable,
-            firstTable.id().eq(firstSlot));
+            List.of(firstTable.id(), firstTable.name()), firstTable, firstTable.id().eq(firstSlot));
     SelectStatement equivalent =
         new SelectStatement(
             List.of(equivalentTable.id(), equivalentTable.name()),
@@ -95,8 +93,7 @@ class SqlAstStructureTest {
     ParameterSlot<Long> primitiveId = new ParameterSlot<>(0, long.class, false);
 
     assertEquals(
-        table.id().eq(new ParameterSlot<>(0, Long.class, false)),
-        table.id().eq(primitiveId));
+        table.id().eq(new ParameterSlot<>(0, Long.class, false)), table.id().eq(primitiveId));
   }
 
   @Test

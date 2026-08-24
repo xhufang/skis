@@ -22,8 +22,8 @@ public final class PostgreSqlCodecs {
   public static final JdbcTypeCodec<String> JSON =
       new JdbcTypeCodec<>() {
         @Override
-        public @Nullable String read(
-            ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
+        public @Nullable String read(ResultSet resultSet, int index, JdbcReadContext context)
+            throws SQLException {
           return readJson(resultSet, index, context);
         }
 
@@ -41,17 +41,14 @@ public final class PostgreSqlCodecs {
   private PostgreSqlCodecs() {}
 
   /** Reads JSON or JSONB as its textual representation. */
-  public static @Nullable String readJson(
-      ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
+  public static @Nullable String readJson(ResultSet resultSet, int index, JdbcReadContext context)
+      throws SQLException {
     return resultSet.getString(index);
   }
 
   /** Binds JSON text without requiring a compile-time dependency on the PostgreSQL driver. */
   public static void bindJson(
-      PreparedStatement statement,
-      int index,
-      @Nullable String value,
-      JdbcWriteContext context)
+      PreparedStatement statement, int index, @Nullable String value, JdbcWriteContext context)
       throws SQLException {
     if (value == null) {
       statement.setNull(index, Types.OTHER);

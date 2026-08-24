@@ -17,9 +17,7 @@ class JdbcValueKindTest {
     assertSame(JdbcValueKind.INTEGER, JdbcValueKind.forPrimitive(TypeKind.INT));
     assertSame(JdbcValueKind.CHARACTER, JdbcValueKind.forPrimitive(TypeKind.CHAR));
     assertSame(JdbcValueKind.UUID, JdbcValueKind.forDeclared("java.util.UUID"));
-    assertSame(
-        JdbcValueKind.LOCAL_DATE_TIME,
-        JdbcValueKind.forDeclared("java.time.LocalDateTime"));
+    assertSame(JdbcValueKind.LOCAL_DATE_TIME, JdbcValueKind.forDeclared("java.time.LocalDateTime"));
     assertSame(JdbcValueKind.UNSUPPORTED, JdbcValueKind.forDeclared("samples.Money"));
   }
 

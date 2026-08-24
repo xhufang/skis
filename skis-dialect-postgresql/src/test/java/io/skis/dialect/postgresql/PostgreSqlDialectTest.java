@@ -48,8 +48,6 @@ class PostgreSqlDialectTest {
     RenderedSql rendered =
         PostgreSqlDialect.INSTANCE.renderer().render(new SelectStatement(List.of(pet.name()), pet));
 
-    assertEquals(
-        "SELECT \"p\".\"pet_name\" FROM \"shelter\".\"pet\" AS \"p\"",
-        rendered.sql());
+    assertEquals("SELECT \"p\".\"pet_name\" FROM \"shelter\".\"pet\" AS \"p\"", rendered.sql());
   }
 }

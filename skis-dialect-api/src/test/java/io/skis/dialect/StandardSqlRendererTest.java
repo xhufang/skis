@@ -42,8 +42,7 @@ class StandardSqlRendererTest {
     ParameterSlot<String> selectedName = new ParameterSlot<>(1, String.class, true);
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
     SelectStatement statement =
-        new SelectStatement(
-            List.of(pet.id(), selectedName), pet, pet.id().eq(id));
+        new SelectStatement(List.of(pet.id(), selectedName), pet, pet.id().eq(id));
 
     RenderedSql rendered = RENDERER.render(statement);
 
@@ -103,11 +102,7 @@ class StandardSqlRendererTest {
 
   private static EntityMeta<Pet> metadata(TableMeta table) {
     return EntityMeta.simple(
-        Pet.class,
-        table,
-        List.of(ID, NAME),
-        new PrimaryKeyMeta<>(List.of(ID)),
-        false);
+        Pet.class, table, List.of(ID, NAME), new PrimaryKeyMeta<>(List.of(ID)), false);
   }
 
   private record Pet(Long id, String name) {}

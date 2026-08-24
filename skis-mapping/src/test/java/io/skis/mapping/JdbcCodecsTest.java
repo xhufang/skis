@@ -209,8 +209,7 @@ class JdbcCodecsTest {
     assertThrows(
         SQLException.class,
         () ->
-            JdbcCodecs.readBigInteger(
-                fractional.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+            JdbcCodecs.readBigInteger(fractional.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
     InvocationRecorder multipleCharacters = new InvocationRecorder("SKIS");
     assertThrows(
         SQLException.class,
@@ -250,23 +249,20 @@ class JdbcCodecsTest {
         "setTimestamp",
         new Object[] {7, java.sql.Timestamp.valueOf(localDateTime)},
         statement ->
-            JdbcCodecs.bindLocalDateTime(
-                statement, 7, localDateTime, JdbcWriteContext.EMPTY));
+            JdbcCodecs.bindLocalDateTime(statement, 7, localDateTime, JdbcWriteContext.EMPTY));
 
     OffsetTime offsetTime = localTime.atOffset(ZoneOffset.ofHours(8));
     assertBind(
         "setObject",
         new Object[] {8, offsetTime, Types.TIME_WITH_TIMEZONE},
-        statement ->
-            JdbcCodecs.bindOffsetTime(statement, 8, offsetTime, JdbcWriteContext.EMPTY));
+        statement -> JdbcCodecs.bindOffsetTime(statement, 8, offsetTime, JdbcWriteContext.EMPTY));
 
     OffsetDateTime offsetDateTime = localDateTime.atOffset(ZoneOffset.ofHours(8));
     assertBind(
         "setObject",
         new Object[] {9, offsetDateTime, Types.TIMESTAMP_WITH_TIMEZONE},
         statement ->
-            JdbcCodecs.bindOffsetDateTime(
-                statement, 9, offsetDateTime, JdbcWriteContext.EMPTY));
+            JdbcCodecs.bindOffsetDateTime(statement, 9, offsetDateTime, JdbcWriteContext.EMPTY));
   }
 
   @Test
@@ -353,8 +349,7 @@ class JdbcCodecsTest {
     assertBind(
         "setTimestamp",
         new Object[] {3, timestamp},
-        statement ->
-            JdbcCodecs.bindSqlTimestamp(statement, 3, timestamp, JdbcWriteContext.EMPTY));
+        statement -> JdbcCodecs.bindSqlTimestamp(statement, 3, timestamp, JdbcWriteContext.EMPTY));
   }
 
   @Test
@@ -417,9 +412,7 @@ class JdbcCodecsTest {
     private <T> T proxy(Class<T> interfaceType) {
       return interfaceType.cast(
           Proxy.newProxyInstance(
-              JdbcCodecsTest.class.getClassLoader(),
-              new Class<?>[] {interfaceType},
-              this));
+              JdbcCodecsTest.class.getClassLoader(), new Class<?>[] {interfaceType}, this));
     }
 
     @Override

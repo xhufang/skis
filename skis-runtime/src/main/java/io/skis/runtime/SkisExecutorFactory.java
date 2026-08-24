@@ -16,7 +16,9 @@ public final class SkisExecutorFactory {
 
   private SkisExecutorFactory() {}
 
-  /** Creates an executor and automatically loads generated entities from the context class loader. */
+  /**
+   * Creates an executor and automatically loads generated entities from the context class loader.
+   */
   public static SkisExecutor create(ConnectionProvider connectionProvider, Dialect dialect) {
     return builder().connectionProvider(connectionProvider).dialect(dialect).build();
   }

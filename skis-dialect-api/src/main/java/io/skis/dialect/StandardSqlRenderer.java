@@ -24,9 +24,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   /** Creates a renderer with explicit dialect identity, identifier rules, and capabilities. */
   public StandardSqlRenderer(
-      String dialectId,
-      IdentifierRules identifierRules,
-      DialectCapabilities capabilities) {
+      String dialectId, IdentifierRules identifierRules, DialectCapabilities capabilities) {
     Objects.requireNonNull(dialectId, "dialectId");
     if (dialectId.isBlank()) {
       throw new IllegalArgumentException("dialectId must not be blank");
@@ -105,9 +103,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderColumn(ColumnExpression<?, ?> column, RenderContext context) {
     if (!column.table().equals(context.from)) {
       throw new SqlRenderException(
-          "dialect '"
-              + dialectId
-              + "' cannot render a column outside the single FROM table");
+          "dialect '" + dialectId + "' cannot render a column outside the single FROM table");
     }
     String qualifier =
         column
@@ -133,8 +129,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     sql.append(identifierRules.quote(metadata.name()));
     table
         .alias()
-        .ifPresent(
-            alias -> sql.append(" AS ").append(identifierRules.quote(alias.value())));
+        .ifPresent(alias -> sql.append(" AS ").append(identifierRules.quote(alias.value())));
   }
 
   private void require(DialectFeature feature, String description) {
