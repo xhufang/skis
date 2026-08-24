@@ -472,6 +472,12 @@
                 <ignoreMissingClasses>true</ignoreMissingClasses>
                 <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                 <skipPomModules>true</skipPomModules>
+                <!-- 0.0.7 intentionally requires transaction support from SkisExecutor
+                     implementations. Remove these waivers once the API baseline includes 0.0.7. -->
+                <excludes>
+                  <exclude>io.skis.runtime.SkisExecutor#beginTransaction()</exclude>
+                  <exclude>io.skis.runtime.SkisExecutor#inTransaction(io.skis.runtime.TransactionCallback)</exclude>
+                </excludes>
                 <breakBuildOnBinaryIncompatibleModifications>true
                 </breakBuildOnBinaryIncompatibleModifications>
                 <breakBuildOnSourceIncompatibleModifications>true

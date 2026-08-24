@@ -42,6 +42,12 @@
 - 明确 `skis-test-model` 仅供仓库内部测试使用，不进入公共 BOM、API 兼容检查或 Maven Central 发布内容。
 - 同一 SQL AST 逻辑参数序号重复出现时，必须使用一致的 Java 类型和 nullability。
 
+### Migration
+
+- 0.0.7 有意扩展 `SkisExecutor` 的抽象契约。自定义实现必须重新编译，并实现新增的 `insert`、
+  `updateById`、`deleteById`、`beginTransaction` 和 `inTransaction`；通过
+  `SkisExecutorFactory` 创建内置执行器的应用无需修改装配代码。
+
 ## [0.0.4] - 2026-08-21
 
 ### Added
