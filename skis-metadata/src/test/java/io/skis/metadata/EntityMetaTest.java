@@ -172,8 +172,7 @@ class EntityMetaTest {
 
   @Test
   void rejectsFloatingPointVersionTypes() {
-    PropertyMeta<Pet, Float> floatVersion =
-        property(0, "version", Float.class, "version", false);
+    PropertyMeta<Pet, Float> floatVersion = property(0, "version", Float.class, "version", false);
     PropertyMeta<Pet, Double> doubleVersion =
         property(0, "version", Double.class, "version", false);
 
@@ -192,10 +191,8 @@ class EntityMetaTest {
     PropertyMeta<Pet, BigDecimal> decimalVersion =
         property(0, "version", BigDecimal.class, "version", false);
 
-    assertDoesNotThrow(
-        () -> new VersionMeta<>(integerVersion, VersionStrategy.NUMERIC_INCREMENT));
-    assertDoesNotThrow(
-        () -> new VersionMeta<>(decimalVersion, VersionStrategy.NUMERIC_INCREMENT));
+    assertDoesNotThrow(() -> new VersionMeta<>(integerVersion, VersionStrategy.NUMERIC_INCREMENT));
+    assertDoesNotThrow(() -> new VersionMeta<>(decimalVersion, VersionStrategy.NUMERIC_INCREMENT));
   }
 
   @Test
@@ -282,12 +279,7 @@ class EntityMetaTest {
         IllegalArgumentException.class,
         () ->
             EntityMeta.simple(
-                Pet.class,
-                TableMeta.of("pet"),
-                List.of(version),
-                primaryKey,
-                versionMeta,
-                false));
+                Pet.class, TableMeta.of("pet"), List.of(version), primaryKey, versionMeta, false));
   }
 
   private static <E, V> PropertyMeta<E, V> property(

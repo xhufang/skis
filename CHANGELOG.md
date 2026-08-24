@@ -6,6 +6,11 @@
 
 ### Added
 
+- 添加可构造注入、线程安全的统一 `SkisExecutor`，同时提供 `findById` Fast Path 和最小单表实体 DSL。
+- 添加值与 AST 分离的 `QueryColumn.eq(value)`、不可变 `EntitySelectQuery` 及 `fetchOne/fetchList/fetch` 执行语义。
+- 添加 `CompiledQueryPlan` 与 `JdbcExecutor`，统一 PreparedStatement 绑定、按下标解码、结果基数检查和 JDBC 资源释放。
+- 添加 APT 生成的 `EntityRuntimeModelProvider`，通过 `META-INF/skis/entities.idx` 自动加载 Codec 与 RowDecoder，不扫描类路径或运行时注解。
+- 添加按实体属性数量天然有界、使用原子槽位发布的查询计划复用；单主键 Fast Path 在执行器装配时预热。
 - 添加 `ConnectionProvider`、`ExecutionContext` 和默认 `DataSourceConnectionProvider`，明确连接获取与归还边界。
 - 添加所有公共框架异常的统一非受检基类 `SkisException`。
 - 添加无运行时参数值的基础 SQL AST：参数槽、等值谓词和单表 SELECT。
@@ -15,6 +20,8 @@
 
 ### Changed
 
+- 生成代码 ABI 更新为 2；实体索引条目由元模型类名调整为生成式运行时模型 Provider 类名。
+- 生成的 `PetTable` 改为查询 DSL 表达式，参数值只保存在执行参数中，不进入 SQL AST、结构哈希或编译计划。
 - 测试示例、共享测试模型和 APT golden 统一由 `Book` 更名为 `Pet`。
 - 明确 `skis-test-model` 仅供仓库内部测试使用，不进入公共 BOM、API 兼容检查或 Maven Central 发布内容。
 - 同一 SQL AST 逻辑参数序号重复出现时，必须使用一致的 Java 类型和 nullability。

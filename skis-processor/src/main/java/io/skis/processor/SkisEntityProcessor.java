@@ -48,7 +48,8 @@ public final class SkisEntityProcessor extends AbstractProcessor {
             new MetaGenerator(),
             new TableGenerator(),
             new RowDecoderGenerator(),
-            new BinderGenerator());
+            new BinderGenerator(),
+            new RuntimeModelGenerator());
   }
 
   @Override
@@ -106,8 +107,7 @@ public final class SkisEntityProcessor extends AbstractProcessor {
       }
       return ProcessingResult.GENERATED;
     } catch (EntityScanDeferredException deferred) {
-      deferredProblems.put(
-          entityName, new DeferredProblem("SKIS097", deferred.getMessage()));
+      deferredProblems.put(entityName, new DeferredProblem("SKIS097", deferred.getMessage()));
       return ProcessingResult.DEFERRED;
     } catch (EntityScanException failure) {
       error(failure.code(), failure.getMessage(), failure.element());
@@ -122,8 +122,7 @@ public final class SkisEntityProcessor extends AbstractProcessor {
     for (String entityName : pendingEntities) {
       DeferredProblem problem =
           deferredProblems.getOrDefault(
-              entityName,
-              new DeferredProblem("SKIS097", "the entity type remained unresolved"));
+              entityName, new DeferredProblem("SKIS097", "the entity type remained unresolved"));
       String resolution =
           "SKIS038".equals(problem.code())
               ? "; ensure Lombok is enabled as an annotation processor and can request its follow-up round"

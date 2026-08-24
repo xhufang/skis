@@ -12,10 +12,6 @@ public interface ParameterBinder<P> {
    *
    * @return the first unbound JDBC parameter index
    */
-  int bind(
-      PreparedStatement statement,
-      int firstIndex,
-      P parameters,
-      JdbcWriteContext context)
+  int bind(PreparedStatement statement, int firstIndex, P parameters, JdbcWriteContext context)
       throws SQLException;
 }

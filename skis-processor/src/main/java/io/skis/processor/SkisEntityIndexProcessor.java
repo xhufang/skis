@@ -18,14 +18,14 @@ import javax.tools.Diagnostic;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 
-/** Aggregates generated metadata class names into the deterministic SKIS entity index. */
+/** Aggregates generated runtime-model provider names into the deterministic SKIS entity index. */
 @SupportedAnnotationTypes("io.skis.annotations.SkisEntity")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public final class SkisEntityIndexProcessor extends AbstractProcessor {
 
   private static final String INDEX_PATH = "META-INF/skis/entities.idx";
 
-  private final Set<String> metadataTypes = new TreeSet<>();
+  private final Set<String> providerTypes = new TreeSet<>();
   private final List<Element> originatingElements = new ArrayList<>();
   private boolean written;
 
@@ -36,11 +36,11 @@ public final class SkisEntityIndexProcessor extends AbstractProcessor {
       if (element instanceof TypeElement type) {
         String packageName =
             processingEnv.getElementUtils().getPackageOf(type).getQualifiedName().toString();
-        metadataTypes.add(packageName + ".skis." + type.getSimpleName() + "Meta");
+        providerTypes.add(packageName + ".skis." + type.getSimpleName() + "RuntimeModel");
         originatingElements.add(type);
       }
     }
-    if (roundEnvironment.processingOver() && !written && !metadataTypes.isEmpty()) {
+    if (roundEnvironment.processingOver() && !written && !providerTypes.isEmpty()) {
       writeIndex();
     }
     return false;
@@ -61,8 +61,8 @@ public final class SkisEntityIndexProcessor extends AbstractProcessor {
         writer.write("# skis-generated-abi=");
         writer.write(Integer.toString(SourceText.GENERATED_ABI));
         writer.write('\n');
-        for (String metadataType : metadataTypes) {
-          writer.write(metadataType);
+        for (String providerType : providerTypes) {
+          writer.write(providerType);
           writer.write('\n');
         }
       }

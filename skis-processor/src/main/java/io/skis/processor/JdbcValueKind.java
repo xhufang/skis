@@ -152,6 +152,13 @@ enum JdbcValueKind {
     return numericVersion;
   }
 
+  String codecConstant() {
+    if (this == UNSUPPORTED) {
+      throw new IllegalStateException("unsupported JDBC value kind has no codec constant");
+    }
+    return name();
+  }
+
   private String requireMethod(String method, String operation) {
     if (method.isEmpty()) {
       throw new IllegalStateException(

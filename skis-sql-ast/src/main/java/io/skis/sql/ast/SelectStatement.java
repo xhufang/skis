@@ -94,9 +94,7 @@ public final class SelectStatement implements StatementAst {
         && (!existing.javaType().equals(slot.javaType())
             || existing.nullable() != slot.nullable())) {
       throw new IllegalArgumentException(
-          "parameter ordinal "
-              + slot.ordinal()
-              + " has conflicting Java type or nullability");
+          "parameter ordinal " + slot.ordinal() + " has conflicting Java type or nullability");
     }
   }
 }

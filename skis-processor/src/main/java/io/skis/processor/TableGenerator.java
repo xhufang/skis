@@ -15,17 +15,19 @@ final class TableGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(3072);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.sql.ast.ColumnExpression;\n");
+    source.append("import io.skis.query.QueryColumn;\n");
+    source.append("import io.skis.query.QueryTable;\n");
     source.append("import io.skis.sql.ast.Identifier;\n");
-    source.append("import io.skis.sql.ast.TableExpression;\n");
     source.append("import org.jspecify.annotations.NonNull;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);
-    source.append("public final class ")
+    source
+        .append("public final class ")
         .append(className)
-        .append(" extends TableExpression<")
+        .append(" extends QueryTable<")
         .append(entityType)
         .append("> {\n\n");
-    source.append("  public static final ")
+    source
+        .append("  public static final ")
         .append(className)
         .append(" ")
         .append(SourceText.constantName(model.entityName()))
@@ -33,19 +35,23 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(className)
         .append("();\n\n");
     for (PropertyModel property : model.properties()) {
-      source.append("  private final ColumnExpression<")
+      source
+          .append("  private final QueryColumn<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())
           .append("> ")
           .append(property.name())
-          .append("Column = column(")
+          .append("Column = queryColumn(")
           .append(metaName)
           .append('.')
           .append(property.fieldName())
           .append(");\n");
     }
-    source.append("\n  private ").append(className).append("() {\n")
+    source
+        .append("\n  private ")
+        .append(className)
+        .append("() {\n")
         .append("    super(")
         .append(metaName)
         .append(".ENTITY);\n")
@@ -58,7 +64,8 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(".ENTITY, alias);\n")
         .append("  }\n\n");
     for (PropertyModel property : model.properties()) {
-      source.append("  public ColumnExpression<")
+      source
+          .append("  public QueryColumn<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())
@@ -70,7 +77,8 @@ final class TableGenerator implements EntitySourceGenerator {
           .append("Column;\n")
           .append("  }\n\n");
     }
-    source.append("  @Override\n")
+    source
+        .append("  @Override\n")
         .append("  public ")
         .append(className)
         .append(" as(@NonNull String alias) {\n")

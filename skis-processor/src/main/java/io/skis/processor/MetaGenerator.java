@@ -26,13 +26,15 @@ final class MetaGenerator implements EntitySourceGenerator {
     source.append(SourceText.GENERATED_ANNOTATION);
     source.append("public final class ").append(className).append(" {\n\n");
     source.append("  private ").append(className).append("() {}\n\n");
-    source.append("  public static final int GENERATED_ABI = ")
+    source
+        .append("  public static final int GENERATED_ABI = ")
         .append(SourceText.GENERATED_ABI)
         .append(";\n\n");
     source.append("  static {\n");
     source.append("    GeneratedModelAbi.requireCompatible(GENERATED_ABI);\n");
     source.append("  }\n\n");
-    source.append("  public static final TableMeta TABLE = new TableMeta(")
+    source
+        .append("  public static final TableMeta TABLE = new TableMeta(")
         .append(SourceText.string(model.table().catalog()))
         .append(", ")
         .append(SourceText.string(model.table().schema()))
@@ -40,7 +42,8 @@ final class MetaGenerator implements EntitySourceGenerator {
         .append(SourceText.string(model.table().name()))
         .append(");\n\n");
     for (PropertyModel property : model.properties()) {
-      source.append("  public static final PropertyMeta<")
+      source
+          .append("  public static final PropertyMeta<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())
@@ -71,7 +74,8 @@ final class MetaGenerator implements EntitySourceGenerator {
           .append("));\n\n");
     }
     if (model.version() != null) {
-      source.append("  public static final VersionMeta<")
+      source
+          .append("  public static final VersionMeta<")
           .append(entityType)
           .append(", ")
           .append(model.version().typeName())
@@ -79,7 +83,8 @@ final class MetaGenerator implements EntitySourceGenerator {
           .append(model.version().fieldName())
           .append(", VersionStrategy.NUMERIC_INCREMENT);\n\n");
     }
-    source.append("  public static final EntityMeta<")
+    source
+        .append("  public static final EntityMeta<")
         .append(entityType)
         .append("> ENTITY = EntityMeta.simple(\n")
         .append("      ")

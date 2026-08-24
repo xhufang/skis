@@ -37,6 +37,7 @@ class SkisEntityProcessorTest {
     assertGeneratedEquals(result, "PetTable.java");
     assertGeneratedEquals(result, "PetRowDecoder.java");
     assertGeneratedEquals(result, "PetBinder.java");
+    assertGeneratedEquals(result, "PetRuntimeModel.java");
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -69,9 +70,7 @@ class SkisEntityProcessorTest {
             """);
     CompilationResult result =
         process(
-            sources,
-            SkisEntityProcessor.class.getName(),
-            temporaryDirectory.resolve("bean-pet"));
+            sources, SkisEntityProcessor.class.getName(), temporaryDirectory.resolve("bean-pet"));
 
     assertTrue(result.success(), result.diagnosticsText());
     String meta = generatedSource(result, "BeanPetMeta.java");
@@ -270,9 +269,7 @@ class SkisEntityProcessorTest {
             }
             """);
     String processors =
-        SkisEntityProcessor.class.getName()
-            + ","
-            + RoundForcingProcessor.class.getName();
+        SkisEntityProcessor.class.getName() + "," + RoundForcingProcessor.class.getName();
     CompilationResult result =
         process(sources, processors, temporaryDirectory.resolve("lombok-round"));
 
@@ -587,17 +584,14 @@ class SkisEntityProcessorTest {
     assertTrue(result.success(), result.diagnosticsText());
     String generated =
         Files.readString(
-            result
-                .generatedSources()
-                .resolve("samples/skis/ImplicitNonNullMeta.java"),
+            result.generatedSources().resolve("samples/skis/ImplicitNonNullMeta.java"),
             StandardCharsets.UTF_8);
     assertTrue(generated.contains("new ColumnMeta(\"id\", false"), generated);
     assertTrue(generated.contains("new ColumnMeta(\"name\", false"), generated);
     assertTrue(generated.contains("new ColumnMeta(\"lock_version\", false"), generated);
     String decoder = generatedSource(result, "ImplicitNonNullRowDecoder.java");
     String binder = generatedSource(result, "ImplicitNonNullBinder.java");
-    assertTrue(
-        decoder.contains("requireReadValue(JdbcCodecs.readNullableLong("), decoder);
+    assertTrue(decoder.contains("requireReadValue(JdbcCodecs.readNullableLong("), decoder);
     assertTrue(decoder.contains("requireReadValue(JdbcCodecs.readString("), decoder);
     assertTrue(binder.contains("requireBindValue(entity.id(), index)"), binder);
     assertTrue(binder.contains("requireBindValue(entity.name(), index)"), binder);
@@ -825,9 +819,7 @@ class SkisEntityProcessorTest {
                 @Transient GeneratedMoney amount) {}
             """);
     String processors =
-        SkisEntityProcessor.class.getName()
-            + ","
-            + DeferredTypeGeneratorProcessor.class.getName();
+        SkisEntityProcessor.class.getName() + "," + DeferredTypeGeneratorProcessor.class.getName();
     CompilationResult result =
         process(sources, processors, temporaryDirectory.resolve("deferred-type"));
 
@@ -878,9 +870,9 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=1\n"
-                + "samples.skis.AlphaMeta\n"
-                + "samples.skis.ZuluMeta\n")
+        ("# skis-generated-abi=2\n"
+                + "samples.skis.AlphaRuntimeModel\n"
+                + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
         Files.readAllBytes(result.classes().resolve("META-INF/skis/entities.idx")));
   }
@@ -926,7 +918,10 @@ class SkisEntityProcessorTest {
               null,
               sourceFiles);
       return new CompilationResult(
-          Boolean.TRUE.equals(task.call()), diagnostics.getDiagnostics(), generatedSources, classes);
+          Boolean.TRUE.equals(task.call()),
+          diagnostics.getDiagnostics(),
+          generatedSources,
+          classes);
     }
   }
 
@@ -937,7 +932,7 @@ class SkisEntityProcessorTest {
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
     try (StandardJavaFileManager fileManager =
-        compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8);
+            compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8);
         var paths = Files.walk(processingResult.generatedSources())) {
       List<Path> generatedPaths = paths.filter(path -> path.toString().endsWith(".java")).toList();
       List<JavaFileObject> allSources = new ArrayList<>(sourceFiles(originalSources));

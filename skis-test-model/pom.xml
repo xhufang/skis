@@ -32,6 +32,14 @@
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-query</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-processor</artifactId>
       <scope>provided</scope>
     </dependency>
