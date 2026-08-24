@@ -50,10 +50,8 @@ class EntityPlanSetTest {
     EntityPlanSet<Pet> plans = plans();
 
     CompiledQueryPlan<Pet, Object> findById = plans.findByIdPlan();
-    CompiledQueryPlan<Pet, Object> firstName =
-        plans.selectPlan(TABLE, TABLE.name().eq("Mimi"));
-    CompiledQueryPlan<Pet, Object> secondName =
-        plans.selectPlan(TABLE, TABLE.name().eq("Fifi"));
+    CompiledQueryPlan<Pet, Object> firstName = plans.selectPlan(TABLE, TABLE.name().eq("Mimi"));
+    CompiledQueryPlan<Pet, Object> secondName = plans.selectPlan(TABLE, TABLE.name().eq("Fifi"));
 
     assertSame(ID, plans.findByIdProperty());
     assertSame(findById, plans.findByIdPlan());
@@ -98,8 +96,7 @@ class EntityPlanSetTest {
 
     assertThrows(QueryValidationException.class, () -> TABLE.name().eq(null));
     assertThrows(
-        QueryValidationException.class,
-        () -> plans().selectPlan(TABLE, alias.name().eq("Mimi")));
+        QueryValidationException.class, () -> plans().selectPlan(TABLE, alias.name().eq("Mimi")));
   }
 
   @Test
@@ -156,6 +153,11 @@ class EntityPlanSetTest {
 
     private QueryColumn<Pet, String> name() {
       return name;
+    }
+
+    @Override
+    public PetTable as(String alias) {
+      return new PetTable(Identifier.of(alias));
     }
 
     @Override
