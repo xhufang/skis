@@ -8,7 +8,7 @@ import io.skis.mapping.RowReadContext;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 1")
+@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 2")
 public final class PetRowDecoder implements RowDecoder<samples.Pet> {
 
   private final int idIndex;

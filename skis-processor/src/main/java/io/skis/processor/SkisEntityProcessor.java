@@ -48,7 +48,8 @@ public final class SkisEntityProcessor extends AbstractProcessor {
             new MetaGenerator(),
             new TableGenerator(),
             new RowDecoderGenerator(),
-            new BinderGenerator());
+            new BinderGenerator(),
+            new RuntimeModelGenerator());
   }
 
   @Override

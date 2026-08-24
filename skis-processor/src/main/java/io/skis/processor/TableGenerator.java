@@ -15,14 +15,14 @@ final class TableGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(3072);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.sql.ast.ColumnExpression;\n");
+    source.append("import io.skis.query.QueryColumn;\n");
+    source.append("import io.skis.query.QueryTable;\n");
     source.append("import io.skis.sql.ast.Identifier;\n");
-    source.append("import io.skis.sql.ast.TableExpression;\n");
     source.append("import org.jspecify.annotations.NonNull;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);
     source.append("public final class ")
         .append(className)
-        .append(" extends TableExpression<")
+        .append(" extends QueryTable<")
         .append(entityType)
         .append("> {\n\n");
     source.append("  public static final ")
@@ -33,13 +33,13 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(className)
         .append("();\n\n");
     for (PropertyModel property : model.properties()) {
-      source.append("  private final ColumnExpression<")
+      source.append("  private final QueryColumn<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())
           .append("> ")
           .append(property.name())
-          .append("Column = column(")
+          .append("Column = queryColumn(")
           .append(metaName)
           .append('.')
           .append(property.fieldName())
@@ -58,7 +58,7 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(".ENTITY, alias);\n")
         .append("  }\n\n");
     for (PropertyModel property : model.properties()) {
-      source.append("  public ColumnExpression<")
+      source.append("  public QueryColumn<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())

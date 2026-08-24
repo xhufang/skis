@@ -37,6 +37,7 @@ class SkisEntityProcessorTest {
     assertGeneratedEquals(result, "PetTable.java");
     assertGeneratedEquals(result, "PetRowDecoder.java");
     assertGeneratedEquals(result, "PetBinder.java");
+    assertGeneratedEquals(result, "PetRuntimeModel.java");
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -878,9 +879,9 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=1\n"
-                + "samples.skis.AlphaMeta\n"
-                + "samples.skis.ZuluMeta\n")
+        ("# skis-generated-abi=2\n"
+                + "samples.skis.AlphaRuntimeModel\n"
+                + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
         Files.readAllBytes(result.classes().resolve("META-INF/skis/entities.idx")));
   }
