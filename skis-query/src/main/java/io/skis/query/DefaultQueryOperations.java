@@ -53,8 +53,9 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   private static void requireValueType(
-      PropertyMeta<?, ?> property, Object value, String description) {
+      PropertyMeta<?, ?> property, @Nullable Object value, String description) {
     if (!property.javaType().isInstance(value)) {
+      String receivedType = value == null ? "null" : value.getClass().getTypeName();
       throw new QueryValidationException(
           description
               + " for property '"
@@ -62,7 +63,7 @@ final class DefaultQueryOperations implements QueryOperations {
               + "' requires "
               + property.javaType().getTypeName()
               + " but received "
-              + value.getClass().getTypeName());
+              + receivedType);
     }
   }
 }
