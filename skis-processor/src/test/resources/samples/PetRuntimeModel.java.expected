@@ -7,7 +7,7 @@ import io.skis.mapping.JdbcCodecs;
 import io.skis.mapping.PropertyRuntime;
 import java.util.List;
 
-@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 2")
+@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 3")
 public final class PetRuntimeModel implements EntityRuntimeModelProvider {
 
   public static final EntityRuntimeModel<samples.Pet> MODEL = new EntityRuntimeModel<>(
@@ -16,7 +16,8 @@ public final class PetRuntimeModel implements EntityRuntimeModelProvider {
       List.of(
           new PropertyRuntime<>(PetMeta.ID, JdbcCodecs.LONG),
           new PropertyRuntime<>(PetMeta.NAME, JdbcCodecs.STRING),
-          new PropertyRuntime<>(PetMeta.VERSION_PROPERTY, JdbcCodecs.LONG)));
+          new PropertyRuntime<>(PetMeta.VERSION_PROPERTY, JdbcCodecs.LONG)),
+      PetBinder.MUTATIONS);
 
   public PetRuntimeModel() {}
 

@@ -15,7 +15,7 @@ public record VersionMeta<E, V>(PropertyMeta<E, V> property, VersionStrategy str
     Objects.requireNonNull(property, "property");
     Objects.requireNonNull(strategy, "strategy");
 
-    if (!strategy.supportsJavaType(property.javaType())) {
+    if (strategy.unSupportsJavaType(property.javaType())) {
       throw new IllegalArgumentException(
           "version strategy '"
               + strategy

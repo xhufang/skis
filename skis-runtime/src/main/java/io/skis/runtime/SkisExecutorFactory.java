@@ -5,6 +5,10 @@ import io.skis.jdbc.ConnectionProvider;
 import io.skis.jdbc.DataSourceConnectionProvider;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.mutation.MutationPlanCatalog;
+import io.skis.mutation.MutationOperations;
+import io.skis.mutation.MutationRuntime;
+import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryRuntime;
 import java.util.Objects;
@@ -77,9 +81,13 @@ public final class SkisExecutorFactory {
         selectedRegistry = EntityRuntimeModelLoader.load(resolveClassLoader(classLoader));
       }
       JdbcExecutor jdbcExecutor = new JdbcExecutor(provider);
-      QueryOperations queries =
-          QueryRuntime.create(selectedRegistry, selectedDialect, jdbcExecutor);
-      return new DefaultSkisExecutor(queries);
+      QueryPlanCatalog queryPlans = QueryRuntime.compile(selectedRegistry, selectedDialect);
+      MutationPlanCatalog mutationPlans =
+          MutationRuntime.compile(selectedRegistry, selectedDialect);
+      QueryOperations queries = queryPlans.bind(jdbcExecutor);
+      MutationOperations mutations = mutationPlans.bind(jdbcExecutor);
+      return new DefaultSkisExecutor(
+          queries, mutations, provider, queryPlans, mutationPlans);
     }
   }
 

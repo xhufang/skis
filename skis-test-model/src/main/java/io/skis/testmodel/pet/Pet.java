@@ -16,5 +16,5 @@ public record Pet(
     @Column(name = "pet_name", nullable = false, length = 200) String name,
     @Column(nullable = false, precision = 6, scale = 2) BigDecimal weight,
     @Column(nullable = false) boolean adopted,
-    @Version long version,
+    @Version Long version,
     @Transient String displayLabel) {}

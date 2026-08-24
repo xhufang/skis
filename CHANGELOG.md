@@ -6,6 +6,19 @@
 
 ### Added
 
+- 添加生成式单实体 `insert`、`updateById`、`deleteById` Fast Path，并通过统一
+  `SkisExecutor` 暴露查询和写入门面。
+- 添加不可变 INSERT/UPDATE/DELETE AST、版本递增表达式、逻辑 AND 谓词及 PostgreSQL/H2
+  portable mutation SQL Renderer。
+- 添加 `CompiledMutationPlan` 与 JDBC `executeUpdate`，验证 Binder 参数形状、影响行数和资源释放。
+- 添加 `SkisSession`、`beginTransaction`、`inTransaction` 和 `afterCommit`，保证同一事务查询/写入共享
+  Connection，异常路径回滚且不发布提交回调。
+- 添加 `SpringConnectionProvider`，通过 Spring `DataSourceUtils` 复用外部事务管理器绑定的 Connection。
+- 添加 `NUMERIC_INCREMENT` 类型正确的零值初始化、内存版本推进和溢出检查；版本冲突抛出
+  `OptimisticLockException`。
+- 添加 H2 实库 CRUD、乐观锁、提交和回滚集成测试，以及 PostgreSQL/H2 mutation SQL golden tests。
+- 添加共享 `QueryPlanCatalog` 与 `MutationPlanCatalog`，事务 Session 只重新绑定 JDBC 执行器，不重复编译实体计划。
+- 为 SELECT/INSERT/UPDATE/DELETE 统一参数 ordinal/描述符校验，并逐项验证 mutation 方言渲染参数形状。
 - 添加可构造注入、线程安全的统一 `SkisExecutor`，同时提供 `findById` Fast Path 和最小单表实体 DSL。
 - 添加值与 AST 分离的 `QueryColumn.eq(value)`、不可变 `EntitySelectQuery` 及 `fetchOne/fetchList/fetch` 执行语义。
 - 添加 `CompiledQueryPlan` 与 `JdbcExecutor`，统一 PreparedStatement 绑定、按下标解码、结果基数检查和 JDBC 资源释放。
@@ -20,6 +33,9 @@
 
 ### Changed
 
+- 生成代码 ABI 更新为 3；`EntityRuntimeModelProvider` 直接携带 mutation Binder 和版本读取器，运行时不按
+  生成类名称反射查找写入代码。
+- 测试 `Pet` 的版本属性改为 `Long`，用于明确表达“未提供初始版本时从 0 开始”的语义。
 - 生成代码 ABI 更新为 2；实体索引条目由元模型类名调整为生成式运行时模型 Provider 类名。
 - 生成的 `PetTable` 改为查询 DSL 表达式，参数值只保存在执行参数中，不进入 SQL AST、结构哈希或编译计划。
 - 测试示例、共享测试模型和 APT golden 统一由 `Book` 更名为 `Pet`。

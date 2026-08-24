@@ -1,8 +1,6 @@
 package io.skis.sql.ast;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
@@ -26,7 +24,11 @@ public final class SelectStatement implements StatementAst {
     }
     this.from = Objects.requireNonNull(from, "from");
     this.where = where;
-    validateParameterSlots(this.selections, where);
+    if (where == null) {
+      ParameterSlotValidator.validate(this.selections);
+    } else {
+      ParameterSlotValidator.validate(this.selections, where);
+    }
   }
 
   /** Creates a SELECT without a WHERE clause. */
@@ -62,39 +64,4 @@ public final class SelectStatement implements StatementAst {
     return 31 * result + Objects.hashCode(where);
   }
 
-  private static void validateParameterSlots(
-      List<SqlExpression<?>> selections, @Nullable SqlPredicate where) {
-    Map<Integer, ParameterSlot<?>> slotsByOrdinal = new HashMap<>();
-    for (SqlExpression<?> selection : selections) {
-      collectParameterSlots(selection, slotsByOrdinal);
-    }
-    if (where != null) {
-      collectParameterSlots(where, slotsByOrdinal);
-    }
-  }
-
-  private static void collectParameterSlots(
-      SqlExpression<?> expression, Map<Integer, ParameterSlot<?>> slotsByOrdinal) {
-    switch (expression) {
-      case ParameterSlot<?> slot -> validateParameterSlot(slot, slotsByOrdinal);
-      case ComparisonPredicate<?> comparison -> {
-        collectParameterSlots(comparison.left(), slotsByOrdinal);
-        collectParameterSlots(comparison.right(), slotsByOrdinal);
-      }
-      default -> {
-        // Other expression types do not contain parameter slots in the current AST subset.
-      }
-    }
-  }
-
-  private static void validateParameterSlot(
-      ParameterSlot<?> slot, Map<Integer, ParameterSlot<?>> slotsByOrdinal) {
-    ParameterSlot<?> existing = slotsByOrdinal.putIfAbsent(slot.ordinal(), slot);
-    if (existing != null
-        && (!existing.javaType().equals(slot.javaType())
-            || existing.nullable() != slot.nullable())) {
-      throw new IllegalArgumentException(
-          "parameter ordinal " + slot.ordinal() + " has conflicting Java type or nullability");
-    }
-  }
 }

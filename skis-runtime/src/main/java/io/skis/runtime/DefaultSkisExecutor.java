@@ -1,7 +1,12 @@
 package io.skis.runtime;
 
+import io.skis.jdbc.ConnectionProvider;
+import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
+import io.skis.mutation.MutationPlanCatalog;
+import io.skis.mutation.MutationOperations;
 import io.skis.query.EntitySelectQuery;
+import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
 import java.util.Objects;
@@ -11,9 +16,22 @@ import java.util.Optional;
 final class DefaultSkisExecutor implements SkisExecutor {
 
   private final QueryOperations queries;
+  private final MutationOperations mutations;
+  private final ConnectionProvider connectionProvider;
+  private final QueryPlanCatalog queryPlans;
+  private final MutationPlanCatalog mutationPlans;
 
-  DefaultSkisExecutor(QueryOperations queries) {
+  DefaultSkisExecutor(
+      QueryOperations queries,
+      MutationOperations mutations,
+      ConnectionProvider connectionProvider,
+      QueryPlanCatalog queryPlans,
+      MutationPlanCatalog mutationPlans) {
     this.queries = Objects.requireNonNull(queries, "queries");
+    this.mutations = Objects.requireNonNull(mutations, "mutations");
+    this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
+    this.queryPlans = Objects.requireNonNull(queryPlans, "queryPlans");
+    this.mutationPlans = Objects.requireNonNull(mutationPlans, "mutationPlans");
   }
 
   @Override
@@ -24,5 +42,69 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
     return queries.selectFrom(table);
+  }
+
+  @Override
+  public <E> int insert(EntityMeta<E> entity, E value) {
+    return mutations.insert(entity, value);
+  }
+
+  @Override
+  public <E> int updateById(EntityMeta<E> entity, E value) {
+    return mutations.updateById(entity, value);
+  }
+
+  @Override
+  public <E> int deleteById(EntityMeta<E> entity, Object id) {
+    return mutations.deleteById(entity, id);
+  }
+
+  @Override
+  public SkisSession beginTransaction() {
+    JdbcTransaction transaction = JdbcTransaction.begin(connectionProvider);
+    try {
+      QueryOperations sessionQueries = queryPlans.bind(transaction.jdbcExecutor());
+      MutationOperations sessionMutations = mutationPlans.bind(transaction.jdbcExecutor());
+      return new DefaultSkisSession(transaction, sessionQueries, sessionMutations);
+    } catch (RuntimeException | Error failure) {
+      try {
+        transaction.close();
+      } catch (RuntimeException | Error closeFailure) {
+        failure.addSuppressed(closeFailure);
+      }
+      throw failure;
+    }
+  }
+
+  @Override
+  public <R> R inTransaction(TransactionCallback<R> callback) {
+    Objects.requireNonNull(callback, "callback");
+    SkisSession session = beginTransaction();
+    Throwable pendingFailure = null;
+    try {
+      R result = callback.execute(session);
+      session.commit();
+      return result;
+    } catch (RuntimeException | Error failure) {
+      pendingFailure = failure;
+      if (session.active()) {
+        try {
+          session.rollback();
+        } catch (RuntimeException | Error rollbackFailure) {
+          failure.addSuppressed(rollbackFailure);
+        }
+      }
+      throw failure;
+    } finally {
+      try {
+        session.close();
+      } catch (RuntimeException | Error closeFailure) {
+        if (pendingFailure != null) {
+          pendingFailure.addSuppressed(closeFailure);
+        } else {
+          throw closeFailure;
+        }
+      }
+    }
   }
 }

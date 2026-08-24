@@ -3,6 +3,7 @@ package io.skis.jdbc;
 import io.skis.core.ExecutionContext;
 import io.skis.core.NonUniqueResultException;
 import io.skis.mapping.JdbcWriteContext;
+import io.skis.mapping.ParameterBinder;
 import io.skis.mapping.RowReadContext;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Thread-safe JDBC execution kernel for immutable compiled query plans. */
+/** Thread-safe JDBC execution kernel for immutable compiled query and mutation plans. */
 public final class JdbcExecutor {
 
   private final ConnectionProvider connectionProvider;
@@ -91,12 +92,50 @@ public final class JdbcExecutor {
         });
   }
 
+  /** Executes a compiled INSERT, UPDATE, or DELETE plan and returns its affected-row count. */
+  public <P> int executeUpdate(CompiledMutationPlan<P> plan, P parameters) {
+    return executeUpdate(plan, parameters, ExecutionContext.EMPTY);
+  }
+
+  /** Executes a compiled mutation plan using an explicit execution context. */
+  public <P> int executeUpdate(
+      CompiledMutationPlan<P> plan, P parameters, ExecutionContext executionContext) {
+    Objects.requireNonNull(plan, "plan");
+    Objects.requireNonNull(executionContext, "executionContext");
+    return withConnection(
+        executionContext,
+        failure ->
+            JdbcExecutionException.from(plan.operation(), plan.dialectId(), plan.sql(), failure),
+        connection -> {
+          try (PreparedStatement statement =
+              prepare(
+                  connection,
+                  plan.sql(),
+                  plan.parameterCount(),
+                  plan.parameterBinder(),
+                  parameters)) {
+            return statement.executeUpdate();
+          }
+        });
+  }
+
   private <R, P> PreparedStatement prepare(
       Connection connection, CompiledQueryPlan<R, P> plan, P parameters) throws SQLException {
-    PreparedStatement statement = connection.prepareStatement(plan.sql());
+    return prepare(
+        connection, plan.sql(), plan.parameterCount(), plan.parameterBinder(), parameters);
+  }
+
+  private <P> PreparedStatement prepare(
+      Connection connection,
+      String sql,
+      int parameterCount,
+      ParameterBinder<P> parameterBinder,
+      P parameters)
+      throws SQLException {
+    PreparedStatement statement = connection.prepareStatement(sql);
     try {
-      int nextIndex = plan.parameterBinder().bind(statement, 1, parameters, writeContext);
-      int expectedNextIndex = plan.parameterCount() + 1;
+      int nextIndex = parameterBinder.bind(statement, 1, parameters, writeContext);
+      int expectedNextIndex = parameterCount + 1;
       if (nextIndex != expectedNextIndex) {
         throw new SQLException(
             "compiled parameter binder returned index "
@@ -117,14 +156,21 @@ public final class JdbcExecutor {
 
   private <R, P> R withConnection(
       CompiledQueryPlan<?, P> plan, ExecutionContext executionContext, SqlWork<R> work) {
+    return withConnection(
+        executionContext,
+        failure -> QueryExecutionException.from(plan.dialectId(), plan.sql(), failure),
+        work);
+  }
+
+  private <R> R withConnection(
+      ExecutionContext executionContext, SqlFailureTranslator failureTranslator, SqlWork<R> work) {
     Connection connection = null;
     Throwable pendingFailure = null;
     try {
       connection = connectionProvider.acquire(executionContext);
       return work.execute(connection);
     } catch (SQLException failure) {
-      QueryExecutionException translated =
-          QueryExecutionException.from(plan.dialectId(), plan.sql(), failure);
+      RuntimeException translated = failureTranslator.translate(failure);
       pendingFailure = translated;
       throw translated;
     } catch (RuntimeException | Error failure) {
@@ -138,7 +184,7 @@ public final class JdbcExecutor {
           if (pendingFailure != null) {
             pendingFailure.addSuppressed(releaseFailure);
           } else {
-            throw QueryExecutionException.from(plan.dialectId(), plan.sql(), releaseFailure);
+            throw failureTranslator.translate(releaseFailure);
           }
         } catch (RuntimeException | Error releaseFailure) {
           if (pendingFailure != null) {
@@ -154,5 +200,10 @@ public final class JdbcExecutor {
   @FunctionalInterface
   private interface SqlWork<R> {
     R execute(Connection connection) throws SQLException;
+  }
+
+  @FunctionalInterface
+  private interface SqlFailureTranslator {
+    RuntimeException translate(SQLException failure);
   }
 }

@@ -47,7 +47,15 @@ final class RuntimeModelGenerator implements EntitySourceGenerator {
           .append(", JdbcCodecs.")
           .append(property.valueKind().codecConstant())
           .append(')');
-      source.append(index + 1 == model.properties().size() ? "));\n\n" : ",\n");
+      source.append(index + 1 == model.properties().size() ? ")),\n" : ",\n");
+    }
+    if (model.readOnly()) {
+      source.append("      null);\n\n");
+    } else {
+      source
+          .append("      ")
+          .append(model.entityName())
+          .append("Binder.MUTATIONS);\n\n");
     }
     source
         .append("  public ")

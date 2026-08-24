@@ -870,7 +870,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=2\n"
+        ("# skis-generated-abi=3\n"
                 + "samples.skis.AlphaRuntimeModel\n"
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),

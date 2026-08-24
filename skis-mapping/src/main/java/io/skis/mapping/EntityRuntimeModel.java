@@ -4,6 +4,8 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Immutable bridge from structural entity metadata to generated JDBC behavior.
@@ -17,15 +19,26 @@ public final class EntityRuntimeModel<E> {
   private final RowDecoderFactory<E> rowDecoderFactory;
   private final RowDecoder<E> fullRowDecoder;
   private final List<PropertyRuntime<E, ?>> properties;
+  private final @Nullable EntityMutationBinders<E> mutationBinders;
 
   /** Creates and validates a generated entity runtime model. */
   public EntityRuntimeModel(
       EntityMeta<E> entity,
       RowDecoderFactory<E> rowDecoderFactory,
       List<? extends PropertyRuntime<E, ?>> properties) {
+    this(entity, rowDecoderFactory, properties, null);
+  }
+
+  /** Creates and validates a generated entity runtime model with mutation Fast Paths. */
+  public EntityRuntimeModel(
+      EntityMeta<E> entity,
+      RowDecoderFactory<E> rowDecoderFactory,
+      List<? extends PropertyRuntime<E, ?>> properties,
+      @Nullable EntityMutationBinders<E> mutationBinders) {
     this.entity = Objects.requireNonNull(entity, "entity");
     this.rowDecoderFactory = Objects.requireNonNull(rowDecoderFactory, "rowDecoderFactory");
     this.properties = List.copyOf(Objects.requireNonNull(properties, "properties"));
+    this.mutationBinders = mutationBinders;
     if (this.properties.size() != entity.properties().size()) {
       throw new IllegalArgumentException(
           "runtime property count for entity '"
@@ -48,6 +61,10 @@ public final class EntityRuntimeModel<E> {
         Objects.requireNonNull(
             rowDecoderFactory.create(RowLayout.contiguous(this.properties.size(), 1)),
             "full row decoder");
+    if (entity.readOnly() && mutationBinders != null) {
+      throw new IllegalArgumentException(
+          "read-only entity '" + entity.entityName() + "' must not expose mutation binders");
+    }
   }
 
   public EntityMeta<E> entity() {
@@ -67,6 +84,11 @@ public final class EntityRuntimeModel<E> {
   /** Returns the shared generated decoder for every persistent property in ordinal order. */
   public RowDecoder<E> fullRowDecoder() {
     return fullRowDecoder;
+  }
+
+  /** Returns generated mutation bindings when the entity was compiled for writes. */
+  public Optional<EntityMutationBinders<E>> mutationBinders() {
+    return Optional.ofNullable(mutationBinders);
   }
 
   /** Returns the generated JDBC behavior for a canonical entity property. */

@@ -13,9 +13,15 @@ public final class QueryRuntime {
   /** Creates immutable query operations backed by generated mappings and JDBC. */
   public static QueryOperations create(
       EntityRuntimeRegistry runtimeRegistry, Dialect dialect, JdbcExecutor jdbcExecutor) {
-    return new DefaultQueryOperations(
-        Objects.requireNonNull(runtimeRegistry, "runtimeRegistry"),
-        Objects.requireNonNull(dialect, "dialect"),
+    return compile(runtimeRegistry, dialect).bind(
         Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
+  }
+
+  /** Compiles one shareable plan catalog for subsequent ordinary and transactional execution. */
+  public static QueryPlanCatalog compile(
+      EntityRuntimeRegistry runtimeRegistry, Dialect dialect) {
+    return new QueryPlanCatalog(
+        Objects.requireNonNull(runtimeRegistry, "runtimeRegistry"),
+        Objects.requireNonNull(dialect, "dialect"));
   }
 }
