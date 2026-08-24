@@ -28,6 +28,7 @@ import io.skis.sql.ast.Identifier;
 import java.sql.Connection;
 import java.util.List;
 import java.util.stream.IntStream;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 class EntityPlanSetTest {
@@ -101,20 +102,21 @@ class EntityPlanSetTest {
 
   @Test
   void rejectsNullFastPathArgumentBeforeAcquiringAConnection() {
-    DefaultQueryOperations operations =
-        new DefaultQueryOperations(
-            EntityRuntimeRegistry.of(List.of(model())),
-            TestDialect.INSTANCE,
-            new JdbcExecutor(
-                new ConnectionProvider() {
-                  @Override
-                  public Connection acquire(ExecutionContext context) {
-                    throw new AssertionError("null validation must happen before JDBC execution");
-                  }
+    QueryOperations operations =
+        QueryRuntime.compile(
+                EntityRuntimeRegistry.of(List.of(model())), TestDialect.INSTANCE)
+            .bind(
+                new JdbcExecutor(
+                    new ConnectionProvider() {
+                      @Override
+                      public Connection acquire(@NonNull ExecutionContext context) {
+                        throw new AssertionError(
+                            "null validation must happen before JDBC execution");
+                      }
 
-                  @Override
-                  public void release(Connection connection, ExecutionContext context) {}
-                }));
+                      @Override
+                      public void release(Connection connection, ExecutionContext context) {}
+                    }));
 
     assertThrows(QueryValidationException.class, () -> operations.findById(PET, null));
   }

@@ -8,6 +8,15 @@ import java.sql.SQLException;
 public interface ConnectionProvider {
 
   /**
+   * Whether SKIS may directly change auto-commit and commit or roll back acquired connections.
+   *
+   * <p>Providers backed by an external transaction manager must return {@code false}.
+   */
+  default boolean supportsLocalTransactions() {
+    return true;
+  }
+
+  /**
    * Acquires a connection for the supplied execution context.
    *
    * @throws SQLException when a connection cannot be acquired

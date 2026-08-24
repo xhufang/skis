@@ -36,7 +36,7 @@ class SkisExecutorReadSliceTest {
     assertEquals("Mimi", fastPath.name());
     assertEquals(new BigDecimal("12.50"), fastPath.weight());
     assertTrue(fastPath.adopted());
-    assertEquals(3L, fastPath.version());
+    assertEquals(Long.valueOf(3L), fastPath.version());
     assertEquals(List.of(fastPath), dsl);
     assertEquals(List.of(7L, "Mimi"), capture.boundValues);
     assertEquals(2, capture.sql.size());

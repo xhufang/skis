@@ -1,0 +1,118 @@
+package io.skis.runtime;
+
+import io.skis.core.TransactionException;
+import io.skis.jdbc.JdbcTransaction;
+import io.skis.metadata.EntityMeta;
+import io.skis.mutation.MutationOperations;
+import io.skis.query.EntitySelectQuery;
+import io.skis.query.QueryOperations;
+import io.skis.query.QueryTable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+
+/** Default explicit transaction session. */
+final class DefaultSkisSession implements SkisSession {
+
+  private final JdbcTransaction transaction;
+  private final QueryOperations queries;
+  private final MutationOperations mutations;
+  private final List<Runnable> afterCommitCallbacks = new ArrayList<>();
+
+  DefaultSkisSession(
+      JdbcTransaction transaction, QueryOperations queries, MutationOperations mutations) {
+    this.transaction = Objects.requireNonNull(transaction, "transaction");
+    this.queries = Objects.requireNonNull(queries, "queries");
+    this.mutations = Objects.requireNonNull(mutations, "mutations");
+  }
+
+  @Override
+  public <E> Optional<E> findById(EntityMeta<E> entity, Object id) {
+    requireActive();
+    return queries.findById(entity, id);
+  }
+
+  @Override
+  public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
+    requireActive();
+    return queries.selectFrom(table);
+  }
+
+  @Override
+  public <E> int insert(EntityMeta<E> entity, E value) {
+    requireActive();
+    return mutations.insert(entity, value);
+  }
+
+  @Override
+  public <E> int updateById(EntityMeta<E> entity, E value) {
+    requireActive();
+    return mutations.updateById(entity, value);
+  }
+
+  @Override
+  public <E> int deleteById(EntityMeta<E> entity, Object id) {
+    requireActive();
+    return mutations.deleteById(entity, id);
+  }
+
+  @Override
+  public void afterCommit(Runnable callback) {
+    requireActive();
+    afterCommitCallbacks.add(Objects.requireNonNull(callback, "callback"));
+  }
+
+  @Override
+  public void commit() {
+    requireActive();
+    transaction.commit();
+    Throwable callbackFailure = null;
+    for (Runnable callback : afterCommitCallbacks) {
+      try {
+        callback.run();
+      } catch (RuntimeException | Error failure) {
+        if (callbackFailure == null) {
+          callbackFailure = failure;
+        } else {
+          callbackFailure.addSuppressed(failure);
+        }
+      }
+    }
+    afterCommitCallbacks.clear();
+    if (callbackFailure instanceof Error error) {
+      throw error;
+    }
+    if (callbackFailure != null) {
+      throw new TransactionException(
+          "transaction committed but an afterCommit callback failed", callbackFailure);
+    }
+  }
+
+  @Override
+  public void rollback() {
+    requireActive();
+    try {
+      transaction.rollback();
+    } finally {
+      afterCommitCallbacks.clear();
+    }
+  }
+
+  @Override
+  public boolean active() {
+    return transaction.active();
+  }
+
+  @Override
+  public void close() {
+    afterCommitCallbacks.clear();
+    transaction.close();
+  }
+
+  private void requireActive() {
+    if (!active()) {
+      throw new TransactionException("SKIS session is no longer active");
+    }
+  }
+}

@@ -147,6 +147,58 @@ class SqlAstStructureTest {
   }
 
   @Test
+  void appliesParameterSlotConsistencyRulesToEveryMutationStatement() {
+    PetTable table = new PetTable();
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<String> conflictingName = new ParameterSlot<>(0, String.class, true);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new InsertStatement(
+                table, List.of(table.id(), table.name()), List.of(id, conflictingName)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new UpdateStatement(
+                table,
+                List.of(new UpdateAssignment<>(table.name(), conflictingName)),
+                table.id().eq(id)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new DeleteStatement(
+                table,
+                LogicalPredicate.and(
+                    List.of(table.id().eq(id), table.name().eq(conflictingName)))));
+  }
+
+  @Test
+  void rejectsParameterOrdinalGapsInQueryAndMutationStatements() {
+    PetTable table = new PetTable();
+    ParameterSlot<Long> gappedId = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<String> gappedName = new ParameterSlot<>(2, String.class, true);
+    ParameterSlot<Long> firstId = new ParameterSlot<>(0, Long.class, false);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new SelectStatement(List.of(table.id()), table, table.id().eq(gappedId)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new InsertStatement(table, List.of(table.id()), List.of(gappedId)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new UpdateStatement(
+                table,
+                List.of(new UpdateAssignment<>(table.name(), gappedName)),
+                table.id().eq(firstId)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new DeleteStatement(table, table.id().eq(gappedId)));
+  }
+
+  @Test
   void rejectsInvalidStatementAndParameterShapes() {
     PetTable table = new PetTable();
 

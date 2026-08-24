@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
 class JdbcExecutorTest {
@@ -68,6 +69,30 @@ class JdbcExecutorTest {
     assertSame(releaseFailure, thrown.getSuppressed()[0]);
   }
 
+  @Test
+  void executesMutationAndValidatesGeneratedBinderShape() {
+    Scenario scenario = new Scenario(List.of());
+    JdbcExecutor executor = new JdbcExecutor(scenario.provider());
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+    CompiledMutationPlan<Long> mutation =
+        new CompiledMutationPlan<>(
+            "deleteById",
+            "test",
+            new RenderedSql("DELETE FROM pet WHERE id = ?", List.of(id)),
+            (statement, firstIndex, value, context) -> {
+              statement.setLong(firstIndex, value);
+              return firstIndex + 1;
+            });
+
+    int affected = executor.executeUpdate(mutation, 23L);
+
+    assertEquals(1, affected);
+    assertEquals(1, scenario.boundIndex.get());
+    assertEquals(23L, scenario.boundValue.get());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
+  }
+
   private static CompiledQueryPlan<String, Long> plan() {
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
     return new CompiledQueryPlan<>(
@@ -100,39 +125,36 @@ class JdbcExecutorTest {
       ResultSet resultSet =
           proxy(
               ResultSet.class,
-              (ignored, method, arguments) -> {
-                return switch (method.getName()) {
-                  case "next" -> cursor.incrementAndGet() < rows.size();
-                  case "getString" -> rows.get(cursor.get());
-                  case "close" -> {
-                    resultSetCloses.incrementAndGet();
-                    yield null;
-                  }
-                  default -> defaultValue(method.getReturnType());
-                };
+              (ignored, method, arguments) -> switch (method.getName()) {
+                case "next" -> cursor.incrementAndGet() < rows.size();
+                case "getString" -> rows.get(cursor.get());
+                case "close" -> {
+                  resultSetCloses.incrementAndGet();
+                  yield null;
+                }
+                default -> defaultValue(method.getReturnType());
               });
       PreparedStatement statement =
           proxy(
               PreparedStatement.class,
-              (ignored, method, arguments) -> {
-                return switch (method.getName()) {
-                  case "setLong" -> {
-                    boundIndex.set((Integer) arguments[0]);
-                    boundValue.set((Long) arguments[1]);
-                    yield null;
+              (ignored, method, arguments) -> switch (method.getName()) {
+                case "setLong" -> {
+                  boundIndex.set((Integer) arguments[0]);
+                  boundValue.set((Long) arguments[1]);
+                  yield null;
+                }
+                case "executeQuery" -> {
+                  if (executionFailure != null) {
+                    throw executionFailure;
                   }
-                  case "executeQuery" -> {
-                    if (executionFailure != null) {
-                      throw executionFailure;
-                    }
-                    yield resultSet;
-                  }
-                  case "close" -> {
-                    statementCloses.incrementAndGet();
-                    yield null;
-                  }
-                  default -> defaultValue(method.getReturnType());
-                };
+                  yield resultSet;
+                }
+                case "executeUpdate" -> 1;
+                case "close" -> {
+                  statementCloses.incrementAndGet();
+                  yield null;
+                }
+                default -> defaultValue(method.getReturnType());
               });
       Connection connection =
           proxy(

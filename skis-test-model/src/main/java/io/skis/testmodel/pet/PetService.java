@@ -1,13 +1,14 @@
 package io.skis.testmodel.pet;
 
 import io.skis.runtime.SkisExecutor;
+import io.skis.runtime.SkisSession;
 import io.skis.testmodel.pet.skis.PetMeta;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-/** Examples of the 0.0.6 Fast Path and single-table query DSL, ordered by query complexity. */
+/** 0.0.7 query, mutation, and transaction examples ordered from simple to complex. */
 public final class PetService {
 
   private static final PetTable PET = PetTable.PET;
@@ -50,5 +51,98 @@ public final class PetService {
   public List<Pet> findByNameUsingAlias(String name) {
     PetTable pet = PET.as("p");
     return skisExecutor.selectFrom(pet).where(pet.name().eq(name)).fetchList();
+  }
+
+  /** Insert one complete entity through its generated Binder. */
+  public int insert(Pet pet) {
+    return skisExecutor.insert(PetMeta.ENTITY, pet);
+  }
+
+  /**
+   * Update one complete entity. A non-null version enables optimistic checking; a null version only
+   * advances the database version without performing a hidden read.
+   */
+  public int updateById(Pet pet) {
+    return skisExecutor.updateById(PetMeta.ENTITY, pet);
+  }
+
+  /** Delete by the generated single-primary-key Fast Path. */
+  public int deleteById(long id) {
+    return skisExecutor.deleteById(PetMeta.ENTITY, id);
+  }
+
+  /**
+   * Recommended simple transaction: insert and read back the initialized version on one
+   * connection.
+   */
+  public Pet insertAndReload(Pet pet) {
+    return skisExecutor.inTransaction(
+        session -> {
+          session.insert(PetMeta.ENTITY, pet);
+          return session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+        });
+  }
+
+  /**
+   * Use an explicit Session when the caller needs a visible commit boundary. Closing before commit
+   * or rollback would automatically roll this transaction back.
+   */
+  public Pet insertWithExplicitTransaction(Pet pet) {
+    try (SkisSession session = skisExecutor.beginTransaction()) {
+      session.insert(PetMeta.ENTITY, pet);
+      Pet stored = session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+      session.commit();
+      return stored;
+    }
+  }
+
+  /**
+   * Run an optimistic update and read on one transaction connection, publishing only after commit.
+   */
+  public Pet updateAndReload(Pet pet, Runnable afterCommit) {
+    return skisExecutor.inTransaction(
+        session -> {
+          session.updateById(PetMeta.ENTITY, pet);
+          session.afterCommit(afterCommit);
+          return session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+        });
+  }
+
+  /**
+   * Insert several entities atomically through repeated single-row Fast Paths, not a JDBC batch.
+   * Any failed insert or read rolls back every earlier insert, and the callback runs only after the
+   * whole transaction commits.
+   */
+  public List<Pet> insertAllAtomically(List<Pet> pets, Runnable afterCommit) {
+    List<Pet> values = List.copyOf(pets);
+    return skisExecutor.inTransaction(
+        session -> {
+          for (Pet pet : values) {
+            session.insert(PetMeta.ENTITY, pet);
+          }
+          List<Pet> stored =
+              values.stream()
+                  .map(pet -> session.findById(PetMeta.ENTITY, pet.id()).orElseThrow())
+                  .toList();
+          session.afterCommit(afterCommit);
+          return stored;
+        });
+  }
+
+  /**
+   * Combine different writes in one transaction. If the optimistic update conflicts, the earlier
+   * insert is rolled back and the after-commit callback is discarded.
+   */
+  public List<Pet> insertAndUpdateAtomically(
+      Pet newPet, Pet changedPet, Runnable afterCommit) {
+    return skisExecutor.inTransaction(
+        session -> {
+          session.insert(PetMeta.ENTITY, newPet);
+          session.updateById(PetMeta.ENTITY, changedPet);
+          Pet inserted = session.findById(PetMeta.ENTITY, newPet.id()).orElseThrow();
+          Pet updated = session.findById(PetMeta.ENTITY, changedPet.id()).orElseThrow();
+          session.afterCommit(afterCommit);
+          return List.of(inserted, updated);
+        });
   }
 }

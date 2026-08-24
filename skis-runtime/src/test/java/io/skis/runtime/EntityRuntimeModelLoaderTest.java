@@ -39,7 +39,7 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void loadsGeneratedProvidersFromIndexWithoutClasspathScanning() throws Exception {
-    writeIndex("# skis-generated-abi=2\n" + TestProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=3\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
@@ -79,7 +79,7 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void reportsNullProviderModelAsAnAssemblyConfigurationFailure() throws Exception {
-    writeIndex("# skis-generated-abi=2\n" + NullProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=3\n" + NullProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
