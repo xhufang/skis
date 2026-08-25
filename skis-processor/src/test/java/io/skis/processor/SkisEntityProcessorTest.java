@@ -31,7 +31,32 @@ class SkisEntityProcessorTest {
     Map<String, String> sources =
         Map.of(
             "samples.TwentyColumnSummary",
-            resource("/samples/TwentyColumnSummary.java"));
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection
+            public record TwentyColumnSummary(
+                long id,
+                String value1,
+                String value2,
+                String value3,
+                String value4,
+                String value5,
+                String value6,
+                String value7,
+                String value8,
+                String value9,
+                String value10,
+                String value11,
+                String value12,
+                String value13,
+                String value14,
+                String value15,
+                String value16,
+                String value17,
+                String value18,
+                String value19) {}
+            """);
     CompilationResult result =
         process(
             sources,
