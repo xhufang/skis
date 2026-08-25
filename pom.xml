@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-    <version>0.0.7-SNAPSHOT</version>
+    <version>0.0.8-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -472,11 +472,14 @@
                 <ignoreMissingClasses>true</ignoreMissingClasses>
                 <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                 <skipPomModules>true</skipPomModules>
-                <!-- 0.0.7 intentionally requires transaction support from SkisExecutor
-                     implementations. Remove these waivers once the API baseline includes 0.0.7. -->
+                <!-- 0.0.8 intentionally extends the query/executor contracts with projection and
+                     plan-cache operations. Remove these waivers once the API baseline includes
+                     0.0.8. -->
                 <excludes>
-                  <exclude>io.skis.runtime.SkisExecutor#beginTransaction()</exclude>
-                  <exclude>io.skis.runtime.SkisExecutor#inTransaction(io.skis.runtime.TransactionCallback)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.Projection)</exclude>
+                  <exclude>io.skis.runtime.SkisExecutor#queryPlanCacheStatistics()</exclude>
+                  <exclude>io.skis.runtime.SkisExecutor#clearQueryPlanCache()</exclude>
                 </excludes>
                 <breakBuildOnBinaryIncompatibleModifications>true
                 </breakBuildOnBinaryIncompatibleModifications>

@@ -1,17 +1,21 @@
 package io.skis.testmodel.pet;
 
+import io.skis.query.Projection;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisSession;
 import io.skis.testmodel.pet.skis.PetMeta;
+import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-/** 0.0.7 query, mutation, and transaction examples ordered from simple to complex. */
+/** 0.0.8 query, projection, mutation, and transaction examples ordered by complexity. */
 public final class PetService {
 
   private static final PetTable PET = PetTable.PET;
+  private static final Projection<Pet, PetSummary> PET_SUMMARY =
+      PetSummaryProjection.of(PET.id(), PET.name(), PET.weight());
 
   private final SkisExecutor skisExecutor;
 
@@ -44,6 +48,26 @@ public final class PetService {
     return skisExecutor.selectFrom(PET).where(PET.weight().eq(weight)).fetchList();
   }
 
+  /** Select one non-null column and return its scalar Java type instead of a Pet entity. */
+  public List<String> findAllNames() {
+    return skisExecutor.select(PET.name()).from(PET).fetchList();
+  }
+
+  /** Add a predicate to a scalar projection and require at most one matching row. */
+  public Optional<String> findNameById(long id) {
+    return skisExecutor.select(PET.name()).from(PET).where(PET.id().eq(id)).fetchOne();
+  }
+
+  /** Map several selected columns to a user-owned record through generated projection metadata. */
+  public List<PetSummary> findAllSummaries() {
+    return skisExecutor.select(PET_SUMMARY).from(PET).fetchList();
+  }
+
+  /** Reuse the immutable projection with different predicates and bound values. */
+  public Optional<PetSummary> findSummaryById(long id) {
+    return skisExecutor.select(PET_SUMMARY).from(PET).where(PET.id().eq(id)).fetchOne();
+  }
+
   /**
    * Use an independently aliased table expression. Aliases become more useful when later versions
    * add joins and self-referencing queries.
@@ -51,6 +75,17 @@ public final class PetService {
   public List<Pet> findByNameUsingAlias(String name) {
     PetTable pet = PET.as("p");
     return skisExecutor.selectFrom(pet).where(pet.name().eq(name)).fetchList();
+  }
+
+  /**
+   * Build the projection from the same aliased table used by from/where. A projection created from
+   * PET columns cannot be mixed with the independently aliased expression.
+   */
+  public List<PetSummary> findSummariesByNameUsingAlias(String name) {
+    PetTable pet = PET.as("p");
+    Projection<Pet, PetSummary> summary =
+        PetSummaryProjection.of(pet.id(), pet.name(), pet.weight());
+    return skisExecutor.select(summary).from(pet).where(pet.name().eq(name)).fetchList();
   }
 
   /** Insert one complete entity through its generated Binder. */
@@ -72,14 +107,27 @@ public final class PetService {
   }
 
   /**
-   * Recommended simple transaction: insert and read back the initialized version on one
-   * connection.
+   * Recommended simple transaction: insert and read back the initialized version on one connection.
    */
   public Pet insertAndReload(Pet pet) {
     return skisExecutor.inTransaction(
         session -> {
           session.insert(PetMeta.ENTITY, pet);
           return session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+        });
+  }
+
+  /** Insert and return only the fields needed by the caller, all on one transaction connection. */
+  public PetSummary insertAndLoadSummary(Pet pet) {
+    return skisExecutor.inTransaction(
+        session -> {
+          session.insert(PetMeta.ENTITY, pet);
+          return session
+              .select(PET_SUMMARY)
+              .from(PET)
+              .where(PET.id().eq(pet.id()))
+              .fetchOne()
+              .orElseThrow();
         });
   }
 
@@ -133,8 +181,7 @@ public final class PetService {
    * Combine different writes in one transaction. If the optimistic update conflicts, the earlier
    * insert is rolled back and the after-commit callback is discarded.
    */
-  public List<Pet> insertAndUpdateAtomically(
-      Pet newPet, Pet changedPet, Runnable afterCommit) {
+  public List<Pet> insertAndUpdateAtomically(Pet newPet, Pet changedPet, Runnable afterCommit) {
     return skisExecutor.inTransaction(
         session -> {
           session.insert(PetMeta.ENTITY, newPet);

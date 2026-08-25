@@ -1,6 +1,7 @@
 package io.skis.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.Dialect;
@@ -23,6 +24,7 @@ import io.skis.metadata.TableMeta;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
@@ -61,6 +63,16 @@ class SkisPlanReuseTest {
     }
 
     assertTrue(rendersAfterAssembly > 0);
+  }
+
+  @Test
+  void rejectsInvalidDynamicPlanCacheConfigurationAtTheBuilderBoundary() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> SkisExecutorFactory.builder().planCacheMaximumSize(0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> SkisExecutorFactory.builder().planCacheExpireAfterAccess(Duration.ZERO));
   }
 
   private static EntityRuntimeModel<Pet> runtimeModel() {

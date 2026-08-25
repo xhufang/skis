@@ -5,12 +5,13 @@ import io.skis.jdbc.ConnectionProvider;
 import io.skis.jdbc.DataSourceConnectionProvider;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.mutation.MutationPlanCatalog;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.MutationPlanCatalog;
 import io.skis.mutation.MutationRuntime;
-import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryOperations;
+import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryRuntime;
+import java.time.Duration;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
@@ -36,13 +37,15 @@ public final class SkisExecutorFactory {
     return new Builder();
   }
 
-  /** Mutable one-time builder; the resulting executor and all runtime state are immutable. */
+  /** Mutable one-time builder; the resulting executor is thread-safe and owns its runtime state. */
   public static final class Builder {
 
     private @Nullable ConnectionProvider connectionProvider;
     private @Nullable Dialect dialect;
     private @Nullable ClassLoader classLoader;
     private @Nullable EntityRuntimeRegistry runtimeRegistry;
+    private int planCacheMaximumSize = QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE;
+    private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
 
     private Builder() {}
 
@@ -72,6 +75,25 @@ public final class SkisExecutorFactory {
       return this;
     }
 
+    /** Sets the maximum number of dynamic projection plans shared by this executor. */
+    public Builder planCacheMaximumSize(int maximumSize) {
+      if (maximumSize < 1) {
+        throw new IllegalArgumentException("planCacheMaximumSize must be positive");
+      }
+      this.planCacheMaximumSize = maximumSize;
+      return this;
+    }
+
+    /** Sets how long an unused dynamic projection plan remains eligible for reuse. */
+    public Builder planCacheExpireAfterAccess(Duration expireAfterAccess) {
+      Objects.requireNonNull(expireAfterAccess, "expireAfterAccess");
+      if (expireAfterAccess.isZero() || expireAfterAccess.isNegative()) {
+        throw new IllegalArgumentException("planCacheExpireAfterAccess must be positive");
+      }
+      this.planCacheExpireAfterAccess = expireAfterAccess;
+      return this;
+    }
+
     public SkisExecutor build() {
       ConnectionProvider provider =
           Objects.requireNonNull(connectionProvider, "connectionProvider must be configured");
@@ -81,13 +103,14 @@ public final class SkisExecutorFactory {
         selectedRegistry = EntityRuntimeModelLoader.load(resolveClassLoader(classLoader));
       }
       JdbcExecutor jdbcExecutor = new JdbcExecutor(provider);
-      QueryPlanCatalog queryPlans = QueryRuntime.compile(selectedRegistry, selectedDialect);
+      QueryPlanCatalog queryPlans =
+          QueryRuntime.compile(
+              selectedRegistry, selectedDialect, planCacheMaximumSize, planCacheExpireAfterAccess);
       MutationPlanCatalog mutationPlans =
           MutationRuntime.compile(selectedRegistry, selectedDialect);
       QueryOperations queries = queryPlans.bind(jdbcExecutor);
       MutationOperations mutations = mutationPlans.bind(jdbcExecutor);
-      return new DefaultSkisExecutor(
-          queries, mutations, provider, queryPlans, mutationPlans);
+      return new DefaultSkisExecutor(queries, mutations, provider, queryPlans, mutationPlans);
     }
   }
 

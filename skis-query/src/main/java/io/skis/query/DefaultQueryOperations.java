@@ -36,6 +36,22 @@ final class DefaultQueryOperations implements QueryOperations {
     return new DefaultEntitySelectQuery<>(this, plans, table, null);
   }
 
+  @Override
+  public <E, V> SelectFromStep<E, V> select(QueryColumn<E, V> column) {
+    return new DefaultSelectFromStep<>(this, Projection.scalar(column));
+  }
+
+  @Override
+  public <E, R> SelectFromStep<E, R> select(Projection<E, R> projection) {
+    return new DefaultSelectFromStep<>(this, Objects.requireNonNull(projection, "projection"));
+  }
+
+  <E, R> ProjectedSelectQuery<R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
+    projection.validateFrom(table);
+    EntityPlanSet<E> plans = requirePlanSet(table.entity());
+    return new DefaultProjectedSelectQuery<>(this, plans, table, projection, null);
+  }
+
   <E> Optional<E> fetchOne(
       EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate predicate) {
     CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
@@ -46,6 +62,14 @@ final class DefaultQueryOperations implements QueryOperations {
       EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate predicate) {
     CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
     return jdbcExecutor.fetchList(plan, plans.argument(predicate));
+  }
+
+  <R> Optional<R> fetchOne(CompiledQueryPlan<R, Object> plan, Object argument) {
+    return jdbcExecutor.fetchOne(plan, argument);
+  }
+
+  <R> List<R> fetchList(CompiledQueryPlan<R, Object> plan, Object argument) {
+    return jdbcExecutor.fetchList(plan, argument);
   }
 
   private <E> EntityPlanSet<E> requirePlanSet(EntityMeta<E> entity) {
