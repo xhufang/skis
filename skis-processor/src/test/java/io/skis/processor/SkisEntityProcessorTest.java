@@ -27,6 +27,196 @@ class SkisEntityProcessorTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void generatesATwentyColumnProjectionMapperWithoutNumberedFactories() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.TwentyColumnSummary",
+            resource("/samples/TwentyColumnSummary.java"));
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("twenty-column-projection"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String generated = generatedSource(result, "TwentyColumnSummaryProjection.java");
+    assertTrue(
+        generated.contains(
+            "public static <E> Projection<E, samples.TwentyColumnSummary> of("),
+        generated);
+    assertTrue(generated.contains("QueryColumn<E, java.lang.Long> id,"), generated);
+    assertTrue(generated.contains("QueryColumn<E, java.lang.String> value19)"), generated);
+    assertTrue(
+        generated.contains(
+            "private static final Projection.Mapping<samples.TwentyColumnSummary> MAPPING ="),
+        generated);
+    assertTrue(
+        generated.contains("Projection.mapping(TwentyColumnSummaryProjection.class);"), generated);
+    assertTrue(generated.contains("return Projection.generated(\n        MAPPING,"), generated);
+    assertTrue(generated.contains("if (id.nullable())"), generated);
+    assertTrue(generated.contains("$skisReaders.reader(19, value19);"), generated);
+    assertTrue(generated.contains("new samples.TwentyColumnSummary("), generated);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void usesTheExplicitProjectionConstructorForAClass() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.NamedSummary",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisProjection
+            public final class NamedSummary {
+              public NamedSummary(Long ignored) {}
+              @ProjectionConstructor
+              public NamedSummary(Long id, String name) {}
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("projection-constructor"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String generated = generatedSource(result, "NamedSummaryProjection.java");
+    assertTrue(generated.contains("QueryColumn<E, java.lang.Long> id,"), generated);
+    assertTrue(generated.contains("QueryColumn<E, java.lang.String> name)"), generated);
+    assertFalse(generated.contains("ignored"), generated);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void rejectsAnAmbiguousProjectionClassConstructor() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.InvalidProjection",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection
+            public final class InvalidProjection {
+              public InvalidProjection(Long id) {}
+              public InvalidProjection(Long id, String name) {}
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("ambiguous-projection-constructor"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS212]"), result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsAGenericProjectionConstructorBeforeGeneratingInvalidSource() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.GenericConstructorSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection
+            public final class GenericConstructorSummary {
+              public <T> GenericConstructorSummary(T value) {}
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("generic-projection-constructor"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS216]"), result.diagnosticsText());
+  }
+
+  @Test
+  void retriesAProjectionWhoseParameterTypeIsGeneratedInALaterRound() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.DeferredProjection",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection
+            public record DeferredProjection(GeneratedMoney amount) {}
+            """);
+    String processors =
+        SkisProjectionProcessor.class.getName()
+            + ","
+            + DeferredTypeGeneratorProcessor.class.getName();
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("deferred-projection-type"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    assertTrue(
+        Files.exists(result.generatedSources().resolve("samples/GeneratedMoney.java")),
+        "the collaborating processor did not generate the deferred type");
+    assertTrue(
+        Files.exists(
+            result.generatedSources().resolve("samples/skis/DeferredProjectionProjection.java")),
+        "SKIS did not retry the deferred projection");
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void reportsAProjectionWhoseParameterTypeNeverBecomesAvailable() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.UnresolvedProjection",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection
+            public record UnresolvedProjection(MissingProjectionValue value) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("unresolved-projection-type"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS217]"), result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsAProjectionParameterTypeThatTheGeneratedPackageCannotAccess() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.HiddenProjectionValue",
+            """
+            package samples;
+            final class HiddenProjectionValue {}
+            """,
+            "samples.InaccessibleProjection",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection
+            public record InaccessibleProjection(HiddenProjectionValue value) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("inaccessible-projection-type"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS218]"), result.diagnosticsText());
+  }
+
+  @Test
   void generatesStableRecordSourcesAndTheyCompileWithoutWarnings() throws Exception {
     Map<String, String> sources = Map.of("samples.Pet", resource("/samples/Pet.java"));
     CompilationResult result =

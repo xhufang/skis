@@ -3,12 +3,16 @@ package io.skis.runtime;
 import io.skis.jdbc.ConnectionProvider;
 import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
-import io.skis.mutation.MutationPlanCatalog;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.MutationPlanCatalog;
 import io.skis.query.EntitySelectQuery;
-import io.skis.query.QueryPlanCatalog;
+import io.skis.query.Projection;
+import io.skis.query.QueryColumn;
 import io.skis.query.QueryOperations;
+import io.skis.query.QueryPlanCacheStatistics;
+import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryTable;
+import io.skis.query.SelectFromStep;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -42,6 +46,16 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
     return queries.selectFrom(table);
+  }
+
+  @Override
+  public <E, V> SelectFromStep<E, V> select(QueryColumn<E, V> column) {
+    return queries.select(column);
+  }
+
+  @Override
+  public <E, R> SelectFromStep<E, R> select(Projection<E, R> projection) {
+    return queries.select(projection);
   }
 
   @Override
@@ -106,5 +120,15 @@ final class DefaultSkisExecutor implements SkisExecutor {
         }
       }
     }
+  }
+
+  @Override
+  public QueryPlanCacheStatistics queryPlanCacheStatistics() {
+    return queryPlans.projectionPlanCacheStatistics();
+  }
+
+  @Override
+  public void clearQueryPlanCache() {
+    queryPlans.clearProjectionPlans();
   }
 }

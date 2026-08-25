@@ -29,7 +29,7 @@ final class DefaultEntitySelectQuery<E> implements EntitySelectQuery<E> {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate != null) {
       throw new QueryValidationException(
-          "the 0.0.6 single-table DSL accepts one where predicate per query");
+          "the single-table DSL accepts one where predicate per query");
     }
     return new DefaultEntitySelectQuery<>(operations, plans, table, newPredicate);
   }

@@ -6,6 +6,16 @@
 
 ### Added
 
+- 添加单表标量投影，以及由 `@SkisProjection` APT 为用户 record/类生成的任意列数强类型
+  `*Projection` 映射器；只渲染实际选择列，通过生成 Codec 按列下标完成无反射映射，且不生成 DTO。
+  投影计划按实体、生成式强类型映射令牌、选择列和谓词结构进入共享的默认 4096 项有界 LRU，参数值不参与缓存键；
+  任意用户别名仍只在不可变查询对象内单槽复用。
+- 添加 PostgreSQL 投影合同测试，并验证投影参数始终使用 PreparedStatement、ResultSet/Statement/Connection
+  均可确定关闭。
+- 投影计划缓存改用 APT 生成类持有的强类型静态映射令牌，避免公开基础设施入口通过重复类键混用不同结果 Decoder；
+  新增容量和访问过期配置、缓存统计、按实体失效及显式清空能力。
+- 投影 APT 支持等待协作处理器在后续轮次生成构造器参数类型；最终未解析时报 `SKIS217`，参数类型无法从生成子包访问时
+  报 `SKIS218`。
 - 添加生成式单实体 `insert`、`updateById`、`deleteById` Fast Path，并通过统一
   `SkisExecutor` 暴露查询和写入门面。
 - 添加不可变 INSERT/UPDATE/DELETE AST、版本递增表达式、逻辑 AND 谓词及 PostgreSQL/H2
@@ -44,6 +54,13 @@
 
 ### Migration
 
+- 0.0.8 为 `QueryOperations` 添加标量和用户投影 `select` 重载。自定义
+  `QueryOperations`/`SkisExecutor`/`SkisSession` 实现必须补充这两个方法；用户投影类型添加
+  `@SkisProjection` 后，改用 APT 生成的 `*Projection.of(...)`。单表投影类型为
+  `Projection<E, R>`，来源实体类型 `E` 会一直保留到 `from(QueryTable<E>)`。
+- `SkisExecutor` 新增 `queryPlanCacheStatistics()` 和 `clearQueryPlanCache()`；自定义实现需要同步实现。直接使用
+  `Projection.generated(...)` 的基础设施代码需先通过 `Projection.mapping(...)` 创建带结果泛型的映射令牌，普通应用
+  继续使用 APT 生成的 `*Projection.of(...)`，无需改动。
 - 0.0.7 有意扩展 `SkisExecutor` 的抽象契约。自定义实现必须重新编译，并实现新增的 `insert`、
   `updateById`、`deleteById`、`beginTransaction` 和 `inTransaction`；通过
   `SkisExecutorFactory` 创建内置执行器的应用无需修改装配代码。
