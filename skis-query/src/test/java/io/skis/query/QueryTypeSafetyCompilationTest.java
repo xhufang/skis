@@ -56,6 +56,52 @@ class QueryTypeSafetyCompilationTest {
     assertFalse(compile("samples.InvalidQuery", invalid, temporaryDirectory.resolve("invalid")));
   }
 
+  @Test
+  void rejectsAProjectionPredicateFromAnotherEntityAtCompilationTime() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidProjectionQuery {
+          static final class Pet {}
+          static final class Summary {}
+          static void query(
+              QueryOperations operations,
+              QueryTable<Pet> table,
+              QueryPredicate<Pet> predicate) {
+            operations.selectProjection(table, Summary.class).where(predicate);
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidProjectionQuery {
+          static final class Pet {}
+          static final class Owner {}
+          static final class Summary {}
+          static void query(
+              QueryOperations operations,
+              QueryTable<Pet> table,
+              QueryPredicate<Owner> predicate) {
+            operations.selectProjection(table, Summary.class).where(predicate);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidProjectionQuery",
+            valid,
+            temporaryDirectory.resolve("valid-projection")));
+    assertFalse(
+        compile(
+            "samples.InvalidProjectionQuery",
+            invalid,
+            temporaryDirectory.resolve("invalid-projection")));
+  }
+
   private static boolean compile(String className, String source, Path output) throws IOException {
     Files.createDirectories(output);
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();

@@ -17,6 +17,7 @@ for production use.
 - [0.0.6 injected executor and reflection-free read slice](docs/0.0.6-read-slice.md)
 - [0.0.7 reflection-free writes and transaction semantics](docs/0.0.7-write-transaction-slice.md)
 - [0.0.8 scalar and generated projection slice](docs/0.0.8-projection-slice.md)
+- [0.0.9 entity-bound projection API refactor](docs/0.0.9-projection-refactor.md)
 
 ## License
 

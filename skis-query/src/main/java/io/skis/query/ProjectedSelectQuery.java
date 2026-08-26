@@ -4,10 +4,10 @@ import java.util.List;
 import java.util.Optional;
 
 /** Immutable, reusable single-table projection query. */
-public interface ProjectedSelectQuery<R> {
+public interface ProjectedSelectQuery<E, R> {
 
   /** Returns a new query with its value-bound predicate. */
-  ProjectedSelectQuery<R> where(QueryPredicate predicate);
+  ProjectedSelectQuery<E, R> where(QueryPredicate<E> predicate);
 
   /** Executes a projection query requiring at most one row. */
   Optional<R> fetchOne();

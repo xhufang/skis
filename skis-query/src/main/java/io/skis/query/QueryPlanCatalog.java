@@ -23,9 +23,15 @@ public final class QueryPlanCatalog {
 
   private final Map<EntityMeta<?>, EntityPlanSet<?>> planSets;
   private final ProjectionPlanCache projectionPlans;
+  private final ProjectionRegistry projectionRegistry;
 
   QueryPlanCatalog(EntityRuntimeRegistry runtimeRegistry, Dialect dialect) {
-    this(runtimeRegistry, dialect, DEFAULT_MAXIMUM_SIZE, DEFAULT_EXPIRE_AFTER_ACCESS);
+    this(
+        runtimeRegistry,
+        ProjectionRegistry.empty(),
+        dialect,
+        DEFAULT_MAXIMUM_SIZE,
+        DEFAULT_EXPIRE_AFTER_ACCESS);
   }
 
   QueryPlanCatalog(
@@ -33,7 +39,22 @@ public final class QueryPlanCatalog {
       Dialect dialect,
       int maximumSize,
       Duration expireAfterAccess) {
+    this(
+        runtimeRegistry,
+        ProjectionRegistry.empty(),
+        dialect,
+        maximumSize,
+        expireAfterAccess);
+  }
+
+  QueryPlanCatalog(
+      EntityRuntimeRegistry runtimeRegistry,
+      ProjectionRegistry projectionRegistry,
+      Dialect dialect,
+      int maximumSize,
+      Duration expireAfterAccess) {
     Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
+    this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
     QueryPlanCompiler compiler = new QueryPlanCompiler(Objects.requireNonNull(dialect, "dialect"));
     this.projectionPlans = new ProjectionPlanCache(maximumSize, expireAfterAccess);
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
@@ -50,7 +71,8 @@ public final class QueryPlanCatalog {
 
   /** Binds the shared plans to a JDBC executor without recompiling SQL. */
   public QueryOperations bind(JdbcExecutor jdbcExecutor) {
-    return new DefaultQueryOperations(this, Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
+    return new DefaultQueryOperations(
+        this, projectionRegistry, Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
   }
 
   /** Returns an immutable snapshot of shared projection-plan cache activity. */

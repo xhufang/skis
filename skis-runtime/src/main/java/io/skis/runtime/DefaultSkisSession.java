@@ -5,7 +5,7 @@ import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.EntitySelectQuery;
-import io.skis.query.Projection;
+import io.skis.query.ProjectedSelectQuery;
 import io.skis.query.QueryColumn;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
@@ -49,9 +49,10 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <E, R> SelectFromStep<E, R> select(Projection<E, R> projection) {
+  public <E, R> ProjectedSelectQuery<E, R> selectProjection(
+      QueryTable<E> table, Class<R> projectionType) {
     requireActive();
-    return queries.select(projection);
+    return queries.selectProjection(table, projectionType);
   }
 
   @Override

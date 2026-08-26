@@ -40,8 +40,9 @@ final class QueryPlanCompiler {
       Projection<E, R> projection,
       @Nullable PropertyMeta<E, ?> equalityProperty) {
     Objects.requireNonNull(projection, "projection").validateFrom(table);
-    List<SqlExpression<?>> selections = new ArrayList<>(projection.columns().size());
-    for (QueryColumn<E, ?> column : projection.columns()) {
+    List<QueryColumn<E, ?>> columns = projection.columns(table);
+    List<SqlExpression<?>> selections = new ArrayList<>(columns.size());
+    for (QueryColumn<E, ?> column : columns) {
       selections.add(column.expression());
     }
     return compile(model, table, selections, equalityProperty, projection.rowDecoder(model));

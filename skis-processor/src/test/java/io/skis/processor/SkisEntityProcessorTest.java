@@ -30,11 +30,38 @@ class SkisEntityProcessorTest {
   void generatesATwentyColumnProjectionMapperWithoutNumberedFactories() throws Exception {
     Map<String, String> sources =
         Map.of(
+            "samples.TwentyColumnEntity",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record TwentyColumnEntity(
+                @Id long id,
+                String value1,
+                String value2,
+                String value3,
+                String value4,
+                String value5,
+                String value6,
+                String value7,
+                String value8,
+                String value9,
+                String value10,
+                String value11,
+                String value12,
+                String value13,
+                String value14,
+                String value15,
+                String value16,
+                String value17,
+                String value18,
+                String value19) {}
+            """,
             "samples.TwentyColumnSummary",
             """
             package samples;
             import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            @SkisProjection(entity = TwentyColumnEntity.class)
             public record TwentyColumnSummary(
                 long id,
                 String value1,
@@ -60,26 +87,32 @@ class SkisEntityProcessorTest {
     CompilationResult result =
         process(
             sources,
-            SkisProjectionProcessor.class.getName(),
+            SkisEntityProcessor.class.getName()
+                + ","
+                + SkisProjectionProcessor.class.getName(),
             temporaryDirectory.resolve("twenty-column-projection"));
 
     assertTrue(result.success(), result.diagnosticsText());
     String generated = generatedSource(result, "TwentyColumnSummaryProjection.java");
     assertTrue(
         generated.contains(
-            "public static <E> Projection<E, samples.TwentyColumnSummary> of("),
+            "private static final Projection<samples.TwentyColumnEntity, "
+                + "samples.TwentyColumnSummary> PROJECTION ="),
         generated);
-    assertTrue(generated.contains("QueryColumn<E, java.lang.Long> id,"), generated);
-    assertTrue(generated.contains("QueryColumn<E, java.lang.String> value19)"), generated);
+    assertTrue(generated.contains("implements ProjectionProvider"), generated);
     assertTrue(
         generated.contains(
             "private static final Projection.Mapping<samples.TwentyColumnSummary> MAPPING ="),
         generated);
     assertTrue(
         generated.contains("Projection.mapping(TwentyColumnSummaryProjection.class);"), generated);
-    assertTrue(generated.contains("return Projection.generated(\n        MAPPING,"), generated);
-    assertTrue(generated.contains("if (id.nullable())"), generated);
-    assertTrue(generated.contains("$skisReaders.reader(19, value19);"), generated);
+    assertTrue(generated.contains("Projection.generated("), generated);
+    assertTrue(generated.contains("samples.skis.TwentyColumnEntityMeta.ID"), generated);
+    assertTrue(
+        generated.contains(
+            "$skisReaders.reader(19, samples.skis.TwentyColumnEntityMeta.VALUE19);"),
+        generated);
+    assertFalse(generated.contains(" of("), generated);
     assertTrue(generated.contains("new samples.TwentyColumnSummary("), generated);
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
@@ -90,11 +123,18 @@ class SkisEntityProcessorTest {
   void usesTheExplicitProjectionConstructorForAClass() throws Exception {
     Map<String, String> sources =
         Map.of(
+            "samples.NamedEntity",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record NamedEntity(@Id Long id, String name) {}
+            """,
             "samples.NamedSummary",
             """
             package samples;
             import io.skis.annotations.*;
-            @SkisProjection
+            @SkisProjection(entity = NamedEntity.class)
             public final class NamedSummary {
               public NamedSummary(Long ignored) {}
               @ProjectionConstructor
@@ -104,17 +144,175 @@ class SkisEntityProcessorTest {
     CompilationResult result =
         process(
             sources,
-            SkisProjectionProcessor.class.getName(),
+            SkisEntityProcessor.class.getName()
+                + ","
+                + SkisProjectionProcessor.class.getName(),
             temporaryDirectory.resolve("projection-constructor"));
 
     assertTrue(result.success(), result.diagnosticsText());
     String generated = generatedSource(result, "NamedSummaryProjection.java");
-    assertTrue(generated.contains("QueryColumn<E, java.lang.Long> id,"), generated);
-    assertTrue(generated.contains("QueryColumn<E, java.lang.String> name)"), generated);
+    assertTrue(generated.contains("samples.skis.NamedEntityMeta.ID"), generated);
+    assertTrue(generated.contains("samples.skis.NamedEntityMeta.NAME"), generated);
     assertFalse(generated.contains("ignored"), generated);
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void mapsARenamedProjectionParameterToAnExplicitEntityProperty() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id Long id, String name) {}
+            """,
+            "samples.PetLabel",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisProjection(entity = Pet.class)
+            public record PetLabel(@ProjectionProperty("name") String label) {}
+            """);
+    String processors =
+        SkisEntityProcessor.class.getName()
+            + ","
+            + SkisProjectionProcessor.class.getName();
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("renamed-projection-property"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String generated = generatedSource(result, "PetLabelProjection.java");
+    assertTrue(generated.contains("samples.skis.PetMeta.NAME"), generated);
+    assertTrue(generated.contains("new samples.PetLabel("), generated);
+  }
+
+  @Test
+  void acceptsAnAccessibleTypeUseAnnotationOnAProjectionParameter() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.ProjectionValue",
+            """
+            package samples;
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Retention;
+            import java.lang.annotation.RetentionPolicy;
+            import java.lang.annotation.Target;
+            @Target(ElementType.TYPE_USE)
+            @Retention(RetentionPolicy.SOURCE)
+            public @interface ProjectionValue {}
+            """,
+            "samples.AnnotatedEntity",
+            """
+            package samples;
+            import io.skis.annotations.SkisEntity;
+            @SkisEntity(readOnly = true)
+            public record AnnotatedEntity(String name) {}
+            """,
+            "samples.AnnotatedSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = AnnotatedEntity.class)
+            public record AnnotatedSummary(@ProjectionValue String name) {}
+            """);
+    String processors =
+        SkisEntityProcessor.class.getName()
+            + ","
+            + SkisProjectionProcessor.class.getName();
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("projection-type-use-annotation"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void rejectsAProjectionParameterThatDoesNotMatchAnEntityProperty() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id Long id, String name) {}
+            """,
+            "samples.InvalidSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Pet.class)
+            public record InvalidSummary(String missing) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("missing-projection-property"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS221]"), result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsAProjectionParameterWhoseTypeDoesNotMatchTheEntityProperty() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(Long id) {}
+            """,
+            "samples.InvalidSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Pet.class)
+            public record InvalidSummary(String id) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("mismatched-projection-property-type"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS222]"), result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsAPrimitiveProjectionParameterForANullableEntityProperty() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(Long weight) {}
+            """,
+            "samples.InvalidSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Pet.class)
+            public record InvalidSummary(long weight) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("nullable-primitive-projection-property"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS223]"), result.diagnosticsText());
   }
 
   @Test
@@ -125,7 +323,7 @@ class SkisEntityProcessorTest {
             """
             package samples;
             import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            @SkisProjection(entity = Object.class)
             public final class InvalidProjection {
               public InvalidProjection(Long id) {}
               public InvalidProjection(Long id, String name) {}
@@ -149,7 +347,7 @@ class SkisEntityProcessorTest {
             """
             package samples;
             import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            @SkisProjection(entity = Object.class)
             public final class GenericConstructorSummary {
               public <T> GenericConstructorSummary(T value) {}
             }
@@ -168,11 +366,36 @@ class SkisEntityProcessorTest {
   void retriesAProjectionWhoseParameterTypeIsGeneratedInALaterRound() throws Exception {
     Map<String, String> sources =
         Map.of(
+            "samples.DeferredProjectionEntity",
+            """
+            package samples;
+            import io.skis.annotations.SkisEntity;
+            @SkisEntity(readOnly = true)
+            public record DeferredProjectionEntity(GeneratedMoney amount) {}
+            """,
+            "samples.skis.DeferredProjectionEntityMeta",
+            """
+            package samples.skis;
+            import io.skis.metadata.*;
+            import java.util.List;
+            import samples.DeferredProjectionEntity;
+            import samples.GeneratedMoney;
+            public final class DeferredProjectionEntityMeta {
+              public static final TableMeta TABLE = TableMeta.of("deferred_projection_entity");
+              public static final PropertyMeta<DeferredProjectionEntity, GeneratedMoney> AMOUNT =
+                  new PropertyMeta<>(
+                      0, "amount", GeneratedMoney.class, ColumnMeta.of("amount", false));
+              public static final EntityMeta<DeferredProjectionEntity> ENTITY =
+                  EntityMeta.simple(
+                      DeferredProjectionEntity.class, TABLE, List.of(AMOUNT), null, true);
+              private DeferredProjectionEntityMeta() {}
+            }
+            """,
             "samples.DeferredProjection",
             """
             package samples;
             import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            @SkisProjection(entity = DeferredProjectionEntity.class)
             public record DeferredProjection(GeneratedMoney amount) {}
             """);
     String processors =
@@ -198,11 +421,18 @@ class SkisEntityProcessorTest {
   void reportsAProjectionWhoseParameterTypeNeverBecomesAvailable() throws Exception {
     Map<String, String> sources =
         Map.of(
+            "samples.UnresolvedProjectionEntity",
+            """
+            package samples;
+            import io.skis.annotations.SkisEntity;
+            @SkisEntity(readOnly = true)
+            public record UnresolvedProjectionEntity(MissingProjectionValue value) {}
+            """,
             "samples.UnresolvedProjection",
             """
             package samples;
             import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            @SkisProjection(entity = UnresolvedProjectionEntity.class)
             public record UnresolvedProjection(MissingProjectionValue value) {}
             """);
     CompilationResult result =
@@ -224,11 +454,18 @@ class SkisEntityProcessorTest {
             package samples;
             final class HiddenProjectionValue {}
             """,
+            "samples.InaccessibleProjectionEntity",
+            """
+            package samples;
+            import io.skis.annotations.SkisEntity;
+            @SkisEntity(readOnly = true)
+            public record InaccessibleProjectionEntity(HiddenProjectionValue value) {}
+            """,
             "samples.InaccessibleProjection",
             """
             package samples;
             import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            @SkisProjection(entity = InaccessibleProjectionEntity.class)
             public record InaccessibleProjection(HiddenProjectionValue value) {}
             """);
     CompilationResult result =
@@ -1090,6 +1327,49 @@ class SkisEntityProcessorTest {
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
         Files.readAllBytes(result.classes().resolve("META-INF/skis/entities.idx")));
+  }
+
+  @Test
+  void writesSortedAggregatedProjectionIndex() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id Long id, String name) {}
+            """,
+            "samples.ZuluSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Pet.class)
+            public record ZuluSummary(String name) {}
+            """,
+            "samples.AlphaSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Pet.class)
+            public record AlphaSummary(Long id) {}
+            """);
+    String processors =
+        SkisEntityProcessor.class.getName()
+            + ","
+            + SkisProjectionProcessor.class.getName()
+            + ","
+            + SkisProjectionIndexProcessor.class.getName();
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("projection-index"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    assertArrayEquals(
+        ("# skis-generated-abi=3\n"
+                + "samples.skis.AlphaSummaryProjection\n"
+                + "samples.skis.ZuluSummaryProjection\n")
+            .getBytes(StandardCharsets.UTF_8),
+        Files.readAllBytes(result.classes().resolve("META-INF/skis/projections.idx")));
   }
 
   private void assertProcessingError(String code, String source) throws Exception {

@@ -1,21 +1,17 @@
 package io.skis.testmodel.pet;
 
-import io.skis.query.Projection;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisSession;
 import io.skis.testmodel.pet.skis.PetMeta;
-import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-/** 0.0.8 query, projection, mutation, and transaction examples ordered by complexity. */
+/** 0.0.9 query, projection, mutation, and transaction examples ordered by complexity. */
 public final class PetService {
 
   private static final PetTable PET = PetTable.PET;
-  private static final Projection<Pet, PetSummary> PET_SUMMARY =
-      PetSummaryProjection.of(PET.id(), PET.name(), PET.weight());
 
   private final SkisExecutor skisExecutor;
 
@@ -60,12 +56,15 @@ public final class PetService {
 
   /** Map several selected columns to a user-owned record through generated projection metadata. */
   public List<PetSummary> findAllSummaries() {
-    return skisExecutor.select(PET_SUMMARY).from(PET).fetchList();
+    return skisExecutor.selectProjection(PET, PetSummary.class).fetchList();
   }
 
   /** Reuse the immutable projection with different predicates and bound values. */
   public Optional<PetSummary> findSummaryById(long id) {
-    return skisExecutor.select(PET_SUMMARY).from(PET).where(PET.id().eq(id)).fetchOne();
+    return skisExecutor
+        .selectProjection(PET, PetSummary.class)
+        .where(PET.id().eq(id))
+        .fetchOne();
   }
 
   /**
@@ -78,14 +77,14 @@ public final class PetService {
   }
 
   /**
-   * Build the projection from the same aliased table used by from/where. A projection created from
-   * PET columns cannot be mixed with the independently aliased expression.
+   * Bind the registered projection to the same aliased table expression used by the predicate.
    */
   public List<PetSummary> findSummariesByNameUsingAlias(String name) {
     PetTable pet = PET.as("p");
-    Projection<Pet, PetSummary> summary =
-        PetSummaryProjection.of(pet.id(), pet.name(), pet.weight());
-    return skisExecutor.select(summary).from(pet).where(pet.name().eq(name)).fetchList();
+    return skisExecutor
+        .selectProjection(pet, PetSummary.class)
+        .where(pet.name().eq(name))
+        .fetchList();
   }
 
   /** Insert one complete entity through its generated Binder. */
@@ -123,8 +122,7 @@ public final class PetService {
         session -> {
           session.insert(PetMeta.ENTITY, pet);
           return session
-              .select(PET_SUMMARY)
-              .from(PET)
+              .selectProjection(PET, PetSummary.class)
               .where(PET.id().eq(pet.id()))
               .fetchOne()
               .orElseThrow();

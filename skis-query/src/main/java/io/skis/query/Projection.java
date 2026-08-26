@@ -5,6 +5,9 @@ import io.skis.mapping.JdbcTypeCodec;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.mapping.RowDecoder;
 import io.skis.mapping.RowReadContext;
+import io.skis.metadata.EntityMeta;
+import io.skis.metadata.PropertyMeta;
+import io.skis.sql.ast.TableExpression;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -13,36 +16,57 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Immutable, reflection-free mapping from selected query columns to a user result type.
+ * Immutable, reflection-free mapping from one entity's persistent properties to a user result type.
  *
- * <p>Applications obtain user-type projections from APT-generated {@code *Projection} classes. SKIS
- * resolves the generated JDBC codec for every selected property while compiling the query and reads
- * result-set values by their one-based column indexes.
+ * <p>SKIS loads user-type projection descriptors from APT-generated {@code *Projection} providers.
+ * It resolves the generated JDBC codec for every selected property while compiling the query, binds
+ * those properties to the caller's table expression, and reads result-set values by their one-based
+ * column indexes.
  */
 public final class Projection<E, R> {
 
   private static final Mapping<Object> SCALAR_MAPPING = new Mapping<>(ScalarMapping.class);
 
+  private final Class<R> resultType;
+  private final EntityMeta<E> entity;
   private final Mapping<R> mapping;
-  private final List<QueryColumn<E, ?>> columns;
+  private final List<PropertyMeta<E, ?>> properties;
   private final DecoderFactory<E, R> decoderFactory;
+  private final @Nullable TableExpression<E> boundTable;
 
   private Projection(
+      Class<R> resultType,
+      EntityMeta<E> entity,
       Mapping<R> mapping,
-      List<? extends QueryColumn<E, ?>> columns,
-      DecoderFactory<E, R> decoderFactory) {
+      List<? extends PropertyMeta<E, ?>> properties,
+      DecoderFactory<E, R> decoderFactory,
+      @Nullable TableExpression<E> boundTable) {
+    this.resultType = Objects.requireNonNull(resultType, "resultType");
+    this.entity = Objects.requireNonNull(entity, "entity");
     this.mapping = Objects.requireNonNull(mapping, "mapping");
-    Objects.requireNonNull(columns, "columns");
-    if (columns.isEmpty()) {
+    Objects.requireNonNull(properties, "properties");
+    if (properties.isEmpty()) {
       throw new QueryValidationException("a projection must select at least one column");
     }
-    List<QueryColumn<E, ?>> copy = new ArrayList<>(columns.size());
-    for (QueryColumn<E, ?> column : columns) {
-      copy.add(Objects.requireNonNull(column, "column"));
+    List<PropertyMeta<E, ?>> copy = new ArrayList<>(properties.size());
+    for (PropertyMeta<E, ?> property : properties) {
+      PropertyMeta<E, ?> selected = Objects.requireNonNull(property, "property");
+      int ordinal = selected.ordinal();
+      if (ordinal < 0
+          || ordinal >= entity.properties().size()
+          || entity.properties().get(ordinal) != selected) {
+        throw new QueryValidationException(
+            "projection property '"
+                + selected.name()
+                + "' does not belong to entity '"
+                + entity.entityName()
+                + "'");
+      }
+      copy.add(selected);
     }
-    this.columns = List.copyOf(copy);
+    this.properties = List.copyOf(copy);
     this.decoderFactory = Objects.requireNonNull(decoderFactory, "decoderFactory");
-    requireOneTableExpression(this.columns);
+    this.boundTable = boundTable;
   }
 
   /**
@@ -59,14 +83,16 @@ public final class Projection<E, R> {
   /**
    * Infrastructure entry used by APT-generated projection mappers.
    *
-   * <p>Application code should use the generated {@code *Projection.of(...)} method rather than
-   * calling this method directly.
+   * <p>Application code should use {@link QueryOperations#selectProjection(QueryTable, Class)}
+   * rather than calling this method directly.
    */
   public static <E, R> Projection<E, R> generated(
+      Class<R> resultType,
+      EntityMeta<E> entity,
       Mapping<R> mapping,
-      List<? extends QueryColumn<E, ?>> columns,
+      List<? extends PropertyMeta<E, ?>> properties,
       DecoderFactory<E, R> decoderFactory) {
-    return new Projection<>(mapping, columns, decoderFactory);
+    return new Projection<>(resultType, entity, mapping, properties, decoderFactory, null);
   }
 
   static <E, V> Projection<E, V> scalar(QueryColumn<E, V> column) {
@@ -77,39 +103,57 @@ public final class Projection<E, R> {
               + column.property().name()
               + "' requires a generated non-null projection result");
     }
-    return generated(
+    return new Projection<E, V>(
+        column.javaType(),
+        column.expression().table().entity(),
         scalarMapping(),
-        List.of(column),
+        List.of(column.property()),
         readers -> {
-          ValueReader<V> value = readers.reader(0, column);
+          ValueReader<V> value = readers.reader(0, column.property());
           return (resultSet, context) -> requireResult(value.read(resultSet, context));
-        });
+        },
+        column.expression().table());
+  }
+
+  /** Returns the generated user result type represented by this projection. */
+  public Class<R> resultType() {
+    return resultType;
+  }
+
+  /** Returns the canonical source entity metadata represented by this projection. */
+  public EntityMeta<E> entity() {
+    return entity;
   }
 
   Mapping<R> mapping() {
     return mapping;
   }
 
-  List<QueryColumn<E, ?>> columns() {
-    return columns;
+  List<PropertyMeta<E, ?>> properties() {
+    return properties;
   }
 
   RowDecoder<R> rowDecoder(EntityRuntimeModel<E> model) {
     Objects.requireNonNull(model, "model");
-    List<ProjectionValue<?>> values = new ArrayList<>(columns.size());
-    for (int index = 0; index < columns.size(); index++) {
-      QueryColumn<E, ?> column = columns.get(index);
-      int ordinal = column.property().ordinal();
-      if (ordinal < 0 || ordinal >= model.properties().size()) {
-        throw foreignColumn(model, column);
-      }
-      PropertyRuntime<?, ?> runtime = model.properties().get(ordinal);
-      if (runtime.property() != column.property()) {
-        throw foreignColumn(model, column);
-      }
-      values.add(projectionValue(runtime.codec(), index + 1, column.nullable()));
+    if (model.entity() != entity) {
+      throw new QueryValidationException(
+          "projection result type '"
+              + resultType.getTypeName()
+              + "' does not belong to runtime model '"
+              + model.entity().entityName()
+              + "'");
     }
-    Readers<E> readers = new CompiledReaders<>(columns, List.copyOf(values));
+    List<ProjectionValue<?>> values = new ArrayList<>(properties.size());
+    for (int index = 0; index < properties.size(); index++) {
+      PropertyMeta<E, ?> property = properties.get(index);
+      int ordinal = property.ordinal();
+      PropertyRuntime<?, ?> runtime = model.properties().get(ordinal);
+      if (runtime.property() != property) {
+        throw foreignProperty(model, property);
+      }
+      values.add(projectionValue(runtime.codec(), index + 1, property.column().nullable()));
+    }
+    Readers<E> readers = new CompiledReaders<>(properties, List.copyOf(values));
     RowDecoder<R> decoder =
         Objects.requireNonNull(decoderFactory.create(readers), "projection row decoder");
     return (resultSet, context) -> requireResult(decoder.decode(resultSet, context));
@@ -117,32 +161,41 @@ public final class Projection<E, R> {
 
   void validateFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
-    for (QueryColumn<E, ?> column : columns) {
-      if (!column.expression().table().equals(table)) {
-        throw new QueryValidationException(
-            "projection column '"
-                + column.property().name()
-                + "' belongs to a different table expression than from");
-      }
+    if (table.entity() != entity) {
+      throw new QueryValidationException(
+          "projection result type '"
+              + resultType.getTypeName()
+              + "' belongs to entity '"
+              + entity.entityName()
+              + "' but query table belongs to entity '"
+              + table.entity().entityName()
+              + "'");
+    }
+    if (boundTable != null && !boundTable.equals(table)) {
+      throw new QueryValidationException(
+          "scalar projection belongs to a different table expression than from");
     }
   }
 
-  private static <E> void requireOneTableExpression(List<QueryColumn<E, ?>> columns) {
-    QueryColumn<E, ?> first = columns.getFirst();
-    for (int index = 1; index < columns.size(); index++) {
-      QueryColumn<E, ?> column = columns.get(index);
-      if (!column.expression().table().equals(first.expression().table())) {
-        throw new QueryValidationException(
-            "a single-table projection accepts columns from one table expression");
-      }
+  List<QueryColumn<E, ?>> columns(QueryTable<E> table) {
+    validateFrom(table);
+    List<QueryColumn<E, ?>> columns = new ArrayList<>(properties.size());
+    for (PropertyMeta<E, ?> property : properties) {
+      columns.add(queryColumn(table, property));
     }
+    return List.copyOf(columns);
   }
 
-  private static QueryValidationException foreignColumn(
-      EntityRuntimeModel<?> model, QueryColumn<?, ?> column) {
+  private static <E, V> QueryColumn<E, V> queryColumn(
+      QueryTable<E> table, PropertyMeta<E, V> property) {
+    return table.queryColumn(property);
+  }
+
+  private static QueryValidationException foreignProperty(
+      EntityRuntimeModel<?> model, PropertyMeta<?, ?> property) {
     return new QueryValidationException(
-        "projection column '"
-            + column.property().name()
+        "projection property '"
+            + property.name()
             + "' does not belong to runtime model '"
             + model.entity().entityName()
             + "'");
@@ -162,7 +215,7 @@ public final class Projection<E, R> {
 
   @SuppressWarnings("unchecked")
   private static <V> Mapping<V> scalarMapping() {
-    return (Mapping<V>) (Mapping<?>) SCALAR_MAPPING;
+    return (Mapping<V>) SCALAR_MAPPING;
   }
 
   /** Opaque identity tying one generated mapper to its declared result type. */
@@ -192,7 +245,7 @@ public final class Projection<E, R> {
   public interface Readers<E> {
 
     /** Resolves the typed reader at one zero-based projection selection index. */
-    <V> ValueReader<V> reader(int selectionIndex, QueryColumn<E, V> column);
+    <V> ValueReader<V> reader(int selectionIndex, PropertyMeta<E, V> property);
   }
 
   /** Reads one generated projection value without advancing the result-set cursor. */
@@ -202,26 +255,26 @@ public final class Projection<E, R> {
   }
 
   private record CompiledReaders<E>(
-      List<QueryColumn<E, ?>> columns, List<ProjectionValue<?>> values) implements Readers<E> {
+      List<PropertyMeta<E, ?>> properties, List<ProjectionValue<?>> values) implements Readers<E> {
 
     @Override
     @SuppressWarnings("unchecked")
-    public <V> ValueReader<V> reader(int selectionIndex, QueryColumn<E, V> column) {
-      Objects.requireNonNull(column, "column");
-      if (selectionIndex < 0 || selectionIndex >= columns.size()) {
+    public <V> ValueReader<V> reader(int selectionIndex, PropertyMeta<E, V> property) {
+      Objects.requireNonNull(property, "property");
+      if (selectionIndex < 0 || selectionIndex >= properties.size()) {
         throw new QueryValidationException(
             "projection selection index "
                 + selectionIndex
                 + " is outside [0, "
-                + columns.size()
+                + properties.size()
                 + ")");
       }
-      if (columns.get(selectionIndex) != column) {
+      if (properties.get(selectionIndex) != property) {
         throw new QueryValidationException(
             "generated projection reader at index "
                 + selectionIndex
-                + " does not match column '"
-                + column.property().name()
+                + " does not match property '"
+                + property.name()
                 + "'");
       }
       return (ValueReader<V>) values.get(selectionIndex);

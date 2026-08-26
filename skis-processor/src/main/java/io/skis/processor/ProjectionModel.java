@@ -8,6 +8,7 @@ record ProjectionModel(
     String generatedPackage,
     String projectionName,
     String projectionTypeName,
+    EntityModel entity,
     List<ProjectionParameter> parameters) {
 
   ProjectionModel {
@@ -18,5 +19,5 @@ record ProjectionModel(
     return generatedPackage + "." + projectionName + "Projection";
   }
 
-  record ProjectionParameter(String name, String typeName, boolean primitive) {}
+  record ProjectionParameter(String name, String typeName, PropertyModel property) {}
 }

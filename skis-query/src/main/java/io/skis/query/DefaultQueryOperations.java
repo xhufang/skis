@@ -14,9 +14,14 @@ final class DefaultQueryOperations implements QueryOperations {
 
   private final JdbcExecutor jdbcExecutor;
   private final QueryPlanCatalog planCatalog;
+  private final ProjectionRegistry projectionRegistry;
 
-  DefaultQueryOperations(QueryPlanCatalog planCatalog, JdbcExecutor jdbcExecutor) {
+  DefaultQueryOperations(
+      QueryPlanCatalog planCatalog,
+      ProjectionRegistry projectionRegistry,
+      JdbcExecutor jdbcExecutor) {
     this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
+    this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
     this.jdbcExecutor = Objects.requireNonNull(jdbcExecutor, "jdbcExecutor");
   }
 
@@ -25,7 +30,7 @@ final class DefaultQueryOperations implements QueryOperations {
     Objects.requireNonNull(entity, "entity");
     EntityPlanSet<E> plans = requirePlanSet(entity);
     PropertyMeta<E, ?> idProperty = plans.findByIdProperty();
-    requireValueType(idProperty, id, "findById id");
+    requireValueType(idProperty, id);
     return jdbcExecutor.fetchOne(plans.findByIdPlan(), id);
   }
 
@@ -42,24 +47,27 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
-  public <E, R> SelectFromStep<E, R> select(Projection<E, R> projection) {
-    return new DefaultSelectFromStep<>(this, Objects.requireNonNull(projection, "projection"));
+  public <E, R> ProjectedSelectQuery<E, R> selectProjection(
+      QueryTable<E> table, Class<R> projectionType) {
+    Objects.requireNonNull(table, "table");
+    Projection<E, R> projection = projectionRegistry.require(table, projectionType);
+    return selectFrom(projection, table);
   }
 
-  <E, R> ProjectedSelectQuery<R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
+  <E, R> ProjectedSelectQuery<E, R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
     projection.validateFrom(table);
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
     return new DefaultProjectedSelectQuery<>(this, plans, table, projection, null);
   }
 
   <E> Optional<E> fetchOne(
-      EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate predicate) {
+      EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
     CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
     return jdbcExecutor.fetchOne(plan, plans.argument(predicate));
   }
 
   <E> List<E> fetchList(
-      EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate predicate) {
+      EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
     CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
     return jdbcExecutor.fetchList(plan, plans.argument(predicate));
   }
@@ -76,12 +84,11 @@ final class DefaultQueryOperations implements QueryOperations {
     return planCatalog.require(entity);
   }
 
-  private static void requireValueType(
-      PropertyMeta<?, ?> property, @Nullable Object value, String description) {
+  private static void requireValueType(PropertyMeta<?, ?> property, @Nullable Object value) {
     if (!property.javaType().isInstance(value)) {
       String receivedType = value == null ? "null" : value.getClass().getTypeName();
       throw new QueryValidationException(
-          description
+          "findById id"
               + " for property '"
               + property.name()
               + "' requires "

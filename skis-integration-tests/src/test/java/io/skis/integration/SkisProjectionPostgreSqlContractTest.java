@@ -5,13 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.dialect.postgresql.PostgreSqlDialect;
-import io.skis.query.Projection;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
 import io.skis.testmodel.pet.skis.PetMeta;
-import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -44,10 +42,12 @@ class SkisProjectionPostgreSqlContractTest {
       PetTable pet = PetTable.PET;
       List<String> names =
           executor.select(pet.name()).from(pet).where(pet.name().eq(name)).fetchList();
-      Projection<Pet, PetSummary> summary =
-          PetSummaryProjection.of(pet.id(), pet.name(), pet.weight());
       PetSummary projected =
-          executor.select(summary).from(pet).where(pet.id().eq(id)).fetchOne().orElseThrow();
+          executor
+              .selectProjection(pet, PetSummary.class)
+              .where(pet.id().eq(id))
+              .fetchOne()
+              .orElseThrow();
 
       assertEquals(List.of(name), names);
       assertEquals(new PetSummary(id, name, new BigDecimal("12.50")), projected);

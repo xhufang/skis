@@ -77,7 +77,7 @@ class ProjectionQueryTest {
   @Test
   void mapsARecordThroughTheGeneratedMapperContractAndResultSetIndexes() throws Exception {
     Projection<Pet, PetSummary> projection =
-        petSummaryProjection(TABLE.id(), TABLE.name(), TABLE.weight());
+        petSummaryProjection();
 
     CompiledQueryPlan<PetSummary, Object> plan =
         plans().projectionPlan(TABLE, projection, null);
@@ -98,12 +98,12 @@ class ProjectionQueryTest {
   }
 
   @Test
-  void rejectsMixedTableExpressionsAndNullRequiredValues() {
+  void rejectsMismatchedScalarTableExpressionsAndNullRequiredValues() {
     PetTable alias = TABLE.as("p");
 
     assertThrows(
         QueryValidationException.class,
-        () -> petNameProjection(TABLE.id(), alias.name()));
+        () -> plans().projectionPlan(TABLE, Projection.scalar(alias.name()), null));
     assertThrows(QueryValidationException.class, () -> Projection.scalar(TABLE.weight()));
 
     CompiledQueryPlan<String, Object> plan =
@@ -114,8 +114,31 @@ class ProjectionQueryTest {
   }
 
   @Test
+  void rejectsAProjectionPredicateFromAnotherAliasOfTheSameEntity() {
+    PetTable alias = TABLE.as("p");
+
+    assertThrows(
+        QueryValidationException.class,
+        () ->
+            plans()
+                .projectionPlan(TABLE, petSummaryProjection(), alias.id().eq(7L)));
+  }
+
+  @Test
+  void resolvesARegisteredProjectionByItsUserResultType() {
+    Projection<Pet, PetName> projection = petNameProjection();
+    ProjectionRegistry registry = ProjectionRegistry.of(List.of(projection));
+
+    assertSame(projection, registry.require(TABLE, PetName.class));
+    assertEquals(1, registry.size());
+    assertThrows(
+        QueryValidationException.class,
+        () -> registry.require(TABLE, PetSummary.class));
+  }
+
+  @Test
   void mapsANullableColumnToANonNullUserProjection() throws Exception {
-    Projection<Pet, PetWeight> projection = petWeightProjection(TABLE.weight());
+    Projection<Pet, PetWeight> projection = petWeightProjection();
 
     CompiledQueryPlan<PetWeight, Object> plan =
         plans().projectionPlan(TABLE, projection, null);
@@ -131,11 +154,11 @@ class ProjectionQueryTest {
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
     Projection<Pet, PetSummary> firstProjection =
-        petSummaryProjection(TABLE.id(), TABLE.name(), TABLE.weight());
+        petSummaryProjection();
     Projection<Pet, PetSummary> secondProjection =
-        petSummaryProjection(TABLE.id(), TABLE.name(), TABLE.weight());
-    QueryPredicate firstPredicate = TABLE.id().eq(7L);
-    QueryPredicate secondPredicate = TABLE.id().eq(8L);
+        petSummaryProjection();
+    QueryPredicate<Pet> firstPredicate = TABLE.id().eq(7L);
+    QueryPredicate<Pet> secondPredicate = TABLE.id().eq(8L);
 
     CompiledQueryPlan<PetSummary, Object> first =
         plans.projectionPlan(TABLE, firstProjection, firstPredicate);
@@ -156,8 +179,8 @@ class ProjectionQueryTest {
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
     Projection<Pet, PetSummary> summary =
-        petSummaryProjection(TABLE.id(), TABLE.name(), TABLE.weight());
-    Projection<Pet, PetWeight> weight = petWeightProjection(TABLE.weight());
+        petSummaryProjection();
+    Projection<Pet, PetWeight> weight = petWeightProjection();
 
     CompiledQueryPlan<PetSummary, Object> original =
         plans.projectionPlan(TABLE, summary, null);
@@ -177,18 +200,22 @@ class ProjectionQueryTest {
     Projection.Mapping<PetLabel> labelMapping = Projection.mapping(SharedMapping.class);
     Projection<Pet, PetText> text =
         Projection.generated(
+            PetText.class,
+            PET,
             textMapping,
-            List.of(TABLE.name()),
+            List.of(NAME),
             readers -> {
-              Projection.ValueReader<String> value = readers.reader(0, TABLE.name());
+              Projection.ValueReader<String> value = readers.reader(0, NAME);
               return (resultSet, context) -> new PetText(value.read(resultSet, context));
             });
     Projection<Pet, PetLabel> label =
         Projection.generated(
+            PetLabel.class,
+            PET,
             labelMapping,
-            List.of(TABLE.name()),
+            List.of(NAME),
             readers -> {
-              Projection.ValueReader<String> value = readers.reader(0, TABLE.name());
+              Projection.ValueReader<String> value = readers.reader(0, NAME);
               return (resultSet, context) -> new PetLabel(value.read(resultSet, context));
             });
     EntityPlanSet<Pet> plans = plans();
@@ -212,7 +239,7 @@ class ProjectionQueryTest {
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
     Projection<Pet, PetSummary> summary =
-        petSummaryProjection(TABLE.id(), TABLE.name(), TABLE.weight());
+        petSummaryProjection();
 
     CompiledQueryPlan<PetSummary, Object> first =
         plans.projectionPlan(TABLE, summary, null);
@@ -242,17 +269,16 @@ class ProjectionQueryTest {
     return new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE));
   }
 
-  private static Projection<Pet, PetSummary> petSummaryProjection(
-      QueryColumn<Pet, Long> id,
-      QueryColumn<Pet, String> name,
-      QueryColumn<Pet, BigDecimal> weight) {
+  private static Projection<Pet, PetSummary> petSummaryProjection() {
     return Projection.generated(
+        PetSummary.class,
+        PET,
         PET_SUMMARY_MAPPING,
-        List.of(id, name, weight),
+        List.of(ID, NAME, WEIGHT),
         readers -> {
-          Projection.ValueReader<Long> idReader = readers.reader(0, id);
-          Projection.ValueReader<String> nameReader = readers.reader(1, name);
-          Projection.ValueReader<BigDecimal> weightReader = readers.reader(2, weight);
+          Projection.ValueReader<Long> idReader = readers.reader(0, ID);
+          Projection.ValueReader<String> nameReader = readers.reader(1, NAME);
+          Projection.ValueReader<BigDecimal> weightReader = readers.reader(2, WEIGHT);
           return (resultSet, context) ->
               new PetSummary(
                   idReader.read(resultSet, context),
@@ -261,27 +287,29 @@ class ProjectionQueryTest {
         });
   }
 
-  private static Projection<Pet, PetName> petNameProjection(
-      QueryColumn<Pet, Long> id, QueryColumn<Pet, String> name) {
+  private static Projection<Pet, PetName> petNameProjection() {
     return Projection.generated(
+        PetName.class,
+        PET,
         PET_NAME_MAPPING,
-        List.of(id, name),
+        List.of(ID, NAME),
         readers -> {
-          Projection.ValueReader<Long> idReader = readers.reader(0, id);
-          Projection.ValueReader<String> nameReader = readers.reader(1, name);
+          Projection.ValueReader<Long> idReader = readers.reader(0, ID);
+          Projection.ValueReader<String> nameReader = readers.reader(1, NAME);
           return (resultSet, context) ->
               new PetName(
                   idReader.read(resultSet, context), nameReader.read(resultSet, context));
         });
   }
 
-  private static Projection<Pet, PetWeight> petWeightProjection(
-      QueryColumn<Pet, BigDecimal> weight) {
+  private static Projection<Pet, PetWeight> petWeightProjection() {
     return Projection.generated(
+        PetWeight.class,
+        PET,
         PET_WEIGHT_MAPPING,
-        List.of(weight),
+        List.of(WEIGHT),
         readers -> {
-          Projection.ValueReader<BigDecimal> weightReader = readers.reader(0, weight);
+          Projection.ValueReader<BigDecimal> weightReader = readers.reader(0, WEIGHT);
           return (resultSet, context) ->
               new PetWeight(weightReader.read(resultSet, context));
         });
