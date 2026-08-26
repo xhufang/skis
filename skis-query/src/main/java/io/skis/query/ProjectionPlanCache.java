@@ -178,9 +178,9 @@ final class ProjectionPlanCache {
         EntityMeta<E> entity,
         Projection<E, R> projection,
         @Nullable PropertyMeta<E, ?> equalityProperty) {
-      int[] ordinals = new int[projection.columns().size()];
+      int[] ordinals = new int[projection.properties().size()];
       for (int index = 0; index < ordinals.length; index++) {
-        ordinals[index] = projection.columns().get(index).property().ordinal();
+        ordinals[index] = projection.properties().get(index).ordinal();
       }
       int predicateOrdinal = equalityProperty == null ? -1 : equalityProperty.ordinal();
       return new ProjectionPlanKey(

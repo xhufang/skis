@@ -8,13 +8,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 
 /** Immutable projection query backed by shared bounded structural plans. */
-final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<R> {
+final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<E, R> {
 
   private final DefaultQueryOperations operations;
   private final EntityPlanSet<E> plans;
   private final QueryTable<E> table;
   private final Projection<E, R> projection;
-  private final @Nullable QueryPredicate predicate;
+  private final @Nullable QueryPredicate<E> predicate;
   private final AtomicReference<@Nullable CompiledQueryPlan<R, Object>> plan =
       new AtomicReference<>();
 
@@ -23,7 +23,7 @@ final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<R>
       EntityPlanSet<E> plans,
       QueryTable<E> table,
       Projection<E, R> projection,
-      @Nullable QueryPredicate predicate) {
+      @Nullable QueryPredicate<E> predicate) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
     this.table = Objects.requireNonNull(table, "table");
@@ -32,7 +32,7 @@ final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<R>
   }
 
   @Override
-  public ProjectedSelectQuery<R> where(QueryPredicate newPredicate) {
+  public ProjectedSelectQuery<E, R> where(QueryPredicate<E> newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate != null) {
       throw new QueryValidationException(

@@ -12,6 +12,8 @@ final class ProjectionGenerator {
 
   String render(ProjectionModel model) {
     String className = model.projectionName() + "Projection";
+    EntityModel entity = model.entity();
+    String entityMetaType = entity.generatedPackage() + "." + entity.entityName() + "Meta";
     List<ProjectionModel.ProjectionParameter> parameters = model.parameters();
     Set<String> usedNames = new HashSet<>();
     parameters.forEach(parameter -> usedNames.add(parameter.name()));
@@ -26,13 +28,16 @@ final class ProjectionGenerator {
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
     source.append("import io.skis.query.Projection;\n");
-    source.append("import io.skis.query.QueryColumn;\n");
+    source.append("import io.skis.query.ProjectionProvider;\n");
     source.append("import java.util.List;\n\n");
     source
         .append("@javax.annotation.processing.Generated(\n")
         .append("    value = \"io.skis.processor.SkisProjectionProcessor\",\n")
-        .append("    comments = \"Projection ABI 1\")\n");
-    source.append("public final class ").append(className).append(" {\n\n");
+        .append("    comments = \"Projection ABI 2\")\n");
+    source
+        .append("public final class ")
+        .append(className)
+        .append(" implements ProjectionProvider {\n\n");
     source
         .append("  private static final Projection.Mapping<")
         .append(model.projectionTypeName())
@@ -40,63 +45,60 @@ final class ProjectionGenerator {
         .append("      Projection.mapping(")
         .append(className)
         .append(".class);\n\n");
-    source.append("  private ").append(className).append("() {}\n\n");
     source
-        .append("  public static <E> Projection<E, ")
+        .append("  private static final Projection<")
+        .append(entity.entityTypeName())
+        .append(", ")
         .append(model.projectionTypeName())
-        .append("> of(\n");
-    for (int index = 0; index < parameters.size(); index++) {
-      ProjectionModel.ProjectionParameter parameter = parameters.get(index);
-      source
-          .append("      QueryColumn<E, ")
-          .append(parameter.typeName())
-          .append("> ")
-          .append(parameter.name())
-          .append(index + 1 == parameters.size() ? ") {\n" : ",\n");
-    }
-    for (ProjectionModel.ProjectionParameter parameter : parameters) {
-      if (parameter.primitive()) {
-        appendPrimitiveNullabilityCheck(source, parameter);
-      }
-    }
-    source.append("    return Projection.generated(\n");
-    source.append("        MAPPING,\n");
-    source.append("        List.of(\n");
+        .append("> PROJECTION =\n")
+        .append("      Projection.generated(\n")
+        .append("          ")
+        .append(model.projectionTypeName())
+        .append(".class,\n")
+        .append("          ")
+        .append(entityMetaType)
+        .append(".ENTITY,\n")
+        .append("          MAPPING,\n")
+        .append("          List.of(\n");
     for (int index = 0; index < parameters.size(); index++) {
       source
-          .append("            ")
-          .append(parameters.get(index).name())
+          .append("              ")
+          .append(entityMetaType)
+          .append('.')
+          .append(parameters.get(index).property().fieldName())
           .append(index + 1 == parameters.size() ? "),\n" : ",\n");
     }
-    source.append("        ").append(readersName).append(" -> {\n");
+    source.append("          ").append(readersName).append(" -> {\n");
     for (int index = 0; index < parameters.size(); index++) {
       ProjectionModel.ProjectionParameter parameter = parameters.get(index);
       source
-          .append("          Projection.ValueReader<")
+          .append("            Projection.ValueReader<")
           .append(parameter.typeName())
           .append("> ")
           .append(valueNames[index])
           .append(" =\n")
-          .append("              ")
+          .append("                ")
           .append(readersName)
           .append(".reader(")
           .append(index)
           .append(", ")
-          .append(parameter.name())
+          .append(entityMetaType)
+          .append('.')
+          .append(parameter.property().fieldName())
           .append(");\n");
     }
     source
-        .append("          return (")
+        .append("            return (")
         .append(resultSetName)
         .append(", ")
         .append(contextName)
         .append(") ->\n")
-        .append("              new ")
+        .append("                new ")
         .append(model.projectionTypeName())
         .append("(\n");
     for (int index = 0; index < parameters.size(); index++) {
       source
-          .append("                  ")
+          .append("                    ")
           .append(valueNames[index])
           .append(".read(")
           .append(resultSetName)
@@ -105,8 +107,17 @@ final class ProjectionGenerator {
           .append(")")
           .append(index + 1 == parameters.size() ? ");\n" : ",\n");
     }
-    source.append("        });\n");
-    source.append("  }\n");
+    source.append("          });\n\n");
+    source.append("  public ").append(className).append("() {}\n\n");
+    source
+        .append("  @Override\n")
+        .append("  public Projection<")
+        .append(entity.entityTypeName())
+        .append(", ")
+        .append(model.projectionTypeName())
+        .append("> projection() {\n")
+        .append("    return PROJECTION;\n")
+        .append("  }\n");
     source.append("}\n");
     return source.toString();
   }
@@ -116,21 +127,6 @@ final class ProjectionGenerator {
     try (Writer writer = source.openWriter()) {
       writer.write(render(model));
     }
-  }
-
-  private static void appendPrimitiveNullabilityCheck(
-      StringBuilder source, ProjectionModel.ProjectionParameter parameter) {
-    source.append("    if (").append(parameter.name()).append(".nullable()) {\n");
-    source
-        .append("      throw new io.skis.query.QueryValidationException(\n")
-        .append("          \"primitive projection parameter '")
-        .append(parameter.name())
-        .append("' cannot use nullable column '\"\n")
-        .append("              + ")
-        .append(parameter.name())
-        .append(".property().name()\n")
-        .append("              + \"'\");\n")
-        .append("    }\n");
   }
 
   private static String uniqueName(String candidate, Set<String> usedNames) {

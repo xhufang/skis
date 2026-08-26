@@ -68,8 +68,8 @@ class EntityPlanSetTest {
   @Test
   void keepsValuesOutsidePlansAndAst() {
     EntityPlanSet<Pet> plans = plans();
-    QueryPredicate mimi = TABLE.name().eq("Mimi");
-    QueryPredicate fifi = TABLE.name().eq("Fifi");
+    QueryPredicate<Pet> mimi = TABLE.name().eq("Mimi");
+    QueryPredicate<Pet> fifi = TABLE.name().eq("Fifi");
 
     assertSame(plans.selectPlan(TABLE, mimi), plans.selectPlan(TABLE, fifi));
     assertEquals("Mimi", plans.argument(mimi));

@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ColumnExpression;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Type-safe generated query column whose value predicates keep values outside the SQL AST. */
 public final class QueryColumn<E, V> {
@@ -26,7 +27,7 @@ public final class QueryColumn<E, V> {
   }
 
   /** Creates a bound equality predicate without storing the value in the structural SQL AST. */
-  public QueryPredicate eq(V value) {
+  public QueryPredicate<E> eq(@Nullable V value) {
     if (value == null) {
       throw new QueryValidationException(
           "eq(null) is not supported for property '" + property().name() + "'");

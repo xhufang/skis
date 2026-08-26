@@ -59,7 +59,8 @@ final class EntityPlanSet<E> {
     return property;
   }
 
-  CompiledQueryPlan<E, Object> selectPlan(QueryTable<E> table, @Nullable QueryPredicate predicate) {
+  CompiledQueryPlan<E, Object> selectPlan(
+      QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
     if (predicate == null) {
       return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
     }
@@ -70,7 +71,7 @@ final class EntityPlanSet<E> {
   }
 
   <R> CompiledQueryPlan<R, Object> projectionPlan(
-      QueryTable<E> table, Projection<E, R> projection, @Nullable QueryPredicate predicate) {
+      QueryTable<E> table, Projection<E, R> projection, @Nullable QueryPredicate<E> predicate) {
     Objects.requireNonNull(projection, "projection").validateFrom(table);
     PropertyMeta<E, ?> property =
         predicate == null ? null : requirePredicateProperty(table, predicate);
@@ -84,7 +85,7 @@ final class EntityPlanSet<E> {
         () -> compiler.compileProjection(model, table, projection, property));
   }
 
-  Object argument(@Nullable QueryPredicate predicate) {
+  Object argument(@Nullable QueryPredicate<E> predicate) {
     return predicate == null ? NoParameters.INSTANCE : predicate.value();
   }
 
@@ -125,14 +126,13 @@ final class EntityPlanSet<E> {
             + "' has no supported single primary key for findById in 0.0.6");
   }
 
-  @SuppressWarnings("unchecked")
   private PropertyMeta<E, ?> requirePredicateProperty(
-      QueryTable<E> table, QueryPredicate predicate) {
+      QueryTable<E> table, QueryPredicate<E> predicate) {
     if (!predicate.column().expression().table().equals(table)) {
       throw new QueryValidationException(
           "where predicate belongs to a different table expression than selectFrom");
     }
-    PropertyMeta<?, ?> untyped = predicate.column().property();
+    PropertyMeta<E, ?> untyped = predicate.column().property();
     int ordinal = untyped.ordinal();
     if (ordinal < 0
         || ordinal >= model.entity().properties().size()
@@ -142,6 +142,6 @@ final class EntityPlanSet<E> {
               + model.entity().entityName()
               + "'");
     }
-    return (PropertyMeta<E, ?>) untyped;
+    return untyped;
   }
 }

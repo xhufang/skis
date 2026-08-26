@@ -11,13 +11,13 @@ final class DefaultEntitySelectQuery<E> implements EntitySelectQuery<E> {
   private final DefaultQueryOperations operations;
   private final EntityPlanSet<E> plans;
   private final QueryTable<E> table;
-  private final @Nullable QueryPredicate predicate;
+  private final @Nullable QueryPredicate<E> predicate;
 
   DefaultEntitySelectQuery(
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      @Nullable QueryPredicate predicate) {
+      @Nullable QueryPredicate<E> predicate) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
     this.table = Objects.requireNonNull(table, "table");
@@ -25,7 +25,7 @@ final class DefaultEntitySelectQuery<E> implements EntitySelectQuery<E> {
   }
 
   @Override
-  public EntitySelectQuery<E> where(QueryPredicate newPredicate) {
+  public EntitySelectQuery<E> where(QueryPredicate<E> newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate != null) {
       throw new QueryValidationException(

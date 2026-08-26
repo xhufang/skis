@@ -8,6 +8,7 @@ import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
 import io.skis.mutation.MutationRuntime;
+import io.skis.query.ProjectionRegistry;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryRuntime;
@@ -44,6 +45,7 @@ public final class SkisExecutorFactory {
     private @Nullable Dialect dialect;
     private @Nullable ClassLoader classLoader;
     private @Nullable EntityRuntimeRegistry runtimeRegistry;
+    private @Nullable ProjectionRegistry projectionRegistry;
     private int planCacheMaximumSize = QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE;
     private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
 
@@ -75,6 +77,12 @@ public final class SkisExecutorFactory {
       return this;
     }
 
+    /** Supplies an already loaded projection registry for containers, tests, or AOT assembly. */
+    public Builder projectionRegistry(ProjectionRegistry projectionRegistry) {
+      this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
+      return this;
+    }
+
     /** Sets the maximum number of dynamic projection plans shared by this executor. */
     public Builder planCacheMaximumSize(int maximumSize) {
       if (maximumSize < 1) {
@@ -102,10 +110,18 @@ public final class SkisExecutorFactory {
       if (selectedRegistry == null) {
         selectedRegistry = EntityRuntimeModelLoader.load(resolveClassLoader(classLoader));
       }
+      ProjectionRegistry selectedProjections = projectionRegistry;
+      if (selectedProjections == null) {
+        selectedProjections = ProjectionModelLoader.load(resolveClassLoader(classLoader));
+      }
       JdbcExecutor jdbcExecutor = new JdbcExecutor(provider);
       QueryPlanCatalog queryPlans =
           QueryRuntime.compile(
-              selectedRegistry, selectedDialect, planCacheMaximumSize, planCacheExpireAfterAccess);
+              selectedRegistry,
+              selectedProjections,
+              selectedDialect,
+              planCacheMaximumSize,
+              planCacheExpireAfterAccess);
       MutationPlanCatalog mutationPlans =
           MutationRuntime.compile(selectedRegistry, selectedDialect);
       QueryOperations queries = queryPlans.bind(jdbcExecutor);

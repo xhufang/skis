@@ -20,6 +20,6 @@ public interface QueryOperations {
    */
   <E, V> SelectFromStep<E, V> select(QueryColumn<E, V> column);
 
-  /** Starts a reflection-free user-defined projection. */
-  <E, R> SelectFromStep<E, R> select(Projection<E, R> projection);
+  /** Selects one registered user projection from the supplied typed table expression. */
+  <E, R> ProjectedSelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType);
 }

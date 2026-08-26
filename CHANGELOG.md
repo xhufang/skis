@@ -16,6 +16,9 @@
   新增容量和访问过期配置、缓存统计、按实体失效及显式清空能力。
 - 投影 APT 支持等待协作处理器在后续轮次生成构造器参数类型；最终未解析时报 `SKIS217`，参数类型无法从生成子包访问时
   报 `SKIS218`。
+- 0.0.9 投影 APT 将用户结果类型绑定到来源实体，新增属性存在性、类型、可空性及 `@ProjectionProperty` 映射校验。
+- 添加生成式 `ProjectionProvider` 和 `META-INF/skis/projections.idx`，执行器装配时建立按用户结果类型索引的
+  不可变投影注册表。
 - 添加生成式单实体 `insert`、`updateById`、`deleteById` Fast Path，并通过统一
   `SkisExecutor` 暴露查询和写入门面。
 - 添加不可变 INSERT/UPDATE/DELETE AST、版本递增表达式、逻辑 AND 谓词及 PostgreSQL/H2
@@ -43,6 +46,9 @@
 
 ### Changed
 
+- `QueryPredicate` 改为 `QueryPredicate<E>`；表参数和 `where` 条件在 Java 编译期保持同一来源实体，同一实体的不同别名
+  继续在执行前通过表表达式身份校验。
+- `ProjectedSelectQuery<R>` 改为 `ProjectedSelectQuery<E, R>`，让标量和用户投影的 `where` 都保留来源实体类型。
 - 生成代码 ABI 更新为 3；`EntityRuntimeModelProvider` 直接携带 mutation Binder 和版本读取器，运行时不按
   生成类名称反射查找写入代码。
 - 测试 `Pet` 的版本属性改为 `Long`，用于明确表达“未提供初始版本时从 0 开始”的语义。
@@ -54,13 +60,18 @@
 
 ### Migration
 
+- 0.0.9 将用户投影入口重构为 `selectProjection(table, ResultType.class)`。用户投影改为
+  `@SkisProjection(entity = Pet.class)`，并删除用户侧 `*Projection.of(...)`、列清单和 `Projection<E, R>` 常量。
+  自定义 `QueryOperations`/`SkisExecutor`/`SkisSession` 实现需要将原用户投影 `select` 重载替换为新入口；显式引用查询
+  接口的代码需将 `ProjectedSelectQuery<R>` 更新为 `ProjectedSelectQuery<E, R>`。
 - 0.0.8 为 `QueryOperations` 添加标量和用户投影 `select` 重载。自定义
   `QueryOperations`/`SkisExecutor`/`SkisSession` 实现必须补充这两个方法；用户投影类型添加
   `@SkisProjection` 后，改用 APT 生成的 `*Projection.of(...)`。单表投影类型为
   `Projection<E, R>`，来源实体类型 `E` 会一直保留到 `from(QueryTable<E>)`。
 - `SkisExecutor` 新增 `queryPlanCacheStatistics()` 和 `clearQueryPlanCache()`；自定义实现需要同步实现。直接使用
-  `Projection.generated(...)` 的基础设施代码需先通过 `Projection.mapping(...)` 创建带结果泛型的映射令牌，普通应用
-  继续使用 APT 生成的 `*Projection.of(...)`，无需改动。
+  `Projection.generated(...)` 的基础设施代码需先通过 `Projection.mapping(...)` 创建带结果泛型的映射令牌。
+- 0.0.9 中直接使用 `Projection.generated(...)` 的基础设施代码还需传入结果类型、来源 `EntityMeta` 和属性元数据；
+  普通应用只使用 `selectProjection(table, ResultType.class)`。
 - 0.0.7 有意扩展 `SkisExecutor` 的抽象契约。自定义实现必须重新编译，并实现新增的 `insert`、
   `updateById`、`deleteById`、`beginTransaction` 和 `inTransaction`；通过
   `SkisExecutorFactory` 创建内置执行器的应用无需修改装配代码。

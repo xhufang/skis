@@ -6,7 +6,7 @@ import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
 import io.skis.query.EntitySelectQuery;
-import io.skis.query.Projection;
+import io.skis.query.ProjectedSelectQuery;
 import io.skis.query.QueryColumn;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
@@ -54,8 +54,9 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E, R> SelectFromStep<E, R> select(Projection<E, R> projection) {
-    return queries.select(projection);
+  public <E, R> ProjectedSelectQuery<E, R> selectProjection(
+      QueryTable<E> table, Class<R> projectionType) {
+    return queries.selectProjection(table, projectionType);
   }
 
   @Override

@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-    <version>0.0.8-SNAPSHOT</version>
+  <version>0.0.9-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -472,15 +472,23 @@
                 <ignoreMissingClasses>true</ignoreMissingClasses>
                 <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                 <skipPomModules>true</skipPomModules>
-                <!-- 0.0.8 intentionally extends the query/executor contracts with projection and
-                     plan-cache operations. Remove these waivers once the API baseline includes
-                     0.0.8. -->
+                <!-- 0.0.8-0.0.9 intentionally extend and refactor the query/executor projection
+                     contracts, generated projection infrastructure, and plan-cache operations.
+                     Remove these waivers once the API baseline includes 0.0.9. -->
                 <excludes>
-                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryColumn)</exclude>
-                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.Projection)</exclude>
+                  <exclude>io.skis.annotations.SkisProjection</exclude>
+                  <exclude>io.skis.query.EntitySelectQuery</exclude>
+                  <exclude>io.skis.query.ProjectedSelectQuery</exclude>
+                  <exclude>io.skis.query.Projection</exclude>
+                  <exclude>io.skis.query.Projection.Readers</exclude>
+                  <exclude>io.skis.query.QueryColumn</exclude>
+                  <exclude>io.skis.query.QueryOperations</exclude>
+                  <exclude>io.skis.query.QueryPredicate</exclude>
+                  <exclude>io.skis.query.SelectFromStep</exclude>
                   <exclude>io.skis.runtime.SkisExecutor#queryPlanCacheStatistics()</exclude>
                   <exclude>io.skis.runtime.SkisExecutor#clearQueryPlanCache()</exclude>
                 </excludes>
+                <breakBuildIfCausedByExclusion>false</breakBuildIfCausedByExclusion>
                 <breakBuildOnBinaryIncompatibleModifications>true
                 </breakBuildOnBinaryIncompatibleModifications>
                 <breakBuildOnSourceIncompatibleModifications>true

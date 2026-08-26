@@ -7,7 +7,7 @@ import java.util.Optional;
 public interface EntitySelectQuery<E> {
 
   /** Returns a new query with its value-bound predicate. */
-  EntitySelectQuery<E> where(QueryPredicate predicate);
+  EntitySelectQuery<E> where(QueryPredicate<E> predicate);
 
   /** Executes a query requiring at most one row. */
   Optional<E> fetchOne();

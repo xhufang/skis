@@ -4,7 +4,7 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.8-SNAPSHOT</version>
+    <version>0.0.9-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-test-model</artifactId>
@@ -63,6 +63,7 @@
             <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisEntityIndexProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisProjectionProcessor</annotationProcessor>
+            <annotationProcessor>io.skis.processor.SkisProjectionIndexProcessor</annotationProcessor>
           </annotationProcessors>
         </configuration>
       </plugin>

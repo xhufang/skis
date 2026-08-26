@@ -3,14 +3,12 @@ package io.skis.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.skis.dialect.h2.H2Dialect;
-import io.skis.query.Projection;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
 import io.skis.testmodel.pet.skis.PetMeta;
-import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -43,15 +41,9 @@ class SkisProjectionIntegrationTest {
             .from(PetTable.PET)
             .where(PetTable.PET.id().eq(7L))
             .fetch();
-    Projection<Pet, PetSummary> summary =
-        PetSummaryProjection.of(
-            PetTable.PET.id(),
-            PetTable.PET.name(),
-            PetTable.PET.weight());
     PetSummary projected =
         executor
-            .select(summary)
-            .from(PetTable.PET)
+            .selectProjection(PetTable.PET, PetSummary.class)
             .where(PetTable.PET.id().eq(7L))
             .fetchOne()
             .orElseThrow();

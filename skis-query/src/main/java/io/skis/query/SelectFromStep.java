@@ -4,5 +4,5 @@ package io.skis.query;
 public interface SelectFromStep<E, R> {
 
   /** Selects the single table expression that owns every projection column. */
-  ProjectedSelectQuery<R> from(QueryTable<E> table);
+  ProjectedSelectQuery<E, R> from(QueryTable<E> table);
 }
