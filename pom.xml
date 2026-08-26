@@ -581,8 +581,7 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-gpg-plugin</artifactId>
             <configuration>
-              <!--suppress UnresolvedMavenProperty -->
-              <passphrase>${env.MAVEN_GPG_PASSPHRASE}</passphrase>
+              <bestPractices>true</bestPractices>
             </configuration>
             <executions>
               <execution>
@@ -598,7 +597,6 @@
             <groupId>org.sonatype.central</groupId>
             <artifactId>central-publishing-maven-plugin</artifactId>
             <extensions>true</extensions>
-            <inherited>false</inherited>
             <configuration>
               <publishingServerId>central</publishingServerId>
               <autoPublish>false</autoPublish>

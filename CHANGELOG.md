@@ -68,6 +68,11 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 - 明确 `skis-test-model` 仅供仓库内部测试使用，不进入公共 BOM、API 兼容检查或 Maven Central 发布内容。
 - 同一 SQL AST 逻辑参数序号重复出现时，必须使用一致的 Java 类型和 nullability。
 
+### Fixed
+
+- 修复 Central 发布扩展未被子模块继承、导致只暂存 `skis-parent` 后在 `skis-bom` 失败的问题。
+- GPG 签名改为从 `MAVEN_GPG_PASSPHRASE` 环境变量读取口令，并启用最佳实践校验。
+
 ### Migration
 
 - 0.0.9 将用户投影入口重构为 `selectProjection(table, ResultType.class)`。用户投影改为

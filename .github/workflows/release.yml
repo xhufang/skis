@@ -68,6 +68,13 @@ jobs:
             exit 1
           }
 
+      - name: Validate Central extension inheritance
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./mvnw -B -ntp -pl skis-bom -Prelease help:effective-pom -Doutput="${RUNNER_TEMP}/skis-bom-effective-pom.xml"
+          grep -Fq "<artifactId>central-publishing-maven-plugin</artifactId>" "${RUNNER_TEMP}/skis-bom-effective-pom.xml"
+
       - name: Verify, sign, and stage
         shell: bash
         env:
