@@ -4,11 +4,15 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-data-permission</artifactId>
   <name>skis-data-permission</name>
+  <!-- Planned module: retained as a source scaffold but deliberately not published in 0.1.0. -->
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <description>AST-level row and field permission policies</description>
   <dependencies>
     <dependency>

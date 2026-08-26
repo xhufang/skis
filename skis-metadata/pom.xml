@@ -4,12 +4,12 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-metadata</artifactId>
   <name>skis-metadata</name>
-  <description>Entity, property, association, table, and column metadata</description>
+  <description>Entity, property, table, column, identifier, and version metadata</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>

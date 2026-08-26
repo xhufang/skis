@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.0.9-SNAPSHOT</version>
+  <version>0.1.0</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -434,7 +434,9 @@
     <profile>
       <id>api-compatibility</id>
       <properties>
-        <api.previous.version>0.0.3-SNAPSHOT</api.previous.version>
+        <!-- 0.0.4 only published an empty parent POM. It is intentionally not treated as an
+             application API baseline; pull-request CI overrides this with a locally built ref. -->
+        <api.previous.version>0.0.4</api.previous.version>
       </properties>
       <build>
         <plugins>
@@ -472,23 +474,6 @@
                 <ignoreMissingClasses>true</ignoreMissingClasses>
                 <ignoreMissingOldVersion>true</ignoreMissingOldVersion>
                 <skipPomModules>true</skipPomModules>
-                <!-- 0.0.8-0.0.9 intentionally extend and refactor the query/executor projection
-                     contracts, generated projection infrastructure, and plan-cache operations.
-                     Remove these waivers once the API baseline includes 0.0.9. -->
-                <excludes>
-                  <exclude>io.skis.annotations.SkisProjection</exclude>
-                  <exclude>io.skis.query.EntitySelectQuery</exclude>
-                  <exclude>io.skis.query.ProjectedSelectQuery</exclude>
-                  <exclude>io.skis.query.Projection</exclude>
-                  <exclude>io.skis.query.Projection.Readers</exclude>
-                  <exclude>io.skis.query.QueryColumn</exclude>
-                  <exclude>io.skis.query.QueryOperations</exclude>
-                  <exclude>io.skis.query.QueryPredicate</exclude>
-                  <exclude>io.skis.query.SelectFromStep</exclude>
-                  <exclude>io.skis.runtime.SkisExecutor#queryPlanCacheStatistics()</exclude>
-                  <exclude>io.skis.runtime.SkisExecutor#clearQueryPlanCache()</exclude>
-                </excludes>
-                <breakBuildIfCausedByExclusion>false</breakBuildIfCausedByExclusion>
                 <breakBuildOnBinaryIncompatibleModifications>true
                 </breakBuildOnBinaryIncompatibleModifications>
                 <breakBuildOnSourceIncompatibleModifications>true
@@ -616,11 +601,11 @@
             <inherited>false</inherited>
             <configuration>
               <publishingServerId>central</publishingServerId>
-              <autoPublish>true</autoPublish>
-              <waitUntil>published</waitUntil>
-              <ignorePublishedComponents>true</ignorePublishedComponents>
+              <autoPublish>false</autoPublish>
+              <waitUntil>validated</waitUntil>
+              <ignorePublishedComponents>false</ignorePublishedComponents>
               <excludeArtifacts>
-                skis-benchmark,skis-integration-tests,skis-examples,skis-example-spring-boot,skis-test-model
+                skis-optimizer,skis-graph,skis-dialect-mysql,skis-dialect-sqlserver,skis-dialect-oracle,skis-dialect-db2,skis-dialect-sqlite,skis-dialect-mariadb,skis-cache-api,skis-cache-caffeine,skis-cache-redis,skis-multitenancy,skis-data-permission,skis-datasource-routing,skis-encryption,skis-audit,skis-observability,skis-schema,skis-codegen,skis-spring-boot,skis-spring-boot-starter,skis-spring-boot-actuator,skis-spring-boot-starter-test,skis-test-support,skis-test-model,skis-integration-tests,skis-benchmark,skis-examples,skis-example-h2,skis-example-spring-boot
               </excludeArtifacts>
             </configuration>
           </plugin>

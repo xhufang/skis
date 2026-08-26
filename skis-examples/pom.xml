@@ -4,14 +4,17 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-examples</artifactId>
   <packaging>pom</packaging>
   <name>skis-examples</name>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <description>SKIS example project aggregation</description>
   <modules>
-    <module>skis-example-spring-boot</module>
+    <module>skis-example-h2</module>
   </modules>
 </project>

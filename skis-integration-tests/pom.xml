@@ -4,11 +4,14 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-integration-tests</artifactId>
   <name>skis-integration-tests</name>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <description>Dialect and transaction integration-test module</description>
   <dependencies>
     <dependency>
@@ -25,15 +28,7 @@
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-dialect-mysql</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-h2</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-test-support</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>

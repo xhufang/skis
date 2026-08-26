@@ -4,8 +4,16 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-26
+
+SKIS 的第一个完整公开预览版本。发布范围只包含已经实现的核心、生成器、JDBC、查询、写入、
+PostgreSQL/H2 方言和 Spring 事务连接适配模块。
+
 ### Added
 
+- 添加可直接复制的 Pet + H2 消费者示例、完整 Maven APT 入门文档和 0.1.0 发布检查表。
+- 扩展 PostgreSQL 合同测试，覆盖 update/delete、乐观锁冲突和事务回滚。
+- 发布流水线增加精确的 16 个 Central 组件白名单校验。
 - 添加单表标量投影，以及由 `@SkisProjection` APT 为用户 record/类生成的任意列数强类型
   `*Projection` 映射器；只渲染实际选择列，通过生成 Codec 按列下标完成无反射映射，且不生成 DTO。
   投影计划按实体、生成式强类型映射令牌、选择列和谓词结构进入共享的默认 4096 项有界 LRU，参数值不参与缓存键；
@@ -46,6 +54,8 @@
 
 ### Changed
 
+- 公共 BOM 和 Central 发布范围收缩为已实现模块；计划模块显式跳过部署。
+- Central 首次完整发布改为验证后人工发布，并先创建草稿 GitHub Release。
 - `QueryPredicate` 改为 `QueryPredicate<E>`；表参数和 `where` 条件在 Java 编译期保持同一来源实体，同一实体的不同别名
   继续在执行前通过表表达式身份校验。
 - `ProjectedSelectQuery<R>` 改为 `ProjectedSelectQuery<E, R>`，让标量和用户投影的 `where` 都保留来源实体类型。
@@ -78,6 +88,9 @@
 
 ## [0.0.4] - 2026-08-21
 
+> Maven Central 上的 0.0.4 是一次不完整发布，只包含空的 `skis-parent` POM；
+> 该版本不作为公共 API 兼容基线。0.1.0 是第一个完整可用的公开版本。
+
 ### Added
 
 - 建立 Java 21/25 的 CI 与独立集成测试工作流。
@@ -102,5 +115,6 @@
 - Maven 依赖坐标需从 `io.skis:*` 更新为 `io.github.xhufang:*`。
 - Java 根包仍为 `io.skis`，源码导入路径无需修改。
 
-[Unreleased]: https://github.com/xhufang/skis/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/xhufang/skis/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/xhufang/skis/compare/v0.0.4...v0.1.0
 [0.0.4]: https://github.com/xhufang/skis/releases/tag/v0.0.4

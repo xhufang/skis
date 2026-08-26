@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Existing release tag version without the v prefix (for example, 0.0.4)"
+        description: "Existing release tag version without the v prefix (for example, 0.1.0)"
         required: true
         type: string
 
@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   publish:
-    name: Publish to Maven Central and GitHub
+    name: Stage Maven Central and draft GitHub release
     runs-on: ubuntu-latest
     environment: maven-central
     steps:
@@ -68,7 +68,7 @@ jobs:
             exit 1
           }
 
-      - name: Verify, sign, and publish
+      - name: Verify, sign, and stage
         shell: bash
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
@@ -76,7 +76,37 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: ./mvnw -B -ntp -Pcompliance,release deploy
 
-      - name: Create or update GitHub Release
+      - name: Validate Central component set
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$(find target/central-publishing -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          if [[ -z "${bundle}" ]]; then
+            echo "Central bundle was not created"
+            exit 1
+          fi
+          cat > "${RUNNER_TEMP}/expected-components.txt" <<'EOF'
+          skis-annotations
+          skis-bom
+          skis-core
+          skis-dialect-api
+          skis-dialect-h2
+          skis-dialect-postgresql
+          skis-jdbc
+          skis-mapping
+          skis-metadata
+          skis-mutation
+          skis-parent
+          skis-processor
+          skis-query
+          skis-runtime
+          skis-spring
+          skis-sql-ast
+          EOF
+          unzip -Z1 "${bundle}" | awk -F/ '$1 == "io" && $2 == "github" && $3 == "xhufang" && NF >= 6 { print $4 }' | sort -u > "${RUNNER_TEMP}/actual-components.txt"
+          diff -u "${RUNNER_TEMP}/expected-components.txt" "${RUNNER_TEMP}/actual-components.txt"
+
+      - name: Create or update draft GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -90,6 +120,7 @@ jobs:
             fi
           else
             gh release create "${RELEASE_TAG}" "${assets[@]}" \
+              --draft \
               --verify-tag \
               --generate-notes \
               --title "SKIS ${RELEASE_TAG#v}"

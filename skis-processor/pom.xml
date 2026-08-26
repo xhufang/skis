@@ -4,12 +4,12 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-processor</artifactId>
   <name>skis-processor</name>
-  <description>Java annotation processor for generated metadata and codecs</description>
+  <description>Annotation processor for entity metadata, typed tables, projections, and indexes</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
