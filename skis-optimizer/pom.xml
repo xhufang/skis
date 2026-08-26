@@ -4,11 +4,15 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-optimizer</artifactId>
   <name>skis-optimizer</name>
+  <!-- Planned module: retained as a source scaffold but deliberately not published in 0.1.0. -->
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <description>SQL, pagination, and fetch-plan optimization</description>
   <dependencies>
     <dependency>

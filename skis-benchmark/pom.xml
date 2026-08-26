@@ -4,11 +4,14 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-benchmark</artifactId>
   <name>skis-benchmark</name>
+  <properties>
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
   <description>JMH and real-database benchmark module</description>
   <dependencies>
     <dependency>

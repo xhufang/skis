@@ -5,14 +5,16 @@
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
     <version>0.1.0</version>
-    <relativePath>../pom.xml</relativePath>
+    <relativePath>../../pom.xml</relativePath>
   </parent>
-  <artifactId>skis-test-model</artifactId>
-  <name>skis-test-model</name>
-  <description>Complex model shared by tests across modules</description>
+
+  <artifactId>skis-example-h2</artifactId>
+  <name>skis-example-h2</name>
+  <description>Minimal plain-Java H2 consumer example for SKIS</description>
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
+
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
@@ -20,23 +22,15 @@
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-metadata</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-mapping</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-sql-ast</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-query</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-dialect-h2</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>

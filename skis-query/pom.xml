@@ -4,12 +4,12 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-query</artifactId>
   <name>skis-query</name>
-  <description>Query DSL, pagination, streaming, and native SQL entry points</description>
+  <description>Typed single-table entity, scalar, and generated projection queries</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
@@ -30,10 +30,6 @@
     <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-optimizer</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>

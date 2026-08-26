@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
-/** 0.0.9 query, projection, mutation, and transaction examples ordered by complexity. */
+/** 0.1.0 query, projection, mutation, and transaction examples ordered by complexity. */
 public final class PetService {
 
   private static final PetTable PET = PetTable.PET;

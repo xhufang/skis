@@ -7,14 +7,14 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-  <version>0.0.9-SNAPSHOT</version>
+    <version>0.1.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>skis-bom</artifactId>
   <packaging>pom</packaging>
   <name>skis-bom</name>
-  <description>Dependency versions for published SKIS modules</description>
+  <description>Dependency versions for the implemented SKIS 0.1 public modules</description>
 
   <dependencyManagement>
     <dependencies>
@@ -50,11 +50,6 @@
       </dependency>
       <dependency>
         <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-optimizer</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-mapping</artifactId>
         <version>${project.version}</version>
       </dependency>
@@ -75,23 +70,12 @@
       </dependency>
       <dependency>
         <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-graph</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-runtime</artifactId>
         <version>${project.version}</version>
       </dependency>
-
       <dependency>
         <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-postgresql</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-dialect-mysql</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -101,115 +85,7 @@
       </dependency>
       <dependency>
         <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-dialect-sqlserver</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-dialect-oracle</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-dialect-db2</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-dialect-sqlite</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-dialect-mariadb</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-cache-api</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-cache-caffeine</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-cache-redis</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-multitenancy</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-data-permission</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-datasource-routing</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-encryption</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-audit</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-observability</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-schema</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-codegen</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
         <artifactId>skis-spring</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-spring-boot</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-spring-boot-starter</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-spring-boot-actuator</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-spring-boot-starter-test</artifactId>
-        <version>${project.version}</version>
-      </dependency>
-
-      <dependency>
-        <groupId>io.github.xhufang</groupId>
-        <artifactId>skis-test-support</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>
