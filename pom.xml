@@ -101,6 +101,7 @@
     <maven.compiler.release>${java.version}</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.deploy.skip>false</maven.deploy.skip>
 
     <spring-boot.version>4.1.0</spring-boot.version>
     <jspecify.version>1.0.0</jspecify.version>
@@ -554,6 +555,9 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-source-plugin</artifactId>
+            <configuration>
+              <skipSource>${maven.deploy.skip}</skipSource>
+            </configuration>
             <executions>
               <execution>
                 <id>attach-sources</id>
@@ -567,6 +571,9 @@
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
+            <configuration>
+              <skip>${maven.deploy.skip}</skip>
+            </configuration>
             <executions>
               <execution>
                 <id>attach-javadocs</id>
@@ -581,7 +588,7 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-gpg-plugin</artifactId>
             <configuration>
-              <bestPractices>true</bestPractices>
+              <skip>${maven.deploy.skip}</skip>
             </configuration>
             <executions>
               <execution>

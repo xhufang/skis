@@ -68,12 +68,38 @@ jobs:
             exit 1
           }
 
-      - name: Validate Central extension inheritance
+      - name: Validate release plugin inheritance
         shell: bash
         run: |
           set -euo pipefail
           ./mvnw -B -ntp -pl skis-bom -Prelease help:effective-pom -Doutput="${RUNNER_TEMP}/skis-bom-effective-pom.xml"
           grep -Fq "<artifactId>central-publishing-maven-plugin</artifactId>" "${RUNNER_TEMP}/skis-bom-effective-pom.xml"
+          ./mvnw -B -ntp -pl skis-test-model -Prelease help:effective-pom -Doutput="${RUNNER_TEMP}/skis-test-model-effective-pom.xml"
+          python - "${RUNNER_TEMP}/skis-test-model-effective-pom.xml" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          namespace = {"m": "http://maven.apache.org/POM/4.0.0"}
+          root = ET.parse(sys.argv[1]).getroot()
+          plugins = {
+              plugin.findtext("m:artifactId", namespaces=namespace): plugin
+              for plugin in root.findall("m:build/m:plugins/m:plugin", namespace)
+          }
+          expected = {
+              "maven-source-plugin": ("skipSource", "true"),
+              "maven-javadoc-plugin": ("skip", "true"),
+              "maven-gpg-plugin": ("skip", "true"),
+          }
+          for artifact_id, (parameter, value) in expected.items():
+              plugin = plugins.get(artifact_id)
+              actual = None if plugin is None else plugin.findtext(
+                  f"m:configuration/m:{parameter}", namespaces=namespace
+              )
+              if actual != value:
+                  raise SystemExit(
+                      f"{artifact_id} must configure {parameter}={value} for skis-test-model; got {actual!r}"
+                  )
+          PY
 
       - name: Verify, sign, and stage
         shell: bash

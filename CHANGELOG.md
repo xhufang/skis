@@ -71,7 +71,8 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 ### Fixed
 
 - 修复 Central 发布扩展未被子模块继承、导致只暂存 `skis-parent` 后在 `skis-bom` 失败的问题。
-- GPG 签名改为从 `MAVEN_GPG_PASSPHRASE` 环境变量读取口令，并启用最佳实践校验。
+- 不发布的测试和占位模块不再生成源码包、Javadoc 包或 GPG 签名，避免其内部代码阻断正式发布。
+- GPG 签名改为从 `MAVEN_GPG_PASSPHRASE` 环境变量读取口令，不再在 POM 中配置敏感值。
 
 ### Migration
 
