@@ -6,9 +6,6 @@ import io.skis.annotations.Table;
 import io.skis.annotations.Version;
 import java.time.Instant;
 
-/**
- * @Author: Hu Xin
- */
 @SkisEntity
 @Table(name = "X_USER")
 public class User {
