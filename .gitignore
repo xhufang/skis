@@ -30,3 +30,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local development plans ###
+/docs/plan/

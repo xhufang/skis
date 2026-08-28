@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.xhufang</groupId>
+    <artifactId>skis-benchmark</artifactId>
+    <version>0.1.1-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>skis-benchmark-jimmer</artifactId>
+  <name>skis-benchmark-jimmer</name>
+  <description>Jimmer benchmark implementation</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.babyfish.jimmer</groupId>
+      <artifactId>jimmer-sql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.babyfish.jimmer</groupId>
+      <artifactId>jimmer-apt</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>tools.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <proc>full</proc>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.babyfish.jimmer</groupId>
+              <artifactId>jimmer-apt</artifactId>
+              <version>${jimmer.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

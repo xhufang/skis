@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -482,6 +482,7 @@
                 <reportOnlyFilename>true</reportOnlyFilename>
                 <excludeModules>
                   <excludeModule>skis-benchmark</excludeModule>
+                  <excludeModule>skis-benchmark-.*</excludeModule>
                   <excludeModule>skis-integration-tests</excludeModule>
                   <excludeModule>skis-examples</excludeModule>
                   <excludeModule>skis-example-.*</excludeModule>
@@ -610,7 +611,7 @@
               <waitUntil>validated</waitUntil>
               <ignorePublishedComponents>false</ignorePublishedComponents>
               <excludeArtifacts>
-                skis-optimizer,skis-graph,skis-dialect-mysql,skis-dialect-sqlserver,skis-dialect-oracle,skis-dialect-db2,skis-dialect-sqlite,skis-dialect-mariadb,skis-cache-api,skis-cache-caffeine,skis-cache-redis,skis-multitenancy,skis-data-permission,skis-datasource-routing,skis-encryption,skis-audit,skis-observability,skis-schema,skis-codegen,skis-spring-boot,skis-spring-boot-starter,skis-spring-boot-actuator,skis-spring-boot-starter-test,skis-test-support,skis-test-model,skis-integration-tests,skis-benchmark,skis-examples,skis-example-h2,skis-example-spring-boot
+                skis-optimizer,skis-graph,skis-dialect-mysql,skis-dialect-sqlserver,skis-dialect-oracle,skis-dialect-db2,skis-dialect-sqlite,skis-dialect-mariadb,skis-cache-api,skis-cache-caffeine,skis-cache-redis,skis-multitenancy,skis-data-permission,skis-datasource-routing,skis-encryption,skis-audit,skis-observability,skis-schema,skis-codegen,skis-spring-boot,skis-spring-boot-starter,skis-spring-boot-actuator,skis-spring-boot-starter-test,skis-test-support,skis-test-model,skis-integration-tests,skis-benchmark,skis-benchmark-jdbc,skis-benchmark-skis,skis-benchmark-jimmer,skis-benchmark-mybatis,skis-benchmark-mybaitisflex,skis-benchmark-mybatisplus,skis-benchmark-jooq,skis-benchmark-runner,skis-examples,skis-example-h2,skis-example-spring-boot
               </excludeArtifacts>
             </configuration>
           </plugin>

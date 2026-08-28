@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.xhufang</groupId>
+    <artifactId>skis-benchmark</artifactId>
+    <version>0.1.1-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>skis-benchmark-skis</artifactId>
+  <name>skis-benchmark-skis</name>
+  <description>Current-reactor SKIS benchmark implementation</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-annotations</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-runtime</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-dialect-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-processor</artifactId>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <proc>full</proc>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>io.github.xhufang</groupId>
+              <artifactId>skis-processor</artifactId>
+              <version>${project.version}</version>
+            </path>
+          </annotationProcessorPaths>
+          <annotationProcessors>
+            <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
+            <annotationProcessor>io.skis.processor.SkisEntityIndexProcessor</annotationProcessor>
+          </annotationProcessors>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

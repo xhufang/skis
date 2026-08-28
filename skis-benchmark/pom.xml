@@ -4,19 +4,113 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.1.0</version>
+    <version>0.1.1-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-benchmark</artifactId>
+  <packaging>pom</packaging>
   <name>skis-benchmark</name>
+  <description>JMH and real-database benchmark reactor</description>
+
+  <modules>
+    <module>skis-benchmark-jdbc</module>
+    <module>skis-benchmark-skis</module>
+    <module>skis-benchmark-jimmer</module>
+    <module>skis-benchmark-mybatis</module>
+    <module>skis-benchmark-mybaitisflex</module>
+    <module>skis-benchmark-mybatisplus</module>
+    <module>skis-benchmark-jooq</module>
+    <module>skis-benchmark-runner</module>
+  </modules>
+
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
+    <jmh.version>1.37</jmh.version>
+    <jimmer.version>0.11.4</jimmer.version>
+    <mybatis.version>3.5.19</mybatis.version>
+    <mybatis-flex.version>1.11.4</mybatis-flex.version>
+    <mybatis-plus.version>3.5.17</mybatis-plus.version>
+    <jooq.version>3.21.7</jooq.version>
+    <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>
   </properties>
-  <description>JMH and real-database benchmark module</description>
-  <dependencies>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-runtime</artifactId>
-    </dependency>
-  </dependencies>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-jdbc</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-skis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-jimmer</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-mybatis</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-mybaitisflex</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-mybatisplus</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-benchmark-jooq</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-core</artifactId>
+        <version>${jmh.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.openjdk.jmh</groupId>
+        <artifactId>jmh-generator-annprocess</artifactId>
+        <version>${jmh.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.babyfish.jimmer</groupId>
+        <artifactId>jimmer-sql</artifactId>
+        <version>${jimmer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.babyfish.jimmer</groupId>
+        <artifactId>jimmer-apt</artifactId>
+        <version>${jimmer.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mybatis</groupId>
+        <artifactId>mybatis</artifactId>
+        <version>${mybatis.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.mybatis-flex</groupId>
+        <artifactId>mybatis-flex-core</artifactId>
+        <version>${mybatis-flex.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>com.baomidou</groupId>
+        <artifactId>mybatis-plus-core</artifactId>
+        <version>${mybatis-plus.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jooq</groupId>
+        <artifactId>jooq</artifactId>
+        <version>${jooq.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 </project>
