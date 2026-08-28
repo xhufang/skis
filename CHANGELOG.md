@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增统一的真实 PostgreSQL `findById` JMH 基准，对比手写 JDBC、SKIS、Jimmer、MyBatis、
+  MyBatis-Flex、MyBatis-Plus 和 jOOQ，并保存平均耗时、分配量及 GC 数据报告。
+- 添加 benchmark 数据库环境变量、运行命令、比较框架版本和公平性边界说明；凭据不写入仓库。
+
+### Changed
+
+- 将 `skis-benchmark` 重构为各框架独立模型/数据访问模块与共享 runner，所有实现使用相同数据表、
+  选择列、对象形状、连接池和 JMH 参数，且不计入 Spring Boot 启动及代理成本。
+- 将全部 benchmark 子模块排除出公共 API 兼容基线和 Maven Central 发布组件校验，继续只作为仓库内部性能工程模块。
+
 ## [0.1.0] - 2026-08-26
 
 SKIS 的第一个完整公开预览版本。发布范围只包含已经实现的核心、生成器、JDBC、查询、写入、
