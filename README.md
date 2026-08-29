@@ -68,6 +68,13 @@ public record Pet(
     @Version Long version) {}
 ```
 
+Simple Entities may also be top-level public concrete Beans. A Bean must have a public no-argument
+constructor and public getter/setter or fluent read/write access for every persistent property;
+public fields are also supported. Field and getter mapping annotations are merged and conflicting
+`@Column` declarations are compile-time errors. Lombok may generate the constructor/accessors when
+it is enabled as an annotation processor; immutable `@Value`, builder-only, inheritance, and
+all-args-only entity shapes remain outside the 0.1 contract.
+
 Compilation generates `PetMeta`, `PetTable`, binders, decoders, and runtime index entries. The
 executor then discovers them without classpath scanning:
 
@@ -102,6 +109,7 @@ accept one non-null value. Applications own DDL and assign identifiers before in
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Annotation-processing error guide](docs/apt-error-codes.md)
 - [0.1.0 release checklist](docs/release-checklist.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)
 - [0.0.6 injected executor and reflection-free read slice](docs/0.0.6-read-slice.md)

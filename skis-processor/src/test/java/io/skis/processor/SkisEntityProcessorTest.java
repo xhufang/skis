@@ -1,6 +1,7 @@
 package io.skis.processor;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,8 +11,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -1372,6 +1376,251 @@ class SkisEntityProcessorTest {
         Files.readAllBytes(result.classes().resolve("META-INF/skis/projections.idx")));
   }
 
+  @Test
+  void keepsEveryGeneratedSourceAndIndexByteStableAcrossInputAndProcessorOrder()
+      throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Zulu",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            public record Zulu(@Id Long id, String name) {}
+            """,
+            "samples.Alpha",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            public record Alpha(@Id Long id, String label) {}
+            """,
+            "samples.ZuluSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Zulu.class)
+            public record ZuluSummary(String name) {}
+            """,
+            "samples.AlphaSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = Alpha.class)
+            public record AlphaSummary(String label) {}
+            """);
+    String normalProcessors =
+        String.join(
+            ",",
+            SkisEntityProcessor.class.getName(),
+            SkisEntityIndexProcessor.class.getName(),
+            SkisProjectionProcessor.class.getName(),
+            SkisProjectionIndexProcessor.class.getName());
+    String reversedProcessors =
+        String.join(
+            ",",
+            SkisProjectionIndexProcessor.class.getName(),
+            SkisProjectionProcessor.class.getName(),
+            SkisEntityIndexProcessor.class.getName(),
+            SkisEntityProcessor.class.getName());
+
+    CompilationResult normal =
+        process(
+            sources,
+            normalProcessors,
+            temporaryDirectory.resolve("stable-normal"),
+            false);
+    CompilationResult reversed =
+        process(
+            sources,
+            reversedProcessors,
+            temporaryDirectory.resolve("stable-reversed"),
+            true);
+
+    assertTrue(normal.success(), normal.diagnosticsText());
+    assertTrue(reversed.success(), reversed.diagnosticsText());
+    assertEquals(outputSnapshot(normal), outputSnapshot(reversed));
+    assertTrue(
+        generatedSource(normal, "AlphaSummaryProjection.java")
+            .contains("comments = \"Projection ABI 3\""));
+  }
+
+  @Test
+  void keepsBeanFieldsBeforeGetterOnlyPropertiesInDeclaredOrder() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.OrderedBean",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity
+            public class OrderedBean {
+              @Id public Long zeta;
+              public String alpha;
+
+              public OrderedBean() {}
+              @Column public String beta() { return null; }
+              public OrderedBean beta(String beta) { return this; }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName(),
+            temporaryDirectory.resolve("bean-property-order"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String meta = generatedSource(result, "OrderedBeanMeta.java");
+    int zeta = meta.indexOf("new PropertyMeta<>(0, \"zeta\"");
+    int alpha = meta.indexOf("new PropertyMeta<>(1, \"alpha\"");
+    int beta = meta.indexOf("new PropertyMeta<>(2, \"beta\"");
+    assertTrue(zeta >= 0 && zeta < alpha && alpha < beta, meta);
+  }
+
+  @Test
+  void waitsForALombokBackedEntityBeforeGeneratingItsProjection() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "lombok.Getter",
+            """
+            package lombok;
+            import java.lang.annotation.*;
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.SOURCE)
+            public @interface Getter {}
+            """,
+            "samples.LombokPet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @lombok.Getter
+            @SkisEntity
+            public class LombokPet {
+              @Id private Long id;
+              public LombokPet() {}
+              public Long getId() { return id; }
+              public void setId(Long id) { this.id = id; }
+            }
+            """,
+            "samples.LombokPetSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = LombokPet.class)
+            public record LombokPetSummary(Long id) {}
+            """);
+    String processors =
+        String.join(
+            ",",
+            SkisProjectionProcessor.class.getName(),
+            SkisEntityProcessor.class.getName(),
+            RoundForcingProcessor.class.getName());
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("lombok-projection-round"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    assertTrue(
+        Files.exists(
+            result
+                .generatedSources()
+                .resolve("samples/skis/LombokPetSummaryProjection.java")));
+  }
+
+  @Test
+  void keepsLombokShapeFailuresDeferredUntilTheFinalRound() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "lombok.Getter",
+            """
+            package lombok;
+            import java.lang.annotation.*;
+            @Target(ElementType.TYPE)
+            @Retention(RetentionPolicy.SOURCE)
+            public @interface Getter {}
+            """,
+            "samples.InvalidLombokPet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @lombok.Getter
+            @SkisEntity
+            public class InvalidLombokPet {
+              @Id private Long id;
+              public InvalidLombokPet() {}
+              public Long getId() { return id; }
+            }
+            """);
+    String processors =
+        SkisEntityProcessor.class.getName() + "," + RoundForcingProcessor.class.getName();
+    CompilationResult result =
+        process(sources, processors, temporaryDirectory.resolve("lombok-final-round"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS038]"), result.diagnosticsText());
+    assertTrue(result.diagnosticsText().contains("[SKIS035]"), result.diagnosticsText());
+  }
+
+  @Test
+  void cooperatesWithTheRealLombokProcessorInEitherProcessorOrder() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.RealLombokPet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import lombok.Getter;
+            import lombok.NoArgsConstructor;
+            import lombok.Setter;
+            @Getter
+            @Setter
+            @NoArgsConstructor
+            @SkisEntity
+            public class RealLombokPet {
+              @Id private Long id;
+              @Column(nullable = false) private boolean isActive;
+            }
+            """,
+            "samples.RealLombokPetSummary",
+            """
+            package samples;
+            import io.skis.annotations.SkisProjection;
+            @SkisProjection(entity = RealLombokPet.class)
+            public record RealLombokPetSummary(Long id, boolean isActive) {}
+            """);
+    String lombokProcessor = "lombok.launch.AnnotationProcessorHider$AnnotationProcessor";
+    List<String> processorOrders =
+        List.of(
+            String.join(
+                ",",
+                lombokProcessor,
+                SkisProjectionProcessor.class.getName(),
+                SkisEntityProcessor.class.getName()),
+            String.join(
+                ",",
+                SkisEntityProcessor.class.getName(),
+                SkisProjectionProcessor.class.getName(),
+                lombokProcessor));
+
+    for (int index = 0; index < processorOrders.size(); index++) {
+      CompilationResult result =
+          process(
+              sources,
+              processorOrders.get(index),
+              temporaryDirectory.resolve("real-lombok-" + index));
+
+      assertTrue(result.success(), result.diagnosticsText());
+      String decoder = generatedSource(result, "RealLombokPetRowDecoder.java");
+      String binder = generatedSource(result, "RealLombokPetBinder.java");
+      assertTrue(decoder.contains("entity.setActive("), decoder);
+      assertTrue(binder.contains("entity.isActive()"), binder);
+      assertTrue(
+          Files.exists(
+              result
+                  .generatedSources()
+                  .resolve("samples/skis/RealLombokPetSummaryProjection.java")));
+    }
+  }
+
   private void assertProcessingError(String code, String source) throws Exception {
     CompilationResult result =
         process(
@@ -1380,10 +1629,17 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve(code));
     assertFalse(result.success(), "processing unexpectedly succeeded");
     assertTrue(result.diagnosticsText().contains("[" + code + "]"), result.diagnosticsText());
+    assertTrue(result.diagnosticsText().contains("Fix:"), result.diagnosticsText());
   }
 
   private static CompilationResult process(
       Map<String, String> sources, String processors, Path output) throws IOException {
+    return process(sources, processors, output, false);
+  }
+
+  private static CompilationResult process(
+      Map<String, String> sources, String processors, Path output, boolean reverseSources)
+      throws IOException {
     Files.createDirectories(output);
     Path generatedSources = output.resolve("generated");
     Path classes = output.resolve("classes");
@@ -1392,7 +1648,7 @@ class SkisEntityProcessorTest {
 
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-    List<JavaFileObject> sourceFiles = sourceFiles(sources);
+    List<JavaFileObject> sourceFiles = sourceFiles(sources, reverseSources);
     try (StandardJavaFileManager fileManager =
         compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
       JavaCompiler.CompilationTask task =
@@ -1456,10 +1712,41 @@ class SkisEntityProcessorTest {
   }
 
   private static List<JavaFileObject> sourceFiles(Map<String, String> sources) {
+    return sourceFiles(sources, false);
+  }
+
+  private static List<JavaFileObject> sourceFiles(
+      Map<String, String> sources, boolean reverseSources) {
+    Comparator<Map.Entry<String, String>> order = Map.Entry.comparingByKey();
+    if (reverseSources) {
+      order = order.reversed();
+    }
     return sources.entrySet().stream()
-        .sorted(Map.Entry.comparingByKey())
+        .sorted(order)
         .map(entry -> (JavaFileObject) new SourceFile(entry.getKey(), entry.getValue()))
         .toList();
+  }
+
+  private static Map<String, String> outputSnapshot(CompilationResult result) throws IOException {
+    Map<String, String> snapshot = new TreeMap<>();
+    addOutputTree(snapshot, "generated", result.generatedSources(), ".java");
+    addOutputTree(snapshot, "classes", result.classes(), ".idx");
+    return Map.copyOf(snapshot);
+  }
+
+  private static void addOutputTree(
+      Map<String, String> snapshot, String prefix, Path root, String suffix) throws IOException {
+    try (var paths = Files.walk(root)) {
+      for (Path path :
+          paths
+              .filter(Files::isRegularFile)
+              .filter(candidate -> candidate.toString().endsWith(suffix))
+              .sorted()
+              .toList()) {
+        String key = prefix + "/" + root.relativize(path).toString().replace('\\', '/');
+        snapshot.put(key, HexFormat.of().formatHex(Files.readAllBytes(path)));
+      }
+    }
   }
 
   private static void assertGeneratedEquals(CompilationResult result, String fileName)

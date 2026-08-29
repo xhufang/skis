@@ -26,6 +26,7 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
   private ProjectionModelScanner scanner;
   private ProjectionGenerator generator;
   private final Set<String> settledProjections = new HashSet<>();
+  private final Set<String> lombokSettlementDeferred = new HashSet<>();
   private final Set<String> pendingProjections = new TreeSet<>();
   private final Map<String, String> deferredProblems = new HashMap<>();
 
@@ -69,7 +70,9 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
   private ProcessingResult processProjection(TypeElement type) {
     String projectionName = type.getQualifiedName().toString();
     try {
-      generator.generate(scanner.scan(type), processingEnv.getFiler());
+      generator.generate(
+          scanner.scan(type, lombokSettlementDeferred.add(projectionName)),
+          processingEnv.getFiler());
       return ProcessingResult.GENERATED;
     } catch (ProjectionScanDeferredException deferred) {
       deferredProblems.put(projectionName, deferred.getMessage());
@@ -99,7 +102,9 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
               + "; ensure the referenced type is generated before processing ends";
       TypeElement type = processingEnv.getElementUtils().getTypeElement(projectionName);
       if (type == null) {
-        processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "[SKIS217] " + message);
+        processingEnv
+            .getMessager()
+            .printMessage(Diagnostic.Kind.ERROR, DiagnosticGuidance.format("SKIS217", message));
       } else {
         error("SKIS217", message, type);
       }
@@ -112,7 +117,7 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
   private void error(String code, String message, Element element) {
     processingEnv
         .getMessager()
-        .printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message, element);
+        .printMessage(Diagnostic.Kind.ERROR, DiagnosticGuidance.format(code, message), element);
   }
 
   private enum ProcessingResult {

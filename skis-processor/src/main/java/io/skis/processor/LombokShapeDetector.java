@@ -31,6 +31,14 @@ final class LombokShapeDetector {
     return type.getEnclosedElements().stream().anyMatch(LombokShapeDetector::hasShapeAnnotation);
   }
 
+  static boolean mayAffectEntityShape(String diagnosticCode) {
+    return switch (diagnosticCode) {
+      case "SKIS031", "SKIS032", "SKIS033", "SKIS034", "SKIS035", "SKIS037", "SKIS039", "SKIS040" ->
+          true;
+      default -> false;
+    };
+  }
+
   private static boolean hasShapeAnnotation(Element element) {
     return element.getAnnotationMirrors().stream()
         .map(mirror -> mirror.getAnnotationType().asElement())

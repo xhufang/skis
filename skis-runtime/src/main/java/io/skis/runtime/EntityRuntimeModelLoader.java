@@ -4,55 +4,47 @@ import io.skis.core.SkisConfigurationException;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeModelProvider;
 import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.metadata.GeneratedModelAbi;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import io.skis.metadata.EntityMeta;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
-import java.net.URLConnection;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Enumeration;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.TreeSet;
 
 /** Loads generated providers once from deterministic indexes without scanning the class path. */
 final class EntityRuntimeModelLoader {
 
   static final String INDEX_PATH = "META-INF/skis/entities.idx";
-  private static final String ABI_PREFIX = "# skis-generated-abi=";
 
   private EntityRuntimeModelLoader() {}
 
   static EntityRuntimeRegistry load(ClassLoader classLoader) {
     Objects.requireNonNull(classLoader, "classLoader");
-    Set<String> providerNames = readProviderNames(classLoader);
-    List<EntityRuntimeModel<?>> models = new ArrayList<>(providerNames.size());
-    for (String providerName : providerNames) {
-      EntityRuntimeModelProvider provider = loadProvider(classLoader, providerName);
-      try {
-        EntityRuntimeModel<?> model = provider.model();
-        if (model == null) {
-          throw new SkisConfigurationException(
-              "generated entity provider '" + providerName + "' returned a null runtime model");
-        }
-        models.add(model);
-      } catch (SkisConfigurationException failure) {
-        throw failure;
-      } catch (RuntimeException failure) {
-        throw new SkisConfigurationException(
-            "generated entity provider '" + providerName + "' failed to supply its runtime model",
-            failure);
-      } catch (LinkageError failure) {
-        throw new SkisConfigurationException(
-            "generated entity provider '"
-                + providerName
-                + "' is not link-compatible with this runtime",
-            failure);
+    List<GeneratedIndexReader.Entry> entries =
+        GeneratedIndexReader.read(classLoader, INDEX_PATH, "entity");
+    List<EntityRuntimeModel<?>> models = new ArrayList<>(entries.size());
+    Map<EntityMeta<?>, LoadedEntity> byMetadata = new IdentityHashMap<>();
+    Map<Class<?>, LoadedEntity> byJavaType = new IdentityHashMap<>();
+    for (GeneratedIndexReader.Entry entry : entries) {
+      EntityRuntimeModelProvider provider = loadProvider(classLoader, entry);
+      EntityRuntimeModel<?> model = model(provider, entry);
+      LoadedEntity loaded = new LoadedEntity(entry);
+      LoadedEntity sameMetadata = byMetadata.putIfAbsent(model.entity(), loaded);
+      if (sameMetadata != null) {
+        throw duplicateModel(
+            "canonical entity metadata for '" + model.entity().entityName() + "'",
+            sameMetadata,
+            loaded);
       }
+      LoadedEntity sameJavaType = byJavaType.putIfAbsent(model.entity().javaType(), loaded);
+      if (sameJavaType != null) {
+        throw duplicateModel(
+            "entity Java type '" + model.entity().javaType().getTypeName() + "'",
+            sameJavaType,
+            loaded);
+      }
+      models.add(model);
     }
     try {
       return EntityRuntimeRegistry.of(models);
@@ -62,133 +54,80 @@ final class EntityRuntimeModelLoader {
     }
   }
 
-  private static Set<String> readProviderNames(ClassLoader classLoader) {
-    Set<String> providerNames = new TreeSet<>();
+  private static EntityRuntimeModel<?> model(
+      EntityRuntimeModelProvider provider, GeneratedIndexReader.Entry entry) {
     try {
-      Enumeration<URL> resources = classLoader.getResources(INDEX_PATH);
-      while (resources.hasMoreElements()) {
-        URL resource = resources.nextElement();
-        readIndex(resource, providerNames);
+      EntityRuntimeModel<?> model = provider.model();
+      if (model == null) {
+        throw new SkisConfigurationException(
+            "generated entity provider " + entry.description() + " returned a null runtime model");
       }
-      return providerNames;
-    } catch (IOException failure) {
+      return model;
+    } catch (SkisConfigurationException failure) {
+      throw failure;
+    } catch (RuntimeException failure) {
       throw new SkisConfigurationException(
-          "cannot enumerate generated entity indexes at " + INDEX_PATH, failure);
-    }
-  }
-
-  private static void readIndex(URL resource, Set<String> providerNames) {
-    boolean abiSeen = false;
-    try {
-      URLConnection connection = resource.openConnection();
-      connection.setUseCaches(false);
-      try (BufferedReader reader =
-          new BufferedReader(
-              new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
-        String line;
-        int lineNumber = 0;
-        while ((line = reader.readLine()) != null) {
-          lineNumber++;
-          String entry = line.strip();
-          if (entry.isEmpty()) {
-            continue;
-          }
-          if (entry.startsWith("#")) {
-            if (entry.startsWith(ABI_PREFIX)) {
-              requireAbi(resource, lineNumber, entry.substring(ABI_PREFIX.length()));
-              abiSeen = true;
-            }
-            continue;
-          }
-          if (!isBinaryName(entry)) {
-            throw new SkisConfigurationException(
-                "invalid generated provider name '"
-                    + entry
-                    + "' at "
-                    + resource
-                    + ":"
-                    + lineNumber);
-          }
-          providerNames.add(entry);
-        }
-      }
-    } catch (IOException failure) {
+          "generated entity provider "
+              + entry.description()
+              + " failed to supply its runtime model",
+          failure);
+    } catch (LinkageError failure) {
       throw new SkisConfigurationException(
-          "cannot read generated entity index " + resource, failure);
-    }
-    if (!abiSeen) {
-      throw new SkisConfigurationException(
-          "generated entity index " + resource + " does not declare its generated-model ABI");
-    }
-  }
-
-  private static void requireAbi(URL resource, int lineNumber, String value) {
-    try {
-      GeneratedModelAbi.requireCompatible(Integer.parseInt(value));
-    } catch (NumberFormatException failure) {
-      throw new SkisConfigurationException(
-          "invalid generated-model ABI '" + value + "' at " + resource + ":" + lineNumber, failure);
-    } catch (IncompatibleClassChangeError failure) {
-      throw new SkisConfigurationException(
-          "incompatible generated-model ABI '" + value + "' at " + resource + ":" + lineNumber,
+          "generated entity provider "
+              + entry.description()
+              + " is not link-compatible with this runtime",
           failure);
     }
   }
 
+  private static SkisConfigurationException duplicateModel(
+      String duplicate, LoadedEntity first, LoadedEntity second) {
+    return new SkisConfigurationException(
+        "generated entity providers "
+            + first.entry().description()
+            + " and "
+            + second.entry().description()
+            + " both supply "
+            + duplicate);
+  }
+
   private static EntityRuntimeModelProvider loadProvider(
-      ClassLoader classLoader, String providerName) {
+      ClassLoader classLoader, GeneratedIndexReader.Entry entry) {
+    String providerName = entry.providerName();
     try {
       Class<?> providerType = Class.forName(providerName, true, classLoader);
       if (!EntityRuntimeModelProvider.class.isAssignableFrom(providerType)) {
         throw new SkisConfigurationException(
-            "generated provider '"
-                + providerName
-                + "' does not implement "
+            "generated provider "
+                + entry.description()
+                + " does not implement "
                 + EntityRuntimeModelProvider.class.getName());
       }
       Object provider = providerType.getConstructor().newInstance();
       return (EntityRuntimeModelProvider) provider;
     } catch (ClassNotFoundException failure) {
       throw new SkisConfigurationException(
-          "generated entity provider '" + providerName + "' is missing", failure);
+          "generated entity provider " + entry.description() + " is missing", failure);
     } catch (NoSuchMethodException failure) {
       throw new SkisConfigurationException(
-          "generated entity provider '" + providerName + "' has no public no-arg constructor",
+          "generated entity provider " + entry.description() + " has no public no-arg constructor",
           failure);
     } catch (InstantiationException | IllegalAccessException failure) {
       throw new SkisConfigurationException(
-          "cannot instantiate generated entity provider '" + providerName + "'", failure);
+          "cannot instantiate generated entity provider " + entry.description(), failure);
     } catch (InvocationTargetException failure) {
       Throwable cause = failure.getCause() == null ? failure : failure.getCause();
       throw new SkisConfigurationException(
-          "generated entity provider '" + providerName + "' failed during initialization", cause);
+          "generated entity provider " + entry.description() + " failed during initialization",
+          cause);
     } catch (LinkageError failure) {
       throw new SkisConfigurationException(
-          "generated entity provider '"
-              + providerName
-              + "' is not link-compatible with this runtime",
+          "generated entity provider "
+              + entry.description()
+              + " is not link-compatible with this runtime",
           failure);
     }
   }
 
-  private static boolean isBinaryName(String value) {
-    if (value.isEmpty()) {
-      return false;
-    }
-    int segmentStart = 0;
-    for (int index = 0; index <= value.length(); index++) {
-      if (index == value.length() || value.charAt(index) == '.') {
-        if (index == segmentStart || !Character.isJavaIdentifierStart(value.charAt(segmentStart))) {
-          return false;
-        }
-        for (int character = segmentStart + 1; character < index; character++) {
-          if (!Character.isJavaIdentifierPart(value.charAt(character))) {
-            return false;
-          }
-        }
-        segmentStart = index + 1;
-      }
-    }
-    return true;
-  }
+  private record LoadedEntity(GeneratedIndexReader.Entry entry) {}
 }

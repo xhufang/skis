@@ -33,7 +33,9 @@ final class ProjectionGenerator {
     source
         .append("@javax.annotation.processing.Generated(\n")
         .append("    value = \"io.skis.processor.SkisProjectionProcessor\",\n")
-        .append("    comments = \"Projection ABI 2\")\n");
+        .append("    comments = \"Projection ABI ")
+        .append(SourceText.GENERATED_ABI)
+        .append("\")\n");
     source
         .append("public final class ")
         .append(className)
