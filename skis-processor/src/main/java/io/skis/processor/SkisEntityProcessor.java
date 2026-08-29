@@ -110,6 +110,18 @@ public final class SkisEntityProcessor extends AbstractProcessor {
       deferredProblems.put(entityName, new DeferredProblem("SKIS097", deferred.getMessage()));
       return ProcessingResult.DEFERRED;
     } catch (EntityScanException failure) {
+      if (LombokShapeDetector.isPresent(type)
+          && LombokShapeDetector.mayAffectEntityShape(failure.code())) {
+        deferredProblems.put(
+            entityName,
+            new DeferredProblem(
+                "SKIS038",
+                "the Lombok-backed entity has not reached a supported Simple Entity shape; last structural diagnostic was ["
+                    + failure.code()
+                    + "] "
+                    + failure.getMessage()));
+        return ProcessingResult.DEFERRED;
+      }
       error(failure.code(), failure.getMessage(), failure.element());
       return ProcessingResult.FAILED;
     } catch (IOException exception) {
@@ -135,7 +147,8 @@ public final class SkisEntityProcessor extends AbstractProcessor {
               + resolution;
       TypeElement type = processingEnv.getElementUtils().getTypeElement(entityName);
       if (type == null) {
-        messager.printMessage(Diagnostic.Kind.ERROR, "[" + problem.code() + "] " + message);
+        messager.printMessage(
+            Diagnostic.Kind.ERROR, DiagnosticGuidance.format(problem.code(), message));
       } else {
         error(problem.code(), message, type);
       }
@@ -146,7 +159,7 @@ public final class SkisEntityProcessor extends AbstractProcessor {
   }
 
   private void error(String code, String message, Element element) {
-    messager.printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message, element);
+    messager.printMessage(Diagnostic.Kind.ERROR, DiagnosticGuidance.format(code, message), element);
   }
 
   private enum ProcessingResult {

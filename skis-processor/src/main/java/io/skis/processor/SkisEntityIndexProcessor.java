@@ -70,7 +70,9 @@ public final class SkisEntityIndexProcessor extends AbstractProcessor {
       processingEnv
           .getMessager()
           .printMessage(
-              Diagnostic.Kind.ERROR, "[SKIS098] cannot generate " + INDEX_PATH + ": " + exception);
+              Diagnostic.Kind.ERROR,
+              DiagnosticGuidance.format(
+                  "SKIS098", "cannot generate " + INDEX_PATH + ": " + exception));
     }
   }
 }

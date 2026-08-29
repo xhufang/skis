@@ -11,6 +11,13 @@ import java.lang.annotation.Target;
  *
  * <p>SKIS reads this annotation during annotation processing. Runtime code uses the generated
  * entity metadata instead of scanning the annotation.
+ *
+ * <p>A Simple Entity is a top-level public record or a top-level public concrete Bean without type
+ * parameters or entity inheritance. A Bean exposes a public no-argument constructor and public
+ * read/write accessors (or writable public fields) for its persistent properties. Lombok may
+ * generate the required mutable Bean shape when it is active as an annotation processor;
+ * immutable, builder-only, and all-arguments-only Bean shapes such as Lombok {@code @Value} are
+ * not supported. Records remain supported through their canonical constructor.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.SkisConfigurationException;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
@@ -37,6 +38,16 @@ class ProjectionModelLoaderTest {
             Projection.ValueReader<Long> id = readers.reader(0, ID);
             return (resultSet, context) -> new PetSummary(id.read(resultSet, context));
           });
+  private static final Projection<Pet, PetSummary> DUPLICATE_PROJECTION =
+      Projection.generated(
+          PetSummary.class,
+          PET,
+          Projection.mapping(DuplicateResultProvider.class),
+          List.of(ID),
+          readers -> {
+            Projection.ValueReader<Long> id = readers.reader(0, ID);
+            return (resultSet, context) -> new PetSummary(id.read(resultSet, context));
+          });
 
   @TempDir Path temporaryDirectory;
 
@@ -60,7 +71,7 @@ class ProjectionModelLoaderTest {
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
       assertThrows(
-          io.skis.core.SkisConfigurationException.class,
+          SkisConfigurationException.class,
           () -> ProjectionModelLoader.load(classLoader));
     }
   }
@@ -73,7 +84,7 @@ class ProjectionModelLoaderTest {
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
       var failure =
           assertThrows(
-              io.skis.core.SkisConfigurationException.class,
+              SkisConfigurationException.class,
               () -> ProjectionModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains(NullProvider.class.getName()));
@@ -81,10 +92,75 @@ class ProjectionModelLoaderTest {
     }
   }
 
+  @Test
+  void reportsAnIncompatibleProjectionIndexAbi() throws Exception {
+    writeIndex("# skis-generated-abi=1\n" + TestProvider.class.getName() + "\n");
+    try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
+      var failure =
+          assertThrows(
+              SkisConfigurationException.class, () -> ProjectionModelLoader.load(classLoader));
+
+      assertTrue(failure.getMessage().contains("incompatible generated-model ABI '1'"));
+      assertTrue(failure.getMessage().contains("projection index"));
+    }
+  }
+
+  @Test
+  void rejectsTheSameProjectionProviderDeclaredByTwoModuleIndexes() throws Exception {
+    Path firstModule = temporaryDirectory.resolve("first-module");
+    Path secondModule = temporaryDirectory.resolve("second-module");
+    String content = "# skis-generated-abi=3\n" + TestProvider.class.getName() + "\n";
+    writeIndex(firstModule, content);
+    writeIndex(secondModule, content);
+
+    try (URLClassLoader classLoader = classLoader(secondModule, firstModule)) {
+      var failure =
+          assertThrows(
+              SkisConfigurationException.class, () -> ProjectionModelLoader.load(classLoader));
+
+      assertTrue(failure.getMessage().contains("duplicate generated projection provider"));
+      assertTrue(failure.getMessage().contains("first-module"), failure.getMessage());
+      assertTrue(failure.getMessage().contains("second-module"), failure.getMessage());
+    }
+  }
+
+  @Test
+  void reportsBothProvidersThatSupplyTheSameProjectionResultType() throws Exception {
+    writeIndex(
+        "# skis-generated-abi=3\n"
+            + TestProvider.class.getName()
+            + "\n"
+            + DuplicateResultProvider.class.getName()
+            + "\n");
+
+    try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
+      var failure =
+          assertThrows(
+              SkisConfigurationException.class, () -> ProjectionModelLoader.load(classLoader));
+
+      assertTrue(failure.getMessage().contains(TestProvider.class.getName()));
+      assertTrue(failure.getMessage().contains(DuplicateResultProvider.class.getName()));
+      assertTrue(failure.getMessage().contains(PetSummary.class.getName()));
+      assertTrue(failure.getMessage().contains("both supply projection result type"));
+    }
+  }
+
   private void writeIndex(String content) throws Exception {
-    Path index = temporaryDirectory.resolve(ProjectionModelLoader.INDEX_PATH);
+    writeIndex(temporaryDirectory, content);
+  }
+
+  private static void writeIndex(Path root, String content) throws Exception {
+    Path index = root.resolve(ProjectionModelLoader.INDEX_PATH);
     Files.createDirectories(index.getParent());
     Files.writeString(index, content, StandardCharsets.UTF_8);
+  }
+
+  private URLClassLoader classLoader(Path... roots) throws Exception {
+    java.net.URL[] urls = new java.net.URL[roots.length];
+    for (int index = 0; index < roots.length; index++) {
+      urls[index] = roots[index].toUri().toURL();
+    }
+    return new URLClassLoader(urls, getClass().getClassLoader());
   }
 
   public static final class TestProvider implements ProjectionProvider {
@@ -104,6 +180,16 @@ class ProjectionModelLoaderTest {
     @Override
     public Projection<?, ?> projection() {
       return null;
+    }
+  }
+
+  public static final class DuplicateResultProvider implements ProjectionProvider {
+
+    public DuplicateResultProvider() {}
+
+    @Override
+    public Projection<Pet, PetSummary> projection() {
+      return DUPLICATE_PROJECTION;
     }
   }
 

@@ -100,6 +100,13 @@ public record Pet(
 SKIS 0.1 supports one application-assigned primary-key property. A nullable Java `@Version` value
 means “initialize the inserted row at version zero”; the database column itself must be non-null.
 
+A Simple Entity can instead be a top-level public concrete Bean. Beans require a public no-argument
+constructor and public getter/setter or fluent access for every persistent property; writable public
+fields are also supported. Mapping annotations on a field and its getter are merged, with conflicting
+`@Column` values rejected at compile time. Lombok-generated accessors and a no-argument constructor
+are supported when Lombok is active on the annotation-processor path. Immutable `@Value`,
+builder-only, inherited, and all-arguments-only entity shapes are intentionally deferred.
+
 ## 3. Create the schema
 
 SKIS 0.1 does not create or migrate schemas. For H2, the matching table is:
@@ -179,7 +186,18 @@ PetSummary summary =
 Projection properties must match mapped entity properties by name and compatible Java type, unless
 `@ProjectionProperty` explicitly selects a different property.
 
-## 8. Know the 0.1 boundary
+## 8. Diagnose annotation-processing failures
+
+Entity and projection declaration failures use stable `SKISxxx` codes and include a short `Fix:`
+hint at the relevant source element. The [annotation-processing error guide](apt-error-codes.md)
+contains the cause, invalid and valid examples, and complete repair steps for every stable code.
+
+Runtime assembly also validates every generated entity/projection index. If two dependency modules
+declare the same Provider, entity Java type, or projection result type, the configuration exception
+identifies both index URLs and line numbers. Do not discard one index entry while shading; rebuild
+the owning modules so each generated model has one Provider.
+
+## 9. Know the 0.1 boundary
 
 Queries are currently limited to one table and at most one non-null equality predicate. There is no
 join, association mapping, generated-key retrieval, composite ID, sorting, pagination, native SQL

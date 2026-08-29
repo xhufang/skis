@@ -40,7 +40,7 @@ final class ProjectionModelScanner {
     this.entityScanner = new EntityModelScanner(elements, types);
   }
 
-  ProjectionModel scan(TypeElement type)
+  ProjectionModel scan(TypeElement type, boolean deferLombokSettlement)
       throws ProjectionScanException, ProjectionScanDeferredException {
     if (type.getAnnotation(SkisProjection.class) == null) {
       throw failure("SKIS201", "a projection type must be annotated with @SkisProjection", type);
@@ -64,6 +64,10 @@ final class ProjectionModelScanner {
     if (packageName.isEmpty()) {
       throw failure("SKIS206", "a projection must declare a package", type);
     }
+    if (deferLombokSettlement && LombokShapeDetector.isPresent(type)) {
+      throw new ProjectionScanDeferredException(
+          "Lombok may still be changing the projection constructor shape");
+    }
     ExecutableElement constructor = selectConstructor(type);
     if (!constructor.getModifiers().contains(Modifier.PUBLIC)) {
       throw failure("SKIS207", "the selected projection constructor must be public", constructor);
@@ -85,7 +89,7 @@ final class ProjectionModelScanner {
           "SKIS210", "a projection constructor must not declare thrown types", constructor);
     }
     String generatedPackage = packageName + ".skis";
-    EntityModel entity = scanEntity(type);
+    EntityModel entity = scanEntity(type, deferLombokSettlement);
     List<ProjectionModel.ProjectionParameter> parameters =
         new ArrayList<>(constructor.getParameters().size());
     for (VariableElement parameter : constructor.getParameters()) {
@@ -147,7 +151,7 @@ final class ProjectionModelScanner {
         parameters);
   }
 
-  private EntityModel scanEntity(TypeElement projection)
+  private EntityModel scanEntity(TypeElement projection, boolean deferLombokSettlement)
       throws ProjectionScanException, ProjectionScanDeferredException {
     TypeMirror entityType = projectionEntityType(projection);
     if (containsUnresolvedType(entityType)) {
@@ -158,6 +162,10 @@ final class ProjectionModelScanner {
       throw failure(
           "SKIS219", "@SkisProjection entity must name a declared entity type", projection);
     }
+    if (deferLombokSettlement && LombokShapeDetector.isPresent(entity)) {
+      throw new ProjectionScanDeferredException(
+          "Lombok may still be changing projection entity '" + entity.getQualifiedName() + "'");
+    }
     try {
       return entityScanner.scan(entity);
     } catch (EntityScanDeferredException deferred) {
@@ -167,6 +175,16 @@ final class ProjectionModelScanner {
               + "' is not resolved: "
               + deferred.getMessage());
     } catch (EntityScanException failure) {
+      if (LombokShapeDetector.isPresent(entity)
+          && LombokShapeDetector.mayAffectEntityShape(failure.code())) {
+        throw new ProjectionScanDeferredException(
+            "Lombok-backed projection entity '"
+                + entity.getQualifiedName()
+                + "' has not reached a supported Simple Entity shape; last structural diagnostic was ["
+                + failure.code()
+                + "] "
+                + failure.getMessage());
+      }
       throw new ProjectionScanException(
           "SKIS220",
           "invalid projection entity '"

@@ -70,7 +70,9 @@ public final class SkisProjectionIndexProcessor extends AbstractProcessor {
       processingEnv
           .getMessager()
           .printMessage(
-              Diagnostic.Kind.ERROR, "[SKIS298] cannot generate " + INDEX_PATH + ": " + exception);
+              Diagnostic.Kind.ERROR,
+              DiagnosticGuidance.format(
+                  "SKIS298", "cannot generate " + INDEX_PATH + ": " + exception));
     }
   }
 }

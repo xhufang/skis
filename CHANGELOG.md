@@ -9,12 +9,18 @@
 - 新增统一的真实 PostgreSQL `findById` JMH 基准，对比手写 JDBC、SKIS、Jimmer、MyBatis、
   MyBatis-Flex、MyBatis-Plus 和 jOOQ，并保存平均耗时、分配量及 GC 数据报告。
 - 添加 benchmark 数据库环境变量、运行命令、比较框架版本和公平性边界说明；凭据不写入仓库。
+- 新增完整的 `SKISxxx` APT 错误指南，为每个稳定错误码提供原因、错误/正确示例、修复步骤和首次公开版本。
+- 添加真实 Lombok 处理器协作、最终轮失败、全量生成源码字节稳定性及跨模块实体/投影索引冲突回归测试。
 
 ### Changed
 
 - 将 `skis-benchmark` 重构为各框架独立模型/数据访问模块与共享 runner，所有实现使用相同数据表、
   选择列、对象形状、连接池和 JMH 参数，且不计入 Spring Boot 启动及代理成本。
 - 将全部 benchmark 子模块排除出公共 API 兼容基线和 Maven Central 发布组件校验，继续只作为仓库内部性能工程模块。
+- 收口 Simple Entity 的稳定属性顺序：record component 按声明顺序，Bean 先按 field 声明顺序、再按
+  getter-only 属性声明顺序生成 Meta、Table、Binder、RowDecoder 和 RuntimeModel。
+- 实体和投影处理器统一等待 Lombok 完成类型结构变换；最终仍未形成受支持可变 Bean 结构时保留最后一个结构诊断并报告
+  `SKIS038`/`SKIS217`，处理器主代码继续不依赖 Lombok API。
 
 ### Fixed
 
@@ -24,6 +30,9 @@
   ResultSet 和 Connection 异常路径中确定关闭资源，并保留后续失败为 suppressed exception。
 - 移除 `findById` 和 mutation Fast Path 运行时错误消息中的 `0.0.6`、`0.0.7`
   历史实现版本提示，改为稳定的能力约束说明。
+- 修复投影生成源码仍标记旧 `Projection ABI 2` 的问题，统一使用当前生成 ABI。
+- 修复多个依赖索引声明同一 Provider 时被集合静默去重的问题；实体和投影索引现在保留 URL/行号来源，并明确拒绝
+  重复 Provider、重复实体 Java 类型、重复投影结果类型以及缺失、重复或不兼容 ABI。
 
 ## [0.1.0] - 2026-08-26
 
