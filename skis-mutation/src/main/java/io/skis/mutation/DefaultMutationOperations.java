@@ -90,8 +90,19 @@ final class DefaultMutationOperations implements MutationOperations {
     try {
       return work.execute();
     } catch (JdbcExecutionException failure) {
-      throw new MutationException(
-          "failed to " + operation + " entity '" + entity.entityName() + "'", failure);
+      MutationException translated =
+          new MutationException(
+              "failed to "
+                  + operation
+                  + " entity '"
+                  + entity.entityName()
+                  + "'; "
+                  + failure.getMessage(),
+              Objects.requireNonNull(failure.getCause(), "JDBC failure cause"));
+      for (Throwable suppressed : failure.getSuppressed()) {
+        translated.addSuppressed(suppressed);
+      }
+      throw translated;
     }
   }
 

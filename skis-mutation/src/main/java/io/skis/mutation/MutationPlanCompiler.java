@@ -51,10 +51,10 @@ final class MutationPlanCompiler {
                             + "' has no generated mutation binders; regenerate it with ABI 3"));
     PropertyMeta<E, ?> id = requireSinglePrimaryKey(entity);
     RuntimeMutationTable<E> table = new RuntimeMutationTable<>(entity);
-    @Nullable CompiledMutationPlan<E> insert = compileInsert(entity, table, binders);
-    @Nullable CompiledMutationPlan<E> uncheckedUpdate =
+    CompiledMutationPlan<E> insert = compileInsert(entity, table, binders);
+    CompiledMutationPlan<E> uncheckedUpdate =
         compileUpdate(entity, table, id, binders.updateByIdUnchecked(), false);
-    @Nullable CompiledMutationPlan<E> checkedUpdate =
+    CompiledMutationPlan<E> checkedUpdate =
         entity.version().isEmpty()
             ? uncheckedUpdate
             : compileUpdate(entity, table, id, binders.updateById(), true);
@@ -73,8 +73,7 @@ final class MutationPlanCompiler {
     List<SqlExpression<?>> values = new ArrayList<>(properties.size());
     List<ParameterSlot<?>> expectedParameters = new ArrayList<>(properties.size());
     for (int index = 0; index < properties.size(); index++) {
-      addInsertProperty(
-          table, properties.get(index), index, columns, values, expectedParameters);
+      addInsertProperty(table, properties.get(index), index, columns, values, expectedParameters);
     }
     RenderedSql rendered = dialect.renderer().render(new InsertStatement(table, columns, values));
     requireParameterShape(entity, "insert", rendered, expectedParameters);
@@ -99,8 +98,7 @@ final class MutationPlanCompiler {
     List<ParameterSlot<?>> expectedParameters = new ArrayList<>();
     int parameterOrdinal = 0;
     for (PropertyMeta<E, ?> property : updateProperties) {
-      assignments.add(
-          parameterAssignment(table, property, parameterOrdinal++, expectedParameters));
+      assignments.add(parameterAssignment(table, property, parameterOrdinal++, expectedParameters));
     }
     entity
         .version()
@@ -113,8 +111,7 @@ final class MutationPlanCompiler {
     predicates.add(equalityPredicate(table, id, parameterOrdinal++, expectedParameters));
     if (versionChecked) {
       PropertyMeta<E, ?> version = entity.version().orElseThrow().property();
-      predicates.add(
-          equalityPredicate(table, version, parameterOrdinal++, expectedParameters));
+      predicates.add(equalityPredicate(table, version, parameterOrdinal++, expectedParameters));
     }
     SqlPredicate where =
         predicates.size() == 1 ? predicates.getFirst() : LogicalPredicate.and(predicates);
@@ -131,8 +128,7 @@ final class MutationPlanCompiler {
         dialect
             .renderer()
             .render(
-                new DeleteStatement(
-                    table, equalityPredicate(table, id, 0, expectedParameters)));
+                new DeleteStatement(table, equalityPredicate(table, id, 0, expectedParameters)));
     requireParameterShape(model.entity(), "deleteById", rendered, expectedParameters);
     PropertyRuntime<E, ?> idRuntime = model.property(id);
     return new CompiledMutationPlan<>(
@@ -181,8 +177,7 @@ final class MutationPlanCompiler {
       PropertyMeta<E, V> property,
       int parameterOrdinal,
       List<ParameterSlot<?>> expectedParameters) {
-    ParameterSlot<V> parameter =
-        new ParameterSlot<>(parameterOrdinal, property.javaType(), false);
+    ParameterSlot<V> parameter = new ParameterSlot<>(parameterOrdinal, property.javaType(), false);
     expectedParameters.add(parameter);
     return table.expression(property).eq(parameter);
   }
@@ -198,7 +193,7 @@ final class MutationPlanCompiler {
             .properties();
     if (keys.size() != 1) {
       throw new MutationException(
-          "0.0.7 mutation Fast Paths require one primary-key property for entity '"
+          "mutation Fast Paths require exactly one primary-key property for entity '"
               + entity.entityName()
               + "'");
     }

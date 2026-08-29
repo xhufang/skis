@@ -104,8 +104,9 @@ public final class JdbcExecutor {
     Objects.requireNonNull(executionContext, "executionContext");
     return withConnection(
         executionContext,
-        failure ->
-            JdbcExecutionException.from(plan.operation(), plan.dialectId(), plan.sql(), failure),
+        (phase, failure) ->
+            JdbcExecutionException.from(
+                plan.operation(), phase, plan.dialectId(), plan.sql(), failure),
         connection -> {
           try (PreparedStatement statement =
               prepare(
@@ -158,40 +159,45 @@ public final class JdbcExecutor {
       CompiledQueryPlan<?, P> plan, ExecutionContext executionContext, SqlWork<R> work) {
     return withConnection(
         executionContext,
-        failure -> QueryExecutionException.from(plan.dialectId(), plan.sql(), failure),
+        (phase, failure) ->
+            QueryExecutionException.from(phase, plan.dialectId(), plan.sql(), failure),
         work);
   }
 
   private <R> R withConnection(
       ExecutionContext executionContext, SqlFailureTranslator failureTranslator, SqlWork<R> work) {
-    Connection connection = null;
-    Throwable pendingFailure = null;
+    Connection connection;
     try {
       connection = connectionProvider.acquire(executionContext);
+    } catch (SQLException failure) {
+      throw failureTranslator.translate(JdbcFailureDiagnostics.Phase.ACQUIRE, failure);
+    }
+
+    Throwable pendingFailure = null;
+    try {
       return work.execute(connection);
     } catch (SQLException failure) {
-      RuntimeException translated = failureTranslator.translate(failure);
+      RuntimeException translated =
+          failureTranslator.translate(JdbcFailureDiagnostics.Phase.EXECUTE, failure);
       pendingFailure = translated;
       throw translated;
     } catch (RuntimeException | Error failure) {
       pendingFailure = failure;
       throw failure;
     } finally {
-      if (connection != null) {
-        try {
-          connectionProvider.release(connection, executionContext);
-        } catch (SQLException releaseFailure) {
-          if (pendingFailure != null) {
-            pendingFailure.addSuppressed(releaseFailure);
-          } else {
-            throw failureTranslator.translate(releaseFailure);
-          }
-        } catch (RuntimeException | Error releaseFailure) {
-          if (pendingFailure != null) {
-            pendingFailure.addSuppressed(releaseFailure);
-          } else {
-            throw releaseFailure;
-          }
+      try {
+        connectionProvider.release(connection, executionContext);
+      } catch (SQLException releaseFailure) {
+        if (pendingFailure != null) {
+          pendingFailure.addSuppressed(releaseFailure);
+        } else {
+          throw failureTranslator.translate(JdbcFailureDiagnostics.Phase.RELEASE, releaseFailure);
+        }
+      } catch (RuntimeException | Error releaseFailure) {
+        if (pendingFailure != null) {
+          pendingFailure.addSuppressed(releaseFailure);
+        } else {
+          throw releaseFailure;
         }
       }
     }
@@ -204,6 +210,6 @@ public final class JdbcExecutor {
 
   @FunctionalInterface
   private interface SqlFailureTranslator {
-    RuntimeException translate(SQLException failure);
+    RuntimeException translate(JdbcFailureDiagnostics.Phase phase, SQLException failure);
   }
 }

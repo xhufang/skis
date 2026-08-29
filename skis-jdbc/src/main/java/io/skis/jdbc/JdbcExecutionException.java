@@ -16,38 +16,30 @@ public final class JdbcExecutionException extends SkisException {
   private final @Nullable String sqlState;
   private final int vendorCode;
 
-  private JdbcExecutionException(
-      String message,
-      SQLException cause,
-      String operation,
-      String dialectId,
-      String sqlFingerprint) {
-    super(message, cause);
-    this.operation = operation;
-    this.dialectId = dialectId;
-    this.sqlFingerprint = sqlFingerprint;
-    this.sqlState = cause.getSQLState();
-    this.vendorCode = cause.getErrorCode();
+  private JdbcExecutionException(JdbcFailureDiagnostics diagnostics, SQLException cause) {
+    super(diagnostics.message(), cause);
+    this.operation = diagnostics.operation();
+    this.dialectId = diagnostics.dialectId();
+    this.sqlFingerprint = diagnostics.sqlFingerprint();
+    this.sqlState = diagnostics.sqlState();
+    this.vendorCode = diagnostics.vendorCode();
   }
 
   /** Translates a driver failure using structural statement diagnostics only. */
   public static JdbcExecutionException from(
       String operation, String dialectId, String sql, SQLException cause) {
-    String fingerprint = QueryExecutionException.fingerprint(sql);
-    String state = cause.getSQLState();
-    String message =
-        "JDBC "
-            + operation
-            + " failed [dialect="
-            + dialectId
-            + ", sqlFingerprint="
-            + fingerprint
-            + ", sqlState="
-            + (state == null || state.isBlank() ? "unknown" : state)
-            + ", vendorCode="
-            + cause.getErrorCode()
-            + "]";
-    return new JdbcExecutionException(message, cause, operation, dialectId, fingerprint);
+    return from(operation, JdbcFailureDiagnostics.Phase.EXECUTE, dialectId, sql, cause);
+  }
+
+  static JdbcExecutionException from(
+      String operation,
+      JdbcFailureDiagnostics.Phase phase,
+      String dialectId,
+      String sql,
+      SQLException cause) {
+    JdbcFailureDiagnostics diagnostics =
+        JdbcFailureDiagnostics.from(operation, phase, dialectId, sql, cause);
+    return new JdbcExecutionException(diagnostics, cause);
   }
 
   public String operation() {
