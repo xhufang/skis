@@ -4,7 +4,7 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.1.3-SNAPSHOT</version>
+    <version>0.1.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-integration-tests</artifactId>
@@ -21,6 +21,11 @@
     <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-mutation</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-mapping</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>

@@ -6,6 +6,13 @@
 
 ### Added
 
+- 新增 PostgreSQL 16/pgJDBC 42.7.11 与 H2 2.4.240 的完整 JDBC 类型合同测试，通过 APT
+  生成的 Binder/RowDecoder 覆盖 primitive/包装类型、null、数值边界、字符、`byte[]`、UUID、
+  Java Time 和传统 `java.sql` 时间类型。
+- 新增 PostgreSQL/H2 Java-JDBC-数据库类型映射矩阵，明确 nullability、数值精度、时间及时区语义、
+  JSON/JSONB 文本边界和延期类型。
+- 新增 PostgreSQL `JSON`/`JSONB` 真实数据库文本 Codec 合同，覆盖参数化写入、null、数据库语法校验和
+  JSONB 文本规范化。
 - 新增统一的真实 PostgreSQL `findById` JMH 基准，对比手写 JDBC、SKIS、Jimmer、MyBatis、
   MyBatis-Flex、MyBatis-Plus 和 jOOQ，并保存平均耗时、分配量及 GC 数据报告。
 - 添加 benchmark 数据库环境变量、运行命令、比较框架版本和公平性边界说明；凭据不写入仓库。
@@ -14,6 +21,11 @@
 
 ### Changed
 
+- Java Time Codec 统一使用 JDBC 4.2 强类型 `getObject` 和原生 `setObject`，避免 `LocalDate`、
+  `LocalDateTime` 经 `java.sql` 中间类型产生默认时区转换；`Instant` 继续通过 UTC
+  `OffsetDateTime` 保持时间点语义。
+- APT 类型回归测试现在逐项校验 `JdbcValueKind`、生成式读写方法和 `JdbcCodecs` 常量的一致性，
+  并明确拒绝 enum 和除 primitive `byte[]` 外的数组。
 - 将 `skis-benchmark` 重构为各框架独立模型/数据访问模块与共享 runner，所有实现使用相同数据表、
   选择列、对象形状、连接池和 JMH 参数，且不计入 Spring Boot 启动及代理成本。
 - 将全部 benchmark 子模块排除出公共 API 兼容基线和 Maven Central 发布组件校验，继续只作为仓库内部性能工程模块。
@@ -24,6 +36,10 @@
 
 ### Fixed
 
+- 修复 PostgreSQL `OffsetTime` 使用 `Types.TIME_WITH_TIMEZONE` 强制绑定时与 pgJDBC 非空参数分派不一致的
+  问题；JSR-310 和 UUID 非空值现在交由驱动按运行时类型绑定，null 仍保留明确 JDBC 类型。
+- 补齐 `String`、`BigDecimal`、`byte[]` 及全部内置引用类型的 null 绑定回归验证，确保 generated
+  Fast Path 不把 SQL NULL 混同为 primitive 默认值。
 - 统一查询和 mutation 的 JDBC 失败诊断，保留执行阶段、方言、SQL 指纹、SQLState、
   vendor code 和原始 `SQLException`，且异常消息不记录 SQL 全文或参数值。
 - 区分 Connection 获取、JDBC 执行和 Connection 归还失败；在 PreparedStatement、

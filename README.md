@@ -13,7 +13,7 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - `findById`, single-table entity/scalar/generated-projection queries with one equality predicate;
 - generated `insert`, `updateById`, and `deleteById` operations;
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
-- PostgreSQL and H2 dialects.
+- PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
 ## Requirements
 
@@ -104,11 +104,13 @@ JDBC drivers are deliberately supplied and versioned by the application.
 Version 0.1 intentionally does not provide joins, associations, generated-key retrieval, composite
 IDs, sorting, pagination, streaming, native SQL entry points, schema migration, batch writes,
 upsert, graph writes, caching, multitenancy, or Spring Boot auto-configuration. Equality predicates
-accept one non-null value. Applications own DDL and assign identifiers before insert.
+accept one non-null value. Enum, LOB, custom converter, database array, and structured JSON object
+mappings are also deferred. Applications own DDL and assign identifiers before insert.
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
 - [0.1.0 release checklist](docs/release-checklist.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)

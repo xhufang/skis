@@ -165,9 +165,9 @@ reused for another meaning.
 ### SKIS022
 
 - Cause: a persistent property type has no built-in JDBC codec.
-- Invalid: `URI homepage` as a persistent property.
-- Valid: map the value to a supported `String` property in 0.1.
-- Fix: use a supported Java type; custom converter/codec registration is a later-version feature.
+- Invalid: `URI homepage`, an enum property, or an array other than primitive `byte[]`.
+- Valid: map the value to a type in the [JDBC type-mapping matrix](jdbc-type-mappings.md), such as `String` or primitive `byte[]`.
+- Fix: use a supported Java type; custom converter/codec registration remains outside the 0.1 scope.
 - First public version: `0.1.0`.
 
 ### SKIS023

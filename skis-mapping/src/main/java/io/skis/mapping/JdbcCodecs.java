@@ -19,7 +19,12 @@ import java.time.ZoneOffset;
 import java.util.UUID;
 import org.jspecify.annotations.Nullable;
 
-/** Built-in codecs and allocation-free static entry points used by generated code. */
+/**
+ * Built-in codecs and allocation-free static entry points used by generated code.
+ *
+ * <p>JSR-310 values use JDBC 4.2 native object mappings. Null binds retain an explicit JDBC type so
+ * drivers do not need to infer a type from a missing Java value.
+ */
 public final class JdbcCodecs {
 
   public static final JdbcTypeCodec<Boolean> BOOLEAN =
@@ -217,8 +222,8 @@ public final class JdbcCodecs {
 
   public static @Nullable LocalDate readLocalDate(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    Date value = resultSet.getDate(index);
-    return value == null ? null : value.toLocalDate();
+    LocalDate value = resultSet.getObject(index, LocalDate.class);
+    return resultSet.wasNull() ? null : value;
   }
 
   public static @Nullable LocalTime readLocalTime(
@@ -229,8 +234,8 @@ public final class JdbcCodecs {
 
   public static @Nullable LocalDateTime readLocalDateTime(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    Timestamp value = resultSet.getTimestamp(index);
-    return value == null ? null : value.toLocalDateTime();
+    LocalDateTime value = resultSet.getObject(index, LocalDateTime.class);
+    return resultSet.wasNull() ? null : value;
   }
 
   public static @Nullable OffsetTime readOffsetTime(
@@ -450,7 +455,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.OTHER);
     } else {
-      statement.setObject(index, value, Types.OTHER);
+      statement.setObject(index, value);
     }
   }
 
@@ -460,7 +465,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.TIMESTAMP_WITH_TIMEZONE);
     } else {
-      statement.setObject(index, value.atOffset(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE);
+      statement.setObject(index, value.atOffset(ZoneOffset.UTC));
     }
   }
 
@@ -470,7 +475,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.DATE);
     } else {
-      statement.setDate(index, Date.valueOf(value));
+      statement.setObject(index, value);
     }
   }
 
@@ -480,7 +485,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.TIME);
     } else {
-      statement.setObject(index, value, Types.TIME);
+      statement.setObject(index, value);
     }
   }
 
@@ -493,7 +498,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.TIMESTAMP);
     } else {
-      statement.setTimestamp(index, Timestamp.valueOf(value));
+      statement.setObject(index, value);
     }
   }
 
@@ -503,7 +508,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.TIME_WITH_TIMEZONE);
     } else {
-      statement.setObject(index, value, Types.TIME_WITH_TIMEZONE);
+      statement.setObject(index, value);
     }
   }
 
@@ -516,7 +521,7 @@ public final class JdbcCodecs {
     if (value == null) {
       statement.setNull(index, Types.TIMESTAMP_WITH_TIMEZONE);
     } else {
-      statement.setObject(index, value, Types.TIMESTAMP_WITH_TIMEZONE);
+      statement.setObject(index, value);
     }
   }
 

@@ -1173,6 +1173,7 @@ class SkisEntityProcessorTest {
             """
             package samples;
             import io.skis.annotations.*;
+            import java.math.BigDecimal;
             import java.math.BigInteger;
             import java.sql.Date;
             import java.sql.Time;
@@ -1187,9 +1188,25 @@ class SkisEntityProcessorTest {
             @SkisEntity
             public record StandardTypes(
                 @Id long id,
+                @Column(nullable = false) boolean booleanValue,
+                Boolean nullableBooleanValue,
+                @Column(nullable = false) byte byteValue,
+                Byte nullableByteValue,
+                @Column(nullable = false) short shortValue,
+                Short nullableShortValue,
+                @Column(nullable = false) int integerValue,
+                Integer nullableIntegerValue,
+                Long nullableLongValue,
+                @Column(nullable = false) float floatValue,
+                Float nullableFloatValue,
+                @Column(nullable = false) double doubleValue,
+                Double nullableDoubleValue,
                 @Column(nullable = false) char code,
                 Character optionalCode,
+                String stringValue,
                 BigInteger bigIntegerValue,
+                BigDecimal bigDecimalValue,
+                byte[] bytesValue,
                 UUID uuidValue,
                 Instant instantValue,
                 LocalDate localDateValue,
@@ -1210,11 +1227,29 @@ class SkisEntityProcessorTest {
     assertTrue(result.success(), result.diagnosticsText());
     String decoder = generatedSource(result, "StandardTypesRowDecoder.java");
     String binder = generatedSource(result, "StandardTypesBinder.java");
+    String runtimeModel = generatedSource(result, "StandardTypesRuntimeModel.java");
     for (String method :
         List.of(
+            "readLong",
+            "readBoolean",
+            "readNullableBoolean",
+            "readByte",
+            "readNullableByte",
+            "readShort",
+            "readNullableShort",
+            "readInt",
+            "readNullableInt",
+            "readNullableLong",
+            "readFloat",
+            "readNullableFloat",
+            "readDouble",
+            "readNullableDouble",
             "readChar",
             "readNullableChar",
+            "readString",
             "readBigInteger",
+            "readBigDecimal",
+            "readBytes",
             "readUuid",
             "readInstant",
             "readLocalDate",
@@ -1229,9 +1264,26 @@ class SkisEntityProcessorTest {
     }
     for (String method :
         List.of(
+            "bindLong",
+            "bindBoolean",
+            "bindNullableBoolean",
+            "bindByte",
+            "bindNullableByte",
+            "bindShort",
+            "bindNullableShort",
+            "bindInt",
+            "bindNullableInt",
+            "bindNullableLong",
+            "bindFloat",
+            "bindNullableFloat",
+            "bindDouble",
+            "bindNullableDouble",
             "bindChar",
             "bindNullableChar",
+            "bindString",
             "bindBigInteger",
+            "bindBigDecimal",
+            "bindBytes",
             "bindUuid",
             "bindInstant",
             "bindLocalDate",
@@ -1243,6 +1295,32 @@ class SkisEntityProcessorTest {
             "bindSqlTime",
             "bindSqlTimestamp")) {
       assertTrue(binder.contains("JdbcCodecs." + method + "("), binder);
+    }
+    for (String codec :
+        List.of(
+            "BOOLEAN",
+            "BYTE",
+            "SHORT",
+            "INTEGER",
+            "LONG",
+            "FLOAT",
+            "DOUBLE",
+            "CHARACTER",
+            "STRING",
+            "BIG_INTEGER",
+            "BIG_DECIMAL",
+            "BYTES",
+            "UUID",
+            "INSTANT",
+            "LOCAL_DATE",
+            "LOCAL_TIME",
+            "LOCAL_DATE_TIME",
+            "OFFSET_TIME",
+            "OFFSET_DATE_TIME",
+            "SQL_DATE",
+            "SQL_TIME",
+            "SQL_TIMESTAMP")) {
+      assertTrue(runtimeModel.contains("JdbcCodecs." + codec + ")"), runtimeModel);
     }
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -1258,6 +1336,31 @@ class SkisEntityProcessorTest {
         @SkisEntity
         public record Invalid(@Id Long id, Money amount) {}
         record Money(long cents) {}
+        """);
+  }
+
+  @Test
+  void rejectsArraysOtherThanPrimitiveBytes() throws Exception {
+    assertProcessingError(
+        "SKIS022",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public record Invalid(@Id Long id, String[] tags) {}
+        """);
+  }
+
+  @Test
+  void rejectsEnumsUntilAnExplicitEnumMappingExists() throws Exception {
+    assertProcessingError(
+        "SKIS022",
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity
+        public record Invalid(@Id Long id, Status status) {}
+        enum Status { ACTIVE, DISABLED }
         """);
   }
 

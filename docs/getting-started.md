@@ -197,7 +197,19 @@ declare the same Provider, entity Java type, or projection result type, the conf
 identifies both index URLs and line numbers. Do not discard one index entry while shading; rebuild
 the owning modules so each generated model has one Provider.
 
-## 9. Know the 0.1 boundary
+## 9. Choose compatible JDBC column types
+
+SKIS has built-in generated mappings for primitive and boxed scalar values, strings, exact numeric
+values, `byte[]`, UUID, Java time, and legacy `java.sql` date/time values. Applications still own
+DDL, including column precision and scale. See the
+[PostgreSQL and H2 JDBC type mapping matrix](jdbc-type-mappings.md) for concrete column types,
+nullability rules, numeric boundaries, and time-zone semantics.
+
+Enums, LOBs, custom converters, arrays other than primitive `byte[]`, and structured JSON object
+mapping are not part of 0.1. Unsupported persistent property types fail annotation processing with
+`SKIS022` instead of falling back to reflection or `ResultSet.getObject` guessing.
+
+## 10. Know the 0.1 boundary
 
 Queries are currently limited to one table and at most one non-null equality predicate. There is no
 join, association mapping, generated-key retrieval, composite ID, sorting, pagination, native SQL
