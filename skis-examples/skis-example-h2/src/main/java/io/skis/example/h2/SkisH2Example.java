@@ -8,6 +8,7 @@ import io.skis.runtime.SkisExecutorFactory;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.h2.jdbcx.JdbcDataSource;
 
 /** Minimal external-consumer-shaped example using only the public SKIS API. */
@@ -27,11 +28,16 @@ public final class SkisH2Example {
     List<Pet> selected = executor.selectFrom(pet).where(pet.name().eq("Mimi")).fetchList();
     Pet stored = selected.getFirst();
 
+    AtomicInteger committedChanges = new AtomicInteger();
     executor.inTransaction(
         session -> {
           session.updateById(PetMeta.ENTITY, new Pet(stored.id(), "Momo", stored.version()));
+          session.afterCommit(committedChanges::incrementAndGet);
           return null;
         });
+    if (committedChanges.get() != 1) {
+      throw new IllegalStateException("afterCommit must run once after a successful JDBC commit");
+    }
 
     executor.deleteById(PetMeta.ENTITY, stored.id());
   }

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.TransactionException;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.mutation.OptimisticLockException;
 import io.skis.runtime.SkisExecutor;
@@ -99,6 +100,34 @@ class SkisMutationTransactionTest {
 
     assertEquals(0, callbacks.get());
     assertFalse(executor.findById(PetMeta.ENTITY, 9L).isPresent());
+  }
+
+  @Test
+  void reportsAfterCommitFailureWithoutRollingBackTheCommittedTransaction() throws Exception {
+    DataSource dataSource = database();
+    SkisExecutor executor = SkisExecutorFactory.create(dataSource, H2Dialect.INSTANCE);
+    AtomicInteger callbacks = new AtomicInteger();
+    Pet pet = new Pet(10L, "Kiki", new BigDecimal("5.75"), false, 0L, "ignored");
+
+    TransactionException failure =
+        assertThrows(
+            TransactionException.class,
+            () ->
+                executor.inTransaction(
+                    session -> {
+                      session.insert(PetMeta.ENTITY, pet);
+                      session.afterCommit(
+                          () -> {
+                            callbacks.incrementAndGet();
+                            throw new IllegalStateException("publication failed");
+                          });
+                      session.afterCommit(callbacks::incrementAndGet);
+                      return null;
+                    }));
+
+    assertTrue(failure.getMessage().contains("transaction committed"));
+    assertEquals(2, callbacks.get());
+    assertTrue(executor.findById(PetMeta.ENTITY, 10L).isPresent());
   }
 
   private static DataSource database() throws Exception {

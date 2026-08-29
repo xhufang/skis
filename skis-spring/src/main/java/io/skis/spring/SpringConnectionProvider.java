@@ -8,7 +8,12 @@ import java.util.Objects;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 
-/** Connection provider that reuses Spring transaction-bound DataSource connections. */
+/**
+ * Connection provider that reuses Spring transaction-bound DataSource connections.
+ *
+ * <p>Transaction completion remains owned by Spring. This provider only participates in Spring's
+ * connection reference counting and never commits or rolls back an acquired connection.
+ */
 public final class SpringConnectionProvider implements ConnectionProvider {
 
   private final DataSource dataSource;
@@ -39,6 +44,6 @@ public final class SpringConnectionProvider implements ConnectionProvider {
   public void release(Connection connection, ExecutionContext context) throws SQLException {
     Objects.requireNonNull(connection, "connection");
     Objects.requireNonNull(context, "context");
-    DataSourceUtils.releaseConnection(connection, dataSource);
+    DataSourceUtils.doReleaseConnection(connection, dataSource);
   }
 }

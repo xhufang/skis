@@ -89,6 +89,12 @@ executor.deleteById(PetMeta.ENTITY, 1L);
 See the complete [plain Java + H2 example](skis-examples/skis-example-h2) for schema creation,
 annotation processing, typed queries, mutations, and transactions.
 
+For Spring Framework applications, add `skis-spring`, assemble the executor with
+`SpringConnectionProvider`, and use Spring `@Transactional` or `TransactionTemplate` boundaries.
+SKIS does not create a second transaction context. See
+[transaction management](docs/transaction-management.md) for both ownership models and failure
+semantics.
+
 ## Supported databases
 
 | Database | 0.1 status |
@@ -110,6 +116,7 @@ mappings are also deferred. Applications own DDL and assign identifiers before i
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Local JDBC and Spring transaction management](docs/transaction-management.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
 - [0.1.0 release checklist](docs/release-checklist.md)

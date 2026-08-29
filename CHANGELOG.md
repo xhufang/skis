@@ -6,6 +6,10 @@
 
 ### Added
 
+- 新增本地 JDBC 与 Spring 外部事务管理指南，覆盖手工装配、连接所有权、提交结果未知、
+  `afterCommit` 失败语义和禁止混用的事务入口；H2 示例同步展示提交后回调。
+- 新增事务故障注入和真实 Spring `JdbcTransactionManager` 回归测试，覆盖 auto-commit 恢复、
+  commit/rollback/release 叠加失败、事务绑定 Connection 复用以及 Spring 提交和回滚归属。
 - 新增 PostgreSQL 16/pgJDBC 42.7.11 与 H2 2.4.240 的完整 JDBC 类型合同测试，通过 APT
   生成的 Binder/RowDecoder 覆盖 primitive/包装类型、null、数值边界、字符、`byte[]`、UUID、
   Java Time 和传统 `java.sql` 时间类型。
@@ -21,6 +25,10 @@
 
 ### Changed
 
+- 本地事务内部状态现在明确区分已提交、已回滚、提交结果未知和回滚结果未知；仅在完成结果明确时恢复
+  原始 auto-commit，然后按固定顺序归还 Connection。
+- `SpringConnectionProvider` 继续完全委托 Spring 事务上下文，并通过可传播 `SQLException` 的
+  `DataSourceUtils.doReleaseConnection` 保留 Connection 释放失败诊断。
 - Java Time Codec 统一使用 JDBC 4.2 强类型 `getObject` 和原生 `setObject`，避免 `LocalDate`、
   `LocalDateTime` 经 `java.sql` 中间类型产生默认时区转换；`Instant` 继续通过 UTC
   `OffsetDateTime` 保持时间点语义。
@@ -36,6 +44,10 @@
 
 ### Fixed
 
+- `afterCommit` 回调现在在 JDBC commit 明确成功后先从 Session 分离并清空，再按注册顺序执行；
+  commit 结果未知、回滚或关闭路径不会误执行，多个回调失败会保留首个原因和后续 suppressed 异常。
+- 修复驱动以运行时异常或 `Error` 报告 commit/rollback 失败时事务仍被视为活动状态的问题，避免随后
+  自动执行可能错误改变数据库结果的 rollback 或 auto-commit 恢复。
 - 修复 PostgreSQL `OffsetTime` 使用 `Types.TIME_WITH_TIMEZONE` 强制绑定时与 pgJDBC 非空参数分派不一致的
   问题；JSR-310 和 UUID 非空值现在交由驱动按运行时类型绑定，null 仍保留明确 JDBC 类型。
 - 补齐 `String`、`BigDecimal`、`byte[]` 及全部内置引用类型的 null 绑定回归验证，确保 generated

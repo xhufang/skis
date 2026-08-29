@@ -155,7 +155,7 @@ executor.deleteById(PetMeta.ENTITY, stored.id());
 When `@Version` is present, `updateById` increments the version and throws
 `OptimisticLockException` if the expected version is stale.
 
-## 6. Use a transaction
+## 6. Use a local transaction
 
 ```java
 executor.inTransaction(
@@ -167,9 +167,47 @@ executor.inTransaction(
 ```
 
 The callback commits on normal return and rolls back on an unchecked failure. `afterCommit` work is
-executed only after the JDBC commit succeeds.
+executed only after the JDBC commit succeeds. A callback failure is reported after every registered
+callback has been attempted and does not roll back the already committed database transaction.
 
-## 7. Add a generated projection
+For an explicit boundary, close the session with try-with-resources. Closing an uncompleted session
+rolls it back:
+
+```java
+try (SkisSession session = executor.beginTransaction()) {
+  session.insert(PetMeta.ENTITY, new Pet(3L, "Kiki", null));
+  session.commit();
+}
+```
+
+Commit and rollback failures may have an unknown database outcome. SKIS will not issue a second
+completion operation or run `afterCommit` callbacks in that state. See the complete
+[transaction-management guide](transaction-management.md) for state restoration and failure
+diagnostics.
+
+## 7. Join a Spring-managed transaction
+
+Add `skis-spring`, construct the executor with `SpringConnectionProvider`, and let Spring own the
+transaction boundary:
+
+```java
+@Bean
+SkisExecutor skisExecutor(DataSource dataSource) {
+  return SkisExecutorFactory.create(
+      new SpringConnectionProvider(dataSource), PostgreSqlDialect.INSTANCE);
+}
+
+@Transactional
+public void createPet(Pet pet) {
+  skisExecutor.insert(PetMeta.ENTITY, pet);
+}
+```
+
+Use `@Transactional` or `TransactionTemplate`, not `executor.inTransaction`, with this provider.
+SKIS 0.1 does not include Spring Boot auto-configuration; bean and transaction-manager assembly is
+explicit.
+
+## 8. Add a generated projection
 
 ```java
 @SkisProjection(entity = Pet.class)
@@ -186,7 +224,7 @@ PetSummary summary =
 Projection properties must match mapped entity properties by name and compatible Java type, unless
 `@ProjectionProperty` explicitly selects a different property.
 
-## 8. Diagnose annotation-processing failures
+## 9. Diagnose annotation-processing failures
 
 Entity and projection declaration failures use stable `SKISxxx` codes and include a short `Fix:`
 hint at the relevant source element. The [annotation-processing error guide](apt-error-codes.md)
@@ -197,7 +235,7 @@ declare the same Provider, entity Java type, or projection result type, the conf
 identifies both index URLs and line numbers. Do not discard one index entry while shading; rebuild
 the owning modules so each generated model has one Provider.
 
-## 9. Choose compatible JDBC column types
+## 10. Choose compatible JDBC column types
 
 SKIS has built-in generated mappings for primitive and boxed scalar values, strings, exact numeric
 values, `byte[]`, UUID, Java time, and legacy `java.sql` date/time values. Applications still own
@@ -209,7 +247,7 @@ Enums, LOBs, custom converters, arrays other than primitive `byte[]`, and struct
 mapping are not part of 0.1. Unsupported persistent property types fail annotation processing with
 `SKIS022` instead of falling back to reflection or `ResultSet.getObject` guessing.
 
-## 10. Know the 0.1 boundary
+## 11. Know the 0.1 boundary
 
 Queries are currently limited to one table and at most one non-null equality predicate. There is no
 join, association mapping, generated-key retrieval, composite ID, sorting, pagination, native SQL
