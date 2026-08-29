@@ -152,9 +152,9 @@ class JdbcCodecsTest {
     LocalDate localDate = LocalDate.of(2026, 8, 20);
     assertRead(
         localDate,
-        java.sql.Date.valueOf(localDate),
-        "getDate",
-        new Object[] {5},
+        localDate,
+        "getObject",
+        new Object[] {5, LocalDate.class},
         resultSet -> JdbcCodecs.readLocalDate(resultSet, 5, JdbcReadContext.EMPTY));
 
     LocalTime localTime = LocalTime.of(11, 22, 33, 456_789_000);
@@ -168,9 +168,9 @@ class JdbcCodecsTest {
     LocalDateTime localDateTime = LocalDateTime.of(localDate, localTime);
     assertRead(
         localDateTime,
-        java.sql.Timestamp.valueOf(localDateTime),
-        "getTimestamp",
-        new Object[] {7},
+        localDateTime,
+        "getObject",
+        new Object[] {7, LocalDateTime.class},
         resultSet -> JdbcCodecs.readLocalDateTime(resultSet, 7, JdbcReadContext.EMPTY));
 
     OffsetTime offsetTime = localTime.atOffset(ZoneOffset.ofHours(8));
@@ -188,6 +188,31 @@ class JdbcCodecsTest {
         "getObject",
         new Object[] {9, OffsetDateTime.class},
         resultSet -> JdbcCodecs.readOffsetDateTime(resultSet, 9, JdbcReadContext.EMPTY));
+  }
+
+  @Test
+  void returnsNullForNullableJdbc42ObjectReads() throws Exception {
+    assertNull(
+        JdbcCodecs.readUuid(
+            new InvocationRecorder(null).proxy(ResultSet.class), 1, JdbcReadContext.EMPTY));
+    assertNull(
+        JdbcCodecs.readInstant(
+            new InvocationRecorder(null).proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+    assertNull(
+        JdbcCodecs.readLocalDate(
+            new InvocationRecorder(null).proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+    assertNull(
+        JdbcCodecs.readLocalTime(
+            new InvocationRecorder(null).proxy(ResultSet.class), 4, JdbcReadContext.EMPTY));
+    assertNull(
+        JdbcCodecs.readLocalDateTime(
+            new InvocationRecorder(null).proxy(ResultSet.class), 5, JdbcReadContext.EMPTY));
+    assertNull(
+        JdbcCodecs.readOffsetTime(
+            new InvocationRecorder(null).proxy(ResultSet.class), 6, JdbcReadContext.EMPTY));
+    assertNull(
+        JdbcCodecs.readOffsetDateTime(
+            new InvocationRecorder(null).proxy(ResultSet.class), 7, JdbcReadContext.EMPTY));
   }
 
   @Test
@@ -219,48 +244,85 @@ class JdbcCodecsTest {
   }
 
   @Test
-  void bindsUuidAndJavaTimeValuesWithExplicitJdbcTypes() throws Exception {
+  void readsAndBindsStringsDecimalsAndBinaryValues() throws Exception {
+    assertRead(
+        "SKIS",
+        "SKIS",
+        "getString",
+        new Object[] {1},
+        resultSet -> JdbcCodecs.readString(resultSet, 1, JdbcReadContext.EMPTY));
+    BigDecimal decimal = new BigDecimal("1234567890.123456");
+    assertRead(
+        decimal,
+        decimal,
+        "getBigDecimal",
+        new Object[] {2},
+        resultSet -> JdbcCodecs.readBigDecimal(resultSet, 2, JdbcReadContext.EMPTY));
+
+    byte[] bytes = new byte[] {0, 1, 2, -1};
+    InvocationRecorder byteReader = new InvocationRecorder(bytes);
+    assertArrayEquals(
+        bytes,
+        JdbcCodecs.readBytes(byteReader.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+    byteReader.assertInvocation("getBytes", new Object[] {3});
+
+    assertBind(
+        "setString",
+        new Object[] {1, "SKIS"},
+        statement -> JdbcCodecs.bindString(statement, 1, "SKIS", JdbcWriteContext.EMPTY));
+    assertBind(
+        "setBigDecimal",
+        new Object[] {2, decimal},
+        statement -> JdbcCodecs.bindBigDecimal(statement, 2, decimal, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setBytes",
+        new Object[] {3, bytes},
+        statement -> JdbcCodecs.bindBytes(statement, 3, bytes, JdbcWriteContext.EMPTY));
+  }
+
+  @Test
+  void bindsUuidAndJavaTimeValuesAsNativeJdbcObjects() throws Exception {
     UUID uuid = UUID.fromString("1e2228a0-4e3e-4ae2-8cf0-a21c9db5999d");
     assertBind(
         "setObject",
-        new Object[] {3, uuid, Types.OTHER},
+        new Object[] {3, uuid},
         statement -> JdbcCodecs.bindUuid(statement, 3, uuid, JdbcWriteContext.EMPTY));
 
     Instant instant = Instant.parse("2026-08-20T03:04:05.123456Z");
     assertBind(
         "setObject",
-        new Object[] {4, instant.atOffset(ZoneOffset.UTC), Types.TIMESTAMP_WITH_TIMEZONE},
+        new Object[] {4, instant.atOffset(ZoneOffset.UTC)},
         statement -> JdbcCodecs.bindInstant(statement, 4, instant, JdbcWriteContext.EMPTY));
 
     LocalDate localDate = LocalDate.of(2026, 8, 20);
     assertBind(
-        "setDate",
-        new Object[] {5, java.sql.Date.valueOf(localDate)},
+        "setObject",
+        new Object[] {5, localDate},
         statement -> JdbcCodecs.bindLocalDate(statement, 5, localDate, JdbcWriteContext.EMPTY));
 
     LocalTime localTime = LocalTime.of(11, 22, 33, 456_789_000);
     assertBind(
         "setObject",
-        new Object[] {6, localTime, Types.TIME},
+        new Object[] {6, localTime},
         statement -> JdbcCodecs.bindLocalTime(statement, 6, localTime, JdbcWriteContext.EMPTY));
 
     LocalDateTime localDateTime = LocalDateTime.of(localDate, localTime);
     assertBind(
-        "setTimestamp",
-        new Object[] {7, java.sql.Timestamp.valueOf(localDateTime)},
+        "setObject",
+        new Object[] {7, localDateTime},
         statement ->
             JdbcCodecs.bindLocalDateTime(statement, 7, localDateTime, JdbcWriteContext.EMPTY));
 
     OffsetTime offsetTime = localTime.atOffset(ZoneOffset.ofHours(8));
     assertBind(
         "setObject",
-        new Object[] {8, offsetTime, Types.TIME_WITH_TIMEZONE},
+        new Object[] {8, offsetTime},
         statement -> JdbcCodecs.bindOffsetTime(statement, 8, offsetTime, JdbcWriteContext.EMPTY));
 
     OffsetDateTime offsetDateTime = localDateTime.atOffset(ZoneOffset.ofHours(8));
     assertBind(
         "setObject",
-        new Object[] {9, offsetDateTime, Types.TIMESTAMP_WITH_TIMEZONE},
+        new Object[] {9, offsetDateTime},
         statement ->
             JdbcCodecs.bindOffsetDateTime(statement, 9, offsetDateTime, JdbcWriteContext.EMPTY));
   }
@@ -301,6 +363,22 @@ class JdbcCodecsTest {
         statement -> JdbcCodecs.bindNullableChar(statement, 1, null, JdbcWriteContext.EMPTY));
     assertBind(
         "setNull",
+        new Object[] {2, Types.VARCHAR},
+        statement -> JdbcCodecs.bindString(statement, 2, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {2, Types.NUMERIC},
+        statement -> JdbcCodecs.bindBigInteger(statement, 2, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {2, Types.DECIMAL},
+        statement -> JdbcCodecs.bindBigDecimal(statement, 2, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {2, Types.VARBINARY},
+        statement -> JdbcCodecs.bindBytes(statement, 2, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
         new Object[] {3, Types.OTHER},
         statement -> JdbcCodecs.bindUuid(statement, 3, null, JdbcWriteContext.EMPTY));
     assertBind(
@@ -311,6 +389,34 @@ class JdbcCodecsTest {
         "setNull",
         new Object[] {5, Types.DATE},
         statement -> JdbcCodecs.bindLocalDate(statement, 5, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {6, Types.TIME},
+        statement -> JdbcCodecs.bindLocalTime(statement, 6, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {7, Types.TIMESTAMP},
+        statement -> JdbcCodecs.bindLocalDateTime(statement, 7, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {8, Types.TIME_WITH_TIMEZONE},
+        statement -> JdbcCodecs.bindOffsetTime(statement, 8, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {9, Types.TIMESTAMP_WITH_TIMEZONE},
+        statement -> JdbcCodecs.bindOffsetDateTime(statement, 9, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {10, Types.DATE},
+        statement -> JdbcCodecs.bindSqlDate(statement, 10, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {11, Types.TIME},
+        statement -> JdbcCodecs.bindSqlTime(statement, 11, null, JdbcWriteContext.EMPTY));
+    assertBind(
+        "setNull",
+        new Object[] {12, Types.TIMESTAMP},
+        statement -> JdbcCodecs.bindSqlTimestamp(statement, 12, null, JdbcWriteContext.EMPTY));
   }
 
   @Test
