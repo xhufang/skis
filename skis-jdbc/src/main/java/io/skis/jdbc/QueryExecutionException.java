@@ -1,42 +1,38 @@
 package io.skis.jdbc;
 
 import io.skis.core.SkisException;
+import java.io.Serial;
 import java.sql.SQLException;
 import org.jspecify.annotations.Nullable;
 
 /** Safe JDBC query failure retaining driver diagnostics without parameter values. */
 public final class QueryExecutionException extends SkisException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   private final String dialectId;
   private final String sqlFingerprint;
   private final @Nullable String sqlState;
   private final int vendorCode;
 
-  private QueryExecutionException(
-      String message, SQLException cause, String dialectId, String sqlFingerprint) {
-    super(message, cause);
-    this.dialectId = dialectId;
-    this.sqlFingerprint = sqlFingerprint;
-    this.sqlState = cause.getSQLState();
-    this.vendorCode = cause.getErrorCode();
+  private QueryExecutionException(JdbcFailureDiagnostics diagnostics, SQLException cause) {
+    super(diagnostics.message(), cause);
+    this.dialectId = diagnostics.dialectId();
+    this.sqlFingerprint = diagnostics.sqlFingerprint();
+    this.sqlState = diagnostics.sqlState();
+    this.vendorCode = diagnostics.vendorCode();
   }
 
   /** Translates a driver failure using only structural query diagnostics. */
   public static QueryExecutionException from(String dialectId, String sql, SQLException cause) {
-    String fingerprint = fingerprint(sql);
-    String message =
-        "JDBC query failed [dialect="
-            + dialectId
-            + ", sqlFingerprint="
-            + fingerprint
-            + ", sqlState="
-            + safeState(cause.getSQLState())
-            + ", vendorCode="
-            + cause.getErrorCode()
-            + "]";
-    return new QueryExecutionException(message, cause, dialectId, fingerprint);
+    return from(JdbcFailureDiagnostics.Phase.EXECUTE, dialectId, sql, cause);
+  }
+
+  static QueryExecutionException from(
+      JdbcFailureDiagnostics.Phase phase, String dialectId, String sql, SQLException cause) {
+    JdbcFailureDiagnostics diagnostics =
+        JdbcFailureDiagnostics.from("query", phase, dialectId, sql, cause);
+    return new QueryExecutionException(diagnostics, cause);
   }
 
   public String dialectId() {
@@ -56,15 +52,6 @@ public final class QueryExecutionException extends SkisException {
   }
 
   static String fingerprint(String sql) {
-    long hash = 0xcbf29ce484222325L;
-    for (int index = 0; index < sql.length(); index++) {
-      hash ^= sql.charAt(index);
-      hash *= 0x100000001b3L;
-    }
-    return Long.toUnsignedString(hash, 16);
-  }
-
-  private static String safeState(@Nullable String sqlState) {
-    return sqlState == null || sqlState.isBlank() ? "unknown" : sqlState;
+    return JdbcFailureDiagnostics.fingerprint(sql);
   }
 }

@@ -121,9 +121,9 @@ final class EntityPlanSet<E> {
 
   private QueryValidationException unsupportedFindById() {
     return new QueryValidationException(
-        "entity '"
+        "findById requires exactly one primary-key property for entity '"
             + model.entity().entityName()
-            + "' has no supported single primary key for findById in 0.0.6");
+            + "'");
   }
 
   private PropertyMeta<E, ?> requirePredicateProperty(

@@ -1,9 +1,11 @@
 package io.skis.core;
 
+import java.io.Serial;
+
 /** Base unchecked exception for all public SKIS failures. */
 public class SkisException extends RuntimeException {
 
-  private static final long serialVersionUID = 1L;
+  @Serial private static final long serialVersionUID = 1L;
 
   /** Creates an exception with a safe diagnostic message. */
   public SkisException(String message) {

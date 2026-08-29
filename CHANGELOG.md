@@ -16,6 +16,15 @@
   选择列、对象形状、连接池和 JMH 参数，且不计入 Spring Boot 启动及代理成本。
 - 将全部 benchmark 子模块排除出公共 API 兼容基线和 Maven Central 发布组件校验，继续只作为仓库内部性能工程模块。
 
+### Fixed
+
+- 统一查询和 mutation 的 JDBC 失败诊断，保留执行阶段、方言、SQL 指纹、SQLState、
+  vendor code 和原始 `SQLException`，且异常消息不记录 SQL 全文或参数值。
+- 区分 Connection 获取、JDBC 执行和 Connection 归还失败；在 PreparedStatement、
+  ResultSet 和 Connection 异常路径中确定关闭资源，并保留后续失败为 suppressed exception。
+- 移除 `findById` 和 mutation Fast Path 运行时错误消息中的 `0.0.6`、`0.0.7`
+  历史实现版本提示，改为稳定的能力约束说明。
+
 ## [0.1.0] - 2026-08-26
 
 SKIS 的第一个完整公开预览版本。发布范围只包含已经实现的核心、生成器、JDBC、查询、写入、
@@ -30,13 +39,16 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
   `*Projection` 映射器；只渲染实际选择列，通过生成 Codec 按列下标完成无反射映射，且不生成 DTO。
   投影计划按实体、生成式强类型映射令牌、选择列和谓词结构进入共享的默认 4096 项有界 LRU，参数值不参与缓存键；
   任意用户别名仍只在不可变查询对象内单槽复用。
-- 添加 PostgreSQL 投影合同测试，并验证投影参数始终使用 PreparedStatement、ResultSet/Statement/Connection
+- 添加 PostgreSQL 投影合同测试，并验证投影参数始终使用
+  PreparedStatement、ResultSet/Statement/Connection
   均可确定关闭。
-- 投影计划缓存改用 APT 生成类持有的强类型静态映射令牌，避免公开基础设施入口通过重复类键混用不同结果 Decoder；
+- 投影计划缓存改用 APT 生成类持有的强类型静态映射令牌，避免公开基础设施入口通过重复类键混用不同结果
+  Decoder；
   新增容量和访问过期配置、缓存统计、按实体失效及显式清空能力。
 - 投影 APT 支持等待协作处理器在后续轮次生成构造器参数类型；最终未解析时报 `SKIS217`，参数类型无法从生成子包访问时
   报 `SKIS218`。
-- 0.0.9 投影 APT 将用户结果类型绑定到来源实体，新增属性存在性、类型、可空性及 `@ProjectionProperty` 映射校验。
+- 0.0.9 投影 APT 将用户结果类型绑定到来源实体，新增属性存在性、类型、可空性及 `@ProjectionProperty`
+  映射校验。
 - 添加生成式 `ProjectionProvider` 和 `META-INF/skis/projections.idx`，执行器装配时建立按用户结果类型索引的
   不可变投影注册表。
 - 添加生成式单实体 `insert`、`updateById`、`deleteById` Fast Path，并通过统一
@@ -53,9 +65,12 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 - 添加共享 `QueryPlanCatalog` 与 `MutationPlanCatalog`，事务 Session 只重新绑定 JDBC 执行器，不重复编译实体计划。
 - 为 SELECT/INSERT/UPDATE/DELETE 统一参数 ordinal/描述符校验，并逐项验证 mutation 方言渲染参数形状。
 - 添加可构造注入、线程安全的统一 `SkisExecutor`，同时提供 `findById` Fast Path 和最小单表实体 DSL。
-- 添加值与 AST 分离的 `QueryColumn.eq(value)`、不可变 `EntitySelectQuery` 及 `fetchOne/fetchList/fetch` 执行语义。
-- 添加 `CompiledQueryPlan` 与 `JdbcExecutor`，统一 PreparedStatement 绑定、按下标解码、结果基数检查和 JDBC 资源释放。
-- 添加 APT 生成的 `EntityRuntimeModelProvider`，通过 `META-INF/skis/entities.idx` 自动加载 Codec 与 RowDecoder，不扫描类路径或运行时注解。
+- 添加值与 AST 分离的 `QueryColumn.eq(value)`、不可变 `EntitySelectQuery` 及
+  `fetchOne/fetchList/fetch` 执行语义。
+- 添加 `CompiledQueryPlan` 与 `JdbcExecutor`，统一 PreparedStatement 绑定、按下标解码、结果基数检查和
+  JDBC 资源释放。
+- 添加 APT 生成的 `EntityRuntimeModelProvider`，通过 `META-INF/skis/entities.idx` 自动加载 Codec 与
+  RowDecoder，不扫描类路径或运行时注解。
 - 添加按实体属性数量天然有界、使用原子槽位发布的查询计划复用；单主键 Fast Path 在执行器装配时预热。
 - 添加 `ConnectionProvider`、`ExecutionContext` 和默认 `DataSourceConnectionProvider`，明确连接获取与归还边界。
 - 添加所有公共框架异常的统一非受检基类 `SkisException`。
@@ -89,8 +104,10 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 ### Migration
 
 - 0.0.9 将用户投影入口重构为 `selectProjection(table, ResultType.class)`。用户投影改为
-  `@SkisProjection(entity = Pet.class)`，并删除用户侧 `*Projection.of(...)`、列清单和 `Projection<E, R>` 常量。
-  自定义 `QueryOperations`/`SkisExecutor`/`SkisSession` 实现需要将原用户投影 `select` 重载替换为新入口；显式引用查询
+  `@SkisProjection(entity = Pet.class)`，并删除用户侧 `*Projection.of(...)`、列清单和
+  `Projection<E, R>` 常量。
+  自定义 `QueryOperations`/`SkisExecutor`/`SkisSession` 实现需要将原用户投影 `select`
+  重载替换为新入口；显式引用查询
   接口的代码需将 `ProjectedSelectQuery<R>` 更新为 `ProjectedSelectQuery<E, R>`。
 - 0.0.8 为 `QueryOperations` 添加标量和用户投影 `select` 重载。自定义
   `QueryOperations`/`SkisExecutor`/`SkisSession` 实现必须补充这两个方法；用户投影类型添加
@@ -98,7 +115,8 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
   `Projection<E, R>`，来源实体类型 `E` 会一直保留到 `from(QueryTable<E>)`。
 - `SkisExecutor` 新增 `queryPlanCacheStatistics()` 和 `clearQueryPlanCache()`；自定义实现需要同步实现。直接使用
   `Projection.generated(...)` 的基础设施代码需先通过 `Projection.mapping(...)` 创建带结果泛型的映射令牌。
-- 0.0.9 中直接使用 `Projection.generated(...)` 的基础设施代码还需传入结果类型、来源 `EntityMeta` 和属性元数据；
+- 0.0.9 中直接使用 `Projection.generated(...)` 的基础设施代码还需传入结果类型、来源 `EntityMeta`
+  和属性元数据；
   普通应用只使用 `selectProjection(table, ResultType.class)`。
 - 0.0.7 有意扩展 `SkisExecutor` 的抽象契约。自定义实现必须重新编译，并实现新增的 `insert`、
   `updateById`、`deleteById`、`beginTransaction` 和 `inTransaction`；通过
@@ -134,5 +152,7 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 - Java 根包仍为 `io.skis`，源码导入路径无需修改。
 
 [Unreleased]: https://github.com/xhufang/skis/compare/v0.1.0...HEAD
+
 [0.1.0]: https://github.com/xhufang/skis/compare/v0.0.4...v0.1.0
+
 [0.0.4]: https://github.com/xhufang/skis/releases/tag/v0.0.4
