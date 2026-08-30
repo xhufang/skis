@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-30
+
+SKIS 0.2.0 汇总发布内部 0.1.x 里程碑完成的稳定性、兼容性、诊断、文档和性能基线工作。
+公共功能范围仍是文档声明的单表 ORM 能力；SQL DSL 扩展、基础优化器和 MySQL 方言从内部 0.2.x
+开发线开始实现，不属于本次发布。
+
 ### Added
 
 - 新增不继承 SKIS 父 POM、也不加入 Reactor 的最小 H2 消费者门禁，独立验证 BOM、APT、
@@ -196,7 +202,9 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 - Maven 依赖坐标需从 `io.skis:*` 更新为 `io.github.xhufang:*`。
 - Java 根包仍为 `io.skis`，源码导入路径无需修改。
 
-[Unreleased]: https://github.com/xhufang/skis/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/xhufang/skis/compare/v0.2.0...HEAD
+
+[0.2.0]: https://github.com/xhufang/skis/compare/v0.1.0...v0.2.0
 
 [0.1.0]: https://github.com/xhufang/skis/compare/v0.0.4...v0.1.0
 

@@ -7,14 +7,14 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.1.6-SNAPSHOT</version>
+    <version>0.2.0</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
 
   <artifactId>skis-bom</artifactId>
   <packaging>pom</packaging>
   <name>skis-bom</name>
-  <description>Dependency versions for the implemented SKIS 0.1 public modules</description>
+  <description>Dependency versions for the implemented SKIS 0.2 public modules</description>
 
   <dependencyManagement>
     <dependencies>

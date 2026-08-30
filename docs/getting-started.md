@@ -1,11 +1,11 @@
-# Getting started with SKIS 0.1
+# Getting started with SKIS 0.2
 
 This guide builds a minimal plain-Java application. SKIS generates its runtime metadata at compile
 time, so annotation processing is a required part of the consumer build.
 
-The dependency snippets use `0.1.0`, the latest public release. Repository CI repeats this setup
-against the current internal snapshot using a standalone project that has no SKIS parent POM and is
-not part of the SKIS reactor. Internal `0.1.x` milestone numbers are deliberately not published.
+The dependency snippets use `0.2.0`, the current public release. Repository CI repeats this setup
+against the current reactor version using a standalone project that has no SKIS parent POM and is
+not part of the SKIS reactor. Internal snapshot milestone numbers are deliberately not published.
 
 ## 1. Configure Maven
 
@@ -15,7 +15,7 @@ Import the SKIS BOM and choose one dialect. The application must also provide it
 ```xml
 <properties>
   <maven.compiler.release>21</maven.compiler.release>
-  <skis.version>0.1.0</skis.version>
+  <skis.version>0.2.0</skis.version>
   <h2.version>2.4.240</h2.version>
 </properties>
 
@@ -101,7 +101,7 @@ public record Pet(
     @Version Long version) {}
 ```
 
-SKIS 0.1 supports one application-assigned primary-key property. A nullable Java `@Version` value
+SKIS 0.2 supports one application-assigned primary-key property. A nullable Java `@Version` value
 means “initialize the inserted row at version zero”; the database column itself must be non-null.
 
 A Simple Entity can instead be a top-level public concrete Bean. Beans require a public no-argument
@@ -113,7 +113,7 @@ builder-only, inherited, and all-arguments-only entity shapes are intentionally 
 
 ## 3. Create the schema
 
-SKIS 0.1 does not create or migrate schemas. For H2, the matching table is:
+SKIS 0.2 does not create or migrate schemas. For H2, the matching table is:
 
 ```sql
 CREATE TABLE "pet" (
@@ -208,7 +208,7 @@ public void createPet(Pet pet) {
 ```
 
 Use `@Transactional` or `TransactionTemplate`, not `executor.inTransaction`, with this provider.
-SKIS 0.1 does not include Spring Boot auto-configuration; bean and transaction-manager assembly is
+SKIS 0.2 does not include Spring Boot auto-configuration; bean and transaction-manager assembly is
 explicit.
 
 ## 8. Add a generated projection
@@ -248,10 +248,10 @@ DDL, including column precision and scale. See the
 nullability rules, numeric boundaries, and time-zone semantics.
 
 Enums, LOBs, custom converters, arrays other than primitive `byte[]`, and structured JSON object
-mapping are not part of 0.1. Unsupported persistent property types fail annotation processing with
+mapping are not part of 0.2. Unsupported persistent property types fail annotation processing with
 `SKIS022` instead of falling back to reflection or `ResultSet.getObject` guessing.
 
-## 11. Know the 0.1 boundary
+## 11. Know the 0.2 boundary
 
 Queries are currently limited to one table and at most one non-null equality predicate. There is no
 join, association mapping, generated-key retrieval, composite ID, sorting, pagination, native SQL

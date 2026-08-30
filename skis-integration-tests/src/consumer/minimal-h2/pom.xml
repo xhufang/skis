@@ -6,12 +6,12 @@
 
   <groupId>example</groupId>
   <artifactId>skis-minimal-h2-consumer</artifactId>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <skis.version>0.1.0</skis.version>
+    <skis.version>0.2.0</skis.version>
     <h2.version>2.4.240</h2.version>
     <junit.version>6.0.3</junit.version>
     <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>

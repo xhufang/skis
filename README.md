@@ -1,9 +1,9 @@
 # SKIS ORM
 
-> **Status: experimental 0.1 preview**
+> **Status: experimental 0.2 preview**
 
 SKIS is a Java 21 JDBC micro-ORM focused on generated, reflection-free metadata and predictable
-single-table operations. Version 0.1 is suitable for evaluation and small controlled services;
+single-table operations. Version 0.2 is suitable for evaluation and small controlled services;
 its API may still change before 1.0 and it is not yet a production-support release.
 
 ## Implemented scope
@@ -31,7 +31,7 @@ Import the public BOM and add the runtime, annotations, and one implemented dial
     <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-bom</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>
@@ -73,7 +73,7 @@ constructor and public getter/setter or fluent read/write access for every persi
 public fields are also supported. Field and getter mapping annotations are merged and conflicting
 `@Column` declarations are compile-time errors. Lombok may generate the constructor/accessors when
 it is enabled as an annotation processor; immutable `@Value`, builder-only, inheritance, and
-all-args-only entity shapes remain outside the 0.1 contract.
+all-args-only entity shapes remain outside the 0.2 contract.
 
 Compilation generates `PetMeta`, `PetTable`, binders, decoders, and runtime index entries. The
 executor then discovers them without classpath scanning:
@@ -97,17 +97,17 @@ semantics.
 
 ## Supported databases
 
-| Database | 0.1 status |
+| Database | 0.2 status |
 | --- | --- |
 | PostgreSQL 16 / pgJDBC 42.7.11 | Query, mutation, transaction, projection, and JDBC type contract |
 | H2 2.4.240 | Development, consumer smoke, example, and integration-test dialect |
-| MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.1 |
+| MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.2 |
 
 JDBC drivers are deliberately supplied and versioned by the application.
 
 ## Current limitations
 
-Version 0.1 intentionally does not provide joins, associations, generated-key retrieval, composite
+Version 0.2 intentionally does not provide joins, associations, generated-key retrieval, composite
 IDs, sorting, pagination, streaming, native SQL entry points, schema migration, batch writes,
 upsert, graph writes, caching, multitenancy, or Spring Boot auto-configuration. Equality predicates
 accept one non-null value. Enum, LOB, custom converter, database array, and structured JSON object
@@ -131,7 +131,9 @@ mappings are also deferred. Applications own DDL and assign identifiers before i
 
 The Maven Central `0.0.4` publication was incomplete and contains only an empty `skis-parent` POM.
 It is not an API baseline. Version `0.1.0` is the first complete public SKIS release. Internal
-`0.1.1` through `0.1.6` milestones must never appear as Maven Central components or Git tags.
+`0.1.1` through `0.1.6` milestones were not published as Maven Central components or Git tags; their
+stabilization work is included in the public `0.2.0` release. After `0.2.0`, new capabilities
+start in internal `0.2.1-SNAPSHOT` and later `0.2.x-SNAPSHOT` milestones, then ship in `0.3.0`.
 
 ## License
 

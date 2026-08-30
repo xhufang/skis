@@ -1,6 +1,6 @@
 # Transaction management
 
-SKIS 0.1 supports two deliberately separate transaction ownership models. Choose one model for a
+SKIS 0.2 supports two deliberately separate transaction ownership models. Choose one model for a
 configured `SkisExecutor`; do not nest one inside the other.
 
 | Environment | Connection provider | Transaction boundary owner | Application entry point |
@@ -109,4 +109,4 @@ TransactionSynchronizationManager.registerSynchronization(
 ```
 
 Spring exception translation, SKIS statement options, nested transactions, savepoints, reactive
-transactions, Spring Boot auto-configuration, and a starter are outside the 0.1 scope.
+transactions, Spring Boot auto-configuration, and a starter are outside the 0.2 scope.

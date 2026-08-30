@@ -1,7 +1,9 @@
 # SKIS formal release checklist
 
-This checklist applies to the next public minor release. Internal `0.1.1` through `0.1.6`
-milestones stay as snapshots: they have no release tag, Maven Central deployment, or GitHub Release.
+This checklist currently applies to the public `0.2.0` release, which packages the stabilization
+work completed in internal `0.1.1` through `0.1.6` snapshot milestones. Those internal versions have
+no release tag, Maven Central deployment, or GitHub Release. After `0.2.0`, new public capabilities
+start in `0.2.1-SNAPSHOT` and later internal `0.2.x-SNAPSHOT` milestones, then ship in `0.3.0`.
 The Central 0.0.4 publication contains only an empty `skis-parent` POM and is not an API
 compatibility baseline; `0.1.0` is the first complete public baseline.
 
@@ -23,7 +25,8 @@ compatibility baseline; `0.1.0` is the first complete public baseline.
 ## Expected Central components
 
 The authoritative component list is [`.github/release-components.txt`](../.github/release-components.txt).
-For the 0.1 maintenance baseline it contains exactly 16 GAVs:
+For `0.2.0`, which publishes the completed 0.1.x stabilization line without the later SQL DSL or
+MySQL work, it continues to contain exactly 16 GAVs:
 
 - `skis-parent`, `skis-bom`;
 - `skis-annotations`, `skis-core`, `skis-metadata`, `skis-processor`;
@@ -46,5 +49,6 @@ allowlist.
 3. Inspect the validated deployment in Central Portal against the component list above.
 4. Publish the validated Central deployment manually.
 5. After Central reports `PUBLISHED`, inspect and publish the draft GitHub Release.
-6. Move development to the explicitly planned next snapshot and restore the Unreleased comparison
-   link.
+6. Move development to `0.2.1-SNAPSHOT` and restore the Unreleased comparison link. Later internal
+   `0.2.x-SNAPSHOT` milestones remain unpublished until their accumulated capabilities ship in
+   `0.3.0`.
