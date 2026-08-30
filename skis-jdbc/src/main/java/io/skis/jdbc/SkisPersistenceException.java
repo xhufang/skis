@@ -31,42 +31,42 @@ public abstract class SkisPersistenceException extends SkisException {
   }
 
   /** Returns the structural query or mutation operation. */
-  public final String operation() {
+  public String operation() {
     return operation;
   }
 
   /** Returns the JDBC lifecycle phase in which the failure occurred. */
-  public final String phase() {
+  public String phase() {
     return phase;
   }
 
   /** Returns the dialect identifier used by the failed plan. */
-  public final String dialectId() {
+  public String dialectId() {
     return dialectId;
   }
 
   /** Returns the value-independent SQL fingerprint; parameters and query tags are excluded. */
-  public final String sqlFingerprint() {
+  public String sqlFingerprint() {
     return sqlFingerprint;
   }
 
   /** Returns the driver SQLState, or {@code null} when the driver supplied none. */
-  public final @Nullable String sqlState() {
+  public @Nullable String sqlState() {
     return sqlState;
   }
 
   /** Returns the vendor-specific JDBC error code. */
-  public final int vendorCode() {
+  public int vendorCode() {
     return vendorCode;
   }
 
   /** Returns the dialect-classified failure category. */
-  public final SqlExceptionCategory category() {
+  public SqlExceptionCategory category() {
     return category;
   }
 
   /** Returns the original driver failure. */
-  public final SQLException sqlException() {
+  public SQLException sqlException() {
     return (SQLException) getCause();
   }
 }
