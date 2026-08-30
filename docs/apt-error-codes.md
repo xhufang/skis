@@ -6,7 +6,8 @@ the longer contract, invalid and valid examples, and the first public version of
 
 All codes below are part of the public diagnostic contract since `0.1.0` unless a section explicitly
 says that it is historical. `SKIS017` and `SKIS018` are intentionally unassigned. A code is never
-reused for another meaning.
+reused for another meaning. Internal `0.1.1` through `0.1.6` hardening keeps these numbers and
+meanings stable; those milestones are not separately published versions.
 
 ## Entity declaration and mapping
 

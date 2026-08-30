@@ -99,8 +99,8 @@ semantics.
 
 | Database | 0.1 status |
 | --- | --- |
-| PostgreSQL 16 | Query and mutation integration contract |
-| H2 | Development, example, and integration-test dialect |
+| PostgreSQL 16 / pgJDBC 42.7.11 | Query, mutation, transaction, projection, and JDBC type contract |
+| H2 2.4.240 | Development, consumer smoke, example, and integration-test dialect |
 | MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.1 |
 
 JDBC drivers are deliberately supplied and versioned by the application.
@@ -119,7 +119,8 @@ mappings are also deferred. Applications own DDL and assign identifiers before i
 - [Local JDBC and Spring transaction management](docs/transaction-management.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
-- [0.1.0 release checklist](docs/release-checklist.md)
+- [Formal release checklist and component boundary](docs/release-checklist.md)
+- [Fast Path performance smoke](docs/benchmark/fast-path-smoke.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)
 - [0.0.6 injected executor and reflection-free read slice](docs/0.0.6-read-slice.md)
 - [0.0.7 reflection-free writes and transaction semantics](docs/0.0.7-write-transaction-slice.md)
@@ -129,7 +130,8 @@ mappings are also deferred. Applications own DDL and assign identifiers before i
 ## Release history note
 
 The Maven Central `0.0.4` publication was incomplete and contains only an empty `skis-parent` POM.
-It is not an API baseline. Version `0.1.0` is the first complete public SKIS release.
+It is not an API baseline. Version `0.1.0` is the first complete public SKIS release. Internal
+`0.1.1` through `0.1.6` milestones must never appear as Maven Central components or Git tags.
 
 ## License
 

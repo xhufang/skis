@@ -18,6 +18,7 @@ public final class SpringConnectionProvider implements ConnectionProvider {
 
   private final DataSource dataSource;
 
+  /** Creates a provider for the DataSource managed by the surrounding Spring application. */
   public SpringConnectionProvider(DataSource dataSource) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
   }

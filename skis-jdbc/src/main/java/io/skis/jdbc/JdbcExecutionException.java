@@ -42,22 +42,27 @@ public final class JdbcExecutionException extends SkisException {
     return new JdbcExecutionException(diagnostics, cause);
   }
 
+  /** Returns the structural mutation operation name. */
   public String operation() {
     return operation;
   }
 
+  /** Returns the dialect identifier used by the failed plan. */
   public String dialectId() {
     return dialectId;
   }
 
+  /** Returns the value-independent SQL fingerprint; parameter values are never included. */
   public String sqlFingerprint() {
     return sqlFingerprint;
   }
 
+  /** Returns the driver SQLState, or {@code null} when the driver supplied none. */
   public @Nullable String sqlState() {
     return sqlState;
   }
 
+  /** Returns the vendor-specific JDBC error code. */
   public int vendorCode() {
     return vendorCode;
   }
