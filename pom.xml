@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-    <version>0.1.6-SNAPSHOT</version>
+  <version>0.2.0</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -435,9 +435,9 @@
     <profile>
       <id>api-compatibility</id>
       <properties>
-        <!-- 0.0.4 only published an empty parent POM. It is intentionally not treated as an
-             application API baseline; pull-request CI overrides this with a locally built ref. -->
-        <api.previous.version>0.0.4</api.previous.version>
+        <!-- 0.1.0 is the first complete public API baseline; pull-request CI may override this
+             with a locally built ref to validate the exact target branch. -->
+        <api.previous.version>0.1.0</api.previous.version>
       </properties>
       <build>
         <plugins>

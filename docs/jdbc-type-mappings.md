@@ -1,6 +1,6 @@
-# SKIS 0.1 JDBC type mappings
+# SKIS 0.2 JDBC type mappings
 
-This document defines the JDBC mapping contract implemented by SKIS 0.1. It is intentionally
+This document defines the JDBC mapping contract implemented by SKIS 0.2. It is intentionally
 limited to the Java types already recognized by the annotation processor. The contract tests use
 the Spring Boot 4.1.0 BOM baselines: PostgreSQL JDBC 42.7.11, PostgreSQL 16, and H2 2.4.240.
 
@@ -79,7 +79,7 @@ PostgreSQL performs syntax validation and target-column conversion. JSONB may no
 and object-key ordering, so its returned text is not guaranteed to be byte-for-byte identical.
 
 This codec does not depend on `PGobject` and does not introduce a PostgreSQL driver dependency into
-`skis-mapping` or other core modules. SKIS 0.1 has no public annotation or registration API for
+`skis-mapping` or other core modules. SKIS 0.2 has no public annotation or registration API for
 selecting this codec on an entity property; generated `String` properties continue to use the
 portable string codec. A JSON mapping annotation or codec registration SPI is a later-version API.
 
