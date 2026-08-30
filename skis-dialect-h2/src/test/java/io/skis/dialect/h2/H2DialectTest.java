@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.DialectFeature;
 import io.skis.dialect.RenderedSql;
+import io.skis.dialect.SqlExceptionCategory;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
@@ -18,6 +19,7 @@ import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.skis.PetMeta;
+import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -29,9 +31,49 @@ class H2DialectTest {
 
     assertEquals("h2", dialect.id());
     assertSame(H2Renderer.INSTANCE, dialect.renderer());
+    assertSame(H2ExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
+  }
+
+  @Test
+  void classifiesH2SqlStatesAndVendorCodes() {
+    assertEquals(
+        SqlExceptionCategory.DUPLICATE_KEY,
+        classify(new SQLException("sensitive detail", "23505", 23505)));
+    assertEquals(
+        SqlExceptionCategory.FOREIGN_KEY_VIOLATION,
+        classify(new SQLException("sensitive detail", "23503", 23503)));
+    assertEquals(
+        SqlExceptionCategory.CONSTRAINT_VIOLATION,
+        classify(new SQLException("sensitive detail", "23513", 23513)));
+    assertEquals(
+        SqlExceptionCategory.TIMEOUT,
+        classify(new SQLException("sensitive detail", "HY000", 50200)));
+    assertEquals(
+        SqlExceptionCategory.QUERY_CANCELED,
+        classify(new SQLException("sensitive detail", "57014", 57014)));
+    assertEquals(
+        SqlExceptionCategory.DEADLOCK,
+        classify(new SQLException("sensitive detail", "40001", 40001)));
+    assertEquals(
+        SqlExceptionCategory.CONNECTION_FAILURE,
+        classify(new SQLException("sensitive detail", "08001", 0)));
+    assertEquals(
+        SqlExceptionCategory.CONNECTION_FAILURE,
+        classify(new SQLException("sensitive detail", "90067", 90067)));
+    assertEquals(
+        SqlExceptionCategory.UNCATEGORIZED,
+        classify(new SQLException("sensitive detail", "42000", 42000)));
+  }
+
+  @Test
+  void preciseChainedStateWinsOverAnOuterGenericStateClass() {
+    SQLException root = new SQLException("wrapper", "23000", 0);
+    root.setNextException(new SQLException("duplicate", "23505", 23505));
+
+    assertEquals(SqlExceptionCategory.DUPLICATE_KEY, classify(root));
   }
 
   @Test
@@ -47,6 +89,10 @@ class H2DialectTest {
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
         rendered.sql());
     assertEquals(List.of(id), rendered.parameters());
+  }
+
+  private static SqlExceptionCategory classify(SQLException exception) {
+    return H2Dialect.INSTANCE.exceptionClassifier().classify(exception);
   }
 
   @Test

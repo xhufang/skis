@@ -14,4 +14,9 @@ public interface Dialect {
 
   /** Renderer configured for this dialect. */
   SqlRenderer renderer();
+
+  /** JDBC error classifier; returned instances must be thread-safe. */
+  default ExceptionClassifier exceptionClassifier() {
+    return ExceptionClassifier.NONE;
+  }
 }

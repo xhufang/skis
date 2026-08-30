@@ -1,5 +1,6 @@
 package io.skis.runtime;
 
+import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
 import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
@@ -37,6 +38,13 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
+  public <E> Optional<E> findById(
+      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+    requireActive();
+    return queries.findById(entity, id, executionOptions);
+  }
+
+  @Override
   public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
     requireActive();
     return queries.selectFrom(table);
@@ -62,15 +70,33 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
+  public <E> int insert(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+    requireActive();
+    return mutations.insert(entity, value, executionOptions);
+  }
+
+  @Override
   public <E> int updateById(EntityMeta<E> entity, E value) {
     requireActive();
     return mutations.updateById(entity, value);
   }
 
   @Override
+  public <E> int updateById(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+    requireActive();
+    return mutations.updateById(entity, value, executionOptions);
+  }
+
+  @Override
   public <E> int deleteById(EntityMeta<E> entity, Object id) {
     requireActive();
     return mutations.deleteById(entity, id);
+  }
+
+  @Override
+  public <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+    requireActive();
+    return mutations.deleteById(entity, id, executionOptions);
   }
 
   @Override

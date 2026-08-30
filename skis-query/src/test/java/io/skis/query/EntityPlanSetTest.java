@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
 import io.skis.dialect.Dialect;
 import io.skis.dialect.DialectCapabilities;
 import io.skis.dialect.DialectFeature;
@@ -15,6 +16,7 @@ import io.skis.dialect.StandardSqlRenderer;
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.jdbc.ConnectionProvider;
 import io.skis.jdbc.JdbcExecutor;
+import io.skis.jdbc.QueryExecutionException;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcCodecs;
@@ -26,7 +28,9 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.Identifier;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.IntStream;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
@@ -119,6 +123,39 @@ class EntityPlanSetTest {
                     }));
 
     assertThrows(QueryValidationException.class, () -> operations.findById(PET, null));
+  }
+
+  @Test
+  void propagatesImmutableOptionsFromFastPathAndFluentQueries() {
+    AtomicReference<ExecutionOptions> observed = new AtomicReference<>();
+    QueryOperations operations =
+        QueryRuntime.compile(
+                EntityRuntimeRegistry.of(List.of(model())), TestDialect.INSTANCE)
+            .bind(
+                new JdbcExecutor(
+                    new ConnectionProvider() {
+                      @Override
+                      public Connection acquire(ExecutionContext context) throws SQLException {
+                        observed.set(context.executionOptions());
+                        throw new SQLException("stop before JDBC work", "08001");
+                      }
+
+                      @Override
+                      public void release(Connection connection, ExecutionContext context) {}
+                    }));
+    ExecutionOptions options = ExecutionOptions.builder().fetchSize(64).build();
+
+    assertThrows(
+        QueryExecutionException.class,
+        () -> operations.findById(PET, 1L, options));
+    assertSame(options, observed.get());
+
+    observed.set(null);
+    EntitySelectQuery<Pet> baseQuery = operations.selectFrom(TABLE);
+    EntitySelectQuery<Pet> configuredQuery = baseQuery.withOptions(options);
+    assertThrows(QueryExecutionException.class, configuredQuery::fetchList);
+    assertSame(options, observed.get());
+    assertSame(baseQuery, baseQuery.withOptions(ExecutionOptions.NONE));
   }
 
   private static EntityPlanSet<Pet> plans() {

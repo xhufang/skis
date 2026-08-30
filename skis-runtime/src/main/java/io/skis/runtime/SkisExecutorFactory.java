@@ -1,10 +1,13 @@
 package io.skis.runtime;
 
+import io.skis.core.ExecutionOptions;
 import io.skis.dialect.Dialect;
 import io.skis.jdbc.ConnectionProvider;
 import io.skis.jdbc.DataSourceConnectionProvider;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.mapping.JdbcWriteContext;
+import io.skis.mapping.RowReadContext;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
 import io.skis.mutation.MutationRuntime;
@@ -49,6 +52,7 @@ public final class SkisExecutorFactory {
     private @Nullable ProjectionRegistry projectionRegistry;
     private int planCacheMaximumSize = QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE;
     private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
+    private ExecutionOptions executionOptions = ExecutionOptions.NONE;
 
     private Builder() {}
 
@@ -87,6 +91,17 @@ public final class SkisExecutorFactory {
       return this;
     }
 
+    /**
+     * Sets immutable statement defaults for this executor and every transaction session it opens.
+     *
+     * <p>Per-statement options override these fields independently. Unset fields continue to use
+     * JDBC driver defaults.
+     */
+    public Builder executionOptions(ExecutionOptions executionOptions) {
+      this.executionOptions = Objects.requireNonNull(executionOptions, "executionOptions");
+      return this;
+    }
+
     /** Sets the maximum number of dynamic projection plans shared by this executor. */
     public Builder planCacheMaximumSize(int maximumSize) {
       if (maximumSize < 1) {
@@ -119,7 +134,13 @@ public final class SkisExecutorFactory {
       if (selectedProjections == null) {
         selectedProjections = ProjectionModelLoader.load(resolveClassLoader(classLoader));
       }
-      JdbcExecutor jdbcExecutor = new JdbcExecutor(provider);
+      JdbcExecutor jdbcExecutor =
+          new JdbcExecutor(
+              provider,
+              JdbcWriteContext.EMPTY,
+              RowReadContext.EMPTY,
+              executionOptions,
+              selectedDialect.exceptionClassifier());
       QueryPlanCatalog queryPlans =
           QueryRuntime.compile(
               selectedRegistry,
@@ -131,7 +152,7 @@ public final class SkisExecutorFactory {
           MutationRuntime.compile(selectedRegistry, selectedDialect);
       QueryOperations queries = queryPlans.bind(jdbcExecutor);
       MutationOperations mutations = mutationPlans.bind(jdbcExecutor);
-      return new DefaultSkisExecutor(queries, mutations, provider, queryPlans, mutationPlans);
+      return new DefaultSkisExecutor(queries, mutations, jdbcExecutor, queryPlans, mutationPlans);
     }
   }
 

@@ -1,4 +1,6 @@
-/** Immutable query plans plus JDBC connection and resource-lifecycle execution. */
+/**
+ * Immutable plans, statement options, classified failures, and JDBC resource-lifecycle execution.
+ */
 @NullMarked
 package io.skis.jdbc;
 

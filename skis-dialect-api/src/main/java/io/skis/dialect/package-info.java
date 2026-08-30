@@ -1,4 +1,4 @@
-/** Database dialect capabilities, identifier rules, and SQL rendering contracts. */
+/** Database dialect capabilities, identifier rules, SQL rendering, and JDBC error contracts. */
 @NullMarked
 package io.skis.dialect;
 

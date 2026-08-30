@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.skis.core.ExecutionOptions;
+import io.skis.dialect.SqlExceptionCategory;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
+import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
@@ -17,7 +20,9 @@ import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -103,6 +108,41 @@ class SkisProjectionPostgreSqlContractTest {
     } finally {
       deletePet(dataSource, id);
       deletePet(dataSource, rolledBackId);
+    }
+  }
+
+  @Test
+  void classifiesARealPostgreSqlDuplicateKeyFailure() throws Exception {
+    PGSimpleDataSource dataSource = configuredDataSource();
+    prepareSchema(dataSource);
+    long id = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
+    ExecutionOptions defaults =
+        ExecutionOptions.builder()
+            .statementTimeout(Duration.ofSeconds(5))
+            .fetchSize(32)
+            .maxRows(100)
+            .queryTag("postgresql.contract")
+            .build();
+    SkisExecutor executor =
+        SkisExecutorFactory.builder()
+            .dataSource(dataSource)
+            .dialect(PostgreSqlDialect.INSTANCE)
+            .executionOptions(defaults)
+            .build();
+    Pet pet = new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
+
+    try {
+      executor.insert(PetMeta.ENTITY, pet);
+      MutationException failure =
+          assertThrows(MutationException.class, () -> executor.insert(PetMeta.ENTITY, pet));
+
+      SQLException sqlFailure = (SQLException) failure.getCause();
+      assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());
+      assertEquals(
+          SqlExceptionCategory.DUPLICATE_KEY,
+          PostgreSqlDialect.INSTANCE.exceptionClassifier().classify(sqlFailure));
+    } finally {
+      deletePet(dataSource, id);
     }
   }
 

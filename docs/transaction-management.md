@@ -49,6 +49,21 @@ retained as primary or suppressed causes without replacing the earlier transacti
 Do not call `commit` or `rollback` inside an `inTransaction` callback, reuse a `SkisSession` after a
 terminal operation, or share a session across threads.
 
+The internal `0.2.1-SNAPSHOT` line can overlay immutable statement defaults for one local Session:
+
+```java
+ExecutionOptions sessionDefaults =
+    ExecutionOptions.builder().fetchSize(1_000).maxRows(0).build();
+
+executor.inTransaction(
+    sessionDefaults,
+    session -> session.selectFrom(PetTable.PET).fetchList());
+```
+
+Unset Session fields inherit executor defaults; per-statement `withOptions` values override the
+effective Session values. See [execution options](execution-options-and-exception-translation.md)
+for the complete precedence and validation contract.
+
 ## Spring Framework transactions
 
 `skis-spring` is a Spring Framework integration module, not Spring Boot auto-configuration. Add it
@@ -108,5 +123,8 @@ TransactionSynchronizationManager.registerSynchronization(
     });
 ```
 
-Spring exception translation, SKIS statement options, nested transactions, savepoints, reactive
-transactions, Spring Boot auto-configuration, and a starter are outside the 0.2 scope.
+The internal `0.2.1-SNAPSHOT` line provides explicit `SkisExceptionTranslator` and statement-option
+APIs without adding Spring Boot auto-configuration. These APIs accumulate toward `0.3.0`; the
+public `0.2.0` release does not contain them. Nested transactions, savepoints, reactive
+transactions, Spring Boot auto-configuration, and a starter remain outside this development
+milestone.

@@ -1,5 +1,7 @@
 package io.skis.mutation;
 
+import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
 import io.skis.jdbc.JdbcExecutionException;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.metadata.EntityMeta;
@@ -19,10 +21,22 @@ final class DefaultMutationOperations implements MutationOperations {
 
   @Override
   public <E> int insert(EntityMeta<E> entity, E value) {
+    return insert(entity, value, ExecutionContext.EMPTY);
+  }
+
+  @Override
+  public <E> int insert(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+    return insert(
+        entity,
+        value,
+        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
+  }
+
+  private <E> int insert(EntityMeta<E> entity, E value, ExecutionContext context) {
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     requireEntityValue(entity, value);
     int affected =
-        execute(entity, "insert", () -> jdbcExecutor.executeUpdate(plans.insert(), value));
+        execute(entity, "insert", () -> jdbcExecutor.executeUpdate(plans.insert(), value, context));
     if (affected != 1) {
       throw unexpectedRowCount(entity, "insert", affected, "exactly one");
     }
@@ -31,11 +45,26 @@ final class DefaultMutationOperations implements MutationOperations {
 
   @Override
   public <E> int updateById(EntityMeta<E> entity, E value) {
+    return updateById(entity, value, ExecutionContext.EMPTY);
+  }
+
+  @Override
+  public <E> int updateById(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+    return updateById(
+        entity,
+        value,
+        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
+  }
+
+  private <E> int updateById(EntityMeta<E> entity, E value, ExecutionContext context) {
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     requireEntityValue(entity, value);
     EntityMutationPlanSet.UpdateExecution<E> execution = plans.update(value);
     int affected =
-        execute(entity, "updateById", () -> jdbcExecutor.executeUpdate(execution.plan(), value));
+        execute(
+            entity,
+            "updateById",
+            () -> jdbcExecutor.executeUpdate(execution.plan(), value, context));
     if (execution.versionChecked() && affected == 0) {
       throw new OptimisticLockException(
           "optimistic update conflict for entity '" + entity.entityName() + "'");
@@ -48,11 +77,24 @@ final class DefaultMutationOperations implements MutationOperations {
 
   @Override
   public <E> int deleteById(EntityMeta<E> entity, Object id) {
+    return deleteById(entity, id, ExecutionContext.EMPTY);
+  }
+
+  @Override
+  public <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+    return deleteById(
+        entity,
+        id,
+        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
+  }
+
+  private <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionContext context) {
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     PropertyMeta<E, ?> idProperty = entity.primaryKey().orElseThrow().properties().getFirst();
     requireValueType(idProperty, id, "deleteById id");
     int affected =
-        execute(entity, "deleteById", () -> jdbcExecutor.executeUpdate(plans.delete(), id));
+        execute(
+            entity, "deleteById", () -> jdbcExecutor.executeUpdate(plans.delete(), id, context));
     if (affected > 1) {
       throw unexpectedRowCount(entity, "deleteById", affected, "at most one");
     }
@@ -98,7 +140,8 @@ final class DefaultMutationOperations implements MutationOperations {
                   + entity.entityName()
                   + "'; "
                   + failure.getMessage(),
-              Objects.requireNonNull(failure.getCause(), "JDBC failure cause"));
+              Objects.requireNonNull(failure.getCause(), "JDBC failure cause"),
+              failure.category());
       for (Throwable suppressed : failure.getSuppressed()) {
         translated.addSuppressed(suppressed);
       }

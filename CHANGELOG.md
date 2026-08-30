@@ -4,6 +4,32 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增不可变 `ExecutionOptions` 与受限 `QueryTag`，支持 statement timeout、fetch size、
+  max rows 和 query tag；执行器、事务 Session 及单次查询/mutation 按字段覆盖，未设置时保持 JDBC 驱动默认值。
+- 新增查询 `withOptions`、`findById` 和单实体 mutation 执行选项入口；事务可一次覆盖 Session 默认值，
+  现有公共接口通过默认方法保持兼容。
+- 新增方言 `ExceptionClassifier` 与稳定 `SqlExceptionCategory`，实现 PostgreSQL/H2 的重复键、外键、
+  约束、超时、查询取消、锁不可用、连接、死锁和序列化失败分类，并补真实数据库重复键合同。
+- 新增 `SkisPersistenceException` 统一安全 JDBC 诊断，以及 `skis-spring` 的
+  `SkisExceptionTranslator`/`PersistenceExceptionTranslator` 集成入口。
+- 新增 ADR-0002 和执行选项/异常翻译指南，记录兼容性、热路径、query tag 安全及回滚方案。
+
+### Changed
+
+- `JdbcExecutor` 在参数绑定后、执行前按固定 timeout → fetch size → max rows 顺序应用选项；普通空选项路径不
+  创建合并对象、不生成新 SQL，也不调用 JDBC setter。
+- 本地事务通过重新绑定 ConnectionProvider 复用执行器 codec context、默认选项和方言分类器，不重新编译计划。
+
+### Fixed
+
+- Statement 选项设置失败现在标记为 `statement-configuration` 阶段，并继续保留 Statement close 与
+  Connection release 失败的原始 cause/suppressed 顺序；异常消息不包含 SQL、参数或 query tag。
+- `fetchOne()` 在有效 `maxRows` 为 1 时内部读取上限提升到 2，避免驱动截断第二行后绕过非唯一结果检查。
+- 修正 H2 `90067` 与 PostgreSQL `57P01`–`57P05` 连接失败分类，并避免把查询取消、锁不可用误报为超时；
+  分类器抛出的运行时异常或 `Error` 现在作为 suppressed 保留，不再覆盖原始 `SQLException`。
+
 ## [0.2.0] - 2026-08-30
 
 SKIS 0.2.0 汇总发布内部 0.1.x 里程碑完成的稳定性、兼容性、诊断、文档和性能基线工作。

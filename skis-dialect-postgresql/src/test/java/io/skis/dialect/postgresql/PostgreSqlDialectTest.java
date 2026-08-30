@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.DialectFeature;
 import io.skis.dialect.RenderedSql;
+import io.skis.dialect.SqlExceptionCategory;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
@@ -18,6 +19,7 @@ import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.skis.PetMeta;
+import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -29,9 +31,55 @@ class PostgreSqlDialectTest {
 
     assertEquals("postgresql", dialect.id());
     assertSame(PostgreSqlRenderer.INSTANCE, dialect.renderer());
+    assertSame(PostgreSqlExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
+  }
+
+  @Test
+  void classifiesPostgreSqlStatesWithoutInspectingMessages() {
+    assertEquals(
+        SqlExceptionCategory.DUPLICATE_KEY,
+        classify(new SQLException("sensitive detail", "23505", 0)));
+    assertEquals(
+        SqlExceptionCategory.FOREIGN_KEY_VIOLATION,
+        classify(new SQLException("sensitive detail", "23503", 0)));
+    assertEquals(
+        SqlExceptionCategory.CONSTRAINT_VIOLATION,
+        classify(new SQLException("sensitive detail", "23514", 0)));
+    assertEquals(
+        SqlExceptionCategory.QUERY_CANCELED,
+        classify(new SQLException("sensitive detail", "57014", 0)));
+    assertEquals(
+        SqlExceptionCategory.LOCK_NOT_AVAILABLE,
+        classify(new SQLException("sensitive detail", "55P03", 0)));
+    assertEquals(
+        SqlExceptionCategory.DEADLOCK,
+        classify(new SQLException("sensitive detail", "40P01", 0)));
+    assertEquals(
+        SqlExceptionCategory.SERIALIZATION_FAILURE,
+        classify(new SQLException("sensitive detail", "40001", 0)));
+    assertEquals(
+        SqlExceptionCategory.CONNECTION_FAILURE,
+        classify(new SQLException("sensitive detail", "08006", 0)));
+    for (String state : List.of("57P01", "57P02", "57P03", "57P04", "57P05")) {
+      assertEquals(
+          SqlExceptionCategory.CONNECTION_FAILURE,
+          classify(new SQLException("sensitive detail", state, 0)),
+          state);
+    }
+    assertEquals(
+        SqlExceptionCategory.UNCATEGORIZED,
+        classify(new SQLException("sensitive detail", "42000", 0)));
+  }
+
+  @Test
+  void preciseChainedStateWinsOverAnOuterGenericStateClass() {
+    SQLException root = new SQLException("wrapper", "23000", 0);
+    root.setNextException(new SQLException("duplicate", "23505", 0));
+
+    assertEquals(SqlExceptionCategory.DUPLICATE_KEY, classify(root));
   }
 
   @Test
@@ -47,6 +95,10 @@ class PostgreSqlDialectTest {
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
         rendered.sql());
     assertEquals(List.of(id), rendered.parameters());
+  }
+
+  private static SqlExceptionCategory classify(SQLException exception) {
+    return PostgreSqlDialect.INSTANCE.exceptionClassifier().classify(exception);
   }
 
   @Test

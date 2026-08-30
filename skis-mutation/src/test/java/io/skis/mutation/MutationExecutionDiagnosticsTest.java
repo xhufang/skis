@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
 import io.skis.dialect.Dialect;
 import io.skis.dialect.DialectCapabilities;
 import io.skis.dialect.DialectFeature;
@@ -34,6 +35,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class MutationExecutionDiagnosticsTest {
@@ -114,6 +116,34 @@ class MutationExecutionDiagnosticsTest {
     assertSame(releaseFailure, thrown.getSuppressed()[0]);
     assertEquals(1, statementCloses.get());
     assertEquals(1, releases.get());
+  }
+
+  @Test
+  void propagatesPerStatementOptionsThroughTheMutationFacade() {
+    AtomicReference<ExecutionOptions> observed = new AtomicReference<>();
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) throws SQLException {
+            observed.set(context.executionOptions());
+            throw new SQLException("stop before JDBC work", "08001");
+          }
+
+          @Override
+          public void release(Connection connection, ExecutionContext context) {}
+        };
+    MutationOperations operations =
+        MutationRuntime.create(
+            EntityRuntimeRegistry.of(List.of(runtimeModel())),
+            TestDialect.INSTANCE,
+            new JdbcExecutor(provider));
+    ExecutionOptions options = ExecutionOptions.builder().maxRows(1).build();
+
+    assertThrows(
+        MutationException.class,
+        () -> operations.insert(PET, new Pet(1L, SENSITIVE_NAME), options));
+
+    assertSame(options, observed.get());
   }
 
   private static EntityRuntimeModel<Pet> runtimeModel() {
