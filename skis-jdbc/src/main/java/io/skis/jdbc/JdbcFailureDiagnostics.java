@@ -1,5 +1,6 @@
 package io.skis.jdbc;
 
+import io.skis.dialect.SqlExceptionCategory;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -9,6 +10,7 @@ final class JdbcFailureDiagnostics {
 
   enum Phase {
     ACQUIRE("connection-acquire"),
+    CONFIGURE("statement-configuration"),
     EXECUTE("execution"),
     RELEASE("connection-release");
 
@@ -25,6 +27,7 @@ final class JdbcFailureDiagnostics {
   private final String sqlFingerprint;
   private final @Nullable String sqlState;
   private final int vendorCode;
+  private final SqlExceptionCategory category;
 
   private JdbcFailureDiagnostics(
       String operation,
@@ -32,28 +35,46 @@ final class JdbcFailureDiagnostics {
       String dialectId,
       String sqlFingerprint,
       @Nullable String sqlState,
-      int vendorCode) {
+      int vendorCode,
+      SqlExceptionCategory category) {
     this.operation = operation;
     this.phase = phase;
     this.dialectId = dialectId;
     this.sqlFingerprint = sqlFingerprint;
     this.sqlState = sqlState;
     this.vendorCode = vendorCode;
+    this.category = category;
   }
 
   static JdbcFailureDiagnostics from(
-      String operation, Phase phase, String dialectId, String sql, SQLException cause) {
+      String operation,
+      Phase phase,
+      String dialectId,
+      String sql,
+      SQLException cause,
+      SqlExceptionCategory category) {
     Objects.requireNonNull(operation, "operation");
     Objects.requireNonNull(phase, "phase");
     Objects.requireNonNull(dialectId, "dialectId");
     Objects.requireNonNull(sql, "sql");
     Objects.requireNonNull(cause, "cause");
+    Objects.requireNonNull(category, "category");
     return new JdbcFailureDiagnostics(
-        operation, phase, dialectId, fingerprint(sql), cause.getSQLState(), cause.getErrorCode());
+        operation,
+        phase,
+        dialectId,
+        fingerprint(sql),
+        cause.getSQLState(),
+        cause.getErrorCode(),
+        category);
   }
 
   String operation() {
     return operation;
+  }
+
+  String phase() {
+    return phase.label;
   }
 
   String dialectId() {
@@ -72,6 +93,10 @@ final class JdbcFailureDiagnostics {
     return vendorCode;
   }
 
+  SqlExceptionCategory category() {
+    return category;
+  }
+
   String message() {
     return "JDBC "
         + operation
@@ -85,6 +110,8 @@ final class JdbcFailureDiagnostics {
         + safeState(sqlState)
         + ", vendorCode="
         + vendorCode
+        + ", category="
+        + category
         + "]";
   }
 

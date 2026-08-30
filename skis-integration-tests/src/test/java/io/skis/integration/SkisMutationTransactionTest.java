@@ -5,16 +5,22 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
+import io.skis.dialect.SqlExceptionCategory;
 import io.skis.dialect.h2.H2Dialect;
+import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.skis.PetMeta;
+import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
@@ -128,6 +134,88 @@ class SkisMutationTransactionTest {
     assertTrue(failure.getMessage().contains("transaction committed"));
     assertEquals(2, callbacks.get());
     assertTrue(executor.findById(PetMeta.ENTITY, 10L).isPresent());
+  }
+
+  @Test
+  void appliesExecutorDefaultsPerStatementOverridesAndTransactionRebinding() throws Exception {
+    DataSource dataSource = database();
+    ExecutionOptions defaults =
+        ExecutionOptions.builder()
+            .statementTimeout(Duration.ofSeconds(5))
+            .fetchSize(16)
+            .maxRows(1)
+            .queryTag("h2.contract")
+            .build();
+    SkisExecutor executor =
+        SkisExecutorFactory.builder()
+            .dataSource(dataSource)
+            .dialect(H2Dialect.INSTANCE)
+            .executionOptions(defaults)
+            .build();
+    executor.insert(
+        PetMeta.ENTITY,
+        new Pet(21L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
+    executor.insert(
+        PetMeta.ENTITY,
+        new Pet(22L, "Fifi", new BigDecimal("8.00"), false, null, "ignored"));
+    ExecutionOptions unlimited =
+        ExecutionOptions.builder().maxRows(0).clearQueryTag().build();
+
+    assertEquals(1, executor.selectFrom(PetTable.PET).fetchList().size());
+    assertEquals(
+        2,
+        executor
+            .selectFrom(PetTable.PET)
+            .withOptions(unlimited)
+            .fetchList()
+            .size());
+
+    executor.inTransaction(
+        session -> {
+          assertEquals(1, session.selectFrom(PetTable.PET).fetchList().size());
+          assertEquals(
+              2,
+              session
+                  .selectFrom(PetTable.PET)
+                  .withOptions(unlimited)
+                  .fetchList()
+                  .size());
+          return null;
+        });
+
+    ExecutionOptions sessionDefaults =
+        ExecutionOptions.builder().maxRows(0).clearQueryTag().build();
+    ExecutionOptions oneRow = ExecutionOptions.builder().maxRows(1).build();
+    executor.inTransaction(
+        sessionDefaults,
+        session -> {
+          assertEquals(2, session.selectFrom(PetTable.PET).fetchList().size());
+          assertEquals(
+              1,
+              session
+                  .selectFrom(PetTable.PET)
+                  .withOptions(oneRow)
+                  .fetchList()
+                  .size());
+          return null;
+        });
+  }
+
+  @Test
+  void classifiesARealH2DuplicateKeyFailure() throws Exception {
+    DataSource dataSource = database();
+    SkisExecutor executor = SkisExecutorFactory.create(dataSource, H2Dialect.INSTANCE);
+    Pet pet = new Pet(31L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
+    executor.insert(PetMeta.ENTITY, pet);
+
+    MutationException failure =
+        assertThrows(MutationException.class, () -> executor.insert(PetMeta.ENTITY, pet));
+
+    SQLException sqlFailure = (SQLException) failure.getCause();
+    assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());
+    assertEquals(
+        SqlExceptionCategory.DUPLICATE_KEY,
+        H2Dialect.INSTANCE.exceptionClassifier().classify(sqlFailure));
   }
 
   private static DataSource database() throws Exception {

@@ -4,12 +4,12 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-spring</artifactId>
   <name>skis-spring</name>
-  <description>Spring transaction-bound DataSource connection integration</description>
+  <description>Spring transaction-bound connections and persistence exception translation</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
@@ -17,7 +17,15 @@
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-dialect-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-mutation</artifactId>
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>

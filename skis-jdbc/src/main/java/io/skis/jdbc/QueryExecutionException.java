@@ -1,58 +1,42 @@
 package io.skis.jdbc;
 
-import io.skis.core.SkisException;
+import io.skis.dialect.SqlExceptionCategory;
 import java.io.Serial;
 import java.sql.SQLException;
-import org.jspecify.annotations.Nullable;
 
 /** Safe JDBC query failure retaining driver diagnostics without parameter values. */
-public final class QueryExecutionException extends SkisException {
+public final class QueryExecutionException extends SkisPersistenceException {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  private final String dialectId;
-  private final String sqlFingerprint;
-  private final @Nullable String sqlState;
-  private final int vendorCode;
-
   private QueryExecutionException(JdbcFailureDiagnostics diagnostics, SQLException cause) {
-    super(diagnostics.message(), cause);
-    this.dialectId = diagnostics.dialectId();
-    this.sqlFingerprint = diagnostics.sqlFingerprint();
-    this.sqlState = diagnostics.sqlState();
-    this.vendorCode = diagnostics.vendorCode();
+    super(diagnostics, cause);
   }
 
   /** Translates a driver failure using only structural query diagnostics. */
   public static QueryExecutionException from(String dialectId, String sql, SQLException cause) {
-    return from(JdbcFailureDiagnostics.Phase.EXECUTE, dialectId, sql, cause);
+    return from(
+        JdbcFailureDiagnostics.Phase.EXECUTE,
+        dialectId,
+        sql,
+        cause,
+        SqlExceptionCategory.UNCATEGORIZED);
   }
 
   static QueryExecutionException from(
       JdbcFailureDiagnostics.Phase phase, String dialectId, String sql, SQLException cause) {
+    return from(phase, dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
+  }
+
+  static QueryExecutionException from(
+      JdbcFailureDiagnostics.Phase phase,
+      String dialectId,
+      String sql,
+      SQLException cause,
+      SqlExceptionCategory category) {
     JdbcFailureDiagnostics diagnostics =
-        JdbcFailureDiagnostics.from("query", phase, dialectId, sql, cause);
+        JdbcFailureDiagnostics.from("query", phase, dialectId, sql, cause, category);
     return new QueryExecutionException(diagnostics, cause);
-  }
-
-  /** Returns the dialect identifier used by the failed plan. */
-  public String dialectId() {
-    return dialectId;
-  }
-
-  /** Returns the value-independent SQL fingerprint; parameter values are never included. */
-  public String sqlFingerprint() {
-    return sqlFingerprint;
-  }
-
-  /** Returns the driver SQLState, or {@code null} when the driver supplied none. */
-  public @Nullable String sqlState() {
-    return sqlState;
-  }
-
-  /** Returns the vendor-specific JDBC error code. */
-  public int vendorCode() {
-    return vendorCode;
   }
 
   static String fingerprint(String sql) {

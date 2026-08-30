@@ -1,5 +1,6 @@
 package io.skis.runtime;
 
+import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.QueryOperations;
@@ -23,6 +24,21 @@ public interface SkisExecutor extends QueryOperations, MutationOperations {
   SkisSession beginTransaction();
 
   /**
+   * Begins a transaction whose defaults overlay the executor defaults for all session statements.
+   *
+   * <p>The default method preserves compatibility for custom executors that only support empty
+   * options.
+   */
+  default SkisSession beginTransaction(ExecutionOptions executionOptions) {
+    java.util.Objects.requireNonNull(executionOptions, "executionOptions");
+    if (!executionOptions.isEmpty()) {
+      throw new UnsupportedOperationException(
+          "this SkisExecutor implementation does not support transaction execution options");
+    }
+    return beginTransaction();
+  }
+
+  /**
    * Executes one local callback transaction, committing on return and, after a failure, attempting
    * a rollback only while the session remains active. A failure with an unknown commit outcome is
    * propagated without a second completion attempt.
@@ -32,6 +48,17 @@ public interface SkisExecutor extends QueryOperations, MutationOperations {
    *     callback fails
    */
   <R> R inTransaction(TransactionCallback<R> callback);
+
+  /** Executes one local callback transaction with session-level statement defaults. */
+  default <R> R inTransaction(ExecutionOptions executionOptions, TransactionCallback<R> callback) {
+    java.util.Objects.requireNonNull(executionOptions, "executionOptions");
+    java.util.Objects.requireNonNull(callback, "callback");
+    if (!executionOptions.isEmpty()) {
+      throw new UnsupportedOperationException(
+          "this SkisExecutor implementation does not support transaction execution options");
+    }
+    return inTransaction(callback);
+  }
 
   /** Returns an immutable snapshot of the shared dynamic query-plan cache. */
   QueryPlanCacheStatistics queryPlanCacheStatistics();

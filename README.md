@@ -15,6 +15,11 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
 - PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
+The repository's internal `0.2.1-SNAPSHOT` line additionally contains immutable JDBC execution
+options and dialect-aware Spring exception translation. These changes are not published as a
+standalone patch release; they accumulate toward `0.3.0`. See
+[execution options and exception translation](docs/execution-options-and-exception-translation.md).
+
 ## Requirements
 
 - Java 21 or later
@@ -117,6 +122,7 @@ mappings are also deferred. Applications own DDL and assign identifiers before i
 
 - [Getting started](docs/getting-started.md)
 - [Local JDBC and Spring transaction management](docs/transaction-management.md)
+- [JDBC execution options and Spring exception translation](docs/execution-options-and-exception-translation.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
 - [Formal release checklist and component boundary](docs/release-checklist.md)

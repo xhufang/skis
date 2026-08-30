@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
 import io.skis.jdbc.CompiledQueryPlan;
 import java.util.List;
 import java.util.Objects;
@@ -15,20 +17,35 @@ final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<E,
   private final QueryTable<E> table;
   private final Projection<E, R> projection;
   private final @Nullable QueryPredicate<E> predicate;
-  private final AtomicReference<@Nullable CompiledQueryPlan<R, Object>> plan =
-      new AtomicReference<>();
+  private final ExecutionContext executionContext;
+  private final AtomicReference<@Nullable CompiledQueryPlan<R, Object>> plan;
 
   DefaultProjectedSelectQuery(
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
       Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate) {
+      @Nullable QueryPredicate<E> predicate,
+      ExecutionContext executionContext) {
+    this(
+        operations, plans, table, projection, predicate, executionContext, new AtomicReference<>());
+  }
+
+  private DefaultProjectedSelectQuery(
+      DefaultQueryOperations operations,
+      EntityPlanSet<E> plans,
+      QueryTable<E> table,
+      Projection<E, R> projection,
+      @Nullable QueryPredicate<E> predicate,
+      ExecutionContext executionContext,
+      AtomicReference<@Nullable CompiledQueryPlan<R, Object>> plan) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
     this.table = Objects.requireNonNull(table, "table");
     this.projection = Objects.requireNonNull(projection, "projection");
     this.predicate = predicate;
+    this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
+    this.plan = Objects.requireNonNull(plan, "plan");
   }
 
   @Override
@@ -38,17 +55,28 @@ final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<E,
       throw new QueryValidationException(
           "the single-table DSL accepts one where predicate per query");
     }
-    return new DefaultProjectedSelectQuery<>(operations, plans, table, projection, newPredicate);
+    return new DefaultProjectedSelectQuery<>(
+        operations, plans, table, projection, newPredicate, executionContext);
+  }
+
+  @Override
+  public ProjectedSelectQuery<E, R> withOptions(ExecutionOptions executionOptions) {
+    ExecutionOptions options = Objects.requireNonNull(executionOptions, "executionOptions");
+    if (executionContext.executionOptions().equals(options)) {
+      return this;
+    }
+    return new DefaultProjectedSelectQuery<>(
+        operations, plans, table, projection, predicate, ExecutionContext.of(options), plan);
   }
 
   @Override
   public Optional<R> fetchOne() {
-    return operations.fetchOne(plan(), plans.argument(predicate));
+    return operations.fetchOne(plan(), plans.argument(predicate), executionContext);
   }
 
   @Override
   public List<R> fetchList() {
-    return operations.fetchList(plan(), plans.argument(predicate));
+    return operations.fetchList(plan(), plans.argument(predicate), executionContext);
   }
 
   private CompiledQueryPlan<R, Object> plan() {

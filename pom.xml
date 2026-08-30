@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.2.0</version>
+  <version>0.2.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -435,9 +435,9 @@
     <profile>
       <id>api-compatibility</id>
       <properties>
-        <!-- 0.1.0 is the first complete public API baseline; pull-request CI may override this
+        <!-- 0.2.0 is the latest public API baseline; pull-request CI may override this
              with a locally built ref to validate the exact target branch. -->
-        <api.previous.version>0.1.0</api.previous.version>
+        <api.previous.version>0.2.0</api.previous.version>
       </properties>
       <build>
         <plugins>

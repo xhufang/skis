@@ -7,8 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
 import io.skis.core.NonUniqueResultException;
+import io.skis.dialect.ExceptionClassifier;
 import io.skis.dialect.RenderedSql;
+import io.skis.dialect.SqlExceptionCategory;
+import io.skis.mapping.JdbcWriteContext;
+import io.skis.mapping.RowReadContext;
 import io.skis.sql.ast.ParameterSlot;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
@@ -16,11 +21,13 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -43,6 +50,194 @@ class JdbcExecutorTest {
     assertEquals(1, scenario.resultSetCloses.get());
     assertEquals(1, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
+    assertEquals(QUERY_SQL, scenario.preparedSql.get());
+    assertEquals(List.of("bind-long", "execute-query"), scenario.executionEvents);
+  }
+
+  @Test
+  void appliesStatementOverridesAfterBindingAndInheritsUnsetExecutorDefaults() {
+    Scenario scenario = new Scenario(List.of());
+    ExecutionOptions defaults =
+        ExecutionOptions.builder()
+            .statementTimeout(Duration.ofSeconds(30))
+            .fetchSize(128)
+            .queryTag("executor-default")
+            .build();
+    ExecutionOptions statementOptions =
+        ExecutionOptions.builder()
+            .statementTimeout(Duration.ofMillis(1_001))
+            .maxRows(25)
+            .queryTag("pet.lookup")
+            .build();
+    JdbcExecutor executor =
+        configuredExecutor(scenario.provider(), defaults, ExceptionClassifier.NONE);
+
+    executor.fetchList(plan(), 17L, ExecutionContext.of(statementOptions));
+
+    assertEquals("/* skis:pet.lookup */ " + QUERY_SQL, scenario.preparedSql.get());
+    assertEquals(2, scenario.queryTimeout.get());
+    assertEquals(128, scenario.fetchSize.get());
+    assertEquals(25, scenario.maxRows.get());
+    assertEquals(
+        List.of(
+            "bind-long",
+            "query-timeout:2",
+            "fetch-size:128",
+            "max-rows:25",
+            "execute-query"),
+        scenario.executionEvents);
+  }
+
+  @Test
+  void explicitZeroValuesAndClearedTagOverrideExecutorDefaultsForMutation() {
+    Scenario scenario = new Scenario(List.of());
+    ExecutionOptions defaults =
+        ExecutionOptions.builder()
+            .statementTimeout(Duration.ofSeconds(30))
+            .fetchSize(128)
+            .maxRows(500)
+            .queryTag("executor-default")
+            .build();
+    ExecutionOptions statementOptions =
+        ExecutionOptions.builder()
+            .statementTimeout(Duration.ZERO)
+            .fetchSize(0)
+            .maxRows(0)
+            .clearQueryTag()
+            .build();
+    JdbcExecutor executor =
+        configuredExecutor(scenario.provider(), defaults, ExceptionClassifier.NONE);
+
+    executor.executeUpdate(
+        sensitiveMutationPlan(),
+        SENSITIVE_PARAMETER,
+        ExecutionContext.of(statementOptions));
+
+    assertEquals(MUTATION_SQL, scenario.preparedSql.get());
+    assertEquals(
+        List.of(
+            "bind-string",
+            "query-timeout:0",
+            "fetch-size:0",
+            "max-rows:0",
+            "execute-update"),
+        scenario.executionEvents);
+  }
+
+  @Test
+  void fetchOneRetainsNonUniqueDetectionWhenMaxRowsIsOne() {
+    Scenario scenario = new Scenario(List.of("Mimi", "Fifi"));
+    ExecutionOptions options = ExecutionOptions.builder().maxRows(1).build();
+
+    assertThrows(
+        NonUniqueResultException.class,
+        () ->
+            new JdbcExecutor(scenario.provider())
+                .fetchOne(plan(), 17L, ExecutionContext.of(options)));
+
+    assertEquals(2, scenario.maxRows.get());
+    assertEquals(
+        List.of("bind-long", "max-rows:2", "execute-query"),
+        scenario.executionEvents);
+    assertEquals(1, scenario.resultSetCloses.get());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
+  }
+
+  @Test
+  void identifiesConfigurationFailuresAndPreservesEveryCloseFailure() {
+    SQLException configurationFailure =
+        new SQLException("fetch size failed", "HY000", 81);
+    SQLException statementCloseFailure =
+        new SQLException("statement close failed", "HY000", 82);
+    SQLException releaseFailure = new SQLException("release failed", "08006", 83);
+    Scenario scenario = new Scenario(List.of());
+    scenario.configurationFailure = configurationFailure;
+    scenario.configurationFailureMethod = "setFetchSize";
+    scenario.statementCloseFailure = statementCloseFailure;
+    scenario.releaseFailure = releaseFailure;
+    ExecutionOptions options =
+        ExecutionOptions.builder().fetchSize(64).queryTag("safe-tag").build();
+
+    QueryExecutionException thrown =
+        assertThrows(
+            QueryExecutionException.class,
+            () ->
+                new JdbcExecutor(scenario.provider())
+                    .fetchList(plan(), 17L, ExecutionContext.of(options)));
+
+    assertSame(configurationFailure, thrown.getCause());
+    assertEquals("statement-configuration", thrown.phase());
+    assertDiagnosticMessage(
+        thrown, "query", "statement-configuration", "test", QUERY_SQL);
+    assertEquals(1, configurationFailure.getSuppressed().length);
+    assertSame(statementCloseFailure, configurationFailure.getSuppressed()[0]);
+    assertEquals(1, thrown.getSuppressed().length);
+    assertSame(releaseFailure, thrown.getSuppressed()[0]);
+    assertFalse(thrown.getMessage().contains("safe-tag"));
+  }
+
+  @Test
+  void recordsDialectClassificationWithoutLettingClassifierFailureMaskJdbcFailure() {
+    SQLException duplicateFailure = new SQLException("duplicate", "23505", 84);
+    Scenario classifiedScenario = new Scenario(List.of());
+    classifiedScenario.executionFailure = duplicateFailure;
+    JdbcExecutor classifiedExecutor =
+        configuredExecutor(
+            classifiedScenario.provider(),
+            ExecutionOptions.NONE,
+            ignored -> SqlExceptionCategory.DUPLICATE_KEY);
+
+    QueryExecutionException classified =
+        assertThrows(
+            QueryExecutionException.class,
+            () -> classifiedExecutor.fetchList(plan(), 17L));
+
+    assertEquals(SqlExceptionCategory.DUPLICATE_KEY, classified.category());
+
+    SQLException executionFailure = new SQLException("execute", "42000", 85);
+    IllegalStateException classifierFailure = new IllegalStateException("classifier failed");
+    Scenario fallbackScenario = new Scenario(List.of());
+    fallbackScenario.executionFailure = executionFailure;
+    JdbcExecutor fallbackExecutor =
+        configuredExecutor(
+            fallbackScenario.provider(),
+            ExecutionOptions.NONE,
+            ignored -> {
+              throw classifierFailure;
+            });
+
+    QueryExecutionException fallback =
+        assertThrows(
+            QueryExecutionException.class,
+            () -> fallbackExecutor.fetchList(plan(), 17L));
+
+    assertSame(executionFailure, fallback.getCause());
+    assertEquals(SqlExceptionCategory.UNCATEGORIZED, fallback.category());
+    assertEquals(1, executionFailure.getSuppressed().length);
+    assertSame(classifierFailure, executionFailure.getSuppressed()[0]);
+
+    SQLException errorExecutionFailure = new SQLException("execute", "42000", 86);
+    AssertionError classifierError = new AssertionError("classifier failed with error");
+    Scenario errorFallbackScenario = new Scenario(List.of());
+    errorFallbackScenario.executionFailure = errorExecutionFailure;
+    JdbcExecutor errorFallbackExecutor =
+        configuredExecutor(
+            errorFallbackScenario.provider(),
+            ExecutionOptions.NONE,
+            ignored -> {
+              throw classifierError;
+            });
+
+    QueryExecutionException errorFallback =
+        assertThrows(
+            QueryExecutionException.class,
+            () -> errorFallbackExecutor.fetchList(plan(), 17L));
+
+    assertSame(errorExecutionFailure, errorFallback.getCause());
+    assertEquals(SqlExceptionCategory.UNCATEGORIZED, errorFallback.category());
+    assertEquals(1, errorExecutionFailure.getSuppressed().length);
+    assertSame(classifierError, errorExecutionFailure.getSuppressed()[0]);
   }
 
   @Test
@@ -285,6 +480,18 @@ class JdbcExecutorTest {
         (resultSet, context) -> resultSet.getString(1));
   }
 
+  private static JdbcExecutor configuredExecutor(
+      ConnectionProvider connectionProvider,
+      ExecutionOptions defaultExecutionOptions,
+      ExceptionClassifier exceptionClassifier) {
+    return new JdbcExecutor(
+        connectionProvider,
+        JdbcWriteContext.EMPTY,
+        RowReadContext.EMPTY,
+        defaultExecutionOptions,
+        exceptionClassifier);
+  }
+
   private static CompiledQueryPlan<String, String> sensitivePlan() {
     ParameterSlot<String> value = new ParameterSlot<>(0, String.class, false);
     return new CompiledQueryPlan<>(
@@ -361,12 +568,19 @@ class JdbcExecutorTest {
     private final AtomicInteger resultSetCloses = new AtomicInteger();
     private final AtomicInteger statementCloses = new AtomicInteger();
     private final AtomicInteger releases = new AtomicInteger();
+    private final AtomicReference<String> preparedSql = new AtomicReference<>();
+    private final AtomicInteger queryTimeout = new AtomicInteger(-1);
+    private final AtomicInteger fetchSize = new AtomicInteger(-1);
+    private final AtomicInteger maxRows = new AtomicInteger(-1);
+    private final List<String> executionEvents = new ArrayList<>();
     private @Nullable SQLException acquireFailure;
     private @Nullable SQLException prepareFailure;
     private @Nullable SQLException executionFailure;
     private @Nullable SQLException resultSetCloseFailure;
     private @Nullable SQLException statementCloseFailure;
     private @Nullable SQLException releaseFailure;
+    private @Nullable SQLException configurationFailure;
+    private @Nullable String configurationFailureMethod;
 
     private Scenario(List<String> rows) {
       this.rows = new ArrayList<>(rows);
@@ -395,15 +609,43 @@ class JdbcExecutorTest {
                 case "setLong" -> {
                   boundIndex.set((Integer) arguments[0]);
                   boundValue.set((Long) arguments[1]);
+                  executionEvents.add("bind-long");
+                  yield null;
+                }
+                case "setString" -> {
+                  executionEvents.add("bind-string");
+                  yield null;
+                }
+                case "setQueryTimeout" -> {
+                  failConfiguration(method.getName());
+                  int value = (Integer) arguments[0];
+                  queryTimeout.set(value);
+                  executionEvents.add("query-timeout:" + value);
+                  yield null;
+                }
+                case "setFetchSize" -> {
+                  failConfiguration(method.getName());
+                  int value = (Integer) arguments[0];
+                  fetchSize.set(value);
+                  executionEvents.add("fetch-size:" + value);
+                  yield null;
+                }
+                case "setMaxRows" -> {
+                  failConfiguration(method.getName());
+                  int value = (Integer) arguments[0];
+                  maxRows.set(value);
+                  executionEvents.add("max-rows:" + value);
                   yield null;
                 }
                 case "executeQuery" -> {
+                  executionEvents.add("execute-query");
                   if (executionFailure != null) {
                     throw executionFailure;
                   }
                   yield resultSet;
                 }
                 case "executeUpdate" -> {
+                  executionEvents.add("execute-update");
                   if (executionFailure != null) {
                     throw executionFailure;
                   }
@@ -426,6 +668,7 @@ class JdbcExecutorTest {
                   if (prepareFailure != null) {
                     throw prepareFailure;
                   }
+                  preparedSql.set((String) arguments[0]);
                   return statement;
                 }
                 return defaultValue(method.getReturnType());
@@ -447,6 +690,12 @@ class JdbcExecutorTest {
           }
         }
       };
+    }
+
+    private void failConfiguration(String methodName) throws SQLException {
+      if (configurationFailure != null && methodName.equals(configurationFailureMethod)) {
+        throw configurationFailure;
+      }
     }
   }
 

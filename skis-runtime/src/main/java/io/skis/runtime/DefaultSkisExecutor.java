@@ -1,6 +1,8 @@
 package io.skis.runtime;
 
-import io.skis.jdbc.ConnectionProvider;
+import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
+import io.skis.jdbc.JdbcExecutor;
 import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
@@ -21,19 +23,19 @@ final class DefaultSkisExecutor implements SkisExecutor {
 
   private final QueryOperations queries;
   private final MutationOperations mutations;
-  private final ConnectionProvider connectionProvider;
+  private final JdbcExecutor jdbcExecutor;
   private final QueryPlanCatalog queryPlans;
   private final MutationPlanCatalog mutationPlans;
 
   DefaultSkisExecutor(
       QueryOperations queries,
       MutationOperations mutations,
-      ConnectionProvider connectionProvider,
+      JdbcExecutor jdbcExecutor,
       QueryPlanCatalog queryPlans,
       MutationPlanCatalog mutationPlans) {
     this.queries = Objects.requireNonNull(queries, "queries");
     this.mutations = Objects.requireNonNull(mutations, "mutations");
-    this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
+    this.jdbcExecutor = Objects.requireNonNull(jdbcExecutor, "jdbcExecutor");
     this.queryPlans = Objects.requireNonNull(queryPlans, "queryPlans");
     this.mutationPlans = Objects.requireNonNull(mutationPlans, "mutationPlans");
   }
@@ -41,6 +43,12 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E> Optional<E> findById(EntityMeta<E> entity, Object id) {
     return queries.findById(entity, id);
+  }
+
+  @Override
+  public <E> Optional<E> findById(
+      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+    return queries.findById(entity, id, executionOptions);
   }
 
   @Override
@@ -65,8 +73,18 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
+  public <E> int insert(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+    return mutations.insert(entity, value, executionOptions);
+  }
+
+  @Override
   public <E> int updateById(EntityMeta<E> entity, E value) {
     return mutations.updateById(entity, value);
+  }
+
+  @Override
+  public <E> int updateById(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+    return mutations.updateById(entity, value, executionOptions);
   }
 
   @Override
@@ -75,8 +93,22 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
+  public <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+    return mutations.deleteById(entity, id, executionOptions);
+  }
+
+  @Override
   public SkisSession beginTransaction() {
-    JdbcTransaction transaction = JdbcTransaction.begin(connectionProvider);
+    return beginTransaction(ExecutionOptions.NONE);
+  }
+
+  @Override
+  public SkisSession beginTransaction(ExecutionOptions executionOptions) {
+    JdbcExecutor sessionExecutor =
+        jdbcExecutor.withDefaultExecutionOptions(
+            Objects.requireNonNull(executionOptions, "executionOptions"));
+    JdbcTransaction transaction =
+        JdbcTransaction.beginWithExecutor(sessionExecutor, ExecutionContext.EMPTY);
     try {
       QueryOperations sessionQueries = queryPlans.bind(transaction.jdbcExecutor());
       MutationOperations sessionMutations = mutationPlans.bind(transaction.jdbcExecutor());
@@ -93,8 +125,13 @@ final class DefaultSkisExecutor implements SkisExecutor {
 
   @Override
   public <R> R inTransaction(TransactionCallback<R> callback) {
+    return inTransaction(ExecutionOptions.NONE, callback);
+  }
+
+  @Override
+  public <R> R inTransaction(ExecutionOptions executionOptions, TransactionCallback<R> callback) {
     Objects.requireNonNull(callback, "callback");
-    SkisSession session = beginTransaction();
+    SkisSession session = beginTransaction(executionOptions);
     Throwable pendingFailure = null;
     try {
       R result = callback.execute(session);

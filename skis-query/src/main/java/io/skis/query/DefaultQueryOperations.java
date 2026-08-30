@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.ExecutionContext;
+import io.skis.core.ExecutionOptions;
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.metadata.EntityMeta;
@@ -27,18 +29,31 @@ final class DefaultQueryOperations implements QueryOperations {
 
   @Override
   public <E> Optional<E> findById(EntityMeta<E> entity, Object id) {
+    return findById(entity, id, ExecutionContext.EMPTY);
+  }
+
+  @Override
+  public <E> Optional<E> findById(
+      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+    ExecutionContext executionContext =
+        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions"));
+    return findById(entity, id, executionContext);
+  }
+
+  private <E> Optional<E> findById(
+      EntityMeta<E> entity, Object id, ExecutionContext executionContext) {
     Objects.requireNonNull(entity, "entity");
     EntityPlanSet<E> plans = requirePlanSet(entity);
     PropertyMeta<E, ?> idProperty = plans.findByIdProperty();
     requireValueType(idProperty, id);
-    return jdbcExecutor.fetchOne(plans.findByIdPlan(), id);
+    return jdbcExecutor.fetchOne(plans.findByIdPlan(), id, executionContext);
   }
 
   @Override
   public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return new DefaultEntitySelectQuery<>(this, plans, table, null);
+    return new DefaultEntitySelectQuery<>(this, plans, table, null, ExecutionContext.EMPTY);
   }
 
   @Override
@@ -57,27 +72,36 @@ final class DefaultQueryOperations implements QueryOperations {
   <E, R> ProjectedSelectQuery<E, R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
     projection.validateFrom(table);
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return new DefaultProjectedSelectQuery<>(this, plans, table, projection, null);
+    return new DefaultProjectedSelectQuery<>(
+        this, plans, table, projection, null, ExecutionContext.EMPTY);
   }
 
   <E> Optional<E> fetchOne(
-      EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
+      EntityPlanSet<E> plans,
+      QueryTable<E> table,
+      @Nullable QueryPredicate<E> predicate,
+      ExecutionContext executionContext) {
     CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
-    return jdbcExecutor.fetchOne(plan, plans.argument(predicate));
+    return jdbcExecutor.fetchOne(plan, plans.argument(predicate), executionContext);
   }
 
   <E> List<E> fetchList(
-      EntityPlanSet<E> plans, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
+      EntityPlanSet<E> plans,
+      QueryTable<E> table,
+      @Nullable QueryPredicate<E> predicate,
+      ExecutionContext executionContext) {
     CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
-    return jdbcExecutor.fetchList(plan, plans.argument(predicate));
+    return jdbcExecutor.fetchList(plan, plans.argument(predicate), executionContext);
   }
 
-  <R> Optional<R> fetchOne(CompiledQueryPlan<R, Object> plan, Object argument) {
-    return jdbcExecutor.fetchOne(plan, argument);
+  <R> Optional<R> fetchOne(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return jdbcExecutor.fetchOne(plan, argument, executionContext);
   }
 
-  <R> List<R> fetchList(CompiledQueryPlan<R, Object> plan, Object argument) {
-    return jdbcExecutor.fetchList(plan, argument);
+  <R> List<R> fetchList(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return jdbcExecutor.fetchList(plan, argument, executionContext);
   }
 
   private <E> EntityPlanSet<E> requirePlanSet(EntityMeta<E> entity) {

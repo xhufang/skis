@@ -36,24 +36,43 @@ public final class JdbcTransaction implements AutoCloseable {
       ConnectionProvider owner,
       ExecutionContext executionContext,
       Connection connection,
-      boolean originalAutoCommit) {
+      boolean originalAutoCommit,
+      JdbcExecutor executorTemplate) {
     this.owner = owner;
     this.executionContext = executionContext;
     this.connection = connection;
     this.originalAutoCommit = originalAutoCommit;
-    this.jdbcExecutor = new JdbcExecutor(new TransactionConnectionProvider());
+    this.jdbcExecutor =
+        Objects.requireNonNull(executorTemplate, "executorTemplate")
+            .withConnectionProvider(new TransactionConnectionProvider());
   }
 
   /** Begins a local transaction with the empty execution context. */
   public static JdbcTransaction begin(ConnectionProvider connectionProvider) {
-    return begin(connectionProvider, ExecutionContext.EMPTY);
+    ConnectionProvider provider = Objects.requireNonNull(connectionProvider, "connectionProvider");
+    return beginInternal(provider, ExecutionContext.EMPTY, new JdbcExecutor(provider));
   }
 
   /** Acquires one connection and begins a local transaction. */
   public static JdbcTransaction begin(
       ConnectionProvider connectionProvider, ExecutionContext executionContext) {
     ConnectionProvider provider = Objects.requireNonNull(connectionProvider, "connectionProvider");
+    return beginInternal(provider, executionContext, new JdbcExecutor(provider));
+  }
+
+  /** Acquires one connection from an executor while retaining all of its immutable settings. */
+  public static JdbcTransaction beginWithExecutor(
+      JdbcExecutor executorTemplate, ExecutionContext executionContext) {
+    JdbcExecutor template = Objects.requireNonNull(executorTemplate, "executorTemplate");
+    return beginInternal(template.connectionProvider(), executionContext, template);
+  }
+
+  private static JdbcTransaction beginInternal(
+      ConnectionProvider provider,
+      ExecutionContext executionContext,
+      JdbcExecutor executorTemplate) {
     ExecutionContext context = Objects.requireNonNull(executionContext, "executionContext");
+    JdbcExecutor template = Objects.requireNonNull(executorTemplate, "executorTemplate");
     if (!provider.supportsLocalTransactions()) {
       throw new TransactionException(
           "connection provider delegates transaction ownership to an external transaction manager");
@@ -70,7 +89,7 @@ public final class JdbcTransaction implements AutoCloseable {
         autoCommitChangeAttempted = true;
         connection.setAutoCommit(false);
       }
-      return new JdbcTransaction(provider, context, connection, originalAutoCommit);
+      return new JdbcTransaction(provider, context, connection, originalAutoCommit, template);
     } catch (SQLException failure) {
       cleanUpFailedBegin(
           provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);

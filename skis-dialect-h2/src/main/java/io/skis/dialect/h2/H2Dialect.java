@@ -3,6 +3,7 @@ package io.skis.dialect.h2;
 import io.skis.dialect.Dialect;
 import io.skis.dialect.DialectCapabilities;
 import io.skis.dialect.DialectFeature;
+import io.skis.dialect.ExceptionClassifier;
 import io.skis.dialect.IdentifierRules;
 import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardIdentifierRules;
@@ -38,5 +39,10 @@ public final class H2Dialect implements Dialect {
   @Override
   public SqlRenderer renderer() {
     return H2Renderer.INSTANCE;
+  }
+
+  @Override
+  public ExceptionClassifier exceptionClassifier() {
+    return H2ExceptionClassifier.INSTANCE;
   }
 }
