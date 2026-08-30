@@ -1,5 +1,6 @@
 package io.skis.runtime;
 
+import io.skis.core.TransactionException;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
@@ -13,10 +14,23 @@ import io.skis.query.QueryPlanCacheStatistics;
  */
 public interface SkisExecutor extends QueryOperations, MutationOperations {
 
-  /** Begins an explicit local JDBC transaction. Closing without completion rolls it back. */
+  /**
+   * Begins an explicit local JDBC transaction. Closing without completion rolls it back.
+   *
+   * @throws TransactionException when the configured connection provider delegates transaction
+   *     ownership to an external transaction manager, or when the transaction cannot be started
+   */
   SkisSession beginTransaction();
 
-  /** Executes one callback transaction, committing on return and rolling back on failure. */
+  /**
+   * Executes one local callback transaction, committing on return and, after a failure, attempting
+   * a rollback only while the session remains active. A failure with an unknown commit outcome is
+   * propagated without a second completion attempt.
+   *
+   * @throws TransactionException when the configured connection provider delegates transaction
+   *     ownership to an external transaction manager, or when begun, commit, or an after-commit
+   *     callback fails
+   */
   <R> R inTransaction(TransactionCallback<R> callback);
 
   /** Returns an immutable snapshot of the shared dynamic query-plan cache. */

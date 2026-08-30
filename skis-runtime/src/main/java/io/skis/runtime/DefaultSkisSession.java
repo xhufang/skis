@@ -82,9 +82,16 @@ final class DefaultSkisSession implements SkisSession {
   @Override
   public void commit() {
     requireActive();
-    transaction.commit();
+    try {
+      transaction.commit();
+    } catch (RuntimeException | Error failure) {
+      afterCommitCallbacks.clear();
+      throw failure;
+    }
+    List<Runnable> committedCallbacks = List.copyOf(afterCommitCallbacks);
+    afterCommitCallbacks.clear();
     Throwable callbackFailure = null;
-    for (Runnable callback : afterCommitCallbacks) {
+    for (Runnable callback : committedCallbacks) {
       try {
         callback.run();
       } catch (RuntimeException | Error failure) {
@@ -95,7 +102,6 @@ final class DefaultSkisSession implements SkisSession {
         }
       }
     }
-    afterCommitCallbacks.clear();
     if (callbackFailure instanceof Error error) {
       throw error;
     }

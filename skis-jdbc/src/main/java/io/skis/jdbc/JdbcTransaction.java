@@ -11,11 +11,18 @@ import org.jspecify.annotations.Nullable;
 public final class JdbcTransaction implements AutoCloseable {
 
   private enum State {
-    ACTIVE,
-    COMMITTED,
-    ROLLED_BACK,
-    FAILED,
-    CLOSED
+    ACTIVE("active"),
+    COMMITTED("committed"),
+    ROLLED_BACK("rolled-back"),
+    COMMIT_OUTCOME_UNKNOWN("commit-outcome-unknown"),
+    ROLLBACK_OUTCOME_UNKNOWN("rollback-outcome-unknown"),
+    CLOSED("closed");
+
+    private final String description;
+
+    State(String description) {
+      this.description = description;
+    }
   }
 
   private final ConnectionProvider owner;
@@ -53,30 +60,24 @@ public final class JdbcTransaction implements AutoCloseable {
     }
 
     Connection connection = null;
+    Boolean acquiredAutoCommit = null;
+    boolean autoCommitChangeAttempted = false;
     try {
       connection = provider.acquire(context);
       boolean originalAutoCommit = connection.getAutoCommit();
+      acquiredAutoCommit = originalAutoCommit;
       if (originalAutoCommit) {
+        autoCommitChangeAttempted = true;
         connection.setAutoCommit(false);
       }
       return new JdbcTransaction(provider, context, connection, originalAutoCommit);
     } catch (SQLException failure) {
-      if (connection != null) {
-        try {
-          provider.release(connection, context);
-        } catch (SQLException | RuntimeException | Error releaseFailure) {
-          failure.addSuppressed(releaseFailure);
-        }
-      }
+      cleanUpFailedBegin(
+          provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);
       throw new TransactionException("cannot begin JDBC transaction", failure);
     } catch (RuntimeException | Error failure) {
-      if (connection != null) {
-        try {
-          provider.release(connection, context);
-        } catch (SQLException | RuntimeException | Error releaseFailure) {
-          failure.addSuppressed(releaseFailure);
-        }
-      }
+      cleanUpFailedBegin(
+          provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);
       throw failure;
     }
   }
@@ -98,10 +99,13 @@ public final class JdbcTransaction implements AutoCloseable {
     try {
       connection.commit();
       state = State.COMMITTED;
-    } catch (SQLException failure) {
-      state = State.FAILED;
+    } catch (SQLException | RuntimeException failure) {
+      state = State.COMMIT_OUTCOME_UNKNOWN;
       throw new TransactionException(
           "JDBC commit failed; transaction outcome may be unknown", failure);
+    } catch (Error failure) {
+      state = State.COMMIT_OUTCOME_UNKNOWN;
+      throw failure;
     }
   }
 
@@ -111,14 +115,23 @@ public final class JdbcTransaction implements AutoCloseable {
     try {
       connection.rollback();
       state = State.ROLLED_BACK;
-    } catch (SQLException failure) {
-      state = State.FAILED;
+    } catch (SQLException | RuntimeException failure) {
+      state = State.ROLLBACK_OUTCOME_UNKNOWN;
       throw new TransactionException(
           "JDBC rollback failed; transaction outcome may be unknown", failure);
+    } catch (Error failure) {
+      state = State.ROLLBACK_OUTCOME_UNKNOWN;
+      throw failure;
     }
   }
 
-  /** Rolls back an active transaction, restores connection state, and releases ownership. */
+  /**
+   * Rolls back an active transaction, safely restores connection state, and releases ownership.
+   *
+   * <p>Auto-commit is restored only after a known successful commit or rollback. It is not changed
+   * after an unknown completion outcome because enabling auto-commit could itself commit pending
+   * work on some drivers.
+   */
   @Override
   public void close() {
     if (state == State.CLOSED) {
@@ -132,35 +145,95 @@ public final class JdbcTransaction implements AutoCloseable {
         pendingFailure = failure;
       }
     }
-    if (originalAutoCommit && state != State.FAILED) {
+    if (originalAutoCommit && completionOutcomeIsKnown()) {
       try {
         connection.setAutoCommit(true);
       } catch (SQLException | RuntimeException | Error failure) {
-        pendingFailure = combine(pendingFailure, failure);
+        pendingFailure =
+            combine(
+                pendingFailure,
+                closeFailure(
+                    "JDBC transaction "
+                        + state.description
+                        + " but the original auto-commit state could not be restored",
+                    failure));
       }
     }
     try {
       owner.release(connection, executionContext);
     } catch (SQLException | RuntimeException | Error failure) {
-      pendingFailure = combine(pendingFailure, failure);
+      pendingFailure = combine(pendingFailure, closeFailure(releaseFailureMessage(), failure));
     } finally {
       state = State.CLOSED;
     }
-    if (pendingFailure != null) {
-      if (pendingFailure instanceof Error error) {
-        throw error;
-      }
-      if (pendingFailure instanceof TransactionException transactionFailure) {
-        throw transactionFailure;
-      }
-      throw new TransactionException("cannot close JDBC transaction", pendingFailure);
-    }
+    rethrow(pendingFailure);
   }
 
   private void requireActive() {
     if (state != State.ACTIVE) {
-      throw new TransactionException(
-          "transaction is not active [state=" + state.name().toLowerCase() + "]");
+      throw new TransactionException("transaction is not active [state=" + state.description + "]");
+    }
+  }
+
+  private boolean completionOutcomeIsKnown() {
+    return state == State.COMMITTED || state == State.ROLLED_BACK;
+  }
+
+  private String releaseFailureMessage() {
+    return switch (state) {
+      case COMMITTED -> "JDBC transaction committed but its connection could not be released";
+      case ROLLED_BACK -> "JDBC transaction rolled back but its connection could not be released";
+      case COMMIT_OUTCOME_UNKNOWN ->
+          "JDBC commit outcome is unknown and its connection could not be released";
+      case ROLLBACK_OUTCOME_UNKNOWN ->
+          "JDBC rollback outcome is unknown and its connection could not be released";
+      case ACTIVE -> "active JDBC transaction connection could not be released";
+      case CLOSED -> "closed JDBC transaction connection could not be released";
+    };
+  }
+
+  private static void cleanUpFailedBegin(
+      ConnectionProvider provider,
+      ExecutionContext context,
+      @Nullable Connection connection,
+      @Nullable Boolean originalAutoCommit,
+      boolean autoCommitChangeAttempted,
+      Throwable failure) {
+    if (connection == null) {
+      return;
+    }
+    if (Boolean.TRUE.equals(originalAutoCommit) && autoCommitChangeAttempted) {
+      try {
+        connection.setAutoCommit(true);
+      } catch (SQLException | RuntimeException | Error restorationFailure) {
+        failure.addSuppressed(
+            closeFailure(
+                "cannot restore auto-commit after JDBC transaction begin failed",
+                restorationFailure));
+      }
+    }
+    try {
+      provider.release(connection, context);
+    } catch (SQLException | RuntimeException | Error releaseFailure) {
+      failure.addSuppressed(
+          closeFailure(
+              "cannot release JDBC connection after transaction begin failed", releaseFailure));
+    }
+  }
+
+  private static Throwable closeFailure(String message, Throwable failure) {
+    if (failure instanceof Error) {
+      return failure;
+    }
+    return new TransactionException(message, failure);
+  }
+
+  private static void rethrow(@Nullable Throwable failure) {
+    if (failure instanceof Error error) {
+      throw error;
+    }
+    if (failure != null) {
+      throw (RuntimeException) failure;
     }
   }
 
