@@ -4,12 +4,12 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.1.5-SNAPSHOT</version>
+    <version>0.1.6-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-audit</artifactId>
   <name>skis-audit</name>
-  <!-- Planned module: retained as a source scaffold but deliberately not published in 0.1.0. -->
+  <!-- Planned module: retained as a source scaffold but deliberately not published from the 0.1 maintenance line. -->
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>

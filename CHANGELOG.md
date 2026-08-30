@@ -6,6 +6,12 @@
 
 ### Added
 
+- 新增不继承 SKIS 父 POM、也不加入 Reactor 的最小 H2 消费者门禁，独立验证 BOM、APT、
+  生成索引、runtime、方言和应用驱动的组合方式。
+- 新增单一 Maven Central 组件白名单及静态边界校验，统一核对 BOM、所有模块的部署跳过配置、
+  Central 排除项和发布包内容。
+- 新增 PostgreSQL `findById` Fast Path 轻量 smoke 工作流，以 0.1.1 报告的同轮
+  SKIS/JDBC 耗时和分配量比例识别明显回退，并保存原始 JMH JSON。
 - 新增本地 JDBC 与 Spring 外部事务管理指南，覆盖手工装配、连接所有权、提交结果未知、
   `afterCommit` 失败语义和禁止混用的事务入口；H2 示例同步展示提交后回调。
 - 新增事务故障注入和真实 Spring `JdbcTransactionManager` 回归测试，覆盖 auto-commit 恢复、
@@ -25,6 +31,8 @@
 
 ### Changed
 
+- Reactor 进入 `0.1.6-SNAPSHOT` 内部稳定化里程碑；README、Getting Started、Javadoc、
+  数据库兼容矩阵说明和正式发布清单统一到实际 0.1 能力及内部版本边界。
 - 本地事务内部状态现在明确区分已提交、已回滚、提交结果未知和回滚结果未知；仅在完成结果明确时恢复
   原始 auto-commit，然后按固定顺序归还 Connection。
 - `SpringConnectionProvider` 继续完全委托 Spring 事务上下文，并通过可传播 `SQLException` 的

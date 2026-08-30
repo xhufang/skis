@@ -14,6 +14,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-boundary:
+    name: Release boundary metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Verify BOM, deploy skips, and Central allowlist
+        shell: pwsh
+        run: ./.github/scripts/verify-release-boundary.ps1
+
   unit-tests:
     name: Unit tests (Java ${{ matrix.java }})
     runs-on: ubuntu-latest
@@ -93,3 +104,36 @@ jobs:
             **/target/surefire-reports/**
             **/target/failsafe-reports/**
           if-no-files-found: ignore
+
+  minimal-consumer:
+    name: Independent H2 consumer
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install only the consumer dependency closure
+        shell: bash
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp -Dmaven.test.skip=true \
+            -pl skis-bom,skis-runtime,skis-dialect-h2,skis-processor \
+            -am install
+
+      - name: Verify a project with no SKIS parent or reactor membership
+        shell: bash
+        run: |
+          project_version="$(./mvnw -q -N help:evaluate -Dexpression=project.version -DforceStdout)"
+          consumer_dir="${RUNNER_TEMP}/skis-minimal-h2-consumer"
+          cp -R skis-integration-tests/src/consumer/minimal-h2 "${consumer_dir}"
+          ./mvnw -B -ntp \
+            -f "${consumer_dir}/pom.xml" \
+            -Dskis.version="${project_version}" \
+            verify

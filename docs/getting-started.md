@@ -3,6 +3,10 @@
 This guide builds a minimal plain-Java application. SKIS generates its runtime metadata at compile
 time, so annotation processing is a required part of the consumer build.
 
+The dependency snippets use `0.1.0`, the latest public release. Repository CI repeats this setup
+against the current internal snapshot using a standalone project that has no SKIS parent POM and is
+not part of the SKIS reactor. Internal `0.1.x` milestone numbers are deliberately not published.
+
 ## 1. Configure Maven
 
 Import the SKIS BOM and choose one dialect. The application must also provide its JDBC driver and
@@ -255,3 +259,7 @@ entry point, schema migration, batch write, upsert, or Spring Boot auto-configur
 JDBC alongside SKIS when an application needs SQL outside this boundary.
 
 A complete version of this setup lives in [`skis-example-h2`](../skis-examples/skis-example-h2).
+The stricter standalone consumer fixture used by CI lives under
+[`skis-integration-tests/src/consumer/minimal-h2`](../skis-integration-tests/src/consumer/minimal-h2)
+and verifies BOM import, annotation processing, generated indexes, runtime assembly, the H2 dialect,
+and the application-supplied driver without inheriting repository build configuration.

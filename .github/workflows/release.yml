@@ -101,6 +101,10 @@ jobs:
                   )
           PY
 
+      - name: Validate release boundary metadata
+        shell: pwsh
+        run: ./.github/scripts/verify-release-boundary.ps1
+
       - name: Verify, sign, and stage
         shell: bash
         env:
@@ -109,8 +113,10 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: ./mvnw -B -ntp -Pcompliance,release deploy
 
-      - name: Validate Central component set
+      - name: Validate Central component GAV set
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
         run: |
           set -euo pipefail
           bundle="$(find target/central-publishing -maxdepth 1 -type f -name '*.zip' -print -quit)"
@@ -118,25 +124,12 @@ jobs:
             echo "Central bundle was not created"
             exit 1
           fi
-          cat > "${RUNNER_TEMP}/expected-components.txt" <<'EOF'
-          skis-annotations
-          skis-bom
-          skis-core
-          skis-dialect-api
-          skis-dialect-h2
-          skis-dialect-postgresql
-          skis-jdbc
-          skis-mapping
-          skis-metadata
-          skis-mutation
-          skis-parent
-          skis-processor
-          skis-query
-          skis-runtime
-          skis-spring
-          skis-sql-ast
-          EOF
-          unzip -Z1 "${bundle}" | awk -F/ '$1 == "io" && $2 == "github" && $3 == "xhufang" && NF >= 6 { print $4 }' | sort -u > "${RUNNER_TEMP}/actual-components.txt"
+          release_version="${RELEASE_TAG#v}"
+          awk -v version="${release_version}" 'NF { print "io.github.xhufang:" $0 ":" version }' \
+            .github/release-components.txt | sort -u > "${RUNNER_TEMP}/expected-components.txt"
+          unzip -Z1 "${bundle}" | \
+            awk -F/ '$1 == "io" && $2 == "github" && $3 == "xhufang" && NF >= 6 { print "io.github.xhufang:" $4 ":" $5 }' | \
+            sort -u > "${RUNNER_TEMP}/actual-components.txt"
           diff -u "${RUNNER_TEMP}/expected-components.txt" "${RUNNER_TEMP}/actual-components.txt"
 
       - name: Create or update draft GitHub Release

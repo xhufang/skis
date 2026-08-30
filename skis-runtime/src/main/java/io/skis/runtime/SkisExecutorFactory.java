@@ -34,6 +34,7 @@ public final class SkisExecutorFactory {
     return create(new DataSourceConnectionProvider(dataSource), dialect);
   }
 
+  /** Starts explicit assembly of an executor and its immutable runtime registries. */
   public static Builder builder() {
     return new Builder();
   }
@@ -51,15 +52,18 @@ public final class SkisExecutorFactory {
 
     private Builder() {}
 
+    /** Uses the supplied connection ownership strategy for every operation. */
     public Builder connectionProvider(ConnectionProvider connectionProvider) {
       this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
       return this;
     }
 
+    /** Uses a plain DataSource whose connections are acquired and released by SKIS. */
     public Builder dataSource(DataSource dataSource) {
       return connectionProvider(new DataSourceConnectionProvider(dataSource));
     }
 
+    /** Selects the dialect used to compile and render all plans in this executor. */
     public Builder dialect(Dialect dialect) {
       this.dialect = Objects.requireNonNull(dialect, "dialect");
       return this;
@@ -102,6 +106,7 @@ public final class SkisExecutorFactory {
       return this;
     }
 
+    /** Loads any unspecified generated registries and creates the thread-safe executor. */
     public SkisExecutor build() {
       ConnectionProvider provider =
           Objects.requireNonNull(connectionProvider, "connectionProvider must be configured");

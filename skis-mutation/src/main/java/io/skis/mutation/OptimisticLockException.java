@@ -7,6 +7,7 @@ public final class OptimisticLockException extends MutationException {
 
   @Serial private static final long serialVersionUID = 1L;
 
+  /** Creates a conflict for a version-checked update that affected no row. */
   public OptimisticLockException(String message) {
     super(message);
   }
