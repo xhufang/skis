@@ -1,19 +1,34 @@
 package io.skis.dialect;
 
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.ArithmeticExpression;
+import io.skis.sql.ast.ArithmeticOperator;
+import io.skis.sql.ast.BetweenPredicate;
+import io.skis.sql.ast.CaseExpression;
+import io.skis.sql.ast.CaseWhen;
+import io.skis.sql.ast.CastExpression;
+import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.LikePredicate;
+import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.NotPredicate;
+import io.skis.sql.ast.NullOperator;
+import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
@@ -110,7 +125,11 @@ public final class StandardSqlRenderer implements SqlRenderer {
       UpdateAssignment<?> assignment = statement.assignments().get(index);
       renderColumnName(assignment.column(), context);
       context.sql.append(" = ");
-      renderExpression(assignment.value(), context);
+      if (assignment.value() instanceof IncrementExpression<?> increment) {
+        renderIncrement(increment, context, false);
+      } else {
+        renderExpression(assignment.value(), context);
+      }
     }
     context.sql.append(" WHERE ");
     renderPredicate(statement.where(), context);
@@ -128,13 +147,36 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderPredicate(SqlPredicate predicate, RenderContext context) {
-    if (predicate instanceof ComparisonPredicate<?> comparison) {
-      renderComparison(comparison, context);
-      return;
-    }
-    if (predicate instanceof LogicalPredicate logical) {
-      renderLogical(logical, context);
-      return;
+    switch (predicate) {
+      case ComparisonPredicate<?> comparison -> {
+        renderComparison(comparison, context);
+        return;
+      }
+      case LogicalPredicate logical -> {
+        renderLogical(logical, context);
+        return;
+      }
+      case NullPredicate nullPredicate -> {
+        renderNull(nullPredicate, context);
+        return;
+      }
+      case BetweenPredicate<?> between -> {
+        renderBetween(between, context);
+        return;
+      }
+      case LikePredicate like -> {
+        renderLike(like, context);
+        return;
+      }
+      case InPredicate<?> in -> {
+        renderIn(in, context);
+        return;
+      }
+      case NotPredicate not -> {
+        renderNot(not, context);
+        return;
+      }
+      default -> {}
     }
     throw unsupported("predicate", predicate);
   }
@@ -146,18 +188,46 @@ public final class StandardSqlRenderer implements SqlRenderer {
         context.sql.append('?');
         context.parameters.add(parameter);
       }
+      case LiteralExpression<?> literal -> renderLiteral(literal, context);
+      case ArithmeticExpression<?> arithmetic -> renderArithmetic(arithmetic, context);
+      case ConcatExpression concat -> renderConcat(concat, context);
+      case CaseExpression<?> caseExpression -> renderCase(caseExpression, context);
+      case CastExpression<?> cast -> renderCast(cast, context);
+      case CoalesceExpression<?> coalesce -> renderCoalesce(coalesce, context);
       case ComparisonPredicate<?> comparison -> {
         context.sql.append('(');
         renderComparison(comparison, context);
         context.sql.append(')');
       }
-      case IncrementExpression<?> increment -> {
-        renderExpression(increment.operand(), context);
-        context.sql.append(" + 1");
-      }
+      case IncrementExpression<?> increment -> renderIncrement(increment, context, true);
       case LogicalPredicate logical -> {
         context.sql.append('(');
         renderLogical(logical, context);
+        context.sql.append(')');
+      }
+      case NullPredicate nullPredicate -> {
+        context.sql.append('(');
+        renderNull(nullPredicate, context);
+        context.sql.append(')');
+      }
+      case BetweenPredicate<?> between -> {
+        context.sql.append('(');
+        renderBetween(between, context);
+        context.sql.append(')');
+      }
+      case LikePredicate like -> {
+        context.sql.append('(');
+        renderLike(like, context);
+        context.sql.append(')');
+      }
+      case InPredicate<?> in -> {
+        context.sql.append('(');
+        renderIn(in, context);
+        context.sql.append(')');
+      }
+      case NotPredicate not -> {
+        context.sql.append('(');
+        renderNot(not, context);
         context.sql.append(')');
       }
       default -> throw unsupported("expression", expression);
@@ -187,15 +257,171 @@ public final class StandardSqlRenderer implements SqlRenderer {
     renderExpression(comparison.right(), context);
   }
 
+  private void renderLiteral(LiteralExpression<?> literal, RenderContext context) {
+    context.sql.append(
+        switch (literal.kind()) {
+          case NULL -> "NULL";
+          case TRUE -> "TRUE";
+          case FALSE -> "FALSE";
+          case ZERO -> "0";
+          case ONE -> "1";
+        });
+  }
+
+  private void renderArithmetic(ArithmeticExpression<?> expression, RenderContext context) {
+    context.sql.append('(');
+    renderExpression(expression.left(), context);
+    context.sql.append(' ').append(renderArithmeticOperator(expression.operator())).append(' ');
+    renderExpression(expression.right(), context);
+    context.sql.append(')');
+  }
+
+  private void renderConcat(ConcatExpression expression, RenderContext context) {
+    context.sql.append('(');
+    for (int index = 0; index < expression.operands().size(); index++) {
+      if (index > 0) {
+        context.sql.append(" || ");
+      }
+      renderExpression(expression.operands().get(index), context);
+    }
+    context.sql.append(')');
+  }
+
+  private void renderCase(CaseExpression<?> expression, RenderContext context) {
+    context.sql.append("CASE");
+    for (CaseWhen<?> branch : expression.branches()) {
+      context.sql.append(" WHEN ");
+      renderPredicate(branch.condition(), context);
+      context.sql.append(" THEN ");
+      renderExpression(branch.result(), context);
+    }
+    expression
+        .otherwise()
+        .ifPresent(
+            otherwise -> {
+              context.sql.append(" ELSE ");
+              renderExpression(otherwise, context);
+            });
+    context.sql.append(" END");
+  }
+
+  private void renderCast(CastExpression<?> expression, RenderContext context) {
+    context.sql.append("CAST(");
+    renderExpression(expression.operand(), context);
+    context.sql.append(" AS ").append(renderCastType(expression.sqlType())).append(')');
+  }
+
+  private void renderCoalesce(CoalesceExpression<?> expression, RenderContext context) {
+    context.sql.append("COALESCE(");
+    for (int index = 0; index < expression.operands().size(); index++) {
+      if (index > 0) {
+        context.sql.append(", ");
+      }
+      renderExpression(expression.operands().get(index), context);
+    }
+    context.sql.append(')');
+  }
+
+  private void renderIncrement(
+      IncrementExpression<?> expression, RenderContext context, boolean parenthesize) {
+    if (parenthesize) {
+      context.sql.append('(');
+    }
+    renderExpression(expression.operand(), context);
+    context.sql.append(" + 1");
+    if (parenthesize) {
+      context.sql.append(')');
+    }
+  }
+
+  private void renderNull(NullPredicate predicate, RenderContext context) {
+    renderExpression(predicate.operand(), context);
+    context.sql.append(predicate.operator() == NullOperator.IS_NULL ? " IS NULL" : " IS NOT NULL");
+  }
+
+  private void renderBetween(BetweenPredicate<?> predicate, RenderContext context) {
+    renderExpression(predicate.value(), context);
+    context.sql.append(" BETWEEN ");
+    renderExpression(predicate.lower(), context);
+    context.sql.append(" AND ");
+    renderExpression(predicate.upper(), context);
+  }
+
+  private void renderLike(LikePredicate predicate, RenderContext context) {
+    renderExpression(predicate.value(), context);
+    context.sql.append(" LIKE ");
+    renderExpression(predicate.pattern(), context);
+  }
+
+  private void renderIn(InPredicate<?> predicate, RenderContext context) {
+    if (predicate.candidates().isEmpty()) {
+      context.sql.append(predicate.negated() ? "1 = 1" : "1 = 0");
+      return;
+    }
+    renderExpression(predicate.value(), context);
+    context.sql.append(predicate.negated() ? " NOT IN (" : " IN (");
+    for (int index = 0; index < predicate.candidates().size(); index++) {
+      if (index > 0) {
+        context.sql.append(", ");
+      }
+      renderExpression(predicate.candidates().get(index), context);
+    }
+    context.sql.append(')');
+  }
+
+  private void renderNot(NotPredicate predicate, RenderContext context) {
+    context.sql.append("NOT (");
+    renderPredicate(predicate.operand(), context);
+    context.sql.append(')');
+  }
+
   private String renderOperator(ComparisonOperator operator) {
     return switch (operator) {
       case EQUAL -> "=";
+      case NOT_EQUAL -> "<>";
+      case GREATER_THAN -> ">";
+      case GREATER_THAN_OR_EQUAL -> ">=";
+      case LESS_THAN -> "<";
+      case LESS_THAN_OR_EQUAL -> "<=";
     };
   }
 
   private String renderLogicalOperator(LogicalOperator operator) {
     return switch (operator) {
       case AND -> "AND";
+      case OR -> "OR";
+    };
+  }
+
+  private String renderArithmeticOperator(ArithmeticOperator operator) {
+    return switch (operator) {
+      case ADD -> "+";
+      case SUBTRACT -> "-";
+      case MULTIPLY -> "*";
+      case DIVIDE -> "/";
+    };
+  }
+
+  private String renderCastType(SqlType type) {
+    return switch (type) {
+      case BOOLEAN -> "BOOLEAN";
+      case TINYINT, SMALLINT -> "SMALLINT";
+      case INTEGER -> "INTEGER";
+      case BIGINT -> "BIGINT";
+      case REAL -> "REAL";
+      case DOUBLE -> "DOUBLE PRECISION";
+      case DECIMAL -> "DECIMAL";
+      case CHARACTER -> "CHAR";
+      case VARCHAR -> "VARCHAR";
+      case UUID -> "UUID";
+      case DATE -> "DATE";
+      case TIME -> "TIME";
+      case TIME_WITH_TIME_ZONE -> "TIME WITH TIME ZONE";
+      case TIMESTAMP -> "TIMESTAMP";
+      case TIMESTAMP_WITH_TIME_ZONE -> "TIMESTAMP WITH TIME ZONE";
+      case VARBINARY, OTHER ->
+          throw new SqlRenderException(
+              "dialect '" + dialectId + "' cannot render CAST target " + type);
     };
   }
 

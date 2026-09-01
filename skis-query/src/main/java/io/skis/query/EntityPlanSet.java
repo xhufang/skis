@@ -4,6 +4,7 @@ import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -64,29 +65,39 @@ final class EntityPlanSet<E> {
     if (predicate == null) {
       return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
     }
-    PropertyMeta<E, ?> property = requirePredicateProperty(table, predicate);
+    PropertyMeta<E, ?> property = predicate.simpleEqualityProperty(table);
+    if (property == null) {
+      return compiler.compileQuery(model, table, predicate);
+    }
     return table.alias().isEmpty()
         ? equalityPlan(property.ordinal())
-        : compiler.compile(model, table, property);
+        : compiler.compileQuery(model, table, predicate);
   }
 
   <R> CompiledQueryPlan<R, Object> projectionPlan(
       QueryTable<E> table, Projection<E, R> projection, @Nullable QueryPredicate<E> predicate) {
     Objects.requireNonNull(projection, "projection").validateFrom(table);
     PropertyMeta<E, ?> property =
-        predicate == null ? null : requirePredicateProperty(table, predicate);
+        predicate == null ? null : predicate.simpleEqualityProperty(table);
     if (table.alias().isPresent()) {
-      return compiler.compileProjection(model, table, projection, property);
+      return compiler.compileProjection(model, table, projection, predicate);
+    }
+    if (predicate != null && property == null) {
+      return compiler.compileProjection(model, table, projection, predicate);
     }
     return projectionPlans.getOrCompile(
         model.entity(),
         projection,
         property,
-        () -> compiler.compileProjection(model, table, projection, property));
+        () -> compiler.compileProjection(model, table, projection, predicate));
   }
 
   Object argument(@Nullable QueryPredicate<E> predicate) {
-    return predicate == null ? NoParameters.INSTANCE : predicate.value();
+    if (predicate == null) {
+      return NoParameters.INSTANCE;
+    }
+    List<Object> arguments = predicate.compile().arguments();
+    return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
   private CompiledQueryPlan<E, Object> cachedSelectAll() {
@@ -126,22 +137,4 @@ final class EntityPlanSet<E> {
             + "'");
   }
 
-  private PropertyMeta<E, ?> requirePredicateProperty(
-      QueryTable<E> table, QueryPredicate<E> predicate) {
-    if (!predicate.column().expression().table().equals(table)) {
-      throw new QueryValidationException(
-          "where predicate belongs to a different table expression than selectFrom");
-    }
-    PropertyMeta<E, ?> untyped = predicate.column().property();
-    int ordinal = untyped.ordinal();
-    if (ordinal < 0
-        || ordinal >= model.entity().properties().size()
-        || model.entity().properties().get(ordinal) != untyped) {
-      throw new QueryValidationException(
-          "where predicate property does not belong to entity '"
-              + model.entity().entityName()
-              + "'");
-    }
-    return untyped;
-  }
 }

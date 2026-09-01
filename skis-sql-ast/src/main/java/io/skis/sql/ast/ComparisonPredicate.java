@@ -16,13 +16,12 @@ public record ComparisonPredicate<T>(
     Objects.requireNonNull(left, "left");
     Objects.requireNonNull(operator, "operator");
     Objects.requireNonNull(right, "right");
-    if (!left.javaType().equals(right.javaType())) {
-      throw new IllegalArgumentException(
-          "comparison Java types differ: "
-              + left.javaType().getTypeName()
-              + " and "
-              + right.javaType().getTypeName());
-    }
+    SemanticValidator.validateComparison(left, operator, right);
+  }
+
+  @Override
+  public Nullability nullability() {
+    return left.nullability().union(right.nullability());
   }
 
   @Override

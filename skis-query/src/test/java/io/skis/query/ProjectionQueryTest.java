@@ -166,8 +166,8 @@ class ProjectionQueryTest {
         plans.projectionPlan(TABLE, secondProjection, secondPredicate);
 
     assertSame(first, second);
-    assertEquals(7L, plans.argument(firstPredicate));
-    assertEquals(8L, plans.argument(secondPredicate));
+    assertEquals(List.of(7L), ((QueryArguments) plans.argument(firstPredicate)).values());
+    assertEquals(List.of(8L), ((QueryArguments) plans.argument(secondPredicate)).values());
     assertEquals(1, cache.size());
     assertEquals(
         new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 8), cache.statistics());

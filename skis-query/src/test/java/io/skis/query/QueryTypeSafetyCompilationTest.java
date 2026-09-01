@@ -102,6 +102,43 @@ class QueryTypeSafetyCompilationTest {
             temporaryDirectory.resolve("invalid-projection")));
   }
 
+  @Test
+  void keepsEntityTypeAcrossQueryLevelAndOrChains() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidChain {
+          static <E> void query(
+              EntitySelectQuery<E> query,
+              QueryPredicate<E> first,
+              QueryPredicate<E> second) {
+            query.where(first).and(second).or(first);
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidChain {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              EntitySelectQuery<Pet> query,
+              QueryPredicate<Pet> pet,
+              QueryPredicate<Owner> owner) {
+            query.where(pet).and(owner);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile("samples.ValidChain", valid, temporaryDirectory.resolve("valid-chain")));
+    assertFalse(
+        compile("samples.InvalidChain", invalid, temporaryDirectory.resolve("invalid-chain")));
+  }
+
   private static boolean compile(String className, String source, Path output) throws IOException {
     Files.createDirectories(output);
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();

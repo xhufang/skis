@@ -8,10 +8,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.skis.dialect.DialectFeature;
 import io.skis.dialect.RenderedSql;
 import io.skis.dialect.SqlExceptionCategory;
+import io.skis.sql.ast.ArithmeticExpression;
+import io.skis.sql.ast.ArithmeticOperator;
+import io.skis.sql.ast.BetweenPredicate;
+import io.skis.sql.ast.CaseExpression;
+import io.skis.sql.ast.CaseWhen;
+import io.skis.sql.ast.CastExpression;
+import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
+import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.TableExpression;
@@ -89,6 +100,80 @@ class H2DialectTest {
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
         rendered.sql());
     assertEquals(List.of(id), rendered.parameters());
+  }
+
+  @Test
+  void rendersComplexPredicateGoldenSql() {
+    PetAstTable pet = PetAstTable.PET;
+    ParameterSlot<Long> minimum = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<Long> maximum = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<String> firstPattern = new ParameterSlot<>(2, String.class, false);
+    ParameterSlot<String> secondPattern = new ParameterSlot<>(3, String.class, false);
+    ParameterSlot<Long> first = new ParameterSlot<>(4, Long.class, false);
+    ParameterSlot<Long> second = new ParameterSlot<>(5, Long.class, false);
+    ParameterSlot<Long> excludedMaximum = new ParameterSlot<>(6, Long.class, false);
+
+    RenderedSql rendered =
+        H2Dialect.INSTANCE
+            .renderer()
+            .render(
+                new SelectStatement(
+                    List.of(pet.id()),
+                    pet,
+                    LogicalPredicate.and(
+                        List.of(
+                            pet.name().isNotNull(),
+                            new BetweenPredicate<>(pet.id(), minimum, maximum),
+                            LogicalPredicate.or(
+                                List.of(
+                                    new LikePredicate(pet.name(), firstPattern),
+                                    new LikePredicate(pet.name(), secondPattern))),
+                            new InPredicate<>(pet.id(), List.of(first, second), false),
+                            new NotPredicate(pet.id().le(excludedMaximum))))));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
+            + "\"pet\".\"pet_name\" IS NOT NULL AND \"pet\".\"id\" BETWEEN ? AND ? "
+            + "AND (\"pet\".\"pet_name\" LIKE ? OR \"pet\".\"pet_name\" LIKE ?) "
+            + "AND \"pet\".\"id\" IN (?, ?) "
+            + "AND NOT (\"pet\".\"id\" <= ?)",
+        rendered.sql());
+    assertEquals(
+        List.of(minimum, maximum, firstPattern, secondPattern, first, second, excludedMaximum),
+        rendered.parameters());
+  }
+
+  @Test
+  void rendersPortableStandardExpressionGoldenSql() {
+    PetAstTable pet = PetAstTable.PET;
+    ParameterSlot<Long> addend = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<String> suffix = new ParameterSlot<>(1, String.class, false);
+    ParameterSlot<Long> threshold = new ParameterSlot<>(2, Long.class, false);
+    ParameterSlot<String> otherwise = new ParameterSlot<>(3, String.class, false);
+    ParameterSlot<String> fallback = new ParameterSlot<>(4, String.class, false);
+
+    RenderedSql rendered =
+        H2Dialect.INSTANCE
+            .renderer()
+            .render(
+                new SelectStatement(
+                    List.of(
+                        new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
+                        new ConcatExpression(List.of(pet.name(), suffix)),
+                        new CaseExpression<>(
+                            List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())),
+                            otherwise),
+                        new CastExpression<>(pet.id(), String.class),
+                        new CoalesceExpression<>(List.of(pet.name(), fallback))),
+                    pet));
+
+    assertEquals(
+        "SELECT (\"pet\".\"id\" + ?), (\"pet\".\"pet_name\" || ?), "
+            + "CASE WHEN \"pet\".\"id\" > ? THEN \"pet\".\"pet_name\" ELSE ? END, "
+            + "CAST(\"pet\".\"id\" AS VARCHAR), COALESCE(\"pet\".\"pet_name\", ?) "
+            + "FROM \"shelter\".\"pet\"",
+        rendered.sql());
+    assertEquals(List.of(addend, suffix, threshold, otherwise, fallback), rendered.parameters());
   }
 
   private static SqlExceptionCategory classify(SQLException exception) {

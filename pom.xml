@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.2.1-SNAPSHOT</version>
+  <version>0.2.2-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -480,6 +480,17 @@
                 <breakBuildOnSourceIncompatibleModifications>true
                 </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
+                <!-- Exact 0.2.2 interface additions approved by the development plan. Do not
+                     replace these method-level exclusions with a category-wide override. -->
+                <excludes>
+                  <exclude>io.skis.query.EntitySelectQuery#and(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.EntitySelectQuery#or(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.ProjectedSelectQuery#and(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.ProjectedSelectQuery#or(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>
+                  <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
+                  <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>
+                </excludes>
                 <excludeModules>
                   <excludeModule>skis-benchmark</excludeModule>
                   <excludeModule>skis-benchmark-.*</excludeModule>
