@@ -7,4 +7,9 @@ public interface SqlPredicate extends SqlExpression<Boolean> {
   default Class<Boolean> javaType() {
     return Boolean.class;
   }
+
+  @Override
+  default SqlType sqlType() {
+    return SqlType.BOOLEAN;
+  }
 }

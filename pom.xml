@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.2.1-SNAPSHOT</version>
+  <version>0.2.2-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -480,6 +480,9 @@
                 <breakBuildOnSourceIncompatibleModifications>true
                 </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
+                <!-- Keep approved 0.2.2 interface breaks visible in reports while allowing only
+                     the exact reviewed methods. Every other API break still fails. -->
+                <postAnalysisScript>${maven.multiModuleProjectDirectory}/config/japicmp/approved-0.2.2-api-changes.groovy</postAnalysisScript>
                 <excludeModules>
                   <excludeModule>skis-benchmark</excludeModule>
                   <excludeModule>skis-benchmark-.*</excludeModule>

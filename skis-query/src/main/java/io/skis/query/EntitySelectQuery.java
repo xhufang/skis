@@ -11,6 +11,12 @@ public interface EntitySelectQuery<E> {
   /** Returns a new query with its value-bound predicate. */
   EntitySelectQuery<E> where(QueryPredicate<E> predicate);
 
+  /** Returns a new query joining the existing WHERE tree and {@code predicate} with AND. */
+  EntitySelectQuery<E> and(QueryPredicate<E> predicate);
+
+  /** Returns a new query joining the existing WHERE tree and {@code predicate} with OR. */
+  EntitySelectQuery<E> or(QueryPredicate<E> predicate);
+
   /**
    * Returns a new query with immutable per-statement overrides.
    *

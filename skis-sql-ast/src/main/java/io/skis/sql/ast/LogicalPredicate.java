@@ -23,6 +23,18 @@ public record LogicalPredicate(LogicalOperator operator, List<SqlPredicate> oper
     return new LogicalPredicate(LogicalOperator.AND, List.copyOf(operands));
   }
 
+  /** Creates an OR predicate in encounter order. */
+  public static LogicalPredicate or(List<? extends SqlPredicate> operands) {
+    return new LogicalPredicate(LogicalOperator.OR, List.copyOf(operands));
+  }
+
+  @Override
+  public Nullability nullability() {
+    return operands.stream().anyMatch(SqlExpression::nullable)
+        ? Nullability.NULLABLE
+        : Nullability.NON_NULL;
+  }
+
   @Override
   public boolean nullable() {
     return operands.stream().anyMatch(SqlExpression::nullable);

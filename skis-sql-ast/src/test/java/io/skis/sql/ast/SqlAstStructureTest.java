@@ -11,8 +11,14 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class SqlAstStructureTest {
@@ -71,11 +77,315 @@ class SqlAstStructureTest {
     ParameterSlot<Long> requiredId = new ParameterSlot<>(0, Long.class, false);
 
     assertEquals(Long.class, table.id().javaType());
+    assertEquals(SqlType.BIGINT, table.id().sqlType());
+    assertEquals(Nullability.NON_NULL, table.id().nullability());
     assertFalse(table.id().nullable());
     assertEquals(String.class, table.name().javaType());
+    assertEquals(SqlType.VARCHAR, table.name().sqlType());
+    assertEquals(Nullability.NULLABLE, table.name().nullability());
     assertTrue(table.name().nullable());
     assertFalse(table.id().eq(requiredId).nullable());
     assertTrue(table.name().eq(new ParameterSlot<>(1, String.class, false)).nullable());
+    assertEquals(Nullability.NON_NULL, table.name().isNull().nullability());
+  }
+
+  @Test
+  void mapsJavaRepresentationsAndDefinesPortableTypeFamilies() {
+    assertEquals(SqlType.BOOLEAN, SqlType.fromJavaType(boolean.class));
+    assertEquals(SqlType.INTEGER, SqlType.fromJavaType(Integer.class));
+    assertEquals(SqlType.DECIMAL, SqlType.fromJavaType(BigDecimal.class));
+    assertEquals(SqlType.VARCHAR, SqlType.fromJavaType(String.class));
+    assertEquals(SqlType.VARBINARY, SqlType.fromJavaType(byte[].class));
+    assertEquals(SqlType.UUID, SqlType.fromJavaType(UUID.class));
+    assertEquals(SqlType.DATE, SqlType.fromJavaType(LocalDate.class));
+    assertEquals(SqlType.TIME_WITH_TIME_ZONE, SqlType.fromJavaType(OffsetTime.class));
+    assertEquals(SqlType.TIMESTAMP_WITH_TIME_ZONE, SqlType.fromJavaType(Instant.class));
+    assertEquals(SqlType.OTHER, SqlType.fromJavaType(Object.class));
+
+    assertTrue(SqlType.INTEGER.equalityCompatibleWith(SqlType.DECIMAL));
+    assertTrue(SqlType.VARCHAR.orderingCompatibleWith(SqlType.CHARACTER));
+    assertTrue(SqlType.VARCHAR.supportsLike());
+    assertFalse(SqlType.BOOLEAN.isOrderable());
+    assertFalse(SqlType.UUID.equalityCompatibleWith(SqlType.VARCHAR));
+    assertTrue(SqlType.VARCHAR.castableTo(SqlType.BIGINT));
+    assertFalse(SqlType.BOOLEAN.castableTo(SqlType.BIGINT));
+    assertFalse(SqlType.VARBINARY.isCastTarget());
+  }
+
+  @Test
+  void validatesPredicateTypeCompatibilityAndNullabilityPropagation() {
+    PetTable table = new PetTable();
+    ParameterSlot<Long> lower = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<Long> upper = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<String> pattern = new ParameterSlot<>(2, String.class, false);
+
+    assertEquals(
+        Nullability.NON_NULL, new BetweenPredicate<>(table.id(), lower, upper).nullability());
+    assertEquals(
+        Nullability.NULLABLE, new LikePredicate(table.name(), pattern).nullability());
+    assertEquals(
+        Nullability.NULLABLE,
+        new NotPredicate(table.name().eq(pattern)).nullability());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new LikePredicate(table.id(), new ParameterSlot<>(3, Long.class, false)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            table
+                .id()
+                .gt(
+                    new ParameterSlot<>(
+                        3, Long.class, SqlType.VARCHAR, Nullability.NON_NULL)));
+  }
+
+  @Test
+  void membershipDefensivelyCopiesCandidatesAndDefinesEmptyNullability() {
+    PetTable table = new PetTable();
+    List<SqlExpression<Long>> candidates = new ArrayList<>();
+    candidates.add(new ParameterSlot<>(0, Long.class, false));
+    InPredicate<Long> predicate = new InPredicate<>(table.id(), candidates, false);
+    candidates.clear();
+
+    assertEquals(1, predicate.candidates().size());
+    assertThrows(UnsupportedOperationException.class, () -> predicate.candidates().clear());
+    assertEquals(
+        Nullability.NON_NULL,
+        new InPredicate<>(table.name(), List.of(), false).nullability());
+  }
+
+  @Test
+  void standardExpressionsAreTypedImmutableAndPropagateNullability() {
+    PetTable table = new PetTable();
+    ParameterSlot<Long> addend = new ParameterSlot<>(0, Long.class, false);
+    ArithmeticExpression<Long> arithmetic =
+        new ArithmeticExpression<>(table.id(), ArithmeticOperator.ADD, addend);
+    List<SqlExpression<String>> concatOperands = new ArrayList<>();
+    concatOperands.add(table.name());
+    concatOperands.add(new ParameterSlot<>(1, String.class, false));
+    ConcatExpression concat = new ConcatExpression(concatOperands);
+    List<CaseWhen<String>> branches = new ArrayList<>();
+    branches.add(
+        new CaseWhen<>(
+            table.id().gt(new ParameterSlot<>(2, Long.class, false)), table.name()));
+    CaseExpression<String> caseExpression =
+        new CaseExpression<>(
+            branches,
+            new ParameterSlot<>(3, String.class, false));
+    CastExpression<String> cast = new CastExpression<>(table.id(), String.class);
+    List<SqlExpression<String>> coalesceOperands = new ArrayList<>();
+    coalesceOperands.add(table.name());
+    coalesceOperands.add(new ParameterSlot<>(4, String.class, false));
+    CoalesceExpression<String> coalesce = new CoalesceExpression<>(coalesceOperands);
+
+    concatOperands.clear();
+    branches.clear();
+    coalesceOperands.clear();
+
+    assertEquals(Long.class, arithmetic.javaType());
+    assertEquals(SqlType.BIGINT, arithmetic.sqlType());
+    assertEquals(Nullability.NON_NULL, arithmetic.nullability());
+    assertEquals(
+        arithmetic,
+        new ArithmeticExpression<>(table.id(), ArithmeticOperator.ADD, addend));
+    assertEquals(2, concat.operands().size());
+    assertThrows(UnsupportedOperationException.class, () -> concat.operands().clear());
+    assertEquals(SqlType.VARCHAR, concat.sqlType());
+    assertEquals(Nullability.NULLABLE, concat.nullability());
+    assertEquals(1, caseExpression.branches().size());
+    assertThrows(UnsupportedOperationException.class, () -> caseExpression.branches().clear());
+    assertEquals(Nullability.NULLABLE, caseExpression.nullability());
+    assertEquals(
+        Nullability.NULLABLE,
+        new CaseExpression<>(List.of(new CaseWhen<>(table.id().isNotNull(), table.id())))
+            .nullability());
+    assertEquals(String.class, cast.javaType());
+    assertEquals(SqlType.VARCHAR, cast.sqlType());
+    assertEquals(Nullability.NON_NULL, cast.nullability());
+    assertEquals(Nullability.NON_NULL, coalesce.nullability());
+    assertEquals(2, coalesce.operands().size());
+    assertThrows(UnsupportedOperationException.class, () -> coalesce.operands().clear());
+    assertEquals(
+        Nullability.NULLABLE,
+        new CoalesceExpression<>(
+                List.of(table.name(), LiteralExpression.nullLiteral(String.class)))
+            .nullability());
+    assertEquals(Boolean.class, LiteralExpression.trueLiteral().javaType());
+    assertEquals(Long.class, LiteralExpression.one(long.class).javaType());
+    assertEquals(
+        LiteralExpression.one(Long.class), LiteralExpression.one(long.class));
+    assertNotEquals(
+        LiteralExpression.zero(Long.class), LiteralExpression.one(Long.class));
+    assertEquals(
+        Nullability.NULLABLE, LiteralExpression.nullLiteral(String.class).nullability());
+  }
+
+  @Test
+  void semanticValidatorTraversesEveryStandardExpressionAndParameterSlot() {
+    PetTable table = new PetTable();
+    ParameterSlot<Long> addend = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<String> suffix = new ParameterSlot<>(1, String.class, false);
+    ParameterSlot<Long> threshold = new ParameterSlot<>(2, Long.class, false);
+    ParameterSlot<String> otherwise = new ParameterSlot<>(3, String.class, false);
+    ParameterSlot<String> fallback = new ParameterSlot<>(4, String.class, false);
+
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(
+                new ArithmeticExpression<>(table.id(), ArithmeticOperator.ADD, addend),
+                new ConcatExpression(List.of(table.name(), suffix)),
+                new CaseExpression<>(
+                    List.of(new CaseWhen<>(table.id().gt(threshold), table.name())), otherwise),
+                new CastExpression<>(table.id(), String.class),
+                new CoalesceExpression<>(List.of(table.name(), fallback))),
+            table);
+
+    assertEquals(5, statement.selections().size());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SelectStatement(
+                List.of(
+                    new CoalesceExpression<>(
+                        List.of(
+                            table.name(),
+                            new ParameterSlot<>(1, String.class, false)))),
+                table));
+  }
+
+  @Test
+  void centralizedRulesRejectInvalidStandardExpressionTypesAndNullComparisons() {
+    PetTable table = new PetTable();
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new ConcatExpression(List.of(table.name())));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new CaseExpression<String>(List.of()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new CoalesceExpression<>(List.of(table.name())));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> table.name().eq(LiteralExpression.nullLiteral(String.class)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            table
+                .name()
+                .eq(
+                    new CastExpression<>(
+                        LiteralExpression.nullLiteral(String.class), String.class)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new ArithmeticExpression<>(
+                new ParameterSlot<>(0, BigInteger.class, false),
+                ArithmeticOperator.DIVIDE,
+                new ParameterSlot<>(1, BigInteger.class, false)));
+    assertEquals(
+        BigDecimal.class,
+        new ArithmeticExpression<>(
+                new ParameterSlot<>(0, BigDecimal.class, false),
+                ArithmeticOperator.DIVIDE,
+                new ParameterSlot<>(1, BigDecimal.class, false))
+            .javaType());
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new ArithmeticExpression<>(
+                table.id(),
+                ArithmeticOperator.ADD,
+                new ParameterSlot<>(0, Long.class, SqlType.INTEGER, Nullability.NON_NULL)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new CastExpression<>(LiteralExpression.trueLiteral(), Long.class));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new ConcatExpression(
+                List.of(
+                    table.name(),
+                    new ParameterSlot<>(
+                        0, String.class, SqlType.BIGINT, Nullability.NON_NULL))));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new CaseExpression<>(
+                List.of(new CaseWhen<>(table.id().isNotNull(), table.name())),
+                new ParameterSlot<>(
+                    0, String.class, SqlType.BIGINT, Nullability.NON_NULL)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new CoalesceExpression<>(
+                List.of(
+                    table.name(),
+                    new ParameterSlot<>(
+                        0, String.class, SqlType.BIGINT, Nullability.NON_NULL))));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> LiteralExpression.nullLiteral(long.class));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> LiteralExpression.zero(String.class));
+  }
+
+  @Test
+  void semanticValidatorRejectsNestedAndMutationReferencesOutsideTheirScope() {
+    PetTable table = new PetTable();
+    PetTable other =
+        new PetTable(
+            EntityMeta.simple(
+                Pet.class,
+                TableMeta.of("other_pet"),
+                List.of(ID, NAME),
+                new PrimaryKeyMeta<>(List.of(ID)),
+                false));
+    PetTable readOnly =
+        new PetTable(
+            EntityMeta.simple(
+                Pet.class,
+                TableMeta.of("pet_archive"),
+                List.of(ID, NAME),
+                new PrimaryKeyMeta<>(List.of(ID)),
+                true));
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SelectStatement(
+                List.of(
+                    new CaseExpression<>(
+                        List.of(new CaseWhen<>(table.id().eq(id), other.name())), table.name())),
+                table));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SelectStatement(
+                List.of(table.id()),
+                table,
+                new InPredicate<>(other.id(), List.of(), false)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new InsertStatement(
+                table, List.of(table.id()), List.of(other.id())));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new UpdateStatement(
+                table,
+                List.of(new UpdateAssignment<>(table.name(), table.name())),
+                other.id().eq(id)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new DeleteStatement(table, other.id().eq(id)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new InsertStatement(readOnly, List.of(readOnly.id()), List.of(id)));
   }
 
   @Test

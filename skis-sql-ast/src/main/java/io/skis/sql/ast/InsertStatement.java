@@ -24,16 +24,9 @@ public record InsertStatement(
       throw new IllegalArgumentException("INSERT columns and values must have the same size");
     }
     for (int index = 0; index < columns.size(); index++) {
-      ColumnExpression<?, ?> column = Objects.requireNonNull(columns.get(index), "column");
-      SqlExpression<?> value = Objects.requireNonNull(values.get(index), "value");
-      if (!column.table().equals(target)) {
-        throw new IllegalArgumentException("INSERT column does not belong to its target table");
-      }
-      if (!column.javaType().equals(value.javaType())) {
-        throw new IllegalArgumentException(
-            "INSERT value type does not match column '" + column.property().name() + "'");
-      }
+      Objects.requireNonNull(columns.get(index), "column");
+      Objects.requireNonNull(values.get(index), "value");
     }
-    ParameterSlotValidator.validate(values);
+    SemanticValidator.validateInsert(target, columns, values);
   }
 }

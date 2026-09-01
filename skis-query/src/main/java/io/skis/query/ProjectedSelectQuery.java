@@ -11,6 +11,12 @@ public interface ProjectedSelectQuery<E, R> {
   /** Returns a new query with its value-bound predicate. */
   ProjectedSelectQuery<E, R> where(QueryPredicate<E> predicate);
 
+  /** Returns a new query joining the existing WHERE tree and {@code predicate} with AND. */
+  ProjectedSelectQuery<E, R> and(QueryPredicate<E> predicate);
+
+  /** Returns a new query joining the existing WHERE tree and {@code predicate} with OR. */
+  ProjectedSelectQuery<E, R> or(QueryPredicate<E> predicate);
+
   /** Returns a new query with execution-only options that do not alter its compiled plan. */
   default ProjectedSelectQuery<E, R> withOptions(ExecutionOptions executionOptions) {
     ExecutionOptions options = Objects.requireNonNull(executionOptions, "executionOptions");

@@ -6,6 +6,19 @@
 
 ### Added
 
+- 新增表达式级标准 SQL 类型与显式 nullability 模型，集中定义相等、排序、LIKE、BETWEEN、IN 的
+  类型兼容及 SQL 三值逻辑传播规则。
+- 新增 `eq/ne/gt/ge/lt/le`、`isNull/isNotNull`、`between`、`like`、`in/notIn`、
+  `and/or/not` 不可变谓词树，空 `IN` 恒假、空 `NOT IN` 恒真，所有普通值继续与 AST 结构分离。
+- 实体、标量和生成式投影查询支持 `where(...).and(...).or(...)` 查询级链式条件，并支持通过谓词树显式分组。
+- 新增受控 `NULL/TRUE/FALSE/0/1` literal、通用四则算术、字符串拼接、searched `CASE`、
+  `CAST` 和 `COALESCE` 标准表达式，并补 PostgreSQL/H2 SQL golden。
+- `SemanticValidator` 统一递归校验 SELECT/INSERT/UPDATE/DELETE 的表达式类型、null 比较、表/别名
+  可见性、参数槽形状及 mutation 可写性，并拒绝所有内置节点中的嵌套不可见引用。
+- 新增 SQL 表达式与语义校验指南，明确参数/literal 安全边界、nullability 传播以及当前单表作用域限制。
+- japicmp 报告通过精确允许清单显式批准 0.2.2 的抽象接口方法变更；其余未批准的二进制或源码
+  不兼容仍会阻断构建。
+
 - 新增不可变 `ExecutionOptions` 与受限 `QueryTag`，支持 statement timeout、fetch size、
   max rows 和 query tag；执行器、事务 Session 及单次查询/mutation 按字段覆盖，未设置时保持 JDBC 驱动默认值。
 - 新增查询 `withOptions`、`findById` 和单实体 mutation 执行选项入口；事务可一次覆盖 Session 默认值，
@@ -18,12 +31,23 @@
 
 ### Changed
 
+- `EntitySelectQuery` 与 `ProjectedSelectQuery` 新增抽象 `and/or`，`SqlExpression` 新增 SQL 类型/nullability
+  契约，`ParameterSlot` record 结构扩展；这是为 `0.3.0` SQL DSL 批准的破坏性变更，第三方查询/表达式实现及
+  依赖 record 结构的代码需要迁移。
+- 单表查询计划从单个等值参数扩展为按谓词遍历顺序绑定多个参数，同时保留无条件查询和单属性等值 Fast Path。
+
 - `JdbcExecutor` 在参数绑定后、执行前按固定 timeout → fetch size → max rows 顺序应用选项；普通空选项路径不
   创建合并对象、不生成新 SQL，也不调用 JDBC setter。
 - 本地事务通过重新绑定 ConnectionProvider 复用执行器 codec context、默认选项和方言分类器，不重新编译计划。
 
 ### Fixed
 
+- 查询计划 Binder 现在严格按方言返回的 `RenderedSql.parameters()` 占位符顺序绑定，并拒绝缺失、重复或
+  类型描述不一致的参数槽，避免方言重排谓词后把值绑定到错误列。
+- 空集合 `IN/NOT IN` 在折叠为常量前仍校验左表达式作用域；不同表或别名的引用不再绕过语义校验。
+- 拒绝可能产生小数 SQL 结果却声明为 `BigInteger` 的除法表达式；调用方可先显式转换为 `BigDecimal`。
+- `ColumnExpression`、既有谓词/增量节点和 `ParameterSlot` 保留显式 `nullable()` 方法，减少 0.2.0
+  已编译调用方在类型模型迁移中的无关二进制变化。
 - Statement 选项设置失败现在标记为 `statement-configuration` 阶段，并继续保留 Statement close 与
   Connection release 失败的原始 cause/suppressed 顺序；异常消息不包含 SQL、参数或 query tag。
 - `fetchOne()` 在有效 `maxRows` 为 1 时内部读取上限提升到 2，避免驱动截断第二行后绕过非唯一结果检查。

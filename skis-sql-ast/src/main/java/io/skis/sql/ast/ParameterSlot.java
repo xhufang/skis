@@ -7,15 +7,20 @@ import java.util.Objects;
  *
  * <p>A slot deliberately contains no runtime value, so AST equality and hash codes are stable
  * across executions with different input values.
- *
- * @param ordinal zero-based logical parameter ordinal
- * @param javaType Java type accepted by the slot; primitive class tokens are normalized to their
- *     wrapper classes
- * @param nullable whether the bound value may be {@code null}; must be {@code false} for a
- *     primitive Java type
  */
-public record ParameterSlot<T>(int ordinal, Class<T> javaType, boolean nullable)
+public record ParameterSlot<T>(
+    int ordinal, Class<T> javaType, SqlType sqlType, Nullability nullability)
     implements SqlExpression<T> {
+
+  /** Creates a slot using the SQL type inferred from its Java representation. */
+  public ParameterSlot(int ordinal, Class<T> javaType, boolean nullable) {
+    this(ordinal, javaType, SqlType.fromJavaType(javaType), Nullability.of(nullable));
+  }
+
+  /** Creates a slot using the SQL type inferred from its Java representation. */
+  public ParameterSlot(int ordinal, Class<T> javaType, Nullability nullability) {
+    this(ordinal, javaType, SqlType.fromJavaType(javaType), nullability);
+  }
 
   /** Validates and creates a parameter slot. */
   public ParameterSlot {
@@ -23,13 +28,21 @@ public record ParameterSlot<T>(int ordinal, Class<T> javaType, boolean nullable)
       throw new IllegalArgumentException("parameter ordinal must not be negative");
     }
     Objects.requireNonNull(javaType, "javaType");
+    Objects.requireNonNull(sqlType, "sqlType");
+    Objects.requireNonNull(nullability, "nullability");
     if (javaType == void.class || javaType == Void.class) {
       throw new IllegalArgumentException("parameter Java type must not be void");
     }
-    if (nullable && javaType.isPrimitive()) {
+    if (nullability.isNullable() && javaType.isPrimitive()) {
       throw new IllegalArgumentException("a primitive parameter Java type cannot be nullable");
     }
     javaType = boxed(javaType);
+  }
+
+  /** Whether the bound value may be {@code null}. */
+  @Override
+  public boolean nullable() {
+    return nullability.isNullable();
   }
 
   @SuppressWarnings("unchecked")

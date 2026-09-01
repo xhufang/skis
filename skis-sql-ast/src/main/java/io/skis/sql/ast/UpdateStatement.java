@@ -19,11 +19,7 @@ public record UpdateStatement(
     }
     for (UpdateAssignment<?> assignment : assignments) {
       Objects.requireNonNull(assignment, "assignment");
-      if (!assignment.column().table().equals(target)) {
-        throw new IllegalArgumentException("UPDATE column does not belong to its target table");
-      }
     }
-    ParameterSlotValidator.validate(
-        assignments.stream().map(UpdateAssignment::value).toList(), where);
+    SemanticValidator.validateUpdate(target, assignments, where);
   }
 }

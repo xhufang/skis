@@ -60,6 +60,16 @@ final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<E,
   }
 
   @Override
+  public ProjectedSelectQuery<E, R> and(QueryPredicate<E> newPredicate) {
+    return chain(newPredicate, true);
+  }
+
+  @Override
+  public ProjectedSelectQuery<E, R> or(QueryPredicate<E> newPredicate) {
+    return chain(newPredicate, false);
+  }
+
+  @Override
   public ProjectedSelectQuery<E, R> withOptions(ExecutionOptions executionOptions) {
     ExecutionOptions options = Objects.requireNonNull(executionOptions, "executionOptions");
     if (executionContext.executionOptions().equals(options)) {
@@ -77,6 +87,19 @@ final class DefaultProjectedSelectQuery<E, R> implements ProjectedSelectQuery<E,
   @Override
   public List<R> fetchList() {
     return operations.fetchList(plan(), plans.argument(predicate), executionContext);
+  }
+
+  private ProjectedSelectQuery<E, R> chain(
+      QueryPredicate<E> newPredicate, boolean conjunction) {
+    Objects.requireNonNull(newPredicate, "predicate");
+    if (predicate == null) {
+      throw new QueryValidationException(
+          (conjunction ? "and" : "or") + "(...) requires an existing where predicate");
+    }
+    QueryPredicate<E> combined =
+        conjunction ? predicate.and(newPredicate) : predicate.or(newPredicate);
+    return new DefaultProjectedSelectQuery<>(
+        operations, plans, table, projection, combined, executionContext);
   }
 
   private CompiledQueryPlan<R, Object> plan() {

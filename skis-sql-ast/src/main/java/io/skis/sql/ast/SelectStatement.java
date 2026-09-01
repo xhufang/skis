@@ -24,11 +24,7 @@ public final class SelectStatement implements StatementAst {
     }
     this.from = Objects.requireNonNull(from, "from");
     this.where = where;
-    if (where == null) {
-      ParameterSlotValidator.validate(this.selections);
-    } else {
-      ParameterSlotValidator.validate(this.selections, where);
-    }
+    SemanticValidator.validate(this);
   }
 
   /** Creates a SELECT without a WHERE clause. */

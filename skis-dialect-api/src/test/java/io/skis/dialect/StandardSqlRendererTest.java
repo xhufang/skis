@@ -11,12 +11,24 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.metadata.VersionMeta;
 import io.skis.metadata.VersionStrategy;
+import io.skis.sql.ast.ArithmeticExpression;
+import io.skis.sql.ast.ArithmeticOperator;
+import io.skis.sql.ast.BetweenPredicate;
+import io.skis.sql.ast.CaseExpression;
+import io.skis.sql.ast.CaseWhen;
+import io.skis.sql.ast.CastExpression;
+import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
+import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.LikePredicate;
+import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.StatementAst;
@@ -79,12 +91,120 @@ class StandardSqlRendererTest {
     PetTable pet = new PetTable(PET);
     PetTable other = new PetTable(OTHER_PET);
 
-    SqlRenderException failure =
+    IllegalArgumentException failure =
         assertThrows(
-            SqlRenderException.class,
-            () -> RENDERER.render(new SelectStatement(List.of(other.name()), pet)));
+            IllegalArgumentException.class,
+            () -> new SelectStatement(List.of(other.name()), pet));
 
-    assertTrue(failure.getMessage().contains("outside the single FROM table"));
+    assertTrue(failure.getMessage().contains("different table expression"));
+  }
+
+  @Test
+  void rendersComplexPortablePredicatesAndPreservesParameterOrder() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> lower = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<Long> upper = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<String> pattern = new ParameterSlot<>(2, String.class, false);
+    ParameterSlot<Long> first = new ParameterSlot<>(3, Long.class, false);
+    ParameterSlot<Long> second = new ParameterSlot<>(4, Long.class, false);
+
+    RenderedSql rendered =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(pet.id()),
+                pet,
+                LogicalPredicate.and(
+                    List.of(
+                        new BetweenPredicate<>(pet.id(), lower, upper),
+                        new LikePredicate(pet.name(), pattern),
+                        new InPredicate<>(pet.id(), List.of(first, second), false),
+                        new NotPredicate(pet.name().isNull())))));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
+            + "\"pet\".\"id\" BETWEEN ? AND ? AND \"pet\".\"pet_name\" LIKE ? "
+            + "AND \"pet\".\"id\" IN (?, ?) AND NOT (\"pet\".\"pet_name\" IS NULL)",
+        rendered.sql());
+    assertEquals(List.of(lower, upper, pattern, first, second), rendered.parameters());
+  }
+
+  @Test
+  void rendersEmptyMembershipWithDeterministicBooleanSemantics() {
+    PetTable pet = new PetTable(PET);
+
+    RenderedSql emptyIn =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), false)));
+    RenderedSql emptyNotIn =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), true)));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE 1 = 0", emptyIn.sql());
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE 1 = 1",
+        emptyNotIn.sql());
+  }
+
+  @Test
+  void rendersPortableStandardExpressionsAndPreservesNestedParameterOrder() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> addend = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<String> suffix = new ParameterSlot<>(1, String.class, false);
+    ParameterSlot<Long> threshold = new ParameterSlot<>(2, Long.class, false);
+    ParameterSlot<String> otherwise = new ParameterSlot<>(3, String.class, false);
+    ParameterSlot<String> fallback = new ParameterSlot<>(4, String.class, false);
+
+    RenderedSql rendered =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(
+                    LiteralExpression.trueLiteral(),
+                    LiteralExpression.falseLiteral(),
+                    LiteralExpression.zero(Long.class),
+                    LiteralExpression.one(Long.class),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
+                    new ConcatExpression(List.of(pet.name(), suffix)),
+                    new CaseExpression<>(
+                        List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())), otherwise),
+                    new CastExpression<>(pet.id(), String.class),
+                    new CoalesceExpression<>(List.of(pet.name(), fallback)),
+                    new CastExpression<>(
+                        LiteralExpression.nullLiteral(String.class), String.class)),
+                pet));
+
+    assertEquals(
+        "SELECT TRUE, FALSE, 0, 1, (\"pet\".\"id\" + ?), "
+            + "(\"pet\".\"pet_name\" || ?), "
+            + "CASE WHEN \"pet\".\"id\" > ? THEN \"pet\".\"pet_name\" ELSE ? END, "
+            + "CAST(\"pet\".\"id\" AS VARCHAR), COALESCE(\"pet\".\"pet_name\", ?), "
+            + "CAST(NULL AS VARCHAR) FROM \"shelter\".\"pet\"",
+        rendered.sql());
+    assertEquals(List.of(addend, suffix, threshold, otherwise, fallback), rendered.parameters());
+  }
+
+  @Test
+  void rendersEveryPortableArithmeticOperatorWithoutLosingPrecedence() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> operand = new ParameterSlot<>(0, Long.class, false);
+
+    RenderedSql rendered =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, operand),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.SUBTRACT, operand),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.MULTIPLY, operand),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.DIVIDE, operand)),
+                pet));
+
+    assertEquals(
+        "SELECT (\"pet\".\"id\" + ?), (\"pet\".\"id\" - ?), "
+            + "(\"pet\".\"id\" * ?), (\"pet\".\"id\" / ?) FROM \"shelter\".\"pet\"",
+        rendered.sql());
+    assertEquals(List.of(operand, operand, operand, operand), rendered.parameters());
   }
 
   @Test

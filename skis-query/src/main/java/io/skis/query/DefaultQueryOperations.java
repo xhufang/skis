@@ -76,24 +76,6 @@ final class DefaultQueryOperations implements QueryOperations {
         this, plans, table, projection, null, ExecutionContext.EMPTY);
   }
 
-  <E> Optional<E> fetchOne(
-      EntityPlanSet<E> plans,
-      QueryTable<E> table,
-      @Nullable QueryPredicate<E> predicate,
-      ExecutionContext executionContext) {
-    CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
-    return jdbcExecutor.fetchOne(plan, plans.argument(predicate), executionContext);
-  }
-
-  <E> List<E> fetchList(
-      EntityPlanSet<E> plans,
-      QueryTable<E> table,
-      @Nullable QueryPredicate<E> predicate,
-      ExecutionContext executionContext) {
-    CompiledQueryPlan<E, Object> plan = plans.selectPlan(table, predicate);
-    return jdbcExecutor.fetchList(plan, plans.argument(predicate), executionContext);
-  }
-
   <R> Optional<R> fetchOne(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
     return jdbcExecutor.fetchOne(plan, argument, executionContext);

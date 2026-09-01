@@ -8,16 +8,22 @@ public record IncrementExpression<T>(SqlExpression<T> operand) implements SqlExp
   /** Creates an increment expression for a numeric operand. */
   public IncrementExpression(SqlExpression<T> operand) {
     this.operand = Objects.requireNonNull(operand, "operand");
-    if (!Number.class.isAssignableFrom(operand.javaType())) {
-      throw new IllegalArgumentException(
-          "increment requires a numeric Java type but received "
-              + operand.javaType().getTypeName());
-    }
+    SemanticValidator.validateIncrement(operand);
   }
 
   @Override
   public Class<T> javaType() {
     return operand.javaType();
+  }
+
+  @Override
+  public SqlType sqlType() {
+    return operand.sqlType();
+  }
+
+  @Override
+  public Nullability nullability() {
+    return operand.nullability();
   }
 
   @Override
