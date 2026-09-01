@@ -480,9 +480,17 @@
                 <breakBuildOnSourceIncompatibleModifications>true
                 </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
-                <!-- Keep approved 0.2.2 interface breaks visible in reports while allowing only
-                     the exact reviewed methods. Every other API break still fails. -->
-                <postAnalysisScript>${maven.multiModuleProjectDirectory}/config/japicmp/approved-0.2.2-api-changes.groovy</postAnalysisScript>
+                <!-- Exact 0.2.2 interface additions approved by the development plan. Do not
+                     replace these method-level exclusions with a category-wide override. -->
+                <excludes>
+                  <exclude>io.skis.query.EntitySelectQuery#and(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.EntitySelectQuery#or(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.ProjectedSelectQuery#and(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.ProjectedSelectQuery#or(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>
+                  <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
+                  <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>
+                </excludes>
                 <excludeModules>
                   <excludeModule>skis-benchmark</excludeModule>
                   <excludeModule>skis-benchmark-.*</excludeModule>

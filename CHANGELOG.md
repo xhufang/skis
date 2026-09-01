@@ -16,7 +16,7 @@
 - `SemanticValidator` 统一递归校验 SELECT/INSERT/UPDATE/DELETE 的表达式类型、null 比较、表/别名
   可见性、参数槽形状及 mutation 可写性，并拒绝所有内置节点中的嵌套不可见引用。
 - 新增 SQL 表达式与语义校验指南，明确参数/literal 安全边界、nullability 传播以及当前单表作用域限制。
-- japicmp 报告通过精确允许清单显式批准 0.2.2 的抽象接口方法变更；其余未批准的二进制或源码
+- japicmp 兼容检查通过精确方法允许清单批准 0.2.2 的接口方法变更；其余未批准的二进制或源码
   不兼容仍会阻断构建。
 
 - 新增不可变 `ExecutionOptions` 与受限 `QueryTag`，支持 statement timeout、fetch size、
