@@ -29,11 +29,13 @@ import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
+import io.skis.sql.ast.StatementAst;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
 /** Compiles immutable single-table query shapes into value-independent JDBC plans. */
@@ -52,7 +54,8 @@ final class QueryPlanCompiler {
       @Nullable PropertyMeta<E, ?> equalityProperty) {
     requireCanonicalModel(model, table);
     PredicateShape<E> shape = equalityShape(table, equalityProperty);
-    SelectStatement statement = new SelectStatement(table.selections(), table, shape.ast());
+    SelectStatement statement =
+        validatedStatement(() -> new SelectStatement(table.selections(), table, shape.ast()));
     return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
   }
 
@@ -60,7 +63,8 @@ final class QueryPlanCompiler {
       EntityRuntimeModel<E> model, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
     requireCanonicalModel(model, table);
     PredicateShape<E> shape = predicateShape(predicate);
-    SelectStatement statement = new SelectStatement(table.selections(), table, shape.ast());
+    SelectStatement statement =
+        validatedStatement(() -> new SelectStatement(table.selections(), table, shape.ast()));
     return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
   }
 
@@ -72,7 +76,9 @@ final class QueryPlanCompiler {
     requireCanonicalModel(model, table);
     Selection<E, R> selection = projectionSelection(model, table, projection);
     PredicateShape<E> shape = predicateShape(predicate);
-    SelectStatement statement = new SelectStatement(selection.expressions(), table, shape.ast());
+    SelectStatement statement =
+        validatedStatement(
+            () -> new SelectStatement(selection.expressions(), table, shape.ast()));
     return compilePlanFromProperties(model, statement, shape.properties(), selection.decoder());
   }
 
@@ -157,7 +163,10 @@ final class QueryPlanCompiler {
     requireCanonicalModel(model, table);
     PredicateShape<E> shape = predicateShape(predicate);
     CountAst count =
-        new CountAst(table, shape.ast(), countDistinctExpression(model, selection, distinct));
+        validatedStatement(
+            () ->
+                new CountAst(
+                    table, shape.ast(), countDistinctExpression(model, selection, distinct)));
     CompiledQueryPlan<Long, Object> plan =
         compilePlanFromProperties(
             model,
@@ -261,14 +270,16 @@ final class QueryPlanCompiler {
     SelectPagination paginationAst = inputs.pagination(orderBy, pagination);
     List<OrderByItem> orderAst = orderBy.stream().map(SortSpecification::ast).toList();
     SelectStatement statement =
-        new SelectStatement(
-            distinct,
-            selection.expressions(),
-            hidden,
-            table,
-            predicateShape.ast(),
-            orderAst,
-            paginationAst);
+        validatedStatement(
+            () ->
+                new SelectStatement(
+                    distinct,
+                    selection.expressions(),
+                    hidden,
+                    table,
+                    predicateShape.ast(),
+                    orderAst,
+                    paginationAst));
     CompiledQueryPlan<R, Object> plan =
         compilePlan(model, statement, inputs.logicalParameters(), selection.decoder());
     return new QueryCompilation<>(plan, inputs.argument(), statement);
@@ -276,7 +287,7 @@ final class QueryPlanCompiler {
 
   private <E, R> CompiledQueryPlan<R, Object> compilePlanFromProperties(
       EntityRuntimeModel<E> model,
-      io.skis.sql.ast.StatementAst statement,
+      StatementAst statement,
       List<PropertyMeta<E, ?>> properties,
       RowDecoder<R> rowDecoder) {
     List<LogicalParameter<E>> parameters = new ArrayList<>(properties.size());
@@ -290,7 +301,7 @@ final class QueryPlanCompiler {
 
   private <E, R> CompiledQueryPlan<R, Object> compilePlan(
       EntityRuntimeModel<E> model,
-      io.skis.sql.ast.StatementAst statement,
+      StatementAst statement,
       List<LogicalParameter<E>> logicalParameters,
       RowDecoder<R> rowDecoder) {
     Objects.requireNonNull(model, "model");
@@ -350,6 +361,14 @@ final class QueryPlanCompiler {
             + "' rendered an unexpected parameter shape for entity '"
             + model.entity().entityName()
             + "'");
+  }
+
+  private static <S extends StatementAst> S validatedStatement(Supplier<S> factory) {
+    try {
+      return factory.get();
+    } catch (IllegalArgumentException failure) {
+      throw new QueryValidationException(failure.getMessage(), failure);
+    }
   }
 
   private static <E, V> ParameterSlot<V> expectedSlot(int ordinal, PropertyMeta<E, V> property) {

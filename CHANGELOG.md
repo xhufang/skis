@@ -75,6 +75,7 @@
   第二行后绕过非唯一结果检查。
 - H2 显式 null placement 改用原生 `NULLS FIRST/LAST`，避免 distinct 查询因 CASE 排名表达式未进入
   SELECT 列表而被数据库拒绝。
+- Query 编译边界将 SQL AST 语义校验失败统一转换为 `QueryValidationException`，并保留原始异常作为 cause。
 - 修正 H2 `90067` 与 PostgreSQL `57P01`–`57P05` 连接失败分类，并避免把查询取消、锁不可用误报为超时；
   分类器抛出的运行时异常或 `Error` 现在作为 suppressed 保留，不再覆盖原始 `SQLException`。
 
