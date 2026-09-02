@@ -18,6 +18,7 @@ public final class SemanticValidator {
     Objects.requireNonNull(statement, "statement");
     switch (statement) {
       case SelectStatement select -> validate(select);
+      case CountAst count -> validate(count);
       case InsertStatement insert ->
           validateInsert(insert.target(), insert.columns(), insert.values());
       case UpdateStatement update ->
@@ -34,7 +35,33 @@ public final class SemanticValidator {
     Objects.requireNonNull(statement, "statement");
     ValidationContext context = new ValidationContext(Set.of(statement.from()));
     statement.selections().forEach(context::validateExpression);
+    statement.hiddenSelections().forEach(item -> context.validateExpression(item.expression()));
     statement.where().ifPresent(context::validateExpression);
+    statement.orderBy().forEach(item -> context.validateExpression(item.expression()));
+    statement
+        .pagination()
+        .ifPresent(
+            pagination -> {
+              if (!(pagination instanceof Limit) && statement.orderBy().isEmpty()) {
+                throw new IllegalArgumentException("paginated SELECT requires ORDER BY");
+              }
+              if (pagination instanceof KeysetSeek keyset) {
+                context.validateExpression(keyset.predicate());
+              }
+              context.validateExpression(pagination.limit());
+              if (pagination instanceof OffsetLimit offset) {
+                context.validateExpression(offset.offset());
+              }
+            });
+    context.requireDenseParameterOrdinals();
+  }
+
+  /** Validates an independent COUNT plan. */
+  public static void validate(CountAst statement) {
+    Objects.requireNonNull(statement, "statement");
+    ValidationContext context = new ValidationContext(Set.of(statement.source()));
+    statement.predicate().ifPresent(context::validateExpression);
+    statement.distinctExpression().ifPresent(context::validateExpression);
     context.requireDenseParameterOrdinals();
   }
 
@@ -59,9 +86,7 @@ public final class SemanticValidator {
   }
 
   static void validateUpdate(
-      TableExpression<?> target,
-      List<UpdateAssignment<?>> assignments,
-      SqlPredicate where) {
+      TableExpression<?> target, List<UpdateAssignment<?>> assignments, SqlPredicate where) {
     requireWritableTarget(target, "UPDATE");
     ValidationContext context = new ValidationContext(Set.of(target));
     for (UpdateAssignment<?> assignment : assignments) {
@@ -160,8 +185,7 @@ public final class SemanticValidator {
     }
   }
 
-  static void validateIn(
-      SqlExpression<?> value, List<? extends SqlExpression<?>> candidates) {
+  static void validateIn(SqlExpression<?> value, List<? extends SqlExpression<?>> candidates) {
     if (candidates.isEmpty()) {
       return;
     }
@@ -216,8 +240,8 @@ public final class SemanticValidator {
     }
   }
 
-  static <T> void validateCase(
-      List<CaseWhen<T>> branches, Optional<SqlExpression<T>> otherwise) {
+  @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
+  static <T> void validateCase(List<CaseWhen<T>> branches, Optional<SqlExpression<T>> otherwise) {
     SqlExpression<?> first = branches.getFirst().result();
     for (CaseWhen<T> branch : branches) {
       requireCompatibleResult(first, branch.result(), "CASE");
@@ -241,10 +265,7 @@ public final class SemanticValidator {
   }
 
   static void validateLiteral(
-      LiteralExpression.Kind kind,
-      Class<?> javaType,
-      SqlType sqlType,
-      Nullability nullability) {
+      LiteralExpression.Kind kind, Class<?> javaType, SqlType sqlType, Nullability nullability) {
     requireJavaSqlDescriptor(javaType, sqlType, "literal");
     switch (kind) {
       case NULL -> {
@@ -366,8 +387,7 @@ public final class SemanticValidator {
       case ConcatExpression concat ->
           concat.operands().stream().anyMatch(SemanticValidator::isAlwaysNull);
       case CaseExpression<?> caseExpression ->
-          caseExpression.branches().stream()
-                  .allMatch(branch -> isAlwaysNull(branch.result()))
+          caseExpression.branches().stream().allMatch(branch -> isAlwaysNull(branch.result()))
               && caseExpression.otherwise().map(SemanticValidator::isAlwaysNull).orElse(true);
       case CastExpression<?> cast -> isAlwaysNull(cast.operand());
       case CoalesceExpression<?> coalesce ->
@@ -421,8 +441,7 @@ public final class SemanticValidator {
           validateExpression(comparison.left());
           validateExpression(comparison.right());
         }
-        case LogicalPredicate logical ->
-            logical.operands().forEach(this::validateExpression);
+        case LogicalPredicate logical -> logical.operands().forEach(this::validateExpression);
         case NullPredicate nullPredicate -> validateExpression(nullPredicate.operand());
         case BetweenPredicate<?> between -> {
           validateBetween(between.value(), between.lower(), between.upper());

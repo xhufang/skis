@@ -68,6 +68,32 @@ class SkisProjectionIntegrationTest {
     assertEquals(2, executor.queryPlanCacheStatistics().invalidationCount());
   }
 
+  @Test
+  void executesDistinctOrderingWithH2NativeNullPlacement() throws Exception {
+    DataSource dataSource = database();
+    SkisExecutor executor =
+        SkisExecutorFactory.builder()
+            .dataSource(dataSource)
+            .dialect(H2Dialect.INSTANCE)
+            .build();
+    executor.insert(
+        PetMeta.ENTITY,
+        new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
+    executor.insert(
+        PetMeta.ENTITY,
+        new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored"));
+
+    List<String> names =
+        executor
+            .select(PetTable.PET.name())
+            .from(PetTable.PET)
+            .distinct()
+            .orderBy(PetTable.PET.name().asc().nullsLast())
+            .fetchList();
+
+    assertEquals(List.of("Mimi"), names);
+  }
+
   private static DataSource database() throws Exception {
     JdbcDataSource dataSource = new JdbcDataSource();
     dataSource.setURL(

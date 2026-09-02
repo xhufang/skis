@@ -31,8 +31,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.jupiter.api.Test;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Test;
 
 class ProjectionQueryTest {
 
@@ -64,8 +64,7 @@ class ProjectionQueryTest {
     EntityPlanSet<Pet> plans = plans();
 
     CompiledQueryPlan<String, Object> plan =
-        plans.projectionPlan(
-            TABLE, Projection.scalar(TABLE.name()), TABLE.id().eq(7L));
+        plans.projectionPlan(TABLE, Projection.scalar(TABLE.name()), TABLE.id().eq(7L));
 
     assertEquals(
         "SELECT \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
@@ -76,11 +75,9 @@ class ProjectionQueryTest {
 
   @Test
   void mapsARecordThroughTheGeneratedMapperContractAndResultSetIndexes() throws Exception {
-    Projection<Pet, PetSummary> projection =
-        petSummaryProjection();
+    Projection<Pet, PetSummary> projection = petSummaryProjection();
 
-    CompiledQueryPlan<PetSummary, Object> plan =
-        plans().projectionPlan(TABLE, projection, null);
+    CompiledQueryPlan<PetSummary, Object> plan = plans().projectionPlan(TABLE, projection, null);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\", \"pet\".\"weight\" FROM \"shelter\".\"pet\"",
@@ -89,11 +86,7 @@ class ProjectionQueryTest {
         new PetSummary(7L, "Mimi", new BigDecimal("12.50")),
         plan.rowDecoder()
             .decode(
-                resultSet(
-                    Map.of(
-                        1, 7L,
-                        2, "Mimi",
-                        3, new BigDecimal("12.50"))),
+                resultSet(Map.of(1, 7L, 2, "Mimi", 3, new BigDecimal("12.50"))),
                 RowReadContext.EMPTY));
   }
 
@@ -104,7 +97,8 @@ class ProjectionQueryTest {
     assertThrows(
         QueryValidationException.class,
         () -> plans().projectionPlan(TABLE, Projection.scalar(alias.name()), null));
-    assertThrows(QueryValidationException.class, () -> Projection.scalar(TABLE.weight()));
+    CompiledQueryPlan<BigDecimal, Object> nullablePlan =
+        plans().projectionPlan(TABLE, Projection.nullableScalar(TABLE.weight()), null);
 
     CompiledQueryPlan<String, Object> plan =
         plans().projectionPlan(TABLE, Projection.scalar(TABLE.name()), null);
@@ -119,9 +113,7 @@ class ProjectionQueryTest {
 
     assertThrows(
         QueryValidationException.class,
-        () ->
-            plans()
-                .projectionPlan(TABLE, petSummaryProjection(), alias.id().eq(7L)));
+        () -> plans().projectionPlan(TABLE, petSummaryProjection(), alias.id().eq(7L)));
   }
 
   @Test
@@ -131,21 +123,17 @@ class ProjectionQueryTest {
 
     assertSame(projection, registry.require(TABLE, PetName.class));
     assertEquals(1, registry.size());
-    assertThrows(
-        QueryValidationException.class,
-        () -> registry.require(TABLE, PetSummary.class));
+    assertThrows(QueryValidationException.class, () -> registry.require(TABLE, PetSummary.class));
   }
 
   @Test
   void mapsANullableColumnToANonNullUserProjection() throws Exception {
     Projection<Pet, PetWeight> projection = petWeightProjection();
 
-    CompiledQueryPlan<PetWeight, Object> plan =
-        plans().projectionPlan(TABLE, projection, null);
+    CompiledQueryPlan<PetWeight, Object> plan = plans().projectionPlan(TABLE, projection, null);
 
     assertEquals(
-        new PetWeight(null),
-        plan.rowDecoder().decode(resultSetWithNull(1), RowReadContext.EMPTY));
+        new PetWeight(null), plan.rowDecoder().decode(resultSetWithNull(1), RowReadContext.EMPTY));
   }
 
   @Test
@@ -153,10 +141,8 @@ class ProjectionQueryTest {
     ProjectionPlanCache cache = new ProjectionPlanCache(8);
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
-    Projection<Pet, PetSummary> firstProjection =
-        petSummaryProjection();
-    Projection<Pet, PetSummary> secondProjection =
-        petSummaryProjection();
+    Projection<Pet, PetSummary> firstProjection = petSummaryProjection();
+    Projection<Pet, PetSummary> secondProjection = petSummaryProjection();
     QueryPredicate<Pet> firstPredicate = TABLE.id().eq(7L);
     QueryPredicate<Pet> secondPredicate = TABLE.id().eq(8L);
 
@@ -169,8 +155,7 @@ class ProjectionQueryTest {
     assertEquals(List.of(7L), ((QueryArguments) plans.argument(firstPredicate)).values());
     assertEquals(List.of(8L), ((QueryArguments) plans.argument(secondPredicate)).values());
     assertEquals(1, cache.size());
-    assertEquals(
-        new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 8), cache.statistics());
+    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 8), cache.statistics());
   }
 
   @Test
@@ -178,15 +163,12 @@ class ProjectionQueryTest {
     ProjectionPlanCache cache = new ProjectionPlanCache(1);
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
-    Projection<Pet, PetSummary> summary =
-        petSummaryProjection();
+    Projection<Pet, PetSummary> summary = petSummaryProjection();
     Projection<Pet, PetWeight> weight = petWeightProjection();
 
-    CompiledQueryPlan<PetSummary, Object> original =
-        plans.projectionPlan(TABLE, summary, null);
+    CompiledQueryPlan<PetSummary, Object> original = plans.projectionPlan(TABLE, summary, null);
     plans.projectionPlan(TABLE, weight, null);
-    CompiledQueryPlan<PetSummary, Object> recompiled =
-        plans.projectionPlan(TABLE, summary, null);
+    CompiledQueryPlan<PetSummary, Object> recompiled = plans.projectionPlan(TABLE, summary, null);
 
     assertNotSame(original, recompiled);
     assertEquals(1, cache.size());
@@ -234,18 +216,14 @@ class ProjectionQueryTest {
   @Test
   void expiresAndExplicitlyInvalidatesProjectionPlansWithObservableStatistics() {
     AtomicLong ticker = new AtomicLong();
-    ProjectionPlanCache cache =
-        new ProjectionPlanCache(2, Duration.ofNanos(10), ticker::get);
+    ProjectionPlanCache cache = new ProjectionPlanCache(2, Duration.ofNanos(10), ticker::get);
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
-    Projection<Pet, PetSummary> summary =
-        petSummaryProjection();
+    Projection<Pet, PetSummary> summary = petSummaryProjection();
 
-    CompiledQueryPlan<PetSummary, Object> first =
-        plans.projectionPlan(TABLE, summary, null);
+    CompiledQueryPlan<PetSummary, Object> first = plans.projectionPlan(TABLE, summary, null);
     ticker.set(11);
-    CompiledQueryPlan<PetSummary, Object> expired =
-        plans.projectionPlan(TABLE, summary, null);
+    CompiledQueryPlan<PetSummary, Object> expired = plans.projectionPlan(TABLE, summary, null);
 
     assertNotSame(first, expired);
     assertEquals(new QueryPlanCacheStatistics(0, 2, 1, 0, 1, 2), cache.statistics());
@@ -260,9 +238,7 @@ class ProjectionQueryTest {
   @Test
   void rejectsInvalidProjectionPlanCacheConfiguration() {
     assertThrows(IllegalArgumentException.class, () -> new ProjectionPlanCache(0));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> new ProjectionPlanCache(1, Duration.ZERO));
+    assertThrows(IllegalArgumentException.class, () -> new ProjectionPlanCache(1, Duration.ZERO));
   }
 
   private static EntityPlanSet<Pet> plans() {
@@ -297,8 +273,7 @@ class ProjectionQueryTest {
           Projection.ValueReader<Long> idReader = readers.reader(0, ID);
           Projection.ValueReader<String> nameReader = readers.reader(1, NAME);
           return (resultSet, context) ->
-              new PetName(
-                  idReader.read(resultSet, context), nameReader.read(resultSet, context));
+              new PetName(idReader.read(resultSet, context), nameReader.read(resultSet, context));
         });
   }
 
@@ -310,17 +285,14 @@ class ProjectionQueryTest {
         List.of(WEIGHT),
         readers -> {
           Projection.ValueReader<BigDecimal> weightReader = readers.reader(0, WEIGHT);
-          return (resultSet, context) ->
-              new PetWeight(weightReader.read(resultSet, context));
+          return (resultSet, context) -> new PetWeight(weightReader.read(resultSet, context));
         });
   }
 
   private static EntityRuntimeModel<Pet> model() {
     return new EntityRuntimeModel<>(
         PET,
-        layout ->
-            (resultSet, context) ->
-                new Pet(1L, "unused", BigDecimal.ONE, false),
+        layout -> (resultSet, context) -> new Pet(1L, "unused", BigDecimal.ONE, false),
         List.of(
             new PropertyRuntime<>(ID, JdbcCodecs.LONG),
             new PropertyRuntime<>(NAME, JdbcCodecs.STRING),
@@ -424,9 +396,9 @@ class ProjectionQueryTest {
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final QueryColumn<Pet, Long> id = queryColumn(ID);
-    private final QueryColumn<Pet, String> name = queryColumn(NAME);
-    private final QueryColumn<Pet, BigDecimal> weight = queryColumn(WEIGHT);
+    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(ID);
+    private final NonNullQueryColumn<Pet, String> name = nonNullQueryColumn(NAME);
+    private final NullableQueryColumn<Pet, BigDecimal> weight = nullableQueryColumn(WEIGHT);
 
     private PetTable() {
       super(PET);
@@ -436,15 +408,15 @@ class ProjectionQueryTest {
       super(PET, alias);
     }
 
-    private QueryColumn<Pet, Long> id() {
+    private NonNullQueryColumn<Pet, Long> id() {
       return id;
     }
 
-    private QueryColumn<Pet, String> name() {
+    private NonNullQueryColumn<Pet, String> name() {
       return name;
     }
 
-    private QueryColumn<Pet, BigDecimal> weight() {
+    private NullableQueryColumn<Pet, BigDecimal> weight() {
       return weight;
     }
 

@@ -39,12 +39,7 @@ public final class QueryPlanCatalog {
       Dialect dialect,
       int maximumSize,
       Duration expireAfterAccess) {
-    this(
-        runtimeRegistry,
-        ProjectionRegistry.empty(),
-        dialect,
-        maximumSize,
-        expireAfterAccess);
+    this(runtimeRegistry, ProjectionRegistry.empty(), dialect, maximumSize, expireAfterAccess);
   }
 
   QueryPlanCatalog(

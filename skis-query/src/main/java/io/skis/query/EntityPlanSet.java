@@ -44,6 +44,14 @@ final class EntityPlanSet<E> {
     return model.entity();
   }
 
+  EntityRuntimeModel<E> model() {
+    return model;
+  }
+
+  QueryPlanCompiler compiler() {
+    return compiler;
+  }
+
   CompiledQueryPlan<E, Object> findByIdPlan() {
     CompiledQueryPlan<E, Object> plan = findByIdPlan;
     if (plan == null) {
@@ -136,5 +144,4 @@ final class EntityPlanSet<E> {
             + model.entity().entityName()
             + "'");
   }
-
 }

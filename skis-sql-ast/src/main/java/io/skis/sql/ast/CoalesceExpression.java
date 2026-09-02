@@ -4,8 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Immutable portable SQL {@code COALESCE} expression. */
-public record CoalesceExpression<T>(List<SqlExpression<T>> operands)
-    implements SqlExpression<T> {
+public record CoalesceExpression<T>(List<SqlExpression<T>> operands) implements SqlExpression<T> {
 
   /** Defensively copies and validates two or more compatible operands. */
   public CoalesceExpression {

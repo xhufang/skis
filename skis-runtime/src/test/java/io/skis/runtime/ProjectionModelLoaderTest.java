@@ -53,7 +53,7 @@ class ProjectionModelLoaderTest {
 
   @Test
   void loadsGeneratedProjectionProvidersFromTheDeterministicIndex() throws Exception {
-    writeIndex("# skis-generated-abi=3\n" + TestProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
@@ -70,22 +70,19 @@ class ProjectionModelLoaderTest {
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
-      assertThrows(
-          SkisConfigurationException.class,
-          () -> ProjectionModelLoader.load(classLoader));
+      assertThrows(SkisConfigurationException.class, () -> ProjectionModelLoader.load(classLoader));
     }
   }
 
   @Test
   void reportsANullProjectionFromAGeneratedProvider() throws Exception {
-    writeIndex("# skis-generated-abi=3\n" + NullProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=4\n" + NullProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> ProjectionModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> ProjectionModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains(NullProvider.class.getName()));
       assertTrue(failure.getMessage().contains("returned a null projection"));
@@ -109,7 +106,7 @@ class ProjectionModelLoaderTest {
   void rejectsTheSameProjectionProviderDeclaredByTwoModuleIndexes() throws Exception {
     Path firstModule = temporaryDirectory.resolve("first-module");
     Path secondModule = temporaryDirectory.resolve("second-module");
-    String content = "# skis-generated-abi=3\n" + TestProvider.class.getName() + "\n";
+    String content = "# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n";
     writeIndex(firstModule, content);
     writeIndex(secondModule, content);
 
@@ -127,7 +124,7 @@ class ProjectionModelLoaderTest {
   @Test
   void reportsBothProvidersThatSupplyTheSameProjectionResultType() throws Exception {
     writeIndex(
-        "# skis-generated-abi=3\n"
+        "# skis-generated-abi=4\n"
             + TestProvider.class.getName()
             + "\n"
             + DuplicateResultProvider.class.getName()

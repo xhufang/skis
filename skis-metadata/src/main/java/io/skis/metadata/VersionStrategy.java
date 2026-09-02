@@ -95,7 +95,8 @@ public enum VersionStrategy {
     if (javaType == BigDecimal.class) {
       return BigDecimal.ZERO;
     }
-    throw new IllegalArgumentException("unsupported numeric version type " + javaType.getTypeName());
+    throw new IllegalArgumentException(
+        "unsupported numeric version type " + javaType.getTypeName());
   }
 
   private static Object increment(Class<?> javaType, Object current) {
@@ -125,7 +126,8 @@ public enum VersionStrategy {
     if (javaType == BigDecimal.class) {
       return ((BigDecimal) current).add(BigDecimal.ONE);
     }
-    throw new IllegalArgumentException("unsupported numeric version type " + javaType.getTypeName());
+    throw new IllegalArgumentException(
+        "unsupported numeric version type " + javaType.getTypeName());
   }
 
   @SuppressWarnings("unchecked")

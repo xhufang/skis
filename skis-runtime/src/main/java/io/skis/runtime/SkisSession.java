@@ -10,8 +10,7 @@ public interface SkisSession extends QueryOperations, MutationOperations, AutoCl
    * Registers work that runs only after the JDBC commit succeeds.
    *
    * <p>Callbacks run in registration order. A callback failure does not roll back the already
-   * committed transaction; remaining callbacks are still attempted and their failures are
-   * retained.
+   * committed transaction; remaining callbacks are still attempted and their failures are retained.
    */
   void afterCommit(Runnable callback);
 

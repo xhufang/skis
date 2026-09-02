@@ -31,7 +31,7 @@ class QueryTypeSafetyCompilationTest {
         import io.skis.query.*;
         final class ValidQuery {
           static <E> void query(
-              QueryOperations operations, QueryColumn<E, String> column, QueryTable<E> table) {
+              QueryOperations operations, NonNullQueryColumn<E, String> column, QueryTable<E> table) {
             operations.select(column).from(table);
           }
         }
@@ -45,7 +45,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Owner {}
           static void query(
               QueryOperations operations,
-              QueryColumn<Pet, String> column,
+              NonNullQueryColumn<Pet, String> column,
               QueryTable<Owner> table) {
             operations.select(column).from(table);
           }
@@ -92,9 +92,7 @@ class QueryTypeSafetyCompilationTest {
 
     assertTrue(
         compile(
-            "samples.ValidProjectionQuery",
-            valid,
-            temporaryDirectory.resolve("valid-projection")));
+            "samples.ValidProjectionQuery", valid, temporaryDirectory.resolve("valid-projection")));
     assertFalse(
         compile(
             "samples.InvalidProjectionQuery",
@@ -110,7 +108,7 @@ class QueryTypeSafetyCompilationTest {
         import io.skis.query.*;
         final class ValidChain {
           static <E> void query(
-              EntitySelectQuery<E> query,
+              SelectQuery<E, E> query,
               QueryPredicate<E> first,
               QueryPredicate<E> second) {
             query.where(first).and(second).or(first);
@@ -125,7 +123,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              EntitySelectQuery<Pet> query,
+              SelectQuery<Pet, Pet> query,
               QueryPredicate<Pet> pet,
               QueryPredicate<Owner> owner) {
             query.where(pet).and(owner);
@@ -133,10 +131,76 @@ class QueryTypeSafetyCompilationTest {
         }
         """;
 
-    assertTrue(
-        compile("samples.ValidChain", valid, temporaryDirectory.resolve("valid-chain")));
+    assertTrue(compile("samples.ValidChain", valid, temporaryDirectory.resolve("valid-chain")));
     assertFalse(
         compile("samples.InvalidChain", invalid, temporaryDirectory.resolve("invalid-chain")));
+  }
+
+  @Test
+  void separatesNullableScalarRowPresenceFromNonNullOptionalQueries() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidNullableScalar {
+          static <E> void query(
+              QueryOperations operations,
+              NonNullQueryColumn<E, Long> id,
+              NullableQueryColumn<E, String> nickname,
+              QueryTable<E> table) {
+            SelectQuery<E, Long> ids = operations.select(id).from(table);
+            NullableScalarQuery<E, String> names = operations.select(nickname).from(table);
+            SingleRow<String> row = names.fetchOne();
+            names.orderBy(nickname.asc().nullsLast(), id.asc());
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidNullableScalar {
+          static <E> void query(
+              QueryOperations operations,
+              NullableQueryColumn<E, String> nickname,
+              QueryTable<E> table) {
+            SelectQuery<E, String> names = operations.select(nickname).from(table);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidNullableScalar",
+            valid,
+            temporaryDirectory.resolve("valid-nullable-scalar")));
+    assertFalse(
+        compile(
+            "samples.InvalidNullableScalar",
+            invalid,
+            temporaryDirectory.resolve("invalid-nullable-scalar")));
+  }
+
+  @Test
+  void exposesAConstructibleExplicitCountQueryForPageFallback() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidExplicitCount {
+          static <E, R> Page<R> query(
+              SelectQuery<E, R> content, SelectQuery<E, E> equivalentCountSource) {
+            CountQuery count = equivalentCountSource.countQuery();
+            return content.fetchPage(PageRequest.page(0, 20), count);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidExplicitCount",
+            valid,
+            temporaryDirectory.resolve("valid-explicit-count")));
   }
 
   private static boolean compile(String className, String source, Path output) throws IOException {
@@ -159,8 +223,9 @@ class QueryTypeSafetyCompilationTest {
               null,
               List.of(new SourceFile(className, source)));
       boolean success = Boolean.TRUE.equals(task.call());
-      if (!success && diagnostics.getDiagnostics().stream()
-          .noneMatch(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)) {
+      if (!success
+          && diagnostics.getDiagnostics().stream()
+              .noneMatch(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)) {
         throw new AssertionError("compilation failed without an error diagnostic");
       }
       return success;

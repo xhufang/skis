@@ -15,7 +15,8 @@ final class TableGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(3072);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.query.QueryColumn;\n");
+    source.append("import io.skis.query.NonNullQueryColumn;\n");
+    source.append("import io.skis.query.NullableQueryColumn;\n");
     source.append("import io.skis.query.QueryTable;\n");
     source.append("import io.skis.sql.ast.Identifier;\n");
     source.append("import org.jspecify.annotations.NonNull;\n\n");
@@ -35,14 +36,19 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(className)
         .append("();\n\n");
     for (PropertyModel property : model.properties()) {
+      String columnType =
+          property.column().nullable() ? "NullableQueryColumn" : "NonNullQueryColumn";
       source
-          .append("  private final QueryColumn<")
+          .append("  private final ")
+          .append(columnType)
+          .append("<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())
           .append("> ")
           .append(property.name())
-          .append("Column = queryColumn(")
+          .append("Column = ")
+          .append(property.column().nullable() ? "nullableQueryColumn(" : "nonNullQueryColumn(")
           .append(metaName)
           .append('.')
           .append(property.fieldName())
@@ -64,8 +70,12 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(".ENTITY, alias);\n")
         .append("  }\n\n");
     for (PropertyModel property : model.properties()) {
+      String columnType =
+          property.column().nullable() ? "NullableQueryColumn" : "NonNullQueryColumn";
       source
-          .append("  public QueryColumn<")
+          .append("  public ")
+          .append(columnType)
+          .append("<")
           .append(entityType)
           .append(", ")
           .append(property.typeName())

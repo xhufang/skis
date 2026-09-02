@@ -1,8 +1,8 @@
 # SQL expressions and semantic validation
 
-This document describes the expression contract implemented by the internal `0.2.2-SNAPSHOT`
-milestone. It accumulates toward the public `0.3.0` SQL DSL and is not part of the published
-`0.2.0` API.
+This document describes the expression contract implemented by the internal `0.2.2-SNAPSHOT` and
+`0.2.3-SNAPSHOT` milestones. It accumulates toward the public `0.3.0` SQL DSL and is not part of
+the published `0.2.0` API.
 
 ## Expression descriptors
 
@@ -103,3 +103,23 @@ has exactly one visible FROM table expression.
 Subqueries, derived tables, joins, and CTEs are not represented by the `0.2.2` AST. Their outer and
 inner visibility rules will be added with those nodes in later `0.2.x` milestones; the validator
 does not claim to validate syntax that the AST cannot yet express.
+
+## SELECT ordering, pagination and count
+
+The `0.2.3` SELECT structure adds visible and hidden selections, `distinct`, ordered expressions,
+and parameterized `Limit`, `OffsetLimit` or `KeysetSeek` pagination. `CountAst` is independent: it
+contains only its source, predicate and optional distinct expression, so count rendering cannot be
+implemented by deleting fragments from a content SQL string. A nullable distinct expression adds a
+null-presence term because `SELECT DISTINCT` returns one `NULL` row while SQL `COUNT(DISTINCT ...)`
+does not count `NULL`.
+
+Structural equality includes direction, null placement, hidden selections and pagination parameter
+descriptors, but not bound limit, offset, predicate or keyset values. Repeated parameter ordinals
+are legal when their Java type, SQL type and nullability descriptors agree; this permits a typed
+keyset anchor to appear in multiple branches of a lexicographic seek predicate.
+
+`SemanticValidator` checks that order and hidden expressions belong to the single visible table,
+pagination slots use the required non-null integer/long descriptors, offset/keyset pagination has
+an order, and all parameter ordinals remain dense. Dialect rendering then requires explicit
+parameterized limit/offset capabilities and either uses native null ordering or a semantically
+equivalent `CASE` fallback.

@@ -54,7 +54,7 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void loadsGeneratedProvidersFromIndexWithoutClasspathScanning() throws Exception {
-    writeIndex("# skis-generated-abi=3\n" + TestProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
@@ -72,8 +72,7 @@ class EntityRuntimeModelLoaderTest {
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
       assertThrows(
-          SkisConfigurationException.class,
-          () -> EntityRuntimeModelLoader.load(classLoader));
+          SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
     }
   }
 
@@ -85,8 +84,7 @@ class EntityRuntimeModelLoaderTest {
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains("incompatible generated-model ABI '1'"));
     }
@@ -94,14 +92,13 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void reportsNullProviderModelAsAnAssemblyConfigurationFailure() throws Exception {
-    writeIndex("# skis-generated-abi=3\n" + NullProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=4\n" + NullProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains(NullProvider.class.getName()));
       assertTrue(failure.getMessage().contains("returned a null runtime model"));
@@ -111,14 +108,11 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void rejectsDuplicateAbiHeadersWithBothLineNumbers() throws Exception {
     writeIndex(
-        "# skis-generated-abi=3\n# skis-generated-abi=3\n"
-            + TestProvider.class.getName()
-            + "\n");
+        "# skis-generated-abi=4\n# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains("more than once"), failure.getMessage());
       assertTrue(failure.getMessage().contains("lines 1 and 2"), failure.getMessage());
@@ -128,7 +122,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void rejectsDuplicateProviderLinesWithinOneIndex() throws Exception {
     writeIndex(
-        "# skis-generated-abi=3\n"
+        "# skis-generated-abi=4\n"
             + TestProvider.class.getName()
             + "\n"
             + TestProvider.class.getName()
@@ -136,8 +130,7 @@ class EntityRuntimeModelLoaderTest {
     try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains("duplicate generated entity provider"));
       assertTrue(failure.getMessage().contains(":2"), failure.getMessage());
@@ -149,15 +142,14 @@ class EntityRuntimeModelLoaderTest {
   void rejectsTheSameProviderDeclaredByTwoModuleIndexes() throws Exception {
     Path firstModule = temporaryDirectory.resolve("first-module");
     Path secondModule = temporaryDirectory.resolve("second-module");
-    String content = "# skis-generated-abi=3\n" + TestProvider.class.getName() + "\n";
+    String content = "# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n";
     writeIndex(firstModule, content);
     writeIndex(secondModule, content);
 
     try (URLClassLoader classLoader = classLoader(secondModule, firstModule)) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains("duplicate generated entity provider"));
       assertTrue(failure.getMessage().contains("first-module"), failure.getMessage());
@@ -168,7 +160,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void reportsBothProvidersThatSupplyTheSameEntityJavaType() throws Exception {
     writeIndex(
-        "# skis-generated-abi=3\n"
+        "# skis-generated-abi=4\n"
             + TestProvider.class.getName()
             + "\n"
             + DuplicateTypeProvider.class.getName()
@@ -177,8 +169,7 @@ class EntityRuntimeModelLoaderTest {
     try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains(TestProvider.class.getName()));
       assertTrue(failure.getMessage().contains(DuplicateTypeProvider.class.getName()));
@@ -190,7 +181,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void reportsBothProvidersThatSupplyTheSameCanonicalEntityMetadata() throws Exception {
     writeIndex(
-        "# skis-generated-abi=3\n"
+        "# skis-generated-abi=4\n"
             + TestProvider.class.getName()
             + "\n"
             + DuplicateCanonicalProvider.class.getName()
@@ -199,8 +190,7 @@ class EntityRuntimeModelLoaderTest {
     try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
       var failure =
           assertThrows(
-              SkisConfigurationException.class,
-              () -> EntityRuntimeModelLoader.load(classLoader));
+              SkisConfigurationException.class, () -> EntityRuntimeModelLoader.load(classLoader));
 
       assertTrue(failure.getMessage().contains(TestProvider.class.getName()));
       assertTrue(failure.getMessage().contains(DuplicateCanonicalProvider.class.getName()));

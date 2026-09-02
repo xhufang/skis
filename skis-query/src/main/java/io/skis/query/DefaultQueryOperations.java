@@ -4,6 +4,8 @@ import io.skis.core.ExecutionContext;
 import io.skis.core.ExecutionOptions;
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.jdbc.JdbcExecutor;
+import io.skis.jdbc.JdbcPageResult;
+import io.skis.jdbc.JdbcRow;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
 import java.util.List;
@@ -50,30 +52,33 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
-  public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
+  public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return new DefaultEntitySelectQuery<>(this, plans, table, null, ExecutionContext.EMPTY);
+    return DefaultSelectQuery.entity(this, plans, table);
   }
 
   @Override
-  public <E, V> SelectFromStep<E, V> select(QueryColumn<E, V> column) {
+  public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
     return new DefaultSelectFromStep<>(this, Projection.scalar(column));
   }
 
   @Override
-  public <E, R> ProjectedSelectQuery<E, R> selectProjection(
-      QueryTable<E> table, Class<R> projectionType) {
+  public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
+    return new DefaultNullableSelectFromStep<>(this, Projection.nullableScalar(column));
+  }
+
+  @Override
+  public <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType) {
     Objects.requireNonNull(table, "table");
     Projection<E, R> projection = projectionRegistry.require(table, projectionType);
     return selectFrom(projection, table);
   }
 
-  <E, R> ProjectedSelectQuery<E, R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
+  <E, R> DefaultSelectQuery<E, R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
     projection.validateFrom(table);
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return new DefaultProjectedSelectQuery<>(
-        this, plans, table, projection, null, ExecutionContext.EMPTY);
+    return DefaultSelectQuery.projection(this, plans, table, projection);
   }
 
   <R> Optional<R> fetchOne(
@@ -81,9 +86,58 @@ final class DefaultQueryOperations implements QueryOperations {
     return jdbcExecutor.fetchOne(plan, argument, executionContext);
   }
 
-  <R> List<R> fetchList(
+  <R> List<@Nullable R> fetchList(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
     return jdbcExecutor.fetchList(plan, argument, executionContext);
+  }
+
+  <R> Optional<R> fetchFirst(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return jdbcExecutor.fetchFirst(plan, argument, executionContext);
+  }
+
+  <R> JdbcRow<R> fetchNullableOne(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return jdbcExecutor.fetchNullableOne(plan, argument, executionContext);
+  }
+
+  <R> JdbcRow<R> fetchNullableFirst(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return jdbcExecutor.fetchNullableFirst(plan, argument, executionContext);
+  }
+
+  <R> JdbcPageResult<R> fetchPage(
+      QueryCompilation<R> content,
+      QueryCompilation<Long> count,
+      ExecutionContext executionContext) {
+    return jdbcExecutor.fetchPage(
+        content.plan(), content.argument(), count.plan(), count.argument(), executionContext);
+  }
+
+  <R> List<@Nullable R> fetchSliceList(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      int pageSize) {
+    return jdbcExecutor.fetchSliceList(plan, argument, executionContext, pageSize);
+  }
+
+  <R> QueryCursor<R> cursor(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return new DefaultQueryCursor<>(jdbcExecutor.openCursor(plan, argument, executionContext));
+  }
+
+  <R> QueryCursor<@Nullable R> nullableCursor(
+      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
+    return DefaultQueryCursor.nullable(jdbcExecutor.openCursor(plan, argument, executionContext));
+  }
+
+  void validateRequestedRows(int requestedRows, ExecutionContext executionContext) {
+    try {
+      jdbcExecutor.validateRequestedRows(requestedRows, executionContext);
+    } catch (IllegalArgumentException exception) {
+      throw new QueryValidationException(exception.getMessage(), exception);
+    }
   }
 
   private <E> EntityPlanSet<E> requirePlanSet(EntityMeta<E> entity) {

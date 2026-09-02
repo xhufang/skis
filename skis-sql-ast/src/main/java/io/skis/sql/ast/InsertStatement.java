@@ -5,9 +5,7 @@ import java.util.Objects;
 
 /** Immutable single-row INSERT statement. */
 public record InsertStatement(
-    TableExpression<?> target,
-    List<ColumnExpression<?, ?>> columns,
-    List<SqlExpression<?>> values)
+    TableExpression<?> target, List<ColumnExpression<?, ?>> columns, List<SqlExpression<?>> values)
     implements StatementAst {
 
   /** Validates the target, column list, and matching values. */

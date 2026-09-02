@@ -85,8 +85,7 @@ final class BinderGenerator implements EntitySourceGenerator {
     if (model.version() != null) {
       uncheckedUpdateProperties.remove(model.version());
     }
-    appendMethod(
-        source, "bindUpdateByIdUnchecked", entityType, uncheckedUpdateProperties, false);
+    appendMethod(source, "bindUpdateByIdUnchecked", entityType, uncheckedUpdateProperties, false);
     if (model.version() != null) {
       source
           .append("  private static Object readVersion(")

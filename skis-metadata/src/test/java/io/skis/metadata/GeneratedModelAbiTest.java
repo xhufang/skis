@@ -21,6 +21,9 @@ class GeneratedModelAbiTest {
             () -> GeneratedModelAbi.requireCompatible(GeneratedModelAbi.CURRENT + 1));
 
     assertTrue(failure.getMessage().contains("generated-model ABI"));
+    assertTrue(failure.getMessage().contains(Integer.toString(GeneratedModelAbi.CURRENT + 1)));
     assertTrue(failure.getMessage().contains("runtime ABI"));
+    assertTrue(failure.getMessage().contains(Integer.toString(GeneratedModelAbi.CURRENT)));
+    assertTrue(failure.getMessage().contains("regenerate"));
   }
 }

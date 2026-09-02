@@ -29,16 +29,14 @@ public interface QueryOperations {
   }
 
   /** Starts an immutable full-entity single-table query. */
-  <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table);
+  <E> SelectQuery<E, E> selectFrom(QueryTable<E> table);
 
-  /**
-   * Starts a non-null scalar projection without constructing an intermediate tuple.
-   *
-   * <p>Nullable columns must use an APT-generated projection that maps each row to a non-null user
-   * result so {@code fetchOne()} can distinguish SQL {@code NULL} from no row.
-   */
-  <E, V> SelectFromStep<E, V> select(QueryColumn<E, V> column);
+  /** Starts a non-null scalar projection without constructing an intermediate tuple. */
+  <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column);
+
+  /** Starts a nullable scalar projection whose row-presence contract is {@link SingleRow}. */
+  <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column);
 
   /** Selects one registered user projection from the supplied typed table expression. */
-  <E, R> ProjectedSelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType);
+  <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType);
 }

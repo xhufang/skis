@@ -17,12 +17,18 @@ import io.skis.sql.ast.CastExpression;
 import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
+import io.skis.sql.ast.NullOrder;
+import io.skis.sql.ast.OffsetLimit;
+import io.skis.sql.ast.OrderByItem;
+import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.TableExpression;
@@ -44,8 +50,116 @@ class PostgreSqlDialectTest {
     assertSame(PostgreSqlRenderer.INSTANCE, dialect.renderer());
     assertSame(PostgreSqlExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
+    assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_LIMIT));
+    assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_OFFSET));
+    assertTrue(dialect.capabilities().supports(DialectFeature.NULLS_FIRST_LAST));
+    assertTrue(dialect.capabilities().supports(DialectFeature.COUNT_DISTINCT));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
+  }
+
+  @Test
+  void rendersNativeNullOrderingPageKeysetAndCountGoldenSql() {
+    PetAstTable pet = PetAstTable.PET;
+    ParameterSlot<Integer> limit = new ParameterSlot<>(0, Integer.class, false);
+    ParameterSlot<Long> offset = new ParameterSlot<>(1, Long.class, false);
+    RenderedSql renderedPage =
+        PostgreSqlDialect.INSTANCE
+            .renderer()
+            .render(
+                new SelectStatement(
+                    false,
+                    List.of(pet.id(), pet.name()),
+                    List.of(),
+                    pet,
+                    null,
+                    List.of(
+                        new OrderByItem(pet.name(), OrderDirection.DESC, NullOrder.LAST),
+                        new OrderByItem(
+                            pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
+                    new OffsetLimit(limit, offset)));
+    assertEquals(
+        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" "
+            + "ORDER BY \"pet\".\"pet_name\" DESC NULLS LAST, \"pet\".\"id\" DESC "
+            + "LIMIT ? OFFSET ?",
+        renderedPage.sql());
+    assertEquals(List.of(limit, offset), renderedPage.parameters());
+
+    ParameterSlot<Long> anchor = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<Integer> keysetLimit = new ParameterSlot<>(1, Integer.class, false);
+    RenderedSql renderedKeyset =
+        PostgreSqlDialect.INSTANCE
+            .renderer()
+            .render(
+                new SelectStatement(
+                    false,
+                    List.of(pet.id()),
+                    List.of(),
+                    pet,
+                    null,
+                    List.of(
+                        new OrderByItem(
+                            pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+                    new KeysetSeek(pet.id().gt(anchor), keysetLimit)));
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" "
+            + "WHERE \"pet\".\"id\" > ? ORDER BY \"pet\".\"id\" ASC LIMIT ?",
+        renderedKeyset.sql());
+    assertEquals(List.of(anchor, keysetLimit), renderedKeyset.parameters());
+
+    RenderedSql renderedCount =
+        PostgreSqlDialect.INSTANCE.renderer().render(new CountAst(pet, null, pet.name()));
+    assertEquals(
+        "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"",
+        renderedCount.sql());
+
+    RenderedSql renderedNullableCount =
+        PostgreSqlDialect.INSTANCE
+            .renderer()
+            .render(
+                new CountAst(
+                    pet,
+                    null,
+                    new CaseExpression<>(
+                        List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
+    assertEquals(
+        "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL "
+            + "THEN \"pet\".\"pet_name\" END) + CASE WHEN COUNT(*) > "
+            + "COUNT(CASE WHEN \"pet\".\"id\" IS NOT NULL THEN \"pet\".\"pet_name\" END) "
+            + "THEN 1 ELSE 0 END "
+            + "FROM \"shelter\".\"pet\"",
+        renderedNullableCount.sql());
+  }
+
+  @Test
+  void groupsAnExistingOrPredicateBeforeAppendingTheKeysetPredicate() {
+    PetAstTable pet = PetAstTable.PET;
+    ParameterSlot<Long> lower = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<Long> upper = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<Long> anchor = new ParameterSlot<>(2, Long.class, false);
+    ParameterSlot<Integer> limit = new ParameterSlot<>(3, Integer.class, false);
+
+    RenderedSql rendered =
+        PostgreSqlDialect.INSTANCE
+            .renderer()
+            .render(
+                new SelectStatement(
+                    false,
+                    List.of(pet.id()),
+                    List.of(),
+                    pet,
+                    LogicalPredicate.or(List.of(pet.id().lt(lower), pet.id().gt(upper))),
+                    List.of(
+                        new OrderByItem(
+                            pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+                    new KeysetSeek(pet.id().gt(anchor), limit)));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
+            + "(\"pet\".\"id\" < ? OR \"pet\".\"id\" > ?) "
+            + "AND (\"pet\".\"id\" > ?) ORDER BY \"pet\".\"id\" ASC LIMIT ?",
+        rendered.sql());
+    assertEquals(List.of(lower, upper, anchor, limit), rendered.parameters());
   }
 
   @Test
