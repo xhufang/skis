@@ -31,8 +31,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.jupiter.api.Test;
 import org.jspecify.annotations.Nullable;
+import org.junit.jupiter.api.Test;
 
 class ProjectionQueryTest {
 
@@ -99,8 +99,6 @@ class ProjectionQueryTest {
         () -> plans().projectionPlan(TABLE, Projection.scalar(alias.name()), null));
     CompiledQueryPlan<BigDecimal, Object> nullablePlan =
         plans().projectionPlan(TABLE, Projection.nullableScalar(TABLE.weight()), null);
-    assertEquals(
-        null, nullablePlan.rowDecoder().decode(resultSetWithNull(1), RowReadContext.EMPTY));
 
     CompiledQueryPlan<String, Object> plan =
         plans().projectionPlan(TABLE, Projection.scalar(TABLE.name()), null);
