@@ -14,7 +14,12 @@ public final class H2Dialect implements Dialect {
   static final String ID = "h2";
 
   private static final DialectCapabilities CAPABILITIES =
-      DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+      DialectCapabilities.of(
+          DialectFeature.SCHEMA_QUALIFIED_TABLES,
+          DialectFeature.PARAMETERIZED_LIMIT,
+          DialectFeature.PARAMETERIZED_OFFSET,
+          DialectFeature.COUNT_DISTINCT,
+          DialectFeature.NULLS_FIRST_LAST);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();

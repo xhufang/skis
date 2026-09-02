@@ -1,8 +1,8 @@
 package io.skis.query;
 
-/** FROM stage shared by scalar and user-defined single-table projections. */
+/** FROM stage for a selected non-null scalar. */
 public interface SelectFromStep<E, R> {
 
   /** Selects the single table expression that owns every projection column. */
-  ProjectedSelectQuery<E, R> from(QueryTable<E> table);
+  SelectQuery<E, R> from(QueryTable<E> table);
 }

@@ -13,8 +13,8 @@ public final class MutationRuntime {
   /** Creates immutable mutation operations backed by generated binders and JDBC. */
   public static MutationOperations create(
       EntityRuntimeRegistry runtimeRegistry, Dialect dialect, JdbcExecutor jdbcExecutor) {
-    return compile(runtimeRegistry, dialect).bind(
-        Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
+    return compile(runtimeRegistry, dialect)
+        .bind(Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
   }
 
   /** Compiles one shareable plan catalog for subsequent ordinary and transactional execution. */

@@ -12,11 +12,14 @@ import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalOperator;
@@ -24,6 +27,10 @@ import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullPredicate;
+import io.skis.sql.ast.NullOrder;
+import io.skis.sql.ast.OffsetLimit;
+import io.skis.sql.ast.OrderByItem;
+import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
@@ -61,6 +68,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     Objects.requireNonNull(statement, "statement");
     return switch (statement) {
       case SelectStatement select -> renderSelect(select);
+      case CountAst count -> renderCount(count);
       case InsertStatement insert -> renderInsert(insert);
       case UpdateStatement update -> renderUpdate(update);
       case DeleteStatement delete -> renderDelete(delete);
@@ -71,22 +79,120 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private RenderedSql renderSelect(SelectStatement statement) {
     RenderContext context = new RenderContext(statement.from(), true);
     context.sql.append("SELECT ");
+    if (statement.distinct()) {
+      context.sql.append("DISTINCT ");
+    }
     for (int index = 0; index < statement.selections().size(); index++) {
       if (index > 0) {
         context.sql.append(", ");
       }
       renderExpression(statement.selections().get(index), context);
     }
+    for (HiddenSelection selection : statement.hiddenSelections()) {
+      context.sql.append(", ");
+      renderExpression(selection.expression(), context);
+      context.sql.append(" AS ").append(identifierRules.quote(selection.alias().value()));
+    }
     context.sql.append(" FROM ");
     renderTable(statement.from(), context.sql);
+    boolean hasWhere = statement.where().isPresent();
+    boolean hasSeek = statement.pagination().filter(KeysetSeek.class::isInstance).isPresent();
+    if (hasWhere || hasSeek) {
+      context.sql.append(" WHERE ");
+      if (hasWhere) {
+        if (hasSeek) {
+          context.sql.append('(');
+        }
+        renderPredicate(statement.where().orElseThrow(), context);
+        if (hasSeek) {
+          context.sql.append(')');
+        }
+      }
+      if (hasWhere && hasSeek) {
+        context.sql.append(" AND ");
+      }
+      if (hasSeek) {
+        if (hasWhere) {
+          context.sql.append('(');
+        }
+        renderPredicate(((KeysetSeek) statement.pagination().orElseThrow()).predicate(), context);
+        if (hasWhere) {
+          context.sql.append(')');
+        }
+      }
+    }
+    if (!statement.orderBy().isEmpty()) {
+      context.sql.append(" ORDER BY ");
+      for (int index = 0; index < statement.orderBy().size(); index++) {
+        if (index > 0) {
+          context.sql.append(", ");
+        }
+        renderOrderByItem(statement.orderBy().get(index), context);
+      }
+    }
     statement
-        .where()
+        .pagination()
+        .ifPresent(
+            pagination -> {
+              require(DialectFeature.PARAMETERIZED_LIMIT, "parameterized LIMIT");
+              context.sql.append(" LIMIT ");
+              renderExpression(pagination.limit(), context);
+              if (pagination instanceof OffsetLimit offset) {
+                require(DialectFeature.PARAMETERIZED_OFFSET, "parameterized OFFSET");
+                context.sql.append(" OFFSET ");
+                renderExpression(offset.offset(), context);
+              }
+            });
+    return new RenderedSql(context.sql.toString(), context.parameters);
+  }
+
+  private RenderedSql renderCount(CountAst statement) {
+    RenderContext context = new RenderContext(statement.source(), true);
+    context.sql.append("SELECT ");
+    if (statement.distinctExpression().isPresent()) {
+      require(DialectFeature.COUNT_DISTINCT, "distinct count");
+      SqlExpression<?> expression = statement.distinctExpression().orElseThrow();
+      context.sql.append("COUNT(DISTINCT ");
+      renderExpression(expression, context);
+      context.sql.append(')');
+      if (expression.nullable()) {
+        context.sql.append(" + CASE WHEN COUNT(*) > COUNT(");
+        renderExpression(expression, context);
+        context.sql.append(") THEN 1 ELSE 0 END");
+      }
+    } else {
+      context.sql.append("COUNT(*)");
+    }
+    context.sql.append(" FROM ");
+    renderTable(statement.source(), context.sql);
+    statement
+        .predicate()
         .ifPresent(
             predicate -> {
               context.sql.append(" WHERE ");
               renderPredicate(predicate, context);
             });
     return new RenderedSql(context.sql.toString(), context.parameters);
+  }
+
+  private void renderOrderByItem(OrderByItem item, RenderContext context) {
+    NullOrder nullOrder = item.nullOrder();
+    if (nullOrder != NullOrder.DIALECT_DEFAULT
+        && !capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
+      context.sql.append("CASE WHEN ");
+      renderExpression(item.expression(), context);
+      context.sql.append(" IS NULL THEN ");
+      context.sql.append(nullOrder == NullOrder.FIRST ? '0' : '1');
+      context.sql.append(" ELSE ");
+      context.sql.append(nullOrder == NullOrder.FIRST ? '1' : '0');
+      context.sql.append(" END ASC, ");
+    }
+    renderExpression(item.expression(), context);
+    context.sql.append(item.direction() == OrderDirection.ASC ? " ASC" : " DESC");
+    if (nullOrder != NullOrder.DIALECT_DEFAULT
+        && capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
+      context.sql.append(nullOrder == NullOrder.FIRST ? " NULLS FIRST" : " NULLS LAST");
+    }
   }
 
   private RenderedSql renderInsert(InsertStatement statement) {
@@ -469,8 +575,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void require(DialectFeature feature, String description) {
     if (!capabilities.supports(feature)) {
-      throw new SqlRenderException(
-          "dialect '" + dialectId + "' does not support " + description + " names");
+      throw new SqlRenderException("dialect '" + dialectId + "' does not support " + description);
     }
   }
 

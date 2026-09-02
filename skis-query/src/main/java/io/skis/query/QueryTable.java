@@ -28,7 +28,20 @@ public abstract class QueryTable<E> extends TableExpression<E> {
 
   /** Returns the query-column wrapper for canonical generated property metadata. */
   protected final <V> QueryColumn<E, V> queryColumn(PropertyMeta<E, V> property) {
-    return new QueryColumn<>(expression(property));
+    ColumnExpression<E, V> expression = expression(property);
+    return expression.nullable()
+        ? new NullableQueryColumn<>(expression)
+        : new NonNullQueryColumn<>(expression);
+  }
+
+  /** Returns a generated non-null column after validating its metadata contract. */
+  protected final <V> NonNullQueryColumn<E, V> nonNullQueryColumn(PropertyMeta<E, V> property) {
+    return new NonNullQueryColumn<>(expression(property));
+  }
+
+  /** Returns a generated nullable column after validating its metadata contract. */
+  protected final <V> NullableQueryColumn<E, V> nullableQueryColumn(PropertyMeta<E, V> property) {
+    return new NullableQueryColumn<>(expression(property));
   }
 
   List<ColumnExpression<E, ?>> selections() {

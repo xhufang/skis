@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.2.2-SNAPSHOT</version>
+  <version>0.2.3-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -480,13 +480,18 @@
                 <breakBuildOnSourceIncompatibleModifications>true
                 </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
-                <!-- Exact 0.2.2 interface additions approved by the development plan. Do not
-                     replace these method-level exclusions with a category-wide override. -->
+                <!-- Exact 0.2.2/0.2.3 internal-line breaks approved by the development plan.
+                     Keep this list at class/member granularity. -->
                 <excludes>
-                  <exclude>io.skis.query.EntitySelectQuery#and(io.skis.query.QueryPredicate)</exclude>
-                  <exclude>io.skis.query.EntitySelectQuery#or(io.skis.query.QueryPredicate)</exclude>
-                  <exclude>io.skis.query.ProjectedSelectQuery#and(io.skis.query.QueryPredicate)</exclude>
-                  <exclude>io.skis.query.ProjectedSelectQuery#or(io.skis.query.QueryPredicate)</exclude>
+                  <exclude>io.skis.query.EntitySelectQuery</exclude>
+                  <exclude>io.skis.query.ProjectedSelectQuery</exclude>
+                  <exclude>io.skis.query.QueryColumn</exclude>
+                  <exclude>io.skis.query.QueryOperations#selectFrom(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.NonNullQueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.NullableQueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
+                  <exclude>io.skis.query.SelectFromStep#from(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
                   <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>

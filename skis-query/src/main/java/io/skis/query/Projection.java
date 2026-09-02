@@ -33,6 +33,7 @@ public final class Projection<E, R> {
   private final List<PropertyMeta<E, ?>> properties;
   private final DecoderFactory<E, R> decoderFactory;
   private final @Nullable TableExpression<E> boundTable;
+  private final boolean nullableResult;
 
   private Projection(
       Class<R> resultType,
@@ -40,7 +41,8 @@ public final class Projection<E, R> {
       Mapping<R> mapping,
       List<? extends PropertyMeta<E, ?>> properties,
       DecoderFactory<E, R> decoderFactory,
-      @Nullable TableExpression<E> boundTable) {
+      @Nullable TableExpression<E> boundTable,
+      boolean nullableResult) {
     this.resultType = Objects.requireNonNull(resultType, "resultType");
     this.entity = Objects.requireNonNull(entity, "entity");
     this.mapping = Objects.requireNonNull(mapping, "mapping");
@@ -48,6 +50,7 @@ public final class Projection<E, R> {
     if (properties.isEmpty()) {
       throw new QueryValidationException("a projection must select at least one column");
     }
+    // noinspection ExtractMethodRecommender
     List<PropertyMeta<E, ?>> copy = new ArrayList<>(properties.size());
     for (PropertyMeta<E, ?> property : properties) {
       PropertyMeta<E, ?> selected = Objects.requireNonNull(property, "property");
@@ -67,6 +70,7 @@ public final class Projection<E, R> {
     this.properties = List.copyOf(copy);
     this.decoderFactory = Objects.requireNonNull(decoderFactory, "decoderFactory");
     this.boundTable = boundTable;
+    this.nullableResult = nullableResult;
   }
 
   /**
@@ -92,17 +96,11 @@ public final class Projection<E, R> {
       Mapping<R> mapping,
       List<? extends PropertyMeta<E, ?>> properties,
       DecoderFactory<E, R> decoderFactory) {
-    return new Projection<>(resultType, entity, mapping, properties, decoderFactory, null);
+    return new Projection<>(resultType, entity, mapping, properties, decoderFactory, null, false);
   }
 
-  static <E, V> Projection<E, V> scalar(QueryColumn<E, V> column) {
+  static <E, V> Projection<E, V> scalar(NonNullQueryColumn<E, V> column) {
     Objects.requireNonNull(column, "column");
-    if (column.nullable()) {
-      throw new QueryValidationException(
-          "nullable scalar column '"
-              + column.property().name()
-              + "' requires a generated non-null projection result");
-    }
     return new Projection<E, V>(
         column.javaType(),
         column.expression().table().entity(),
@@ -112,7 +110,23 @@ public final class Projection<E, R> {
           ValueReader<V> value = readers.reader(0, column.property());
           return (resultSet, context) -> requireResult(value.read(resultSet, context));
         },
-        column.expression().table());
+        column.expression().table(),
+        false);
+  }
+
+  static <E, V> Projection<E, V> nullableScalar(NullableQueryColumn<E, V> column) {
+    Objects.requireNonNull(column, "column");
+    return new Projection<E, V>(
+        column.javaType(),
+        column.expression().table().entity(),
+        scalarMapping(),
+        List.of(column.property()),
+        readers -> {
+          ValueReader<V> value = readers.reader(0, column.property());
+          return value::read;
+        },
+        column.expression().table(),
+        true);
   }
 
   /** Returns the generated user result type represented by this projection. */
@@ -156,7 +170,9 @@ public final class Projection<E, R> {
     Readers<E> readers = new CompiledReaders<>(properties, List.copyOf(values));
     RowDecoder<R> decoder =
         Objects.requireNonNull(decoderFactory.create(readers), "projection row decoder");
-    return (resultSet, context) -> requireResult(decoder.decode(resultSet, context));
+    return nullableResult
+        ? decoder
+        : (resultSet, context) -> requireResult(decoder.decode(resultSet, context));
   }
 
   void validateFrom(QueryTable<E> table) {

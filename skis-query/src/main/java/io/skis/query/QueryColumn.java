@@ -12,8 +12,8 @@ import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
-/** Type-safe generated query column that builds immutable value-separated predicates. */
-public final class QueryColumn<E, V> {
+/** Shared predicate and ordering DSL for generated nullable and non-null columns. */
+public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, NullableQueryColumn {
 
   private final ColumnExpression<E, V> expression;
 
@@ -21,63 +21,63 @@ public final class QueryColumn<E, V> {
     this.expression = Objects.requireNonNull(expression, "expression");
   }
 
-  public PropertyMeta<E, V> property() {
+  public final PropertyMeta<E, V> property() {
     return expression.property();
   }
 
-  public Class<V> javaType() {
+  public final Class<V> javaType() {
     return expression.javaType();
   }
 
-  public SqlType sqlType() {
+  public final SqlType sqlType() {
     return expression.sqlType();
   }
 
-  public Nullability nullability() {
+  public final Nullability nullability() {
     return expression.nullability();
   }
 
-  public boolean nullable() {
+  public final boolean nullable() {
     return expression.nullable();
   }
 
-  public QueryPredicate<E> eq(@Nullable V value) {
+  public final QueryPredicate<E> eq(@Nullable V value) {
     return comparison(ComparisonOperator.EQUAL, value);
   }
 
-  public QueryPredicate<E> ne(@Nullable V value) {
+  public final QueryPredicate<E> ne(@Nullable V value) {
     return comparison(ComparisonOperator.NOT_EQUAL, value);
   }
 
-  public QueryPredicate<E> gt(@Nullable V value) {
+  public final QueryPredicate<E> gt(@Nullable V value) {
     requireOrdering("gt");
     return comparison(ComparisonOperator.GREATER_THAN, value);
   }
 
-  public QueryPredicate<E> ge(@Nullable V value) {
+  public final QueryPredicate<E> ge(@Nullable V value) {
     requireOrdering("ge");
     return comparison(ComparisonOperator.GREATER_THAN_OR_EQUAL, value);
   }
 
-  public QueryPredicate<E> lt(@Nullable V value) {
+  public final QueryPredicate<E> lt(@Nullable V value) {
     requireOrdering("lt");
     return comparison(ComparisonOperator.LESS_THAN, value);
   }
 
-  public QueryPredicate<E> le(@Nullable V value) {
+  public final QueryPredicate<E> le(@Nullable V value) {
     requireOrdering("le");
     return comparison(ComparisonOperator.LESS_THAN_OR_EQUAL, value);
   }
 
-  public QueryPredicate<E> isNull() {
+  public final QueryPredicate<E> isNull() {
     return QueryPredicate.nullCheck(this, NullOperator.IS_NULL);
   }
 
-  public QueryPredicate<E> isNotNull() {
+  public final QueryPredicate<E> isNotNull() {
     return QueryPredicate.nullCheck(this, NullOperator.IS_NOT_NULL);
   }
 
-  public QueryPredicate<E> between(@Nullable V lower, @Nullable V upper) {
+  public final QueryPredicate<E> between(@Nullable V lower, @Nullable V upper) {
     requireOrdering("between");
     return QueryPredicate.between(
         this,
@@ -85,7 +85,7 @@ public final class QueryColumn<E, V> {
         requireValue("between upper bound", upper));
   }
 
-  public QueryPredicate<E> like(String pattern) {
+  public final QueryPredicate<E> like(String pattern) {
     if (javaType() != String.class || !sqlType().supportsLike()) {
       throw unsupported("like");
     }
@@ -93,15 +93,27 @@ public final class QueryColumn<E, V> {
     return QueryPredicate.like(this, typedPattern);
   }
 
-  public QueryPredicate<E> in(Collection<? extends V> values) {
+  public final QueryPredicate<E> in(Collection<? extends V> values) {
     return membership(values, false);
   }
 
-  public QueryPredicate<E> notIn(Collection<? extends V> values) {
+  public final QueryPredicate<E> notIn(Collection<? extends V> values) {
     return membership(values, true);
   }
 
-  ColumnExpression<E, V> expression() {
+  /** Creates ascending ordering using the database default null placement. */
+  public final SortSpecification<E> asc() {
+    requireOrdering("asc");
+    return new SortSpecification<>(this, SortDirection.ASC, NullPlacement.DIALECT_DEFAULT);
+  }
+
+  /** Creates descending ordering using the database default null placement. */
+  public final SortSpecification<E> desc() {
+    requireOrdering("desc");
+    return new SortSpecification<>(this, SortDirection.DESC, NullPlacement.DIALECT_DEFAULT);
+  }
+
+  final ColumnExpression<E, V> expression() {
     return expression;
   }
 

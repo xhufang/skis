@@ -144,8 +144,7 @@ public enum SqlType {
     if (isCharacter() || target.isCharacter()) {
       return true;
     }
-    return (this == DATE && target.isTimestamp())
-        || (target == DATE && isTimestamp());
+    return (this == DATE && target.isTimestamp()) || (target == DATE && isTimestamp());
   }
 
   /** Whether this value family has a portable ordering for the initial DSL. */
@@ -178,6 +177,14 @@ public enum SqlType {
   }
 
   private enum Family {
-    BOOLEAN, NUMERIC, CHARACTER, BINARY, UUID, DATE, TIME, TIMESTAMP, OTHER
+    BOOLEAN,
+    NUMERIC,
+    CHARACTER,
+    BINARY,
+    UUID,
+    DATE,
+    TIME,
+    TIMESTAMP,
+    OTHER
   }
 }

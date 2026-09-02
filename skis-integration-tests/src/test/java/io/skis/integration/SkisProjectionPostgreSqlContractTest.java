@@ -11,6 +11,12 @@ import io.skis.dialect.SqlExceptionCategory;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
 import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;
+import io.skis.query.Page;
+import io.skis.query.PageRequest;
+import io.skis.query.QueryCursor;
+import io.skis.query.SelectQuery;
+import io.skis.query.Slice;
+import io.skis.query.SliceRequest;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
@@ -143,6 +149,66 @@ class SkisProjectionPostgreSqlContractTest {
           PostgreSqlDialect.INSTANCE.exceptionClassifier().classify(sqlFailure));
     } finally {
       deletePet(dataSource, id);
+    }
+  }
+
+  @Test
+  void executesPageOffsetKeysetAndCursorContractsAgainstPostgreSql() throws Exception {
+    PGSimpleDataSource dataSource = configuredDataSource();
+    prepareSchema(dataSource);
+    List<Long> ids =
+        java.util.stream.Stream.generate(
+                () -> UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE)
+            .distinct()
+            .limit(5)
+            .sorted()
+            .toList();
+    SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
+
+    try {
+      for (int index = 0; index < ids.size(); index++) {
+        executor.insert(
+            PetMeta.ENTITY,
+            new Pet(
+                ids.get(index),
+                "page-" + index,
+                new BigDecimal("10.00"),
+                false,
+                null,
+                "ignored"));
+      }
+      PetTable pet = PetTable.PET;
+      SelectQuery<Pet, Pet> query =
+          executor
+              .selectFrom(pet)
+              .where(pet.id().in(ids))
+              .orderBy(pet.id().asc());
+
+      Page<Pet> page = query.fetchPage(PageRequest.page(1, 2));
+      Slice<Pet> offset = query.fetchSlice(SliceRequest.offset(0, 2));
+      Slice<Pet> keysetFirst = query.fetchSlice(SliceRequest.keysetFirst(2));
+      Slice<Pet> keysetSecond =
+          query.fetchSlice(
+              SliceRequest.resume(keysetFirst.nextContinuation().orElseThrow(), 2));
+      List<Long> cursorIds = new java.util.ArrayList<>();
+      try (QueryCursor<Pet> cursor = query.cursor()) {
+        while (cursor.advance()) {
+          cursorIds.add(cursor.current().id());
+        }
+      }
+
+      assertEquals(ids.subList(2, 4), page.items().stream().map(Pet::id).toList());
+      assertEquals(5, page.totalElements());
+      assertEquals(3, page.totalPages());
+      assertEquals(ids.subList(0, 2), offset.items().stream().map(Pet::id).toList());
+      assertTrue(offset.hasNext());
+      assertEquals(ids.subList(0, 2), keysetFirst.items().stream().map(Pet::id).toList());
+      assertEquals(ids.subList(2, 4), keysetSecond.items().stream().map(Pet::id).toList());
+      assertEquals(ids, cursorIds);
+    } finally {
+      for (long id : ids) {
+        deletePet(dataSource, id);
+      }
     }
   }
 

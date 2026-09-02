@@ -91,9 +91,7 @@ class SkisEntityProcessorTest {
     CompilationResult result =
         process(
             sources,
-            SkisEntityProcessor.class.getName()
-                + ","
-                + SkisProjectionProcessor.class.getName(),
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
             temporaryDirectory.resolve("twenty-column-projection"));
 
     assertTrue(result.success(), result.diagnosticsText());
@@ -113,8 +111,7 @@ class SkisEntityProcessorTest {
     assertTrue(generated.contains("Projection.generated("), generated);
     assertTrue(generated.contains("samples.skis.TwentyColumnEntityMeta.ID"), generated);
     assertTrue(
-        generated.contains(
-            "$skisReaders.reader(19, samples.skis.TwentyColumnEntityMeta.VALUE19);"),
+        generated.contains("$skisReaders.reader(19, samples.skis.TwentyColumnEntityMeta.VALUE19);"),
         generated);
     assertFalse(generated.contains(" of("), generated);
     assertTrue(generated.contains("new samples.TwentyColumnSummary("), generated);
@@ -148,9 +145,7 @@ class SkisEntityProcessorTest {
     CompilationResult result =
         process(
             sources,
-            SkisEntityProcessor.class.getName()
-                + ","
-                + SkisProjectionProcessor.class.getName(),
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
             temporaryDirectory.resolve("projection-constructor"));
 
     assertTrue(result.success(), result.diagnosticsText());
@@ -182,9 +177,7 @@ class SkisEntityProcessorTest {
             public record PetLabel(@ProjectionProperty("name") String label) {}
             """);
     String processors =
-        SkisEntityProcessor.class.getName()
-            + ","
-            + SkisProjectionProcessor.class.getName();
+        SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName();
     CompilationResult result =
         process(sources, processors, temporaryDirectory.resolve("renamed-projection-property"));
 
@@ -224,9 +217,7 @@ class SkisEntityProcessorTest {
             public record AnnotatedSummary(@ProjectionValue String name) {}
             """);
     String processors =
-        SkisEntityProcessor.class.getName()
-            + ","
-            + SkisProjectionProcessor.class.getName();
+        SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName();
     CompilationResult result =
         process(sources, processors, temporaryDirectory.resolve("projection-type-use-annotation"));
 
@@ -1429,7 +1420,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=3\n"
+        ("# skis-generated-abi=4\n"
                 + "samples.skis.AlphaRuntimeModel\n"
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
@@ -1472,7 +1463,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=3\n"
+        ("# skis-generated-abi=4\n"
                 + "samples.skis.AlphaSummaryProjection\n"
                 + "samples.skis.ZuluSummaryProjection\n")
             .getBytes(StandardCharsets.UTF_8),
@@ -1480,8 +1471,7 @@ class SkisEntityProcessorTest {
   }
 
   @Test
-  void keepsEveryGeneratedSourceAndIndexByteStableAcrossInputAndProcessorOrder()
-      throws Exception {
+  void keepsEveryGeneratedSourceAndIndexByteStableAcrossInputAndProcessorOrder() throws Exception {
     Map<String, String> sources =
         Map.of(
             "samples.Zulu",
@@ -1528,24 +1518,16 @@ class SkisEntityProcessorTest {
             SkisEntityProcessor.class.getName());
 
     CompilationResult normal =
-        process(
-            sources,
-            normalProcessors,
-            temporaryDirectory.resolve("stable-normal"),
-            false);
+        process(sources, normalProcessors, temporaryDirectory.resolve("stable-normal"), false);
     CompilationResult reversed =
-        process(
-            sources,
-            reversedProcessors,
-            temporaryDirectory.resolve("stable-reversed"),
-            true);
+        process(sources, reversedProcessors, temporaryDirectory.resolve("stable-reversed"), true);
 
     assertTrue(normal.success(), normal.diagnosticsText());
     assertTrue(reversed.success(), reversed.diagnosticsText());
     assertEquals(outputSnapshot(normal), outputSnapshot(reversed));
     assertTrue(
         generatedSource(normal, "AlphaSummaryProjection.java")
-            .contains("comments = \"Projection ABI 3\""));
+            .contains("comments = \"Projection ABI 4\""));
   }
 
   @Test
@@ -1624,9 +1606,7 @@ class SkisEntityProcessorTest {
     assertTrue(result.success(), result.diagnosticsText());
     assertTrue(
         Files.exists(
-            result
-                .generatedSources()
-                .resolve("samples/skis/LombokPetSummaryProjection.java")));
+            result.generatedSources().resolve("samples/skis/LombokPetSummaryProjection.java")));
   }
 
   @Test

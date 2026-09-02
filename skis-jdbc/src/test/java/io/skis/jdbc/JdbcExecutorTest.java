@@ -42,7 +42,7 @@ class JdbcExecutorTest {
     Scenario scenario = new Scenario(List.of("Mimi", "Fifi"));
     JdbcExecutor executor = new JdbcExecutor(scenario.provider());
 
-    List<String> result = executor.fetchList(plan(), 17L);
+    List<@Nullable String> result = executor.fetchList(plan(), 17L);
 
     assertEquals(List.of("Mimi", "Fifi"), result);
     assertEquals(1, scenario.boundIndex.get());
@@ -50,6 +50,8 @@ class JdbcExecutorTest {
     assertEquals(1, scenario.resultSetCloses.get());
     assertEquals(1, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
+    assertEquals(
+        List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
     assertEquals(QUERY_SQL, scenario.preparedSql.get());
     assertEquals(List.of("bind-long", "execute-query"), scenario.executionEvents);
   }
@@ -134,6 +136,26 @@ class JdbcExecutorTest {
         () ->
             new JdbcExecutor(scenario.provider())
                 .fetchOne(plan(), 17L, ExecutionContext.of(options)));
+
+    assertEquals(2, scenario.maxRows.get());
+    assertEquals(
+        List.of("bind-long", "max-rows:2", "execute-query"),
+        scenario.executionEvents);
+    assertEquals(1, scenario.resultSetCloses.get());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
+  }
+
+  @Test
+  void nullableFetchOneRetainsNonUniqueDetectionWhenMaxRowsIsOne() {
+    Scenario scenario = new Scenario(List.of("Mimi", "Fifi"));
+    ExecutionOptions options = ExecutionOptions.builder().maxRows(1).build();
+
+    assertThrows(
+        NonUniqueResultException.class,
+        () ->
+            new JdbcExecutor(scenario.provider())
+                .fetchNullableOne(plan(), 17L, ExecutionContext.of(options)));
 
     assertEquals(2, scenario.maxRows.get());
     assertEquals(
@@ -468,6 +490,275 @@ class JdbcExecutorTest {
     assertEquals(1, releaseScenario.releases.get());
   }
 
+  @Test
+  void cursorEnforcesStateAndClosesInOwnershipOrderOnExhaustion() {
+    Scenario scenario = new Scenario(List.of("Mimi"));
+    JdbcCursor<String> cursor =
+        new JdbcExecutor(scenario.provider())
+            .openCursor(plan(), 17L, ExecutionContext.EMPTY);
+
+    assertThrows(IllegalStateException.class, cursor::current);
+    assertTrue(cursor.advance());
+    assertEquals("Mimi", cursor.current());
+    assertFalse(cursor.advance());
+    assertTrue(cursor.isClosed());
+    assertThrows(IllegalStateException.class, cursor::current);
+    cursor.close();
+
+    assertEquals(1, scenario.resultSetCloses.get());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
+  }
+
+  @Test
+  void cursorPreservesReadFailureAndSuppressesEveryCloseFailure() {
+    SQLException decodeFailure = new SQLException("decode", "22000", 91);
+    SQLException resultSetCloseFailure = new SQLException("result", "HY000", 92);
+    SQLException statementCloseFailure = new SQLException("statement", "HY000", 93);
+    SQLException releaseFailure = new SQLException("release", "08006", 94);
+    Scenario scenario = new Scenario(List.of("Mimi"));
+    scenario.resultSetCloseFailure = resultSetCloseFailure;
+    scenario.statementCloseFailure = statementCloseFailure;
+    scenario.releaseFailure = releaseFailure;
+    JdbcCursor<String> cursor =
+        new JdbcExecutor(scenario.provider())
+            .openCursor(
+                decodingFailurePlan(decodeFailure),
+                SENSITIVE_PARAMETER,
+                ExecutionContext.EMPTY);
+
+    QueryExecutionException thrown =
+        assertThrows(QueryExecutionException.class, cursor::advance);
+
+    assertSame(decodeFailure, thrown.getCause());
+    assertEquals("execution", thrown.phase());
+    assertEquals(3, thrown.getSuppressed().length);
+    assertEquals(
+        "result-set-close",
+        ((QueryExecutionException) thrown.getSuppressed()[0]).phase());
+    assertEquals(
+        "statement-close",
+        ((QueryExecutionException) thrown.getSuppressed()[1]).phase());
+    assertEquals(
+        "connection-release",
+        ((QueryExecutionException) thrown.getSuppressed()[2]).phase());
+    assertTrue(cursor.isClosed());
+  }
+
+  @Test
+  void cursorCloseUsesTheFirstCloseFailureAsPrimaryAndSuppressesLaterFailures() {
+    Scenario scenario = new Scenario(List.of());
+    scenario.resultSetCloseFailure = new SQLException("result", "HY000", 95);
+    scenario.statementCloseFailure = new SQLException("statement", "HY000", 96);
+    scenario.releaseFailure = new SQLException("release", "08006", 97);
+    JdbcCursor<String> cursor =
+        new JdbcExecutor(scenario.provider())
+            .openCursor(plan(), 17L, ExecutionContext.EMPTY);
+
+    QueryExecutionException thrown =
+        assertThrows(QueryExecutionException.class, cursor::close);
+
+    assertEquals("result-set-close", thrown.phase());
+    assertEquals(2, thrown.getSuppressed().length);
+    assertEquals(
+        "statement-close",
+        ((QueryExecutionException) thrown.getSuppressed()[0]).phase());
+    assertEquals(
+        "connection-release",
+        ((QueryExecutionException) thrown.getSuppressed()[1]).phase());
+    assertTrue(cursor.isClosed());
+  }
+
+  @Test
+  void nullableSingleRowDistinguishesNoRowFromPresentNull() {
+    Scenario noRow = new Scenario(List.of());
+    Scenario nullRow = new Scenario(java.util.Collections.singletonList(null));
+
+    JdbcRow<String> absent =
+        new JdbcExecutor(noRow.provider())
+            .fetchNullableOne(plan(), 17L, ExecutionContext.EMPTY);
+    JdbcRow<String> presentNull =
+        new JdbcExecutor(nullRow.provider())
+            .fetchNullableOne(plan(), 17L, ExecutionContext.EMPTY);
+
+    assertFalse(absent.present());
+    assertTrue(presentNull.present());
+    assertEquals(null, presentNull.value());
+  }
+
+  @Test
+  void nonNullableSingleRowRejectsPresentNull() {
+    Scenario nullRow = new Scenario(java.util.Collections.singletonList(null));
+
+    QueryExecutionException thrown =
+        assertThrows(
+            QueryExecutionException.class,
+            () ->
+                new JdbcExecutor(nullRow.provider())
+                    .fetchFirst(plan(), 17L, ExecutionContext.EMPTY));
+
+    assertEquals("non-null query decoder returned null", thrown.getCause().getMessage());
+  }
+
+  @Test
+  void sliceRaisesInternalMaxRowsByOneButValidatesTheVisibleSize() {
+    Scenario scenario = new Scenario(List.of("one", "two", "extra"));
+    ExecutionContext context =
+        ExecutionContext.of(ExecutionOptions.builder().maxRows(2).build());
+
+    List<@Nullable String> rows =
+        new JdbcExecutor(scenario.provider()).fetchSliceList(plan(), 17L, context, 2);
+
+    assertEquals(List.of("one", "two", "extra"), rows);
+    assertEquals(3, scenario.maxRows.get());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new JdbcExecutor(scenario.provider()).validateRequestedRows(3, context));
+  }
+
+  @Test
+  void pageExecutesContentThenCountOnOneAcquiredConnection() {
+    List<String> prepared = new ArrayList<>();
+    AtomicInteger acquisitions = new AtomicInteger();
+    AtomicInteger releases = new AtomicInteger();
+    Connection connection =
+        proxy(
+            Connection.class,
+            (ignored, method, arguments) -> {
+              if (!method.getName().equals("prepareStatement")) {
+                return defaultValue(method.getReturnType());
+              }
+              String sql = (String) arguments[0];
+              prepared.add(sql);
+              boolean count = sql.startsWith("SELECT COUNT");
+              AtomicInteger cursor = new AtomicInteger(-1);
+              ResultSet resultSet =
+                  proxy(
+                      ResultSet.class,
+                      (ignoredResultSet, resultMethod, resultArguments) ->
+                          switch (resultMethod.getName()) {
+                            case "next" ->
+                                cursor.incrementAndGet() < (count ? 1 : 2);
+                            case "getString" -> cursor.get() == 0 ? "Mimi" : "Fifi";
+                            case "getLong" -> 7L;
+                            case "wasNull" -> false;
+                            default -> defaultValue(resultMethod.getReturnType());
+                          });
+              return proxy(
+                  PreparedStatement.class,
+                  (ignoredStatement, statementMethod, statementArguments) ->
+                      statementMethod.getName().equals("executeQuery")
+                          ? resultSet
+                          : defaultValue(statementMethod.getReturnType()));
+            });
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) {
+            acquisitions.incrementAndGet();
+            return connection;
+          }
+
+          @Override
+          public void release(Connection released, ExecutionContext context) {
+            releases.incrementAndGet();
+          }
+        };
+    CompiledQueryPlan<String, Object> content =
+        new CompiledQueryPlan<>(
+            "test",
+            new RenderedSql("SELECT name FROM pet LIMIT ? OFFSET ?", List.of()),
+            (statement, firstIndex, value, context) -> firstIndex,
+            (resultSet, context) -> resultSet.getString(1));
+    CompiledQueryPlan<Long, Object> count =
+        new CompiledQueryPlan<>(
+            "test",
+            new RenderedSql("SELECT COUNT(*) FROM pet", List.of()),
+            (statement, firstIndex, value, context) -> firstIndex,
+            (resultSet, context) -> resultSet.getLong(1));
+
+    JdbcPageResult<String> page =
+        new JdbcExecutor(provider)
+            .fetchPage(content, new Object(), count, new Object(), ExecutionContext.EMPTY);
+
+    assertEquals(List.of("Mimi", "Fifi"), page.items());
+    assertEquals(7, page.totalElements());
+    assertEquals(
+        List.of("SELECT name FROM pet LIMIT ? OFFSET ?", "SELECT COUNT(*) FROM pet"),
+        prepared);
+    assertEquals(1, acquisitions.get());
+    assertEquals(1, releases.get());
+  }
+
+  @Test
+  void pageAttributesCountConfigurationFailureToTheCountPlan() {
+    String contentSql = "SELECT name FROM pet LIMIT ? OFFSET ?";
+    String countSql = "SELECT COUNT(*) FROM pet";
+    SQLException configurationFailure =
+        new SQLException("count configuration failed", "HY000", 121);
+    ResultSet emptyResultSet =
+        proxy(
+            ResultSet.class,
+            (ignored, method, arguments) ->
+                method.getName().equals("next")
+                    ? false
+                    : defaultValue(method.getReturnType()));
+    Connection connection =
+        proxy(
+            Connection.class,
+            (ignored, method, arguments) -> {
+              if (!method.getName().equals("prepareStatement")) {
+                return defaultValue(method.getReturnType());
+              }
+              boolean count = countSql.equals(arguments[0]);
+              return proxy(
+                  PreparedStatement.class,
+                  (ignoredStatement, statementMethod, statementArguments) -> {
+                    if (statementMethod.getName().equals("setFetchSize") && count) {
+                      throw configurationFailure;
+                    }
+                    return statementMethod.getName().equals("executeQuery")
+                        ? emptyResultSet
+                        : defaultValue(statementMethod.getReturnType());
+                  });
+            });
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) {
+            return connection;
+          }
+
+          @Override
+          public void release(Connection released, ExecutionContext context) {}
+        };
+    CompiledQueryPlan<String, Object> content =
+        new CompiledQueryPlan<>(
+            "content-dialect",
+            new RenderedSql(contentSql, List.of()),
+            (statement, firstIndex, value, context) -> firstIndex,
+            (resultSet, context) -> resultSet.getString(1));
+    CompiledQueryPlan<Long, Object> count =
+        new CompiledQueryPlan<>(
+            "count-dialect",
+            new RenderedSql(countSql, List.of()),
+            (statement, firstIndex, value, context) -> firstIndex,
+            (resultSet, context) -> resultSet.getLong(1));
+    ExecutionContext context =
+        ExecutionContext.of(ExecutionOptions.builder().fetchSize(25).build());
+
+    QueryExecutionException thrown =
+        assertThrows(
+            QueryExecutionException.class,
+            () ->
+                new JdbcExecutor(provider)
+                    .fetchPage(content, new Object(), count, new Object(), context));
+
+    assertSame(configurationFailure, thrown.getCause());
+    assertDiagnosticMessage(
+        thrown, "query", "statement-configuration", "count-dialect", countSql);
+  }
+
   private static CompiledQueryPlan<String, Long> plan() {
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
     return new CompiledQueryPlan<>(
@@ -573,6 +864,7 @@ class JdbcExecutorTest {
     private final AtomicInteger fetchSize = new AtomicInteger(-1);
     private final AtomicInteger maxRows = new AtomicInteger(-1);
     private final List<String> executionEvents = new ArrayList<>();
+    private final List<String> resourceCloseEvents = new ArrayList<>();
     private @Nullable SQLException acquireFailure;
     private @Nullable SQLException prepareFailure;
     private @Nullable SQLException executionFailure;
@@ -595,6 +887,7 @@ class JdbcExecutorTest {
                 case "getString" -> rows.get(cursor.get());
                 case "close" -> {
                   resultSetCloses.incrementAndGet();
+                  resourceCloseEvents.add("result-set");
                   if (resultSetCloseFailure != null) {
                     throw resultSetCloseFailure;
                   }
@@ -653,6 +946,7 @@ class JdbcExecutorTest {
                 }
                 case "close" -> {
                   statementCloses.incrementAndGet();
+                  resourceCloseEvents.add("statement");
                   if (statementCloseFailure != null) {
                     throw statementCloseFailure;
                   }
@@ -685,6 +979,7 @@ class JdbcExecutorTest {
         @Override
         public void release(Connection released, ExecutionContext context) throws SQLException {
           releases.incrementAndGet();
+          resourceCloseEvents.add("connection");
           if (releaseFailure != null) {
             throw releaseFailure;
           }

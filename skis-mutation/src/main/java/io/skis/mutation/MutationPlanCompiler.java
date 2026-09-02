@@ -48,7 +48,7 @@ final class MutationPlanCompiler {
                     new MutationException(
                         "entity '"
                             + entity.entityName()
-                            + "' has no generated mutation binders; regenerate it with ABI 3"));
+                            + "' has no generated mutation binders; regenerate it with ABI 4"));
     PropertyMeta<E, ?> id = requireSinglePrimaryKey(entity);
     RuntimeMutationTable<E> table = new RuntimeMutationTable<>(entity);
     CompiledMutationPlan<E> insert = compileInsert(entity, table, binders);

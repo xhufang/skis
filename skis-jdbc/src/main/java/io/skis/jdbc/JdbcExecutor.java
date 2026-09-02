@@ -9,6 +9,7 @@ import io.skis.dialect.SqlExceptionCategory;
 import io.skis.mapping.JdbcWriteContext;
 import io.skis.mapping.ParameterBinder;
 import io.skis.mapping.RowReadContext;
+import java.lang.ref.Cleaner;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -24,6 +25,7 @@ public final class JdbcExecutor {
 
   private static final int NO_MINIMUM_MAX_ROWS = 0;
   private static final int FETCH_ONE_CARDINALITY_ROWS = 2;
+  private static final System.Logger LOGGER = System.getLogger(JdbcExecutor.class.getName());
 
   private final ConnectionProvider connectionProvider;
   private final JdbcWriteContext writeContext;
@@ -103,12 +105,12 @@ public final class JdbcExecutor {
   }
 
   /** Executes and materializes every result row. */
-  public <R, P> List<R> fetchList(CompiledQueryPlan<R, P> plan, P parameters) {
+  public <R, P> List<@Nullable R> fetchList(CompiledQueryPlan<R, P> plan, P parameters) {
     return fetchList(plan, parameters, ExecutionContext.EMPTY);
   }
 
   /** Executes and materializes every result row using an explicit execution context. */
-  public <R, P> List<R> fetchList(
+  public <R, P> List<@Nullable R> fetchList(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
@@ -119,13 +121,132 @@ public final class JdbcExecutor {
           try (PreparedStatement statement =
                   prepare(connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS);
               ResultSet resultSet = statement.executeQuery()) {
-            List<R> results = new ArrayList<>();
+            List<@Nullable R> results = new ArrayList<>();
             while (resultSet.next()) {
               results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
             }
             return results;
           }
         });
+  }
+
+  /** Executes a SQL-limited query and returns its first row without cardinality checking. */
+  public <R, P> Optional<R> fetchFirst(
+      CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
+    JdbcRow<R> row = fetchSingleRow(plan, parameters, executionContext, false, false);
+    return row.present() ? Optional.of(Objects.requireNonNull(row.value())) : Optional.empty();
+  }
+
+  /** Executes one nullable scalar row while preserving the distinction between no row and NULL. */
+  public <R, P> JdbcRow<R> fetchNullableOne(
+      CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
+    return fetchSingleRow(plan, parameters, executionContext, true, true);
+  }
+
+  /** Executes one SQL-limited nullable scalar row without cardinality checking. */
+  public <R, P> JdbcRow<R> fetchNullableFirst(
+      CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
+    return fetchSingleRow(plan, parameters, executionContext, true, false);
+  }
+
+  /** Validates a user-visible page size against effective statement/executor maxRows. */
+  public void validateRequestedRows(int requestedRows, ExecutionContext executionContext) {
+    if (requestedRows <= 0) {
+      throw new IllegalArgumentException("requestedRows must be positive");
+    }
+    ExecutionOptions options =
+        Objects.requireNonNull(executionContext, "executionContext").executionOptions();
+    int configured =
+        options.hasMaxRows()
+            ? options.maxRows()
+            : defaultExecutionOptions.hasMaxRows() ? defaultExecutionOptions.maxRows() : 0;
+    if (configured > 0 && requestedRows > configured) {
+      throw new IllegalArgumentException(
+          "requested page size " + requestedRows + " exceeds effective maxRows " + configured);
+    }
+  }
+
+  /** Executes a size+1 slice while keeping the extra internal row outside visible maxRows. */
+  public <R, P> List<@Nullable R> fetchSliceList(
+      CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext, int pageSize) {
+    validateRequestedRows(pageSize, executionContext);
+    int internalRows;
+    try {
+      internalRows = Math.addExact(pageSize, 1);
+    } catch (ArithmeticException exception) {
+      throw new IllegalArgumentException("pageSize + 1 overflows int", exception);
+    }
+    return withConnection(
+        plan,
+        executionContext,
+        connection -> executeList(connection, plan, parameters, executionContext, internalRows));
+  }
+
+  /** Executes content and count on one acquired connection and returns no partial result. */
+  public <R, P, C> JdbcPageResult<R> fetchPage(
+      CompiledQueryPlan<R, P> contentPlan,
+      P contentParameters,
+      CompiledQueryPlan<Long, C> countPlan,
+      C countParameters,
+      ExecutionContext executionContext) {
+    Objects.requireNonNull(contentPlan, "contentPlan");
+    Objects.requireNonNull(countPlan, "countPlan");
+    Objects.requireNonNull(executionContext, "executionContext");
+    return withConnection(
+        contentPlan,
+        executionContext,
+        connection -> {
+          List<@Nullable R> items =
+              executeList(
+                  connection,
+                  contentPlan,
+                  contentParameters,
+                  executionContext,
+                  NO_MINIMUM_MAX_ROWS);
+          try {
+            JdbcRow<Long> count =
+                executeSingleRow(
+                    connection, countPlan, countParameters, executionContext, false, true);
+            if (!count.present() || count.value() == null) {
+              throw new SQLException("count query did not return one non-null row");
+            }
+            return new JdbcPageResult<R>(items, count.value());
+          } catch (PhasedSqlFailure failure) {
+            throw translate(countPlan, failure.phase(), failure.sqlException());
+          } catch (SQLException failure) {
+            throw translate(countPlan, JdbcFailureDiagnostics.Phase.EXECUTE, failure);
+          }
+        });
+  }
+
+  /** Opens an explicit cursor that owns its ResultSet, Statement, and acquired connection. */
+  public <R, P> JdbcCursor<R> openCursor(
+      CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
+    Objects.requireNonNull(plan, "plan");
+    Objects.requireNonNull(executionContext, "executionContext");
+    Connection connection;
+    try {
+      connection = connectionProvider.acquire(executionContext);
+    } catch (SQLException failure) {
+      throw translate(plan, JdbcFailureDiagnostics.Phase.ACQUIRE, failure);
+    }
+    PreparedStatement statement = null;
+    try {
+      statement = prepare(connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS);
+      ResultSet resultSet = statement.executeQuery();
+      return new DefaultJdbcCursor<>(plan, executionContext, connection, statement, resultSet);
+    } catch (PhasedSqlFailure failure) {
+      RuntimeException primary = translate(plan, failure.phase(), failure.sqlException());
+      closeOpenFailure(plan, connection, statement, executionContext, primary);
+      throw primary;
+    } catch (SQLException failure) {
+      RuntimeException primary = translate(plan, JdbcFailureDiagnostics.Phase.EXECUTE, failure);
+      closeOpenFailure(plan, connection, statement, executionContext, primary);
+      throw primary;
+    } catch (RuntimeException | Error failure) {
+      closeOpenFailure(plan, connection, statement, executionContext, failure);
+      throw failure;
+    }
   }
 
   /** Executes a query requiring at most one row. */
@@ -149,7 +270,10 @@ public final class JdbcExecutor {
             if (!resultSet.next()) {
               return Optional.empty();
             }
-            R result = plan.rowDecoder().decode(resultSet, rowReadContext);
+            var result = plan.rowDecoder().decode(resultSet, rowReadContext);
+            if (result == null) {
+              throw new SQLException("non-null query decoder returned null");
+            }
             if (resultSet.next()) {
               throw new NonUniqueResultException(
                   "query expected at most one row [sqlFingerprint="
@@ -159,6 +283,69 @@ public final class JdbcExecutor {
             return Optional.of(result);
           }
         });
+  }
+
+  private <R, P> JdbcRow<R> fetchSingleRow(
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      boolean nullable,
+      boolean checkMultiple) {
+    Objects.requireNonNull(plan, "plan");
+    Objects.requireNonNull(executionContext, "executionContext");
+    return withConnection(
+        plan,
+        executionContext,
+        connection ->
+            executeSingleRow(
+                connection, plan, parameters, executionContext, nullable, checkMultiple));
+  }
+
+  private <R, P> List<@Nullable R> executeList(
+      Connection connection,
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      int minimumMaxRows)
+      throws SQLException {
+    try (PreparedStatement statement =
+            prepare(connection, plan, parameters, executionContext, minimumMaxRows);
+        ResultSet resultSet = statement.executeQuery()) {
+      List<@Nullable R> results = new ArrayList<>();
+      while (resultSet.next()) {
+        results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
+      }
+      return results;
+    }
+  }
+
+  private <R, P> JdbcRow<R> executeSingleRow(
+      Connection connection,
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      boolean nullable,
+      boolean checkMultiple)
+      throws SQLException {
+    int minimumMaxRows = checkMultiple ? FETCH_ONE_CARDINALITY_ROWS : NO_MINIMUM_MAX_ROWS;
+    try (PreparedStatement statement =
+            prepare(connection, plan, parameters, executionContext, minimumMaxRows);
+        ResultSet resultSet = statement.executeQuery()) {
+      if (!resultSet.next()) {
+        return JdbcRow.absent();
+      }
+      JdbcRow<R> row = JdbcRow.present(plan.rowDecoder().decode(resultSet, rowReadContext));
+      if (!nullable && row.value() == null) {
+        throw new SQLException("non-null query decoder returned null");
+      }
+      if (checkMultiple && resultSet.next()) {
+        throw new NonUniqueResultException(
+            "query expected at most one row [sqlFingerprint="
+                + QueryExecutionException.fingerprint(plan.sql())
+                + "]");
+      }
+      return row;
+    }
   }
 
   /** Executes a compiled INSERT, UPDATE, or DELETE plan and returns its affected-row count. */
@@ -371,6 +558,231 @@ public final class JdbcExecutor {
       failure.addSuppressed(classifierFailure);
       return SqlExceptionCategory.UNCATEGORIZED;
     }
+  }
+
+  private QueryExecutionException translate(
+      CompiledQueryPlan<?, ?> plan, JdbcFailureDiagnostics.Phase phase, SQLException failure) {
+    return QueryExecutionException.from(
+        phase, plan.dialectId(), plan.sql(), failure, classify(failure));
+  }
+
+  private void closeOpenFailure(
+      CompiledQueryPlan<?, ?> plan,
+      Connection connection,
+      @Nullable PreparedStatement statement,
+      ExecutionContext executionContext,
+      Throwable primary) {
+    if (statement != null) {
+      try {
+        statement.close();
+      } catch (SQLException failure) {
+        primary.addSuppressed(
+            translate(plan, JdbcFailureDiagnostics.Phase.STATEMENT_CLOSE, failure));
+      } catch (RuntimeException | Error failure) {
+        primary.addSuppressed(failure);
+      }
+    }
+    try {
+      connectionProvider.release(connection, executionContext);
+    } catch (SQLException failure) {
+      primary.addSuppressed(translate(plan, JdbcFailureDiagnostics.Phase.RELEASE, failure));
+    } catch (RuntimeException | Error failure) {
+      primary.addSuppressed(failure);
+    }
+  }
+
+  private final class DefaultJdbcCursor<R> implements JdbcCursor<R> {
+
+    private final CompiledQueryPlan<R, ?> plan;
+    private final CursorResources<R> resources;
+    private final Cleaner.Cleanable cleanable;
+    private boolean positioned;
+    private @Nullable R current;
+
+    private DefaultJdbcCursor(
+        CompiledQueryPlan<R, ?> plan,
+        ExecutionContext executionContext,
+        Connection connection,
+        PreparedStatement statement,
+        ResultSet resultSet) {
+      this.plan = plan;
+      this.resources =
+          new CursorResources<>(plan, executionContext, connection, statement, resultSet);
+      this.cleanable = CursorCleanerHolder.INSTANCE.register(this, resources);
+    }
+
+    @Override
+    public boolean advance() {
+      if (resources.isClosed()) {
+        return false;
+      }
+      positioned = false;
+      current = null;
+      try {
+        if (!resources.resultSet.next()) {
+          close();
+          return false;
+        }
+        current = plan.rowDecoder().decode(resources.resultSet, rowReadContext);
+        positioned = true;
+        return true;
+      } catch (SQLException failure) {
+        RuntimeException primary = translate(plan, JdbcFailureDiagnostics.Phase.EXECUTE, failure);
+        throw runtimeFailure(closeResources(primary));
+      } catch (RuntimeException | Error failure) {
+        throw runtimeFailure(closeResources(failure));
+      }
+    }
+
+    @Override
+    public @Nullable R current() {
+      if (!positioned || resources.isClosed()) {
+        throw new IllegalStateException(
+            "current() requires a successful advance() and an open cursor");
+      }
+      return current;
+    }
+
+    @Override
+    public boolean isClosed() {
+      return resources.isClosed();
+    }
+
+    @Override
+    public void close() {
+      if (resources.isClosed()) {
+        return;
+      }
+      Throwable failure = closeResources(null);
+      if (failure instanceof Error error) {
+        throw error;
+      }
+      if (failure instanceof RuntimeException runtime) {
+        throw runtime;
+      }
+    }
+
+    private @Nullable Throwable closeResources(@Nullable Throwable primary) {
+      positioned = false;
+      current = null;
+      Throwable result = resources.closeResources(primary);
+      cleanable.clean();
+      return result;
+    }
+
+    private RuntimeException runtimeFailure(@Nullable Throwable failure) {
+      if (failure instanceof RuntimeException runtime) {
+        return runtime;
+      }
+      if (failure instanceof Error error) {
+        throw error;
+      }
+      throw new IllegalStateException("cursor cleanup did not preserve the primary failure");
+    }
+  }
+
+  private final class CursorResources<R> implements Runnable {
+
+    private final CompiledQueryPlan<R, ?> plan;
+    private final ExecutionContext executionContext;
+    private final Connection connection;
+    private final PreparedStatement statement;
+    private final ResultSet resultSet;
+    private boolean closed;
+
+    private CursorResources(
+        CompiledQueryPlan<R, ?> plan,
+        ExecutionContext executionContext,
+        Connection connection,
+        PreparedStatement statement,
+        ResultSet resultSet) {
+      this.plan = plan;
+      this.executionContext = executionContext;
+      this.connection = connection;
+      this.statement = statement;
+      this.resultSet = resultSet;
+    }
+
+    private synchronized boolean isClosed() {
+      return closed;
+    }
+
+    private synchronized @Nullable Throwable closeResources(@Nullable Throwable primary) {
+      if (closed) {
+        return primary;
+      }
+      closed = true;
+      Throwable result = primary;
+      result = closeResultSet(result);
+      result = closeStatement(result);
+      result = releaseConnection(result);
+      return result;
+    }
+
+    @Override
+    public synchronized void run() {
+      if (closed) {
+        return;
+      }
+      String fingerprint = QueryExecutionException.fingerprint(plan.sql());
+      LOGGER.log(
+          System.Logger.Level.WARNING,
+          "JDBC cursor was abandoned without close [dialect="
+              + plan.dialectId()
+              + ", sqlFingerprint="
+              + fingerprint
+              + "]");
+      // JDBC cleanup is intentionally not attempted from the Cleaner thread. Providers backed by
+      // external transaction managers may require release on the acquiring thread.
+    }
+
+    private @Nullable Throwable closeResultSet(@Nullable Throwable primary) {
+      try {
+        resultSet.close();
+        return primary;
+      } catch (SQLException failure) {
+        return append(
+            primary, translate(plan, JdbcFailureDiagnostics.Phase.RESULT_SET_CLOSE, failure));
+      } catch (RuntimeException | Error failure) {
+        return append(primary, failure);
+      }
+    }
+
+    private @Nullable Throwable closeStatement(@Nullable Throwable primary) {
+      try {
+        statement.close();
+        return primary;
+      } catch (SQLException failure) {
+        return append(
+            primary, translate(plan, JdbcFailureDiagnostics.Phase.STATEMENT_CLOSE, failure));
+      } catch (RuntimeException | Error failure) {
+        return append(primary, failure);
+      }
+    }
+
+    private @Nullable Throwable releaseConnection(@Nullable Throwable primary) {
+      try {
+        connectionProvider.release(connection, executionContext);
+        return primary;
+      } catch (SQLException failure) {
+        return append(primary, translate(plan, JdbcFailureDiagnostics.Phase.RELEASE, failure));
+      } catch (RuntimeException | Error failure) {
+        return append(primary, failure);
+      }
+    }
+
+    private Throwable append(@Nullable Throwable primary, Throwable next) {
+      if (primary == null) {
+        return next;
+      }
+      primary.addSuppressed(next);
+      return primary;
+    }
+  }
+
+  private static final class CursorCleanerHolder {
+
+    private static final Cleaner INSTANCE = Cleaner.create();
   }
 
   @FunctionalInterface

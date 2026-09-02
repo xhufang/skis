@@ -5,8 +5,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** Immutable searched SQL {@code CASE} expression. */
-public record CaseExpression<T>(
-    List<CaseWhen<T>> branches, Optional<SqlExpression<T>> otherwise)
+public record CaseExpression<T>(List<CaseWhen<T>> branches, Optional<SqlExpression<T>> otherwise)
     implements SqlExpression<T> {
 
   /** Creates a searched CASE with implicit {@code ELSE NULL}. */

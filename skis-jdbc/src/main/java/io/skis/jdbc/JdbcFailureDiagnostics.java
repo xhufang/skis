@@ -12,6 +12,8 @@ final class JdbcFailureDiagnostics {
     ACQUIRE("connection-acquire"),
     CONFIGURE("statement-configuration"),
     EXECUTE("execution"),
+    RESULT_SET_CLOSE("result-set-close"),
+    STATEMENT_CLOSE("statement-close"),
     RELEASE("connection-release");
 
     private final String label;

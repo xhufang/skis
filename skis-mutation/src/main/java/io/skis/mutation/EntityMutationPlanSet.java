@@ -58,8 +58,7 @@ final class EntityMutationPlanSet<E> {
 
   UpdateExecution<E> update(E value) {
     Object expectedVersion = readExpectedVersion(value);
-    CompiledMutationPlan<E> selected =
-        expectedVersion == null ? uncheckedUpdate : checkedUpdate;
+    CompiledMutationPlan<E> selected = expectedVersion == null ? uncheckedUpdate : checkedUpdate;
     if (selected == null) {
       throw new MutationException(
           "entity '" + entity().entityName() + "' has no updatable properties");

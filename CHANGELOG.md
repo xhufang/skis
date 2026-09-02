@@ -6,6 +6,17 @@
 
 ### Added
 
+- 新增统一的 `SelectQuery<E, R>`、独立 nullable scalar `NullableScalarQuery<E, V>` 与 `SingleRow<V>`；
+  APT 生成列按元数据区分 `NonNullQueryColumn`/`NullableQueryColumn`，生成模型 ABI 提升为 4。
+- 新增多列排序、ASC/DESC、显式 null placement、distinct、显式主键 tie-breaker，以及 PostgreSQL/H2
+  原生 NULLS FIRST/LAST 能力。
+- 新增唯一分页结果 `Page<R>`/`Slice<R>`、offset/keyset `SliceContinuation`、独立 count AST、
+  可通过 `countQuery()` 构造的显式 `CountQuery` 回退、pageSize + 1 Slice 执行、投影隐藏排序值及
+  continuation 结构/参数/类型/ABI 校验。
+- 新增 `QueryCursor` 与 `CloseableQueryStream`，固定 ResultSet → Statement → Connection release 关闭顺序，
+  保留读取、关闭和 release 失败的主异常/suppressed 关系，并安全检测和告警未关闭游标。
+- 新增 Page/Slice 与 Cursor/Stream 指南，并扩展 SQL DSL 指南说明 SELECT 排序、分页、隐藏选择和独立 count AST。
+
 - 新增表达式级标准 SQL 类型与显式 nullability 模型，集中定义相等、排序、LIKE、BETWEEN、IN 的
   类型兼容及 SQL 三值逻辑传播规则。
 - 新增 `eq/ne/gt/ge/lt/le`、`isNull/isNotNull`、`between`、`like`、`in/notIn`、
@@ -31,6 +42,14 @@
 
 ### Changed
 
+- Reactor 进入 `0.2.3-SNAPSHOT`。删除 `EntitySelectQuery`/`ProjectedSelectQuery`，三个查询入口统一返回
+  `SelectQuery` 或 `NullableScalarQuery`；这是已批准的内部开发线破坏性调整。
+- `fetchFirst`、offset/page/keyset 限制进入 SELECT AST；Page 固定执行内容与 count，Slice 明确不执行 count。
+- 相同不可变查询的不同 offset/limit/keyset 值复用值无关计划；实际页位置与锚点只进入绑定参数，
+  nullable keyset 的 null 形状变化使用独立且有界的本地计划槽。
+- 无排序、无分页、非 distinct 的实体与投影 `fetchOne/fetchList` 继续直接使用原子缓存的 Fast Path 计划。
+- `RowDecoder.decode` 明确返回可空值；JDBC 列表、分页与 cursor 保留 SQL NULL，非空查询门面在结果边界统一校验。
+
 - `EntitySelectQuery` 与 `ProjectedSelectQuery` 新增抽象 `and/or`，`SqlExpression` 新增 SQL 类型/nullability
   契约，`ParameterSlot` record 结构扩展；这是为 `0.3.0` SQL DSL 批准的破坏性变更，第三方查询/表达式实现及
   依赖 record 结构的代码需要迁移。
@@ -42,15 +61,20 @@
 
 ### Fixed
 
-- 查询计划 Binder 现在严格按方言返回的 `RenderedSql.parameters()` 占位符顺序绑定，并拒绝缺失、重复或
-  类型描述不一致的参数槽，避免方言重排谓词后把值绑定到错误列。
+- Keyset 追加到已有顶层 OR 谓词时分别包裹原条件和 seek 条件，避免 SQL 运算符优先级改变查询语义；
+  continuation 对数组锚点进行深复制，并按内容实现值相等。
+- 查询计划 Binder 严格按方言返回的 `RenderedSql.parameters()` 占位符顺序绑定，允许 Keyset 前缀使用
+  结构一致的重复参数槽，并拒绝缺失、越界或类型描述不一致的槽位。
 - 空集合 `IN/NOT IN` 在折叠为常量前仍校验左表达式作用域；不同表或别名的引用不再绕过语义校验。
 - 拒绝可能产生小数 SQL 结果却声明为 `BigInteger` 的除法表达式；调用方可先显式转换为 `BigDecimal`。
 - `ColumnExpression`、既有谓词/增量节点和 `ParameterSlot` 保留显式 `nullable()` 方法，减少 0.2.0
   已编译调用方在类型模型迁移中的无关二进制变化。
 - Statement 选项设置失败现在标记为 `statement-configuration` 阶段，并继续保留 Statement close 与
   Connection release 失败的原始 cause/suppressed 顺序；异常消息不包含 SQL、参数或 query tag。
-- `fetchOne()` 在有效 `maxRows` 为 1 时内部读取上限提升到 2，避免驱动截断第二行后绕过非唯一结果检查。
+- `fetchOne()` 与 nullable scalar `fetchOne()` 在有效 `maxRows` 为 1 时内部读取上限提升到 2，避免驱动截断
+  第二行后绕过非唯一结果检查。
+- H2 显式 null placement 改用原生 `NULLS FIRST/LAST`，避免 distinct 查询因 CASE 排名表达式未进入
+  SELECT 列表而被数据库拒绝。
 - 修正 H2 `90067` 与 PostgreSQL `57P01`–`57P05` 连接失败分类，并避免把查询取消、锁不可用误报为超时；
   分类器抛出的运行时异常或 `Error` 现在作为 suppressed 保留，不再覆盖原始 `SQLException`。
 

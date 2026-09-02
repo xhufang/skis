@@ -14,7 +14,7 @@ final class DefaultSelectFromStep<E, R> implements SelectFromStep<E, R> {
   }
 
   @Override
-  public ProjectedSelectQuery<E, R> from(QueryTable<E> table) {
+  public SelectQuery<E, R> from(QueryTable<E> table) {
     return operations.selectFrom(projection, Objects.requireNonNull(table, "table"));
   }
 }

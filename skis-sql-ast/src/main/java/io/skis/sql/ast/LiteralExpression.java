@@ -51,10 +51,7 @@ public final class LiteralExpression<T> implements SqlExpression<T> {
   /** Creates a typed SQL {@code NULL}; use {@code IS NULL} rather than ordinary comparison. */
   public static <T> LiteralExpression<T> nullLiteral(Class<T> javaType) {
     return new LiteralExpression<>(
-        Kind.NULL,
-        javaType,
-        SqlType.fromJavaType(javaType),
-        Nullability.NULLABLE);
+        Kind.NULL, javaType, SqlType.fromJavaType(javaType), Nullability.NULLABLE);
   }
 
   /** Creates the allow-listed numeric literal {@code 0} for a numeric Java representation. */
@@ -70,10 +67,7 @@ public final class LiteralExpression<T> implements SqlExpression<T> {
   private static <T> LiteralExpression<T> numeric(Kind kind, Class<T> javaType) {
     Class<T> boxedType = SemanticValidator.boxedJavaType(javaType);
     return new LiteralExpression<>(
-        kind,
-        boxedType,
-        SqlType.fromJavaType(boxedType),
-        Nullability.NON_NULL);
+        kind, boxedType, SqlType.fromJavaType(boxedType), Nullability.NON_NULL);
   }
 
   public Kind kind() {

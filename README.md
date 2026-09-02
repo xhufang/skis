@@ -11,17 +11,23 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - compile-time entity metadata, typed table expressions, row decoders, binders, and projection indexes;
 - application-assigned single-column IDs and optional optimistic locking with `@Version`;
 - `findById`, single-table entity/scalar/generated-projection queries with immutable complex predicates;
+- typed ordering, distinct results, offset/keyset `Page`/`Slice`, and explicit cursor/stream reading;
 - generated `insert`, `updateById`, and `deleteById` operations;
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
 - PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
-The repository currently uses the internal `0.2.2-SNAPSHOT` version. The completed `0.2.1`
+The repository currently uses the internal `0.2.3-SNAPSHOT` version. The completed `0.2.1`
 milestone added immutable JDBC execution options and dialect-aware Spring exception translation.
 The `0.2.2` development milestone adds explicit SQL type/nullability metadata, immutable complex
 single-table predicates, query-level `where(...).and(...).or(...)` chaining, portable standard
 expressions, and centralized pre-render semantic validation.
+The `0.2.3` milestone unifies non-null query types, separates nullable scalar row presence, and adds
+stable sorting, pagination, independent count plans, opaque continuations, and resource-owning
+cursor/stream terminal operations.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
+[page and slice pagination](docs/pagination.md),
+[cursor and stream ownership](docs/cursor-and-stream.md), and
 [execution options and exception translation](docs/execution-options-and-exception-translation.md).
 
 ## Requirements
@@ -108,8 +114,8 @@ semantics.
 
 | Database | 0.2 status |
 | --- | --- |
-| PostgreSQL 16 / pgJDBC 42.7.11 | Query, mutation, transaction, projection, and JDBC type contract |
-| H2 2.4.240 | Development, consumer smoke, example, and integration-test dialect |
+| PostgreSQL 16 / pgJDBC 42.7.11 | Query, sorting/pagination, mutation, transaction, projection, and JDBC type contract |
+| H2 2.4.240 | Query and pagination development dialect, consumer smoke, example, and integration tests |
 | MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.2 |
 
 JDBC drivers are deliberately supplied and versioned by the application.
@@ -117,11 +123,11 @@ JDBC drivers are deliberately supplied and versioned by the application.
 ## Current limitations
 
 Version 0.2 intentionally does not provide joins, associations, generated-key retrieval, composite
-IDs, sorting, pagination, streaming, native SQL entry points, schema migration, batch writes,
-upsert, graph writes, caching, multitenancy, or Spring Boot auto-configuration. Predicates remain
-single-table only; subqueries and large-`IN` strategies are deferred. Enum, LOB, custom converter,
-database array, and structured JSON object mappings are also deferred. Applications own DDL and
-assign identifiers before insert.
+ID lookup, reverse keyset traversal, native SQL entry points, schema migration, batch writes,
+upsert, graph writes, second-level caching, multitenancy, or Spring Boot auto-configuration.
+Predicates remain single-table only; subqueries and large-`IN` strategies are deferred. Enum, LOB,
+custom converter, database array, and structured JSON object mappings are also deferred.
+Applications own DDL and assign identifiers before insert.
 
 ## Documentation
 
@@ -129,6 +135,8 @@ assign identifiers before insert.
 - [Local JDBC and Spring transaction management](docs/transaction-management.md)
 - [JDBC execution options and Spring exception translation](docs/execution-options-and-exception-translation.md)
 - [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md)
+- [Page and slice pagination](docs/pagination.md)
+- [Cursor and stream resource ownership](docs/cursor-and-stream.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
 - [Formal release checklist and component boundary](docs/release-checklist.md)

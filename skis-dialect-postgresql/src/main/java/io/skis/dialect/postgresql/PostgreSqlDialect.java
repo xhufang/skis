@@ -14,7 +14,12 @@ public final class PostgreSqlDialect implements Dialect {
   static final String ID = "postgresql";
 
   private static final DialectCapabilities CAPABILITIES =
-      DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+      DialectCapabilities.of(
+          DialectFeature.SCHEMA_QUALIFIED_TABLES,
+          DialectFeature.PARAMETERIZED_LIMIT,
+          DialectFeature.PARAMETERIZED_OFFSET,
+          DialectFeature.NULLS_FIRST_LAST,
+          DialectFeature.COUNT_DISTINCT);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();

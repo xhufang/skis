@@ -37,8 +37,7 @@ public final class QueryPredicate<E> {
     return new QueryPredicate<>(new NullNode<>(column, operator));
   }
 
-  static <E, V> QueryPredicate<E> between(
-      QueryColumn<E, V> column, V lower, V upper) {
+  static <E, V> QueryPredicate<E> between(QueryColumn<E, V> column, V lower, V upper) {
     return new QueryPredicate<>(new BetweenNode<>(column, lower, upper));
   }
 
@@ -46,8 +45,7 @@ public final class QueryPredicate<E> {
     return new QueryPredicate<>(new LikeNode<>(column, pattern));
   }
 
-  static <E, V> QueryPredicate<E> in(
-      QueryColumn<E, V> column, List<V> values, boolean negated) {
+  static <E, V> QueryPredicate<E> in(QueryColumn<E, V> column, List<V> values, boolean negated) {
     return new QueryPredicate<>(new InNode<>(column, values, negated));
   }
 
@@ -126,8 +124,7 @@ public final class QueryPredicate<E> {
     }
   }
 
-  private record BetweenNode<E, V>(QueryColumn<E, V> column, V lower, V upper)
-      implements Node<E> {
+  private record BetweenNode<E, V>(QueryColumn<E, V> column, V lower, V upper) implements Node<E> {
 
     private BetweenNode {
       Objects.requireNonNull(column, "column");
@@ -213,10 +210,7 @@ public final class QueryPredicate<E> {
       properties.add(column.property());
       arguments.add(value);
       return new ParameterSlot<>(
-          ordinal,
-          column.javaType(),
-          column.sqlType(),
-          Nullability.NON_NULL);
+          ordinal, column.javaType(), column.sqlType(), Nullability.NON_NULL);
     }
   }
 }

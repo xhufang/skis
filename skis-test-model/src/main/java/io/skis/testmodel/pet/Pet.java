@@ -14,7 +14,7 @@ import java.math.BigDecimal;
 public record Pet(
     @Id long id,
     @Column(name = "pet_name", nullable = false, length = 200) String name,
-    @Column(nullable = false, precision = 6, scale = 2) BigDecimal weight,
+    @Column(precision = 6, scale = 2) BigDecimal weight,
     @Column(nullable = false) boolean adopted,
     @Version Long version,
     @Transient String displayLabel) {}

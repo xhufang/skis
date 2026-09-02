@@ -121,11 +121,8 @@ class SqlAstStructureTest {
 
     assertEquals(
         Nullability.NON_NULL, new BetweenPredicate<>(table.id(), lower, upper).nullability());
-    assertEquals(
-        Nullability.NULLABLE, new LikePredicate(table.name(), pattern).nullability());
-    assertEquals(
-        Nullability.NULLABLE,
-        new NotPredicate(table.name().eq(pattern)).nullability());
+    assertEquals(Nullability.NULLABLE, new LikePredicate(table.name(), pattern).nullability());
+    assertEquals(Nullability.NULLABLE, new NotPredicate(table.name().eq(pattern)).nullability());
     assertThrows(
         IllegalArgumentException.class,
         () -> new LikePredicate(table.id(), new ParameterSlot<>(3, Long.class, false)));
@@ -134,9 +131,7 @@ class SqlAstStructureTest {
         () ->
             table
                 .id()
-                .gt(
-                    new ParameterSlot<>(
-                        3, Long.class, SqlType.VARCHAR, Nullability.NON_NULL)));
+                .gt(new ParameterSlot<>(3, Long.class, SqlType.VARCHAR, Nullability.NON_NULL)));
   }
 
   @Test
@@ -150,8 +145,7 @@ class SqlAstStructureTest {
     assertEquals(1, predicate.candidates().size());
     assertThrows(UnsupportedOperationException.class, () -> predicate.candidates().clear());
     assertEquals(
-        Nullability.NON_NULL,
-        new InPredicate<>(table.name(), List.of(), false).nullability());
+        Nullability.NON_NULL, new InPredicate<>(table.name(), List.of(), false).nullability());
   }
 
   @Test
@@ -166,12 +160,9 @@ class SqlAstStructureTest {
     ConcatExpression concat = new ConcatExpression(concatOperands);
     List<CaseWhen<String>> branches = new ArrayList<>();
     branches.add(
-        new CaseWhen<>(
-            table.id().gt(new ParameterSlot<>(2, Long.class, false)), table.name()));
+        new CaseWhen<>(table.id().gt(new ParameterSlot<>(2, Long.class, false)), table.name()));
     CaseExpression<String> caseExpression =
-        new CaseExpression<>(
-            branches,
-            new ParameterSlot<>(3, String.class, false));
+        new CaseExpression<>(branches, new ParameterSlot<>(3, String.class, false));
     CastExpression<String> cast = new CastExpression<>(table.id(), String.class);
     List<SqlExpression<String>> coalesceOperands = new ArrayList<>();
     coalesceOperands.add(table.name());
@@ -186,8 +177,7 @@ class SqlAstStructureTest {
     assertEquals(SqlType.BIGINT, arithmetic.sqlType());
     assertEquals(Nullability.NON_NULL, arithmetic.nullability());
     assertEquals(
-        arithmetic,
-        new ArithmeticExpression<>(table.id(), ArithmeticOperator.ADD, addend));
+        arithmetic, new ArithmeticExpression<>(table.id(), ArithmeticOperator.ADD, addend));
     assertEquals(2, concat.operands().size());
     assertThrows(UnsupportedOperationException.class, () -> concat.operands().clear());
     assertEquals(SqlType.VARCHAR, concat.sqlType());
@@ -207,17 +197,13 @@ class SqlAstStructureTest {
     assertThrows(UnsupportedOperationException.class, () -> coalesce.operands().clear());
     assertEquals(
         Nullability.NULLABLE,
-        new CoalesceExpression<>(
-                List.of(table.name(), LiteralExpression.nullLiteral(String.class)))
+        new CoalesceExpression<>(List.of(table.name(), LiteralExpression.nullLiteral(String.class)))
             .nullability());
     assertEquals(Boolean.class, LiteralExpression.trueLiteral().javaType());
     assertEquals(Long.class, LiteralExpression.one(long.class).javaType());
-    assertEquals(
-        LiteralExpression.one(Long.class), LiteralExpression.one(long.class));
-    assertNotEquals(
-        LiteralExpression.zero(Long.class), LiteralExpression.one(Long.class));
-    assertEquals(
-        Nullability.NULLABLE, LiteralExpression.nullLiteral(String.class).nullability());
+    assertEquals(LiteralExpression.one(Long.class), LiteralExpression.one(long.class));
+    assertNotEquals(LiteralExpression.zero(Long.class), LiteralExpression.one(Long.class));
+    assertEquals(Nullability.NULLABLE, LiteralExpression.nullLiteral(String.class).nullability());
   }
 
   @Test
@@ -247,9 +233,7 @@ class SqlAstStructureTest {
             new SelectStatement(
                 List.of(
                     new CoalesceExpression<>(
-                        List.of(
-                            table.name(),
-                            new ParameterSlot<>(1, String.class, false)))),
+                        List.of(table.name(), new ParameterSlot<>(1, String.class, false)))),
                 table));
   }
 
@@ -257,15 +241,10 @@ class SqlAstStructureTest {
   void centralizedRulesRejectInvalidStandardExpressionTypesAndNullComparisons() {
     PetTable table = new PetTable();
 
+    assertThrows(IllegalArgumentException.class, () -> new ConcatExpression(List.of(table.name())));
+    assertThrows(IllegalArgumentException.class, () -> new CaseExpression<String>(List.of()));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new ConcatExpression(List.of(table.name())));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> new CaseExpression<String>(List.of()));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> new CoalesceExpression<>(List.of(table.name())));
+        IllegalArgumentException.class, () -> new CoalesceExpression<>(List.of(table.name())));
     assertThrows(
         IllegalArgumentException.class,
         () -> table.name().eq(LiteralExpression.nullLiteral(String.class)));
@@ -307,29 +286,22 @@ class SqlAstStructureTest {
             new ConcatExpression(
                 List.of(
                     table.name(),
-                    new ParameterSlot<>(
-                        0, String.class, SqlType.BIGINT, Nullability.NON_NULL))));
+                    new ParameterSlot<>(0, String.class, SqlType.BIGINT, Nullability.NON_NULL))));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new CaseExpression<>(
                 List.of(new CaseWhen<>(table.id().isNotNull(), table.name())),
-                new ParameterSlot<>(
-                    0, String.class, SqlType.BIGINT, Nullability.NON_NULL)));
+                new ParameterSlot<>(0, String.class, SqlType.BIGINT, Nullability.NON_NULL)));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new CoalesceExpression<>(
                 List.of(
                     table.name(),
-                    new ParameterSlot<>(
-                        0, String.class, SqlType.BIGINT, Nullability.NON_NULL))));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> LiteralExpression.nullLiteral(long.class));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> LiteralExpression.zero(String.class));
+                    new ParameterSlot<>(0, String.class, SqlType.BIGINT, Nullability.NON_NULL))));
+    assertThrows(IllegalArgumentException.class, () -> LiteralExpression.nullLiteral(long.class));
+    assertThrows(IllegalArgumentException.class, () -> LiteralExpression.zero(String.class));
   }
 
   @Test
@@ -365,14 +337,10 @@ class SqlAstStructureTest {
         IllegalArgumentException.class,
         () ->
             new SelectStatement(
-                List.of(table.id()),
-                table,
-                new InPredicate<>(other.id(), List.of(), false)));
+                List.of(table.id()), table, new InPredicate<>(other.id(), List.of(), false)));
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            new InsertStatement(
-                table, List.of(table.id()), List.of(other.id())));
+        () -> new InsertStatement(table, List.of(table.id()), List.of(other.id())));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -381,8 +349,7 @@ class SqlAstStructureTest {
                 List.of(new UpdateAssignment<>(table.name(), table.name())),
                 other.id().eq(id)));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new DeleteStatement(table, other.id().eq(id)));
+        IllegalArgumentException.class, () -> new DeleteStatement(table, other.id().eq(id)));
     assertThrows(
         IllegalArgumentException.class,
         () -> new InsertStatement(readOnly, List.of(readOnly.id()), List.of(id)));
@@ -417,6 +384,65 @@ class SqlAstStructureTest {
 
     assertEquals(List.of(table.id()), statement.selections());
     assertThrows(UnsupportedOperationException.class, () -> statement.selections().clear());
+  }
+
+  @Test
+  void selectPaginationOrderingHiddenItemsAndCountParticipateInStructure() {
+    PetTable table = new PetTable();
+    ParameterSlot<Integer> limit = new ParameterSlot<>(0, Integer.class, false);
+    ParameterSlot<Long> offset = new ParameterSlot<>(1, Long.class, false);
+    SelectStatement page =
+        new SelectStatement(
+            true,
+            List.of(table.name()),
+            List.of(new HiddenSelection(table.id(), Identifier.of("__skis_order_0"))),
+            table,
+            null,
+            List.of(new OrderByItem(table.id(), OrderDirection.DESC, NullOrder.LAST)),
+            new OffsetLimit(limit, offset));
+
+    assertNotEquals(
+        page,
+        new SelectStatement(
+            false,
+            page.selections(),
+            page.hiddenSelections(),
+            table,
+            null,
+            page.orderBy(),
+            page.pagination().orElseThrow()));
+    assertNotEquals(
+        page,
+        new SelectStatement(
+            true,
+            page.selections(),
+            List.of(),
+            table,
+            null,
+            page.orderBy(),
+            page.pagination().orElseThrow()));
+    assertNotEquals(
+        page,
+        new SelectStatement(
+            true,
+            page.selections(),
+            page.hiddenSelections(),
+            table,
+            null,
+            List.of(new OrderByItem(table.id(), OrderDirection.ASC, NullOrder.LAST)),
+            page.pagination().orElseThrow()));
+    assertNotEquals(new CountAst(table, null, null), new CountAst(table, null, table.name()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SelectStatement(
+                false,
+                List.of(table.id()),
+                List.of(),
+                table,
+                null,
+                List.of(),
+                new OffsetLimit(limit, offset)));
   }
 
   @Test
@@ -504,8 +530,7 @@ class SqlAstStructureTest {
                 List.of(new UpdateAssignment<>(table.name(), gappedName)),
                 table.id().eq(firstId)));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new DeleteStatement(table, table.id().eq(gappedId)));
+        IllegalArgumentException.class, () -> new DeleteStatement(table, table.id().eq(gappedId)));
   }
 
   @Test

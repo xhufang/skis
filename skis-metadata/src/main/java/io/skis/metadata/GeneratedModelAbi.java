@@ -4,7 +4,7 @@ package io.skis.metadata;
 public final class GeneratedModelAbi {
 
   /** ABI implemented by this runtime. */
-  public static final int CURRENT = 3;
+  public static final int CURRENT = 4;
 
   private GeneratedModelAbi() {}
 
@@ -15,7 +15,8 @@ public final class GeneratedModelAbi {
           "SKIS generated-model ABI "
               + generatedAbi
               + " is incompatible with runtime ABI "
-              + CURRENT);
+              + CURRENT
+              + "; regenerate SKIS entity and projection sources with the matching processor");
     }
   }
 }

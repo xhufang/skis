@@ -52,10 +52,7 @@ final class RuntimeModelGenerator implements EntitySourceGenerator {
     if (model.readOnly()) {
       source.append("      null);\n\n");
     } else {
-      source
-          .append("      ")
-          .append(model.entityName())
-          .append("Binder.MUTATIONS);\n\n");
+      source.append("      ").append(model.entityName()).append("Binder.MUTATIONS);\n\n");
     }
     source
         .append("  public ")

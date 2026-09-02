@@ -7,13 +7,14 @@ import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
-import io.skis.query.EntitySelectQuery;
-import io.skis.query.ProjectedSelectQuery;
-import io.skis.query.QueryColumn;
+import io.skis.query.NonNullQueryColumn;
+import io.skis.query.NullableQueryColumn;
+import io.skis.query.NullableSelectFromStep;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryTable;
+import io.skis.query.SelectQuery;
 import io.skis.query.SelectFromStep;
 import java.util.Objects;
 import java.util.Optional;
@@ -52,18 +53,22 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E> EntitySelectQuery<E> selectFrom(QueryTable<E> table) {
+  public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
     return queries.selectFrom(table);
   }
 
   @Override
-  public <E, V> SelectFromStep<E, V> select(QueryColumn<E, V> column) {
+  public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
     return queries.select(column);
   }
 
   @Override
-  public <E, R> ProjectedSelectQuery<E, R> selectProjection(
-      QueryTable<E> table, Class<R> projectionType) {
+  public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
+    return queries.select(column);
+  }
+
+  @Override
+  public <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType) {
     return queries.selectProjection(table, projectionType);
   }
 
