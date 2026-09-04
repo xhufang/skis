@@ -492,7 +492,19 @@
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NullableQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
-                  <exclude>io.skis.query.SelectFromStep#from(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableScalarQuery#where(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.NullableScalarQuery#and(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.NullableScalarQuery#or(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectFromStep</exclude>
+                  <exclude>io.skis.query.SelectQuery#where(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectQuery#and(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectQuery#or(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectQuery#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#crossJoin(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
                   <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>
