@@ -72,7 +72,7 @@ public final class QueryPredicate<E> {
 
   @Nullable PropertyMeta<E, ?> simpleEqualityProperty(QueryTable<E> table) {
     QueryColumn<E, ?> column = root.simpleEqualityColumn();
-    return column != null && column.expression().table().equals(table) ? column.property() : null;
+    return column != null && column.expression().table() == table ? column.property() : null;
   }
 
   private QueryPredicate<E> logical(LogicalOperator operator, QueryPredicate<E> other) {

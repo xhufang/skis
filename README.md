@@ -16,7 +16,7 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
 - PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
-The repository currently uses the internal `0.2.3-SNAPSHOT` version. The completed `0.2.1`
+The repository currently uses the internal `0.2.4-SNAPSHOT` version. The completed `0.2.1`
 milestone added immutable JDBC execution options and dialect-aware Spring exception translation.
 The `0.2.2` development milestone adds explicit SQL type/nullability metadata, immutable complex
 single-table predicates, query-level `where(...).and(...).or(...)` chaining, portable standard

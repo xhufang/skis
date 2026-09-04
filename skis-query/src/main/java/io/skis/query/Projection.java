@@ -187,7 +187,7 @@ public final class Projection<E, R> {
               + table.entity().entityName()
               + "'");
     }
-    if (boundTable != null && !boundTable.equals(table)) {
+    if (boundTable != null && boundTable != table) {
       throw new QueryValidationException(
           "scalar projection belongs to a different table expression than from");
     }

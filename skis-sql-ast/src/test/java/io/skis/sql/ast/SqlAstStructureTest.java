@@ -59,7 +59,7 @@ class SqlAstStructureTest {
   }
 
   @Test
-  void keepsDistinctMetadataSymbolsOutOfTheSameStructureKey() {
+  void keepsJvmMetadataObjectAddressesOutOfTheStructureKey() {
     EntityMeta<Pet> distinctMetadata =
         EntityMeta.simple(
             Pet.class,
@@ -68,7 +68,7 @@ class SqlAstStructureTest {
             new PrimaryKeyMeta<>(List.of(ID)),
             false);
 
-    assertNotEquals(new PetTable(), new PetTable(distinctMetadata));
+    assertEquals(new PetTable(), new PetTable(distinctMetadata));
   }
 
   @Test

@@ -528,7 +528,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     Set<PropertyMeta<E, ?>> properties = new HashSet<>();
     for (SortSpecification<E> item : items) {
       Objects.requireNonNull(item, "ordering item");
-      if (!item.column().expression().table().equals(table)) {
+      if (item.column().expression().table() != table) {
         throw new QueryValidationException(
             "ORDER BY column belongs to a different table expression");
       }

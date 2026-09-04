@@ -307,6 +307,7 @@ final class QueryPlanCompiler {
     Objects.requireNonNull(model, "model");
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(rowDecoder, "rowDecoder");
+    dialect.validate(statement);
     RenderedSql rendered = dialect.renderer().render(statement);
     List<RenderedBinding<E>> renderedBindings =
         renderedBindings(model, logicalParameters, rendered);

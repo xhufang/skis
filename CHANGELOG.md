@@ -6,6 +6,10 @@
 
 ### Added
 
+- 新增查询块局部的 `FromClause`、稳定表 occurrence、五类 `JoinClause` 与引用身份作用域校验；
+  SELECT 和独立 count 共享相同的有序 FROM/Join 结构，重复别名、重复无别名表及前向 ON 引用在渲染前失败。
+- 新增五类独立 Join 方言能力和统一映射；PostgreSQL 渲染 INNER/LEFT/RIGHT/FULL/CROSS JOIN，H2
+  渲染其真实支持的 INNER/LEFT/RIGHT/CROSS JOIN，并在输出 SQL 前明确拒绝 FULL JOIN。
 - 新增统一的 `SelectQuery<E, R>`、独立 nullable scalar `NullableScalarQuery<E, V>` 与 `SingleRow<V>`；
   APT 生成列按元数据区分 `NonNullQueryColumn`/`NullableQueryColumn`，生成模型 ABI 提升为 4。
 - 新增多列排序、ASC/DESC、显式 null placement、distinct、显式主键 tie-breaker，以及 PostgreSQL/H2

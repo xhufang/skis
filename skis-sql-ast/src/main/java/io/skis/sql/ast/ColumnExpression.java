@@ -6,8 +6,8 @@ import java.util.Objects;
 /**
  * Immutable typed column reference backed by canonical generated property metadata.
  *
- * <p>Property metadata is a symbol owned by an {@link io.skis.metadata.EntityMeta}; expression
- * equality therefore uses property identity rather than accidental value equality.
+ * <p>Structural equality uses the stable table descriptor and property metadata value. Query-local
+ * visibility is resolved separately with the owning table's object identity.
  */
 public final class ColumnExpression<E, V> implements SqlExpression<V> {
 
@@ -89,11 +89,19 @@ public final class ColumnExpression<E, V> implements SqlExpression<V> {
     return this == other
         || other instanceof ColumnExpression<?, ?> column
             && table.equals(column.table)
-            && property == column.property;
+            && property.ordinal() == column.property.ordinal()
+            && property.name().equals(column.property.name())
+            && property.javaType().getName().equals(column.property.javaType().getName())
+            && property.column().equals(column.property.column());
   }
 
   @Override
   public int hashCode() {
-    return 31 * table.hashCode() + System.identityHashCode(property);
+    return Objects.hash(
+        table,
+        property.ordinal(),
+        property.name(),
+        property.javaType().getName(),
+        property.column());
   }
 }

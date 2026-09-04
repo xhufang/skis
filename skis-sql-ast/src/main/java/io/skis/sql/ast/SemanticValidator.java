@@ -2,11 +2,11 @@ package io.skis.sql.ast;
 
 import java.math.BigInteger;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 /** Central semantic validation for portable statement scope, types, nulls, and writability. */
 public final class SemanticValidator {
@@ -30,14 +30,29 @@ public final class SemanticValidator {
     }
   }
 
-  /** Validates the currently supported single-table SELECT scope and expression tree. */
+  /** Validates SELECT scopes in join order and then validates the final expression tree. */
   public static void validate(SelectStatement statement) {
     Objects.requireNonNull(statement, "statement");
-    ValidationContext context = new ValidationContext(Set.of(statement.from()));
-    statement.selections().forEach(context::validateExpression);
-    statement.hiddenSelections().forEach(item -> context.validateExpression(item.expression()));
-    statement.where().ifPresent(context::validateExpression);
-    statement.orderBy().forEach(item -> context.validateExpression(item.expression()));
+    ValidationContext context = new ValidationContext();
+    context.addVisible(statement.from());
+    for (int index = 0; index < statement.joins().size(); index++) {
+      JoinClause join = statement.joins().get(index);
+      context.addVisible(join.right());
+      int position = index + 1;
+      join.on()
+          .ifPresent(
+              predicate ->
+                  context.validateExpression(
+                      predicate, "SELECT FROM join #" + position + " ON"));
+    }
+    statement.selections().forEach(item -> context.validateExpression(item, "SELECT"));
+    statement
+        .hiddenSelections()
+        .forEach(item -> context.validateExpression(item.expression(), "SELECT hidden item"));
+    statement.where().ifPresent(item -> context.validateExpression(item, "WHERE"));
+    statement
+        .orderBy()
+        .forEach(item -> context.validateExpression(item.expression(), "ORDER BY"));
     statement
         .pagination()
         .ifPresent(
@@ -46,11 +61,11 @@ public final class SemanticValidator {
                 throw new IllegalArgumentException("paginated SELECT requires ORDER BY");
               }
               if (pagination instanceof KeysetSeek keyset) {
-                context.validateExpression(keyset.predicate());
+                context.validateExpression(keyset.predicate(), "pagination seek");
               }
-              context.validateExpression(pagination.limit());
+              context.validateExpression(pagination.limit(), "pagination limit");
               if (pagination instanceof OffsetLimit offset) {
-                context.validateExpression(offset.offset());
+                context.validateExpression(offset.offset(), "pagination offset");
               }
             });
     context.requireDenseParameterOrdinals();
@@ -59,9 +74,21 @@ public final class SemanticValidator {
   /** Validates an independent COUNT plan. */
   public static void validate(CountAst statement) {
     Objects.requireNonNull(statement, "statement");
-    ValidationContext context = new ValidationContext(Set.of(statement.source()));
-    statement.predicate().ifPresent(context::validateExpression);
-    statement.distinctExpression().ifPresent(context::validateExpression);
+    ValidationContext context = new ValidationContext();
+    context.addVisible(statement.source());
+    for (int index = 0; index < statement.joins().size(); index++) {
+      JoinClause join = statement.joins().get(index);
+      context.addVisible(join.right());
+      int position = index + 1;
+      join.on()
+          .ifPresent(
+              predicate ->
+                  context.validateExpression(predicate, "COUNT FROM join #" + position + " ON"));
+    }
+    statement.predicate().ifPresent(item -> context.validateExpression(item, "COUNT WHERE"));
+    statement
+        .distinctExpression()
+        .ifPresent(item -> context.validateExpression(item, "COUNT DISTINCT"));
     context.requireDenseParameterOrdinals();
   }
 
@@ -70,7 +97,7 @@ public final class SemanticValidator {
       List<ColumnExpression<?, ?>> columns,
       List<SqlExpression<?>> values) {
     requireWritableTarget(target, "INSERT");
-    ValidationContext context = new ValidationContext(Set.of());
+    ValidationContext context = new ValidationContext();
     for (int index = 0; index < columns.size(); index++) {
       ColumnExpression<?, ?> column = columns.get(index);
       SqlExpression<?> value = values.get(index);
@@ -80,7 +107,7 @@ public final class SemanticValidator {
             "INSERT column '" + column.property().name() + "' is not insertable");
       }
       validateAssignment(column, value, "INSERT");
-      context.validateExpression(value);
+      context.validateExpression(value, "INSERT value");
     }
     context.requireDenseParameterOrdinals();
   }
@@ -88,7 +115,8 @@ public final class SemanticValidator {
   static void validateUpdate(
       TableExpression<?> target, List<UpdateAssignment<?>> assignments, SqlPredicate where) {
     requireWritableTarget(target, "UPDATE");
-    ValidationContext context = new ValidationContext(Set.of(target));
+    ValidationContext context = new ValidationContext();
+    context.addVisible(target);
     for (UpdateAssignment<?> assignment : assignments) {
       ColumnExpression<?, ?> column = assignment.column();
       requireTargetColumn(column, target, "UPDATE");
@@ -97,16 +125,17 @@ public final class SemanticValidator {
             "UPDATE column '" + column.property().name() + "' is not updatable");
       }
       validateAssignment(column, assignment.value(), "UPDATE");
-      context.validateExpression(assignment.value());
+      context.validateExpression(assignment.value(), "UPDATE assignment");
     }
-    context.validateExpression(where);
+    context.validateExpression(where, "UPDATE WHERE");
     context.requireDenseParameterOrdinals();
   }
 
   static void validateDelete(TableExpression<?> target, SqlPredicate where) {
     requireWritableTarget(target, "DELETE");
-    ValidationContext context = new ValidationContext(Set.of(target));
-    context.validateExpression(where);
+    ValidationContext context = new ValidationContext();
+    context.addVisible(target);
+    context.validateExpression(where, "DELETE WHERE");
     context.requireDenseParameterOrdinals();
   }
 
@@ -320,7 +349,7 @@ public final class SemanticValidator {
 
   private static void requireTargetColumn(
       ColumnExpression<?, ?> column, TableExpression<?> target, String operation) {
-    if (!column.table().equals(target)) {
+    if (column.table() != target) {
       throw new IllegalArgumentException(operation + " column does not belong to its target table");
     }
   }
@@ -399,15 +428,17 @@ public final class SemanticValidator {
 
   private static final class ValidationContext {
 
-    private final Set<TableExpression<?>> visibleTables;
+    private final IdentityHashMap<TableExpression<?>, Boolean> visibleTables =
+        new IdentityHashMap<>();
     private final Map<Integer, ParameterSlot<?>> parametersByOrdinal = new HashMap<>();
 
-    private ValidationContext(Set<TableExpression<?>> visibleTables) {
-      this.visibleTables = Set.copyOf(visibleTables);
+    private void addVisible(TableExpression<?> table) {
+      visibleTables.put(Objects.requireNonNull(table, "table"), Boolean.TRUE);
     }
 
-    private void validateExpression(SqlExpression<?> expression) {
+    private void validateExpression(SqlExpression<?> expression, String clause) {
       Objects.requireNonNull(expression, "expression");
+      Objects.requireNonNull(clause, "clause");
       requireJavaSqlDescriptor(expression.javaType(), expression.sqlType(), "expression");
       Objects.requireNonNull(expression.nullability(), "expression nullability");
       if (expression.nullable() && expression.javaType().isPrimitive()) {
@@ -416,53 +447,54 @@ public final class SemanticValidator {
       }
 
       switch (expression) {
-        case ColumnExpression<?, ?> column -> validateColumn(column);
+        case ColumnExpression<?, ?> column -> validateColumn(column, clause);
         case ParameterSlot<?> parameter -> validateParameter(parameter);
         case LiteralExpression<?> literal ->
             validateLiteral(
                 literal.kind(), literal.javaType(), literal.sqlType(), literal.nullability());
         case ArithmeticExpression<?> arithmetic -> {
           validateArithmetic(arithmetic.left(), arithmetic.operator(), arithmetic.right());
-          validateExpression(arithmetic.left());
-          validateExpression(arithmetic.right());
+          validateExpression(arithmetic.left(), clause);
+          validateExpression(arithmetic.right(), clause);
         }
         case ConcatExpression concat -> {
           validateConcat(concat.operands());
-          concat.operands().forEach(this::validateExpression);
+          concat.operands().forEach(item -> validateExpression(item, clause));
         }
-        case CaseExpression<?> caseExpression -> validateCaseExpression(caseExpression);
+        case CaseExpression<?> caseExpression -> validateCaseExpression(caseExpression, clause);
         case CastExpression<?> cast -> {
           validateCast(cast.operand(), cast.javaType(), cast.sqlType());
-          validateExpression(cast.operand());
+          validateExpression(cast.operand(), clause);
         }
-        case CoalesceExpression<?> coalesce -> validateCoalesceExpression(coalesce);
+        case CoalesceExpression<?> coalesce -> validateCoalesceExpression(coalesce, clause);
         case ComparisonPredicate<?> comparison -> {
           validateComparison(comparison.left(), comparison.operator(), comparison.right());
-          validateExpression(comparison.left());
-          validateExpression(comparison.right());
+          validateExpression(comparison.left(), clause);
+          validateExpression(comparison.right(), clause);
         }
-        case LogicalPredicate logical -> logical.operands().forEach(this::validateExpression);
-        case NullPredicate nullPredicate -> validateExpression(nullPredicate.operand());
+        case LogicalPredicate logical ->
+            logical.operands().forEach(item -> validateExpression(item, clause));
+        case NullPredicate nullPredicate -> validateExpression(nullPredicate.operand(), clause);
         case BetweenPredicate<?> between -> {
           validateBetween(between.value(), between.lower(), between.upper());
-          validateExpression(between.value());
-          validateExpression(between.lower());
-          validateExpression(between.upper());
+          validateExpression(between.value(), clause);
+          validateExpression(between.lower(), clause);
+          validateExpression(between.upper(), clause);
         }
         case LikePredicate like -> {
           validateLike(like.value(), like.pattern());
-          validateExpression(like.value());
-          validateExpression(like.pattern());
+          validateExpression(like.value(), clause);
+          validateExpression(like.pattern(), clause);
         }
         case InPredicate<?> in -> {
           validateIn(in.value(), in.candidates());
-          validateExpression(in.value());
-          in.candidates().forEach(this::validateExpression);
+          validateExpression(in.value(), clause);
+          in.candidates().forEach(item -> validateExpression(item, clause));
         }
-        case NotPredicate not -> validateExpression(not.operand());
+        case NotPredicate not -> validateExpression(not.operand(), clause);
         case IncrementExpression<?> increment -> {
           validateIncrement(increment.operand());
-          validateExpression(increment.operand());
+          validateExpression(increment.operand(), clause);
         }
         default -> {
           // Custom opaque leaf expressions expose no portable child traversal contract yet.
@@ -470,13 +502,21 @@ public final class SemanticValidator {
       }
     }
 
-    private void validateColumn(ColumnExpression<?, ?> column) {
-      if (!visibleTables.contains(column.table())) {
+    private void validateColumn(ColumnExpression<?, ?> column, String clause) {
+      if (!visibleTables.containsKey(column.table())) {
         throw new IllegalArgumentException(
-            "column '"
+            clause
+                + " column '"
                 + column.property().name()
-                + "' belongs to a different table expression or one that is not visible in this "
-                + "statement scope");
+                + "' references invisible table entity '"
+                + column.table().entity().entityName()
+                + "'"
+                + column
+                    .table()
+                    .alias()
+                    .map(alias -> " with alias '" + alias.value() + "'")
+                    .orElse("")
+                + "; table references are matched by object identity");
       }
     }
 
@@ -493,18 +533,18 @@ public final class SemanticValidator {
       }
     }
 
-    private void validateCaseExpression(CaseExpression<?> caseExpression) {
+    private void validateCaseExpression(CaseExpression<?> caseExpression, String clause) {
       validateCaseUntyped(caseExpression);
       for (CaseWhen<?> branch : caseExpression.branches()) {
-        validateExpression(branch.condition());
-        validateExpression(branch.result());
+        validateExpression(branch.condition(), clause);
+        validateExpression(branch.result(), clause);
       }
-      caseExpression.otherwise().ifPresent(this::validateExpression);
+      caseExpression.otherwise().ifPresent(item -> validateExpression(item, clause));
     }
 
-    private void validateCoalesceExpression(CoalesceExpression<?> coalesce) {
+    private void validateCoalesceExpression(CoalesceExpression<?> coalesce, String clause) {
       validateCoalesceUntyped(coalesce);
-      coalesce.operands().forEach(this::validateExpression);
+      coalesce.operands().forEach(item -> validateExpression(item, clause));
     }
 
     private void requireDenseParameterOrdinals() {
