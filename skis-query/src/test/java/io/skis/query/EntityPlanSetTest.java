@@ -138,7 +138,11 @@ class EntityPlanSetTest {
   @Test
   void followsRendererParameterOrderWhenDialectReordersPlaceholders() throws Exception {
     EntityPlanSet<Pet> plans =
-        new EntityPlanSet<>(model(), new QueryPlanCompiler(ReorderedParameterDialect.INSTANCE));
+        new EntityPlanSet<>(
+            model(),
+            new QueryPlanCompiler(
+                EntityRuntimeRegistry.empty(), ReorderedParameterDialect.INSTANCE),
+            projectionPlans());
     QueryPredicate<Pet> predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
@@ -255,7 +259,7 @@ class EntityPlanSetTest {
   void rejectsAmbiguousNullAndPredicatesFromAnotherTable() {
     PetTable alias = TABLE.as("p");
 
-    assertThrows(QueryValidationException.class, () -> TABLE.name().eq(null));
+    assertThrows(QueryValidationException.class, () -> TABLE.name().eq((String) null));
     assertThrows(
         QueryValidationException.class, () -> plans().selectPlan(TABLE, alias.name().eq("Mimi")));
     assertThrows(
@@ -314,7 +318,17 @@ class EntityPlanSetTest {
   }
 
   private static EntityPlanSet<Pet> plans() {
-    return new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE));
+    return new EntityPlanSet<>(
+        model(),
+        new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE),
+        projectionPlans());
+  }
+
+  private static ProjectionPlanCache projectionPlans() {
+    return new ProjectionPlanCache(
+        ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE,
+        ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS,
+        System::nanoTime);
   }
 
   private static EntityRuntimeModel<Pet> model() {

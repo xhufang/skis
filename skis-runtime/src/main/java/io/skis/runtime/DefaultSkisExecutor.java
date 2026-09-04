@@ -14,8 +14,8 @@ import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
 import io.skis.query.SelectFromStep;
+import io.skis.query.SelectQuery;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -55,6 +55,11 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
     return queries.selectFrom(table);
+  }
+
+  @Override
+  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+    return queries.select(table);
   }
 
   @Override

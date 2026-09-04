@@ -9,9 +9,15 @@ public interface NullableScalarQuery<E, V> {
 
   NullableScalarQuery<E, V> where(QueryPredicate<E> predicate);
 
+  NullableScalarQuery<E, V> where(QueryCondition condition);
+
   NullableScalarQuery<E, V> and(QueryPredicate<E> predicate);
 
+  NullableScalarQuery<E, V> and(QueryCondition condition);
+
   NullableScalarQuery<E, V> or(QueryPredicate<E> predicate);
+
+  NullableScalarQuery<E, V> or(QueryCondition condition);
 
   NullableScalarQuery<E, V> withOptions(ExecutionOptions executionOptions);
 

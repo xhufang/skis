@@ -11,7 +11,6 @@ import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullPredicate;
-import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
@@ -20,7 +19,7 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Immutable, entity-typed predicate tree whose runtime values remain outside the SQL AST. */
-public final class QueryPredicate<E> {
+public final class QueryPredicate<E> implements QueryCondition {
 
   private final Node<E> root;
 
@@ -54,20 +53,41 @@ public final class QueryPredicate<E> {
     return logical(LogicalOperator.AND, other);
   }
 
+  @Override
+  public QueryCondition and(QueryCondition other) {
+    return QueryConditions.logical(
+        LogicalOperator.AND, this, Objects.requireNonNull(other, "other"));
+  }
+
   /** Returns a new grouped predicate combining this predicate and {@code other} with OR. */
   public QueryPredicate<E> or(QueryPredicate<E> other) {
     return logical(LogicalOperator.OR, other);
   }
 
+  @Override
+  public QueryCondition or(QueryCondition other) {
+    return QueryConditions.logical(
+        LogicalOperator.OR, this, Objects.requireNonNull(other, "other"));
+  }
+
   /** Returns a new grouped predicate representing SQL three-valued NOT. */
+  @Override
   public QueryPredicate<E> not() {
     return new QueryPredicate<>(new NotNode<>(root));
   }
 
   CompiledQueryPredicate<E> compile() {
-    PredicateCompiler<E> compiler = new PredicateCompiler<>();
+    QueryConditionCompiler compiler = new QueryConditionCompiler();
     SqlPredicate ast = root.compile(compiler);
-    return new CompiledQueryPredicate<>(ast, compiler.properties, compiler.arguments);
+    List<PropertyMeta<E, ?>> properties = new ArrayList<>(compiler.parameterColumns().size());
+    for (QueryColumn<?, ?> column : compiler.parameterColumns()) {
+      properties.add(property(column));
+    }
+    return new CompiledQueryPredicate<>(ast, properties, compiler.arguments());
+  }
+
+  SqlPredicate compile(QueryConditionCompiler compiler) {
+    return root.compile(Objects.requireNonNull(compiler, "compiler"));
   }
 
   @Nullable PropertyMeta<E, ?> simpleEqualityProperty(QueryTable<E> table) {
@@ -83,7 +103,7 @@ public final class QueryPredicate<E> {
   private sealed interface Node<E>
       permits ComparisonNode, NullNode, BetweenNode, LikeNode, InNode, LogicalNode, NotNode {
 
-    SqlPredicate compile(PredicateCompiler<E> compiler);
+    SqlPredicate compile(QueryConditionCompiler compiler);
 
     default @Nullable QueryColumn<E, ?> simpleEqualityColumn() {
       return null;
@@ -100,7 +120,7 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new ComparisonPredicate<>(
           column.expression(), operator, compiler.parameter(column, value));
     }
@@ -119,7 +139,7 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new NullPredicate(column.expression(), operator);
     }
   }
@@ -133,7 +153,7 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new BetweenPredicate<>(
           column.expression(),
           compiler.parameter(column, lower),
@@ -149,7 +169,7 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new LikePredicate(column.expression(), compiler.parameter(column, pattern));
     }
   }
@@ -163,7 +183,7 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       List<ParameterSlot<V>> candidates = new ArrayList<>(values.size());
       for (V value : values) {
         candidates.add(compiler.parameter(column, value));
@@ -182,7 +202,7 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new LogicalPredicate(
           operator, List.of(left.compile(compiler), right.compile(compiler)));
     }
@@ -195,23 +215,14 @@ public final class QueryPredicate<E> {
     }
 
     @Override
-    public SqlPredicate compile(PredicateCompiler<E> compiler) {
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new NotPredicate(operand.compile(compiler));
     }
   }
 
-  private static final class PredicateCompiler<E> {
-
-    private final List<PropertyMeta<E, ?>> properties = new ArrayList<>();
-    private final List<Object> arguments = new ArrayList<>();
-
-    private <V> ParameterSlot<V> parameter(QueryColumn<E, V> column, V value) {
-      int ordinal = arguments.size();
-      properties.add(column.property());
-      arguments.add(value);
-      return new ParameterSlot<>(
-          ordinal, column.javaType(), column.sqlType(), Nullability.NON_NULL);
-    }
+  @SuppressWarnings("unchecked")
+  private static <E> PropertyMeta<E, ?> property(QueryColumn<?, ?> column) {
+    return (PropertyMeta<E, ?>) column.property();
   }
 }
 

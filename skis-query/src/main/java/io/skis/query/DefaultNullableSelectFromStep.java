@@ -6,17 +6,17 @@ import java.util.Objects;
 final class DefaultNullableSelectFromStep<E, V> implements NullableSelectFromStep<E, V> {
 
   private final DefaultQueryOperations operations;
-  private final Projection<E, V> projection;
+  private final SelectedResult<E, V> selected;
 
-  DefaultNullableSelectFromStep(DefaultQueryOperations operations, Projection<E, V> projection) {
+  DefaultNullableSelectFromStep(DefaultQueryOperations operations, SelectedResult<E, V> selected) {
     this.operations = Objects.requireNonNull(operations, "operations");
-    this.projection = Objects.requireNonNull(projection, "projection");
+    this.selected = Objects.requireNonNull(selected, "selected");
   }
 
   @Override
   public NullableScalarQuery<E, V> from(QueryTable<E> table) {
     DefaultSelectQuery<E, V> query =
-        operations.selectFrom(projection, Objects.requireNonNull(table, "table"));
+        operations.selectFrom(selected, Objects.requireNonNull(table, "table"));
     return new DefaultNullableScalarQuery<>(operations, query);
   }
 }

@@ -14,6 +14,7 @@ import io.skis.dialect.StandardIdentifierRules;
 import io.skis.dialect.StandardSqlRenderer;
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
+import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcCodecs;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.mapping.RowReadContext;
@@ -138,9 +139,14 @@ class ProjectionQueryTest {
 
   @Test
   void reusesValueIndependentProjectionPlansAcrossQueryValues() {
-    ProjectionPlanCache cache = new ProjectionPlanCache(8);
+    ProjectionPlanCache cache =
+        new ProjectionPlanCache(
+            8, ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS, System::nanoTime);
     EntityPlanSet<Pet> plans =
-        new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
+        new EntityPlanSet<>(
+            model(),
+            new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE),
+            cache);
     Projection<Pet, PetSummary> firstProjection = petSummaryProjection();
     Projection<Pet, PetSummary> secondProjection = petSummaryProjection();
     QueryPredicate<Pet> firstPredicate = TABLE.id().eq(7L);
@@ -154,15 +160,20 @@ class ProjectionQueryTest {
     assertSame(first, second);
     assertEquals(List.of(7L), ((QueryArguments) plans.argument(firstPredicate)).values());
     assertEquals(List.of(8L), ((QueryArguments) plans.argument(secondPredicate)).values());
-    assertEquals(1, cache.size());
+    assertEquals(1, cache.statistics().size());
     assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 8), cache.statistics());
   }
 
   @Test
   void boundsAndEvictsSharedProjectionPlans() {
-    ProjectionPlanCache cache = new ProjectionPlanCache(1);
+    ProjectionPlanCache cache =
+        new ProjectionPlanCache(
+            1, ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS, System::nanoTime);
     EntityPlanSet<Pet> plans =
-        new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
+        new EntityPlanSet<>(
+            model(),
+            new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE),
+            cache);
     Projection<Pet, PetSummary> summary = petSummaryProjection();
     Projection<Pet, PetWeight> weight = petWeightProjection();
 
@@ -171,7 +182,7 @@ class ProjectionQueryTest {
     CompiledQueryPlan<PetSummary, Object> recompiled = plans.projectionPlan(TABLE, summary, null);
 
     assertNotSame(original, recompiled);
-    assertEquals(1, cache.size());
+    assertEquals(1, cache.statistics().size());
     assertEquals(2, cache.statistics().evictionCount());
   }
 
@@ -218,7 +229,10 @@ class ProjectionQueryTest {
     AtomicLong ticker = new AtomicLong();
     ProjectionPlanCache cache = new ProjectionPlanCache(2, Duration.ofNanos(10), ticker::get);
     EntityPlanSet<Pet> plans =
-        new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE), cache);
+        new EntityPlanSet<>(
+            model(),
+            new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE),
+            cache);
     Projection<Pet, PetSummary> summary = petSummaryProjection();
 
     CompiledQueryPlan<PetSummary, Object> first = plans.projectionPlan(TABLE, summary, null);
@@ -237,12 +251,24 @@ class ProjectionQueryTest {
 
   @Test
   void rejectsInvalidProjectionPlanCacheConfiguration() {
-    assertThrows(IllegalArgumentException.class, () -> new ProjectionPlanCache(0));
-    assertThrows(IllegalArgumentException.class, () -> new ProjectionPlanCache(1, Duration.ZERO));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new ProjectionPlanCache(
+                0, ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS, System::nanoTime));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new ProjectionPlanCache(1, Duration.ZERO, System::nanoTime));
   }
 
   private static EntityPlanSet<Pet> plans() {
-    return new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE));
+    return new EntityPlanSet<>(
+        model(),
+        new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE),
+        new ProjectionPlanCache(
+            ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE,
+            ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS,
+            System::nanoTime));
   }
 
   private static Projection<Pet, PetSummary> petSummaryProjection() {

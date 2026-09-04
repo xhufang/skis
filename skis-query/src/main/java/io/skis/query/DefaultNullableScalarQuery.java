@@ -23,13 +23,28 @@ final class DefaultNullableScalarQuery<E, V> implements NullableScalarQuery<E, V
   }
 
   @Override
+  public NullableScalarQuery<E, V> where(QueryCondition condition) {
+    return wrap(delegate.where(condition));
+  }
+
+  @Override
   public NullableScalarQuery<E, V> and(QueryPredicate<E> predicate) {
     return wrap(delegate.and(predicate));
   }
 
   @Override
+  public NullableScalarQuery<E, V> and(QueryCondition condition) {
+    return wrap(delegate.and(condition));
+  }
+
+  @Override
   public NullableScalarQuery<E, V> or(QueryPredicate<E> predicate) {
     return wrap(delegate.or(predicate));
+  }
+
+  @Override
+  public NullableScalarQuery<E, V> or(QueryCondition condition) {
+    return wrap(delegate.or(condition));
   }
 
   @Override

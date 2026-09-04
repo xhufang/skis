@@ -25,15 +25,6 @@ public final class QueryPlanCatalog {
   private final ProjectionPlanCache projectionPlans;
   private final ProjectionRegistry projectionRegistry;
 
-  QueryPlanCatalog(EntityRuntimeRegistry runtimeRegistry, Dialect dialect) {
-    this(
-        runtimeRegistry,
-        ProjectionRegistry.empty(),
-        dialect,
-        DEFAULT_MAXIMUM_SIZE,
-        DEFAULT_EXPIRE_AFTER_ACCESS);
-  }
-
   QueryPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
       Dialect dialect,
@@ -50,8 +41,10 @@ public final class QueryPlanCatalog {
       Duration expireAfterAccess) {
     Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
     this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
-    QueryPlanCompiler compiler = new QueryPlanCompiler(Objects.requireNonNull(dialect, "dialect"));
-    this.projectionPlans = new ProjectionPlanCache(maximumSize, expireAfterAccess);
+    QueryPlanCompiler compiler =
+        new QueryPlanCompiler(runtimeRegistry, Objects.requireNonNull(dialect, "dialect"));
+    this.projectionPlans =
+        new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
     for (EntityRuntimeModel<?> model : runtimeRegistry.models()) {
       EntityPlanSet<?> previous =

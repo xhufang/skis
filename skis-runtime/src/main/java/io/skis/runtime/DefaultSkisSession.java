@@ -10,8 +10,8 @@ import io.skis.query.NullableQueryColumn;
 import io.skis.query.NullableSelectFromStep;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
 import io.skis.query.SelectFromStep;
+import io.skis.query.SelectQuery;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -49,6 +49,12 @@ final class DefaultSkisSession implements SkisSession {
   public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
     requireActive();
     return queries.selectFrom(table);
+  }
+
+  @Override
+  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+    requireActive();
+    return queries.select(table);
   }
 
   @Override

@@ -480,7 +480,7 @@
                 <breakBuildOnSourceIncompatibleModifications>true
                 </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
-                <!-- Exact 0.2.2/0.2.3 internal-line breaks approved by the development plan.
+                <!-- Exact 0.2.2-0.2.4 internal-line breaks approved by the development plan.
                      Keep this list at class/member granularity. -->
                 <excludes>
                   <exclude>io.skis.query.EntitySelectQuery</exclude>
@@ -490,6 +490,7 @@
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NonNullQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NullableQueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
                   <exclude>io.skis.query.SelectFromStep#from(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>

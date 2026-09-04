@@ -23,10 +23,6 @@ final class EntityPlanSet<E> {
   private final @Nullable PropertyMeta<E, ?> findByIdProperty;
   private final @Nullable CompiledQueryPlan<E, Object> findByIdPlan;
 
-  EntityPlanSet(EntityRuntimeModel<E> model, QueryPlanCompiler compiler) {
-    this(model, compiler, new ProjectionPlanCache(ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE));
-  }
-
   EntityPlanSet(
       EntityRuntimeModel<E> model,
       QueryPlanCompiler compiler,

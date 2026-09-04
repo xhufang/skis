@@ -29,14 +29,6 @@ final class ProjectionPlanCache {
   private long evictions;
   private long invalidations;
 
-  ProjectionPlanCache(int maximumSize) {
-    this(maximumSize, DEFAULT_EXPIRE_AFTER_ACCESS, System::nanoTime);
-  }
-
-  ProjectionPlanCache(int maximumSize, Duration expireAfterAccess) {
-    this(maximumSize, expireAfterAccess, System::nanoTime);
-  }
-
   ProjectionPlanCache(int maximumSize, Duration expireAfterAccess, LongSupplier ticker) {
     if (maximumSize < 1) {
       throw new IllegalArgumentException("projection plan cache maximumSize must be positive");
@@ -66,11 +58,6 @@ final class ProjectionPlanCache {
     plans.put(key, new CacheEntry(compiled, ticker.getAsLong()));
     evictEldestIfNecessary();
     return compiled;
-  }
-
-  synchronized int size() {
-    evictExpired(ticker.getAsLong());
-    return plans.size();
   }
 
   synchronized QueryPlanCacheStatistics statistics() {

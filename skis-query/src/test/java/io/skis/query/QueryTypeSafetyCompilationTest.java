@@ -24,7 +24,8 @@ class QueryTypeSafetyCompilationTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void keepsTheSelectedColumnEntityTypeThroughTheFromStage() throws Exception {
+  void decouplesNonNullSelectionsButKeepsNullableScalarsOnTheirOwningTableUntilT09()
+      throws Exception {
     String valid =
         """
         package samples;
@@ -36,28 +37,60 @@ class QueryTypeSafetyCompilationTest {
           }
         }
         """;
-    String invalid =
+    String joinedTarget =
         """
         package samples;
         import io.skis.query.*;
-        final class InvalidQuery {
+        final class JoinedTargetQuery {
           static final class Pet {}
           static final class Owner {}
           static void query(
               QueryOperations operations,
-              NonNullQueryColumn<Pet, String> column,
-              QueryTable<Owner> table) {
-            operations.select(column).from(table);
+              NonNullQueryColumn<Owner, String> ownerName,
+              NullableQueryColumn<Owner, String> ownerNickname,
+              QueryTable<Pet> pet,
+              QueryTable<Owner> owner,
+              QueryCondition on) {
+            SelectQuery<Pet, String> query = operations.select(ownerName).from(pet);
+            NullableScalarQuery<Owner, String> nullable =
+                operations.select(ownerNickname).from(owner);
+            query.join(owner).on(on);
+            nullable.where(ownerNickname.isNull());
+          }
+        }
+        """;
+    String prematureNullableFromDecoupling =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class PrematureNullableFromDecoupling {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              QueryOperations operations,
+              NullableQueryColumn<Owner, String> ownerNickname,
+              QueryTable<Pet> pet) {
+            operations.select(ownerNickname).from(pet);
           }
         }
         """;
 
     assertTrue(compile("samples.ValidQuery", valid, temporaryDirectory.resolve("valid")));
-    assertFalse(compile("samples.InvalidQuery", invalid, temporaryDirectory.resolve("invalid")));
+    assertTrue(
+        compile(
+            "samples.JoinedTargetQuery",
+            joinedTarget,
+            temporaryDirectory.resolve("joined-target")));
+    assertFalse(
+        compile(
+            "samples.PrematureNullableFromDecoupling",
+            prematureNullableFromDecoupling,
+            temporaryDirectory.resolve("premature-nullable-from-decoupling")));
   }
 
   @Test
-  void rejectsAProjectionPredicateFromAnotherEntityAtCompilationTime() throws Exception {
+  void routesAProjectionPredicateFromAnotherEntityThroughTheWideConditionOverload()
+      throws Exception {
     String valid =
         """
         package samples;
@@ -93,7 +126,7 @@ class QueryTypeSafetyCompilationTest {
     assertTrue(
         compile(
             "samples.ValidProjectionQuery", valid, temporaryDirectory.resolve("valid-projection")));
-    assertFalse(
+    assertTrue(
         compile(
             "samples.InvalidProjectionQuery",
             invalid,
@@ -101,7 +134,7 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
-  void keepsEntityTypeAcrossQueryLevelAndOrChains() throws Exception {
+  void keepsNarrowPredicatesAndAllowsWideConditionChains() throws Exception {
     String valid =
         """
         package samples;
@@ -115,11 +148,11 @@ class QueryTypeSafetyCompilationTest {
           }
         }
         """;
-    String invalid =
+    String wide =
         """
         package samples;
         import io.skis.query.*;
-        final class InvalidChain {
+        final class WideChain {
           static final class Pet {}
           static final class Owner {}
           static void query(
@@ -132,8 +165,87 @@ class QueryTypeSafetyCompilationTest {
         """;
 
     assertTrue(compile("samples.ValidChain", valid, temporaryDirectory.resolve("valid-chain")));
+    assertTrue(
+        compile("samples.WideChain", wide, temporaryDirectory.resolve("wide-chain")));
+  }
+
+  @Test
+  void requiresOnBeforeAJoinCanReachTerminalOperations() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidJoin {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              SelectQuery<Pet, Pet> query,
+              QueryTable<Owner> owner,
+              QueryCondition condition) {
+            query.join(owner).on(condition).fetchList();
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class IncompleteJoin {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(SelectQuery<Pet, Pet> query, QueryTable<Owner> owner) {
+            query.join(owner).fetchList();
+          }
+        }
+        """;
+
+    assertTrue(compile("samples.ValidJoin", valid, temporaryDirectory.resolve("valid-join")));
     assertFalse(
-        compile("samples.InvalidChain", invalid, temporaryDirectory.resolve("invalid-chain")));
+        compile(
+            "samples.IncompleteJoin", invalid, temporaryDirectory.resolve("incomplete-join")));
+  }
+
+  @Test
+  void checksColumnComparisonJavaTypesAtCompilationTime() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidColumnComparison {
+          static final class Pet {}
+          static final class Owner {}
+          static QueryCondition condition(
+              NonNullQueryColumn<Pet, Long> ownerId,
+              NonNullQueryColumn<Owner, Long> id) {
+            return ownerId.eq(id).and(ownerId.ge(id));
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidColumnComparison {
+          static final class Pet {}
+          static final class Owner {}
+          static QueryCondition condition(
+              NonNullQueryColumn<Pet, Long> ownerId,
+              NonNullQueryColumn<Owner, String> id) {
+            return ownerId.eq(id);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidColumnComparison",
+            valid,
+            temporaryDirectory.resolve("valid-column-comparison")));
+    assertFalse(
+        compile(
+            "samples.InvalidColumnComparison",
+            invalid,
+            temporaryDirectory.resolve("invalid-column-comparison")));
   }
 
   @Test

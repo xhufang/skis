@@ -28,8 +28,11 @@ public interface QueryOperations {
     return findById(entity, id);
   }
 
-  /** Starts an immutable full-entity single-table query. */
+  /** Starts an immutable full-entity query rooted at the supplied table. */
   <E> SelectQuery<E, E> selectFrom(QueryTable<E> table);
+
+  /** Selects one complete entity table before choosing an independent of root. */
+  <R> SelectFromStep<R, R> select(QueryTable<R> table);
 
   /** Starts a non-null scalar projection without constructing an intermediate tuple. */
   <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column);

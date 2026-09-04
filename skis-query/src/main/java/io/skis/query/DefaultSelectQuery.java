@@ -7,6 +7,7 @@ import io.skis.jdbc.JdbcPageResult;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
+import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
@@ -32,8 +33,9 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final DefaultQueryOperations operations;
   private final EntityPlanSet<E> plans;
   private final QueryTable<E> table;
-  private final @Nullable Projection<E, R> projection;
-  private final @Nullable QueryPredicate<E> predicate;
+  private final SelectedResult<?, R> selected;
+  private final List<QueryJoin> joins;
+  private final @Nullable QueryCondition predicate;
   private final ExecutionContext executionContext;
   private final List<SortSpecification<E>> orderBy;
   private final boolean distinct;
@@ -43,22 +45,17 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final LocalPlanCache<OrderedRow<R>> orderedPlansByPagination = new LocalPlanCache<>();
   private final AtomicReference<@Nullable CachedPlan<Long>> countPlan = new AtomicReference<>();
 
-  static <E> DefaultSelectQuery<E, E> entity(
-      DefaultQueryOperations operations, EntityPlanSet<E> plans, QueryTable<E> table) {
-    return new DefaultSelectQuery<>(
-        operations, plans, table, null, null, ExecutionContext.EMPTY, List.of(), false);
-  }
-
-  static <E, R> DefaultSelectQuery<E, R> projection(
+  static <E, R> DefaultSelectQuery<E, R> create(
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      Projection<E, R> projection) {
+      SelectedResult<?, R> selected) {
     return new DefaultSelectQuery<>(
         operations,
         plans,
         table,
-        Objects.requireNonNull(projection, "projection"),
+        selected,
+        List.of(),
         null,
         ExecutionContext.EMPTY,
         List.of(),
@@ -69,15 +66,17 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      @Nullable Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate,
+      SelectedResult<?, R> selected,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition predicate,
       ExecutionContext executionContext,
       List<SortSpecification<E>> orderBy,
       boolean distinct) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
     this.table = Objects.requireNonNull(table, "table");
-    this.projection = projection;
+    this.selected = Objects.requireNonNull(selected, "selected");
+    this.joins = List.copyOf(joins);
     this.predicate = predicate;
     this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
     this.orderBy = List.copyOf(orderBy);
@@ -86,6 +85,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   @Override
   public DefaultSelectQuery<E, R> where(QueryPredicate<E> newPredicate) {
+    return where((QueryCondition) newPredicate);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> where(QueryCondition newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate != null) {
       throw new QueryValidationException("where(...) may only be called once per query");
@@ -95,12 +99,52 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   @Override
   public DefaultSelectQuery<E, R> and(QueryPredicate<E> newPredicate) {
+    return chainNarrow(newPredicate, true);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> and(QueryCondition newPredicate) {
     return chain(newPredicate, true);
   }
 
   @Override
   public DefaultSelectQuery<E, R> or(QueryPredicate<E> newPredicate) {
+    return chainNarrow(newPredicate, false);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> or(QueryCondition newPredicate) {
     return chain(newPredicate, false);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> join(QueryTable<J> joinedTable) {
+    return innerJoin(joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> innerJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.INNER, joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> leftJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.LEFT, joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> rightJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.RIGHT, joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> fullJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.FULL, joinedTable);
+  }
+
+  @Override
+  public <J> DefaultSelectQuery<E, R> crossJoin(QueryTable<J> joinedTable) {
+    return appendJoin(JoinType.CROSS, Objects.requireNonNull(joinedTable, "table"), null);
   }
 
   @Override
@@ -162,7 +206,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   @Override
   public Optional<R> fetchOne() {
     if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return operations.fetchOne(fastPlan(), plans.argument(predicate), executionContext);
+      return operations.fetchOne(fastPlan(), fastArgument(), executionContext);
     }
     QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
     return operations.fetchOne(query.plan(), query.argument(), executionContext);
@@ -185,7 +229,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private List<@Nullable R> fetchListResult() {
     if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return operations.fetchList(fastPlan(), plans.argument(predicate), executionContext);
+      return operations.fetchList(fastPlan(), fastArgument(), executionContext);
     }
     QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
     return operations.fetchList(query.plan(), query.argument(), executionContext);
@@ -212,8 +256,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return fetchPageResult(request, countCompilation());
   }
 
-  Page<@Nullable R> fetchNullablePage(
-      PageRequest request, CountQuery explicitCountQuery) {
+  Page<@Nullable R> fetchNullablePage(PageRequest request, CountQuery explicitCountQuery) {
     validatePageRequest(request);
     return fetchPageResult(
         request,
@@ -281,12 +324,18 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return plansByPagination.getOrCompile(
         pagination,
         () ->
-            projection == null
-                ? entityCompilation(pagination)
-                : plans
-                    .compiler()
-                    .compileProjection(
-                        plans.model(), table, projection, predicate, orderBy, distinct, pagination),
+            plans
+                .compiler()
+                .compileSelection(
+                    plans.model(),
+                    table,
+                    selection(),
+                    joins,
+                    predicate,
+                    orderBy,
+                    distinct,
+                    pagination,
+                    List.of()),
         paginationArgument(pagination));
   }
 
@@ -299,80 +348,66 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return orderedPlansByPagination.getOrCompile(
         pagination,
         () ->
-            projection == null
-                ? orderedEntityCompilation(pagination)
-                : plans
-                    .compiler()
-                    .compileOrderedProjection(
-                        plans.model(), table, projection, predicate, orderBy, distinct, pagination),
+            plans
+                .compiler()
+                .compileOrdered(
+                    plans.model(),
+                    table,
+                    selection(),
+                    joins,
+                    predicate,
+                    orderBy,
+                    distinct,
+                    pagination),
         paginationArgument(pagination));
   }
 
   private boolean isFastPathShape(QueryPagination pagination) {
-    return pagination == QueryPagination.None.INSTANCE && orderBy.isEmpty() && !distinct;
+    return pagination == QueryPagination.None.INSTANCE
+        && joins.isEmpty()
+        && selected.belongsTo(table)
+        && (predicate == null || predicate instanceof QueryPredicate<?>)
+        && orderBy.isEmpty()
+        && !distinct;
   }
 
   private QueryCompilation<R> unpaginatedCompilation() {
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
     return new QueryCompilation<>(
         fastPlan(),
-        plans.argument(predicate),
+        fastArgument(),
         new SelectStatement(
-            selection().expressions(),
-            table,
-            predicate == null ? null : predicate.compile().ast()));
+            selection().expressions(), structure.fromClause(), structure.where()));
   }
 
-  @SuppressWarnings("unchecked")
   private CompiledQueryPlan<R, Object> fastPlan() {
     CompiledQueryPlan<R, Object> existing = fastPlan.get();
     if (existing != null) {
       return existing;
     }
-    CompiledQueryPlan<R, Object> compiled =
-        projection == null
-            ? (CompiledQueryPlan<R, Object>) plans.selectPlan(table, predicate)
-            : plans.projectionPlan(table, projection, predicate);
+    CompiledQueryPlan<R, Object> compiled = selected.fastPlan(fastPredicate());
     CompiledQueryPlan<R, Object> published = fastPlan.compareAndExchange(null, compiled);
     return published == null ? compiled : published;
-  }
-
-  @SuppressWarnings("unchecked")
-  private QueryCompilation<R> entityCompilation(QueryPagination pagination) {
-    return (QueryCompilation<R>)
-        plans
-            .compiler()
-            .compileEntity(plans.model(), table, predicate, orderBy, distinct, pagination);
-  }
-
-  @SuppressWarnings("unchecked")
-  private QueryCompilation<OrderedRow<R>> orderedEntityCompilation(QueryPagination pagination) {
-    return (QueryCompilation<OrderedRow<R>>)
-        (QueryCompilation<?>)
-            plans
-                .compiler()
-                .compileOrderedEntity(
-                    plans.model(), table, predicate, orderBy, distinct, pagination);
   }
 
   QueryCompilation<Long> countCompilation() {
     CachedPlan<Long> existing = countPlan.get();
     if (existing != null) {
-      return new QueryCompilation<>(existing.plan(), plans.argument(predicate), existing.ast());
+      return new QueryCompilation<>(existing.plan(), conditionArgument(), existing.ast());
     }
     QueryCompilation<Long> compiled =
-        plans.compiler().compileCount(plans.model(), table, selection(), predicate, distinct);
+        plans
+            .compiler()
+            .compileCount(plans.model(), table, selection(), joins, predicate, distinct);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     return published == null
         ? compiled
-        : new QueryCompilation<>(published.plan(), plans.argument(predicate), published.ast());
+        : new QueryCompilation<>(published.plan(), conditionArgument(), published.ast());
   }
 
   private Object paginationArgument(QueryPagination pagination) {
-    List<Object> arguments = new ArrayList<>();
-    if (predicate != null) {
-      arguments.addAll(predicate.compile().arguments());
-    }
+    List<Object> arguments = new ArrayList<>(conditionArguments());
     switch (pagination) {
       case QueryPagination.None ignored -> {}
       case QueryPagination.LimitOnly limit -> arguments.add(limit.limit());
@@ -388,16 +423,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
-  private QueryPlanCompiler.Selection<E, R> selection() {
-    if (projection != null) {
-      return plans.compiler().projectionSelection(plans.model(), table, projection);
-    }
-    @SuppressWarnings("unchecked")
-    QueryPlanCompiler.Selection<E, R> entity =
-        (QueryPlanCompiler.Selection<E, R>)
-            (QueryPlanCompiler.Selection<?, ?>)
-                plans.compiler().entitySelection(plans.model(), table);
-    return entity;
+  private QueryPlanCompiler.Selection<R> selection() {
+    return selected.selection();
   }
 
   private QueryCompilation<Long> requireExplicitCount(CountQuery explicitCountQuery) {
@@ -592,14 +619,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     MessageDigest digest = sha256();
     updateDigest(digest, structure.plan().dialectId());
     updateDigest(digest, structure.plan().sql());
-    updateDigest(
-        digest,
-        projection == null
-            ? "entity:" + plans.entity().javaType().getName()
-            : "projection:"
-                + projection.resultType().getName()
-                + ':'
-                + projection.mapping().mappingType().getName());
+    updateDigest(digest, selected.structuralIdentity());
     structure
         .plan()
         .renderedSql()
@@ -630,7 +650,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private String parameterDigest() {
     MessageDigest digest = sha256();
-    List<Object> arguments = predicate == null ? List.of() : predicate.compile().arguments();
+    List<Object> arguments = conditionArguments();
     for (Object argument : arguments) {
       updateDigest(digest, argument.getClass().getName());
       updateDigest(digest, deepValue(argument));
@@ -661,7 +681,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         : String.valueOf(value);
   }
 
-  private DefaultSelectQuery<E, R> chain(QueryPredicate<E> newPredicate, boolean conjunction) {
+  private DefaultSelectQuery<E, R> chain(QueryCondition newPredicate, boolean conjunction) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate == null) {
       throw new QueryValidationException(
@@ -674,13 +694,76 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         distinct);
   }
 
+  private DefaultSelectQuery<E, R> chainNarrow(
+      QueryPredicate<E> newPredicate, boolean conjunction) {
+    Objects.requireNonNull(newPredicate, "predicate");
+    if (predicate == null) {
+      throw new QueryValidationException(
+          (conjunction ? "and" : "or") + "(...) requires an existing where predicate");
+    }
+    QueryCondition combined =
+        predicate instanceof QueryPredicate<?> existing
+            ? combineNarrow(existing, newPredicate, conjunction)
+            : (conjunction ? predicate.and(newPredicate) : predicate.or(newPredicate));
+    return copy(combined, executionContext, orderBy, distinct);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <E> QueryPredicate<E> combineNarrow(
+      QueryPredicate<?> existing, QueryPredicate<E> added, boolean conjunction) {
+    QueryPredicate<E> typed = (QueryPredicate<E>) existing;
+    return conjunction ? typed.and(added) : typed.or(added);
+  }
+
   private DefaultSelectQuery<E, R> copy(
-      @Nullable QueryPredicate<E> newPredicate,
+      @Nullable QueryCondition newPredicate,
       ExecutionContext context,
       List<SortSpecification<E>> newOrderBy,
       boolean newDistinct) {
     return new DefaultSelectQuery<>(
-        operations, plans, table, projection, newPredicate, context, newOrderBy, newDistinct);
+        operations, plans, table, selected, joins, newPredicate, context, newOrderBy, newDistinct);
+  }
+
+  private <J> JoinOnStep<E, R, J> joinOn(JoinType type, QueryTable<J> joinedTable) {
+    return new DefaultJoinOnStep<>(this, type, Objects.requireNonNull(joinedTable, "table"));
+  }
+
+  DefaultSelectQuery<E, R> appendJoin(
+      JoinType type, QueryTable<?> joinedTable, @Nullable QueryCondition on) {
+    List<QueryJoin> appended = new ArrayList<>(joins.size() + 1);
+    appended.addAll(joins);
+    appended.add(new QueryJoin(type, joinedTable, on));
+    return new DefaultSelectQuery<>(
+        operations,
+        plans,
+        table,
+        selected,
+        appended,
+        predicate,
+        executionContext,
+        orderBy,
+        distinct);
+  }
+
+  private List<Object> conditionArguments() {
+    if (joins.isEmpty() && predicate == null) {
+      return List.of();
+    }
+    return QueryStructureCompiler.compile(table, joins, predicate).arguments();
+  }
+
+  private Object conditionArgument() {
+    List<Object> arguments = conditionArguments();
+    return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
+  }
+
+  private Object fastArgument() {
+    return plans.argument(fastPredicate());
+  }
+
+  @SuppressWarnings("unchecked")
+  private @Nullable QueryPredicate<E> fastPredicate() {
+    return predicate == null ? null : (QueryPredicate<E>) predicate;
   }
 
   private static int sizePlusOne(int pageSize) {

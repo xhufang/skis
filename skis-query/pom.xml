@@ -9,7 +9,7 @@
   </parent>
   <artifactId>skis-query</artifactId>
   <name>skis-query</name>
-  <description>Typed single-table entity, scalar, and generated projection queries</description>
+  <description>Typed entity, scalar, generated projection, and explicit Join queries</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>

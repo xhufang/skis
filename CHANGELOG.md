@@ -6,6 +6,13 @@
 
 ### Added
 
+- 新增 `join/innerJoin/leftJoin/rightJoin/fullJoin/crossJoin` 查询 DSL；非 CROSS Join 通过不暴露终止操作的
+  `JoinOnStep` 强制完成 `.on(...)`，Join 链保持不可变并复用既有 Join AST、作用域校验和方言能力预检。
+- 新增 sealed `QueryCondition` 多表条件抽象以及六种强类型列间比较；列比较不创建参数槽，Java/SQL 类型兼容性
+  继续由集中规则验证，ON 与 WHERE 的普通参数按语句顺序统一分配稠密 ordinal。
+- 新增 `select(QueryTable<R>)` 完整实体选择入口；非空标量和完整实体的 FROM 阶段允许选择目标与根表解耦，
+  最终表可见性延迟到完整 Join 建立后的查询编译阶段验证。物理可空标量在 T09 统一 nullable 查询合同前继续要求
+  选择目标与 FROM 表一致。
 - 新增查询块局部的 `FromClause`、稳定表 occurrence、五类 `JoinClause` 与引用身份作用域校验；
   SELECT 和独立 count 共享相同的有序 FROM/Join 结构，重复别名、重复无别名表及前向 ON 引用在渲染前失败。
 - 新增五类独立 Join 方言能力和统一映射；PostgreSQL 渲染 INNER/LEFT/RIGHT/FULL/CROSS JOIN，H2
@@ -46,7 +53,10 @@
 
 ### Changed
 
-- Reactor 进入 `0.2.3-SNAPSHOT`。删除 `EntitySelectQuery`/`ProjectedSelectQuery`，三个查询入口统一返回
+- `SelectFromStep#from` 改为独立根实体泛型方法；`SelectQuery` 和当前 nullable scalar 查询接口新增宽
+  `QueryCondition` 条件重载，`SelectQuery` 新增 Join 抽象方法。这些是 `0.2.0 → 0.3.0` 已批准的源码实现契约
+  变化，第三方查询门面实现需要迁移。`NullableSelectFromStep#from` 的解耦与接口迁移保留到 T09 一次完成。
+- Reactor 进入 `0.2.4-SNAPSHOT`。删除 `EntitySelectQuery`/`ProjectedSelectQuery`，三个查询入口统一返回
   `SelectQuery` 或 `NullableScalarQuery`；这是已批准的内部开发线破坏性调整。
 - `fetchFirst`、offset/page/keyset 限制进入 SELECT AST；Page 固定执行内容与 count，Slice 明确不执行 count。
 - 相同不可变查询的不同 offset/limit/keyset 值复用值无关计划；实际页位置与锚点只进入绑定参数，
