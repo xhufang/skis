@@ -137,13 +137,13 @@ public final class JdbcExecutor {
     return row.present() ? Optional.of(Objects.requireNonNull(row.value())) : Optional.empty();
   }
 
-  /** Executes one nullable scalar row while preserving the distinction between no row and NULL. */
+  /** Executes one nullable result row while preserving the distinction between no row and NULL. */
   public <R, P> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     return fetchSingleRow(plan, parameters, executionContext, true, true);
   }
 
-  /** Executes one SQL-limited nullable scalar row without cardinality checking. */
+  /** Executes one SQL-limited nullable result row without cardinality checking. */
   public <R, P> JdbcRow<R> fetchNullableFirst(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     return fetchSingleRow(plan, parameters, executionContext, true, false);

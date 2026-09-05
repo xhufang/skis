@@ -1,7 +1,9 @@
 package io.skis.mapping;
 
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -79,6 +81,57 @@ public final class EntityRuntimeModel<E> {
   public RowDecoder<E> rowDecoder(RowLayout layout) {
     return Objects.requireNonNull(
         rowDecoderFactory.create(Objects.requireNonNull(layout, "layout")), "row decoder");
+  }
+
+  /**
+   * Creates a decoder for an entity selected from a null-extended outer-join occurrence.
+   *
+   * <p>All primary-key columns being {@code NULL} means that the joined entity is absent. A fully
+   * present key delegates to the generated entity decoder, while a partially {@code NULL} composite
+   * key is reported as a mapping-contract failure before entity construction.
+   */
+  public RowDecoder<E> nullableRowDecoder(RowLayout layout) {
+    Objects.requireNonNull(layout, "layout");
+    PrimaryKeyMeta<E> primaryKey =
+        entity
+            .primaryKey()
+            .orElseThrow(
+                () ->
+                    new IllegalArgumentException(
+                        "nullable entity decoding requires primary-key metadata for entity '"
+                            + entity.entityName()
+                            + "'"));
+    RowDecoder<E> entityDecoder = rowDecoder(layout);
+    int[] keyIndexes = new int[primaryKey.properties().size()];
+    JdbcTypeCodec<?>[] keyCodecs = new JdbcTypeCodec<?>[primaryKey.properties().size()];
+    for (int index = 0; index < primaryKey.properties().size(); index++) {
+      PropertyMeta<E, ?> property = primaryKey.properties().get(index);
+      keyIndexes[index] = layout.requireIndex(property.ordinal());
+      keyCodecs[index] = properties.get(property.ordinal()).codec();
+    }
+    return (resultSet, context) -> {
+      int nullKeys = 0;
+      for (int index = 0; index < keyIndexes.length; index++) {
+        if (keyCodecs[index].read(resultSet, keyIndexes[index], context) == null) {
+          nullKeys++;
+        }
+      }
+      if (nullKeys == keyIndexes.length) {
+        return null;
+      }
+      if (nullKeys != 0) {
+        throw new SQLException(
+            "nullable entity '"
+                + entity.entityName()
+                + "' has a partially null primary key in the result row");
+      }
+      E decoded = entityDecoder.decode(resultSet, context);
+      if (decoded == null) {
+        throw new SQLException(
+            "generated decoder returned null for present entity '" + entity.entityName() + "'");
+      }
+      return decoded;
+    };
   }
 
   /** Returns the shared generated decoder for every persistent property in ordinal order. */

@@ -491,10 +491,11 @@
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NonNullQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NullableQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.NonNullQueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
-                  <exclude>io.skis.query.NullableScalarQuery#where(io.skis.query.QueryCondition)</exclude>
-                  <exclude>io.skis.query.NullableScalarQuery#and(io.skis.query.QueryCondition)</exclude>
-                  <exclude>io.skis.query.NullableScalarQuery#or(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.NullableScalarQuery</exclude>
+                  <exclude>io.skis.query.NullableSelectFromStep#from(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.SelectFromStep</exclude>
                   <exclude>io.skis.query.SelectQuery#where(io.skis.query.QueryCondition)</exclude>
                   <exclude>io.skis.query.SelectQuery#and(io.skis.query.QueryCondition)</exclude>

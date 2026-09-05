@@ -1,8 +1,8 @@
 package io.skis.query;
 
-/** FROM stage for a selected nullable scalar. */
-public interface NullableSelectFromStep<E, V> {
+/** FROM stage for a selected nullable scalar or complete entity. */
+public interface NullableSelectFromStep<S, R> {
 
-  /** Selects the table expression that owns the nullable scalar. */
-  NullableScalarQuery<E, V> from(QueryTable<E> table);
+  /** Chooses an independent root; the selected target must enter the final join scope. */
+  <F> NullableSelectQuery<F, R> from(QueryTable<F> table);
 }

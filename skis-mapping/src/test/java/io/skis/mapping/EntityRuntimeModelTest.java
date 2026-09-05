@@ -2,6 +2,7 @@ package io.skis.mapping;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -12,7 +13,10 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import java.lang.reflect.Proxy;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
@@ -85,6 +89,76 @@ class EntityRuntimeModelTest {
                     new PropertyRuntime<>(NAME, JdbcCodecs.STRING))));
   }
 
+  @Test
+  void nullableEntityDecoderChecksPrimaryKeyBeforeConstructingTheEntity() throws Exception {
+    AtomicInteger decodedRows = new AtomicInteger();
+    EntityRuntimeModel<Pet> model =
+        new EntityRuntimeModel<>(
+            PET,
+            layout ->
+                (resultSet, context) -> {
+                  decodedRows.incrementAndGet();
+                  return new Pet(7L, "Mimi");
+                },
+            List.of(
+                new PropertyRuntime<>(ID, JdbcCodecs.LONG),
+                new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
+    RowDecoder<Pet> decoder = model.nullableRowDecoder(RowLayout.contiguous(2, 1));
+
+    assertNull(decoder.decode(resultSet(Map.of(2, "orphan")), RowReadContext.EMPTY));
+    assertEquals(0, decodedRows.get());
+    assertEquals(
+        new Pet(7L, "Mimi"),
+        decoder.decode(resultSet(Map.of(1, 7L, 2, "Mimi")), RowReadContext.EMPTY));
+    assertEquals(1, decodedRows.get());
+  }
+
+  @Test
+  void nullableEntityDecoderRejectsPartiallyNullCompositePrimaryKey() {
+    PropertyMeta<CompositePet, Long> tenantId =
+        new PropertyMeta<>(0, "tenantId", Long.class, ColumnMeta.of("tenant_id", false));
+    PropertyMeta<CompositePet, Long> petId =
+        new PropertyMeta<>(1, "petId", Long.class, ColumnMeta.of("pet_id", false));
+    EntityMeta<CompositePet> entity =
+        EntityMeta.simple(
+            CompositePet.class,
+            TableMeta.of("composite_pet"),
+            List.of(tenantId, petId),
+            new PrimaryKeyMeta<>(List.of(tenantId, petId)),
+            false);
+    EntityRuntimeModel<CompositePet> model =
+        new EntityRuntimeModel<>(
+            entity,
+            layout -> (resultSet, context) -> new CompositePet(1L, 2L),
+            List.of(
+                new PropertyRuntime<>(tenantId, JdbcCodecs.LONG),
+                new PropertyRuntime<>(petId, JdbcCodecs.LONG)));
+    RowDecoder<CompositePet> decoder =
+        model.nullableRowDecoder(RowLayout.contiguous(2, 1));
+
+    assertThrows(
+        SQLException.class,
+        () -> decoder.decode(resultSet(Map.of(1, 1L)), RowReadContext.EMPTY));
+  }
+
+  @Test
+  void nullableEntityDecoderRequiresPrimaryKeyMetadata() {
+    EntityMeta<Pet> readOnlyWithoutKey =
+        EntityMeta.simple(
+            Pet.class, TableMeta.of("pet_view"), List.of(ID, NAME), null, true);
+    EntityRuntimeModel<Pet> model =
+        new EntityRuntimeModel<>(
+            readOnlyWithoutKey,
+            layout -> (resultSet, context) -> new Pet(7L, "Mimi"),
+            List.of(
+                new PropertyRuntime<>(ID, JdbcCodecs.LONG),
+                new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> model.nullableRowDecoder(RowLayout.contiguous(2, 1)));
+  }
+
   private static EntityRuntimeModel<Pet> model() {
     return new EntityRuntimeModel<>(
         PET,
@@ -92,6 +166,26 @@ class EntityRuntimeModelTest {
         List.of(
             new PropertyRuntime<>(ID, JdbcCodecs.LONG),
             new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
+  }
+
+  private static ResultSet resultSet(Map<Integer, Object> values) {
+    int[] lastIndex = new int[1];
+    return (ResultSet)
+        Proxy.newProxyInstance(
+            ResultSet.class.getClassLoader(),
+            new Class<?>[] {ResultSet.class},
+            (ignored, method, arguments) -> {
+              if (method.getName().equals("wasNull")) {
+                return values.get(lastIndex[0]) == null;
+              }
+              if (method.getName().equals("getLong")) {
+                int index = (Integer) arguments[0];
+                lastIndex[0] = index;
+                Object value = values.get(index);
+                return value == null ? 0L : ((Number) value).longValue();
+              }
+              return defaultValue(method.getReturnType());
+            });
   }
 
   private static Object defaultValue(Class<?> type) {
@@ -126,4 +220,6 @@ class EntityRuntimeModelTest {
   }
 
   private record Pet(Long id, String name) {}
+
+  private record CompositePet(Long tenantId, Long petId) {}
 }

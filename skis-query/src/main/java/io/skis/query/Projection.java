@@ -114,7 +114,7 @@ public final class Projection<E, R> {
         false);
   }
 
-  static <E, V> Projection<E, V> nullableScalar(NullableQueryColumn<E, V> column) {
+  static <E, V> Projection<E, V> nullableScalar(QueryColumn<E, V> column) {
     Objects.requireNonNull(column, "column");
     return new Projection<E, V>(
         column.javaType(),
@@ -165,7 +165,9 @@ public final class Projection<E, R> {
       if (runtime.property() != property) {
         throw foreignProperty(model, property);
       }
-      values.add(projectionValue(runtime.codec(), index + 1, property.column().nullable()));
+      values.add(
+          projectionValue(
+              runtime.codec(), index + 1, property.column().nullable() || nullableResult));
     }
     Readers<E> readers = new CompiledReaders<>(properties, List.copyOf(values));
     RowDecoder<R> decoder =

@@ -13,6 +13,7 @@ import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -262,6 +263,73 @@ class JoinAstTest {
     assertSame(from, statement.fromClause());
     assertSame(from, count.fromClause());
     assertEquals(statement.joins(), count.joins());
+  }
+
+  @Test
+  void resolvesOuterJoinNullabilityPerOccurrenceWithoutMutatingColumns() {
+    PetTable root = new PetTable();
+    PetTable leftTarget = root.as("left_target");
+    FromClause left =
+        new FromClause(
+            root,
+            List.of(
+                new JoinClause(
+                    JoinType.LEFT, leftTarget, root.id().eq(leftTarget.id()))));
+
+    assertEquals(Nullability.NON_NULL, leftTarget.id().nullability());
+    assertEquals(Nullability.NON_NULL, left.effectiveNullability(root.id()));
+    assertEquals(Nullability.NULLABLE, left.effectiveNullability(leftTarget.id()));
+    assertEquals(
+        Nullability.NULLABLE,
+        left.effectiveNullability(root.id().eq(leftTarget.id())));
+    assertEquals(
+        Nullability.NON_NULL,
+        left.effectiveNullability(
+            new CoalesceExpression<>(List.of(leftTarget.id(), root.id()))));
+    assertEquals(
+        Nullability.NON_NULL,
+        left.effectiveNullability(leftTarget.id().isNull()));
+    assertFalse(left.isNullExtended(root));
+    assertTrue(left.isNullExtended(leftTarget));
+
+    PetTable rightTarget = root.as("right_target");
+    FromClause right =
+        new FromClause(
+            root,
+            List.of(
+                new JoinClause(
+                    JoinType.RIGHT, rightTarget, root.id().eq(rightTarget.id()))));
+    assertEquals(Nullability.NULLABLE, right.effectiveNullability(root.id()));
+    assertEquals(Nullability.NON_NULL, right.effectiveNullability(rightTarget.id()));
+
+    PetTable fullTarget = root.as("full_target");
+    FromClause full =
+        new FromClause(
+            root,
+            List.of(
+                new JoinClause(
+                    JoinType.FULL, fullTarget, root.id().eq(fullTarget.id()))));
+    assertEquals(Nullability.NULLABLE, full.effectiveNullability(root.id()));
+    assertEquals(Nullability.NULLABLE, full.effectiveNullability(fullTarget.id()));
+  }
+
+  @Test
+  void appliesOuterJoinNullExtensionOnlyAfterTheCurrentOnStage() {
+    PetTable root = new PetTable();
+    PetTable right = root.as("right_side");
+    IdentityHashMap<TableExpression<?>, Boolean> state = new IdentityHashMap<>();
+    state.put(root, Boolean.FALSE);
+    state.put(right, Boolean.FALSE);
+
+    assertEquals(
+        Nullability.NON_NULL,
+        EffectiveNullabilityResolver.resolve(right.id(), state));
+
+    EffectiveNullabilityResolver.applyJoin(JoinType.LEFT, right, state);
+
+    assertEquals(
+        Nullability.NULLABLE,
+        EffectiveNullabilityResolver.resolve(right.id(), state));
   }
 
   private record Pet(Long id, String name) {}

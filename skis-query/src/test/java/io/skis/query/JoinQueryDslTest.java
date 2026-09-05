@@ -2,6 +2,8 @@ package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,6 +22,7 @@ import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcCodecs;
 import io.skis.mapping.JdbcWriteContext;
 import io.skis.mapping.PropertyRuntime;
+import io.skis.mapping.RowReadContext;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
@@ -33,8 +36,10 @@ import io.skis.sql.ast.SqlPredicate;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class JoinQueryDslTest {
@@ -65,8 +70,19 @@ class JoinQueryDslTest {
           new PrimaryKeyMeta<>(List.of(OWNER_ID)),
           false);
 
+  private static final PropertyMeta<ReadOnlyView, Long> VIEW_VALUE =
+      new PropertyMeta<>(0, "value", Long.class, ColumnMeta.of("value", false));
+  private static final EntityMeta<ReadOnlyView> READ_ONLY_VIEW =
+      EntityMeta.simple(
+          ReadOnlyView.class,
+          new TableMeta("", "shelter", "read_only_view"),
+          List.of(VIEW_VALUE),
+          null,
+          true);
+
   private static final PetTable PET_TABLE = new PetTable();
   private static final OwnerTable OWNER_TABLE = new OwnerTable();
+  private static final ReadOnlyViewTable VIEW_TABLE = new ReadOnlyViewTable();
 
   @Test
   void selectsAJoinedEntityFromAnIndependentRootAndKeepsTheOriginalQueryImmutable() {
@@ -108,6 +124,156 @@ class JoinQueryDslTest {
         "SELECT \"owner\".\"id\" FROM \"shelter\".\"pet\" "
             + "INNER JOIN \"shelter\".\"owner\" ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
         compilation.plan().sql());
+  }
+
+  @Test
+  void allowsRequiredEntitiesOnOuterJoinNonNullSidesAndCrossJoins() {
+    DefaultSelectQuery<Pet, Pet> leftRoot =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .leftJoin(OWNER_TABLE)
+                .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+    DefaultSelectQuery<Pet, Owner> rightTarget =
+        (DefaultSelectQuery<Pet, Owner>)
+            operations()
+                .select(OWNER_TABLE)
+                .from(PET_TABLE)
+                .rightJoin(OWNER_TABLE)
+                .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+    DefaultSelectQuery<Pet, Owner> crossTarget =
+        (DefaultSelectQuery<Pet, Owner>)
+            operations().select(OWNER_TABLE).from(PET_TABLE).crossJoin(OWNER_TABLE);
+
+    leftRoot.compilation(QueryPagination.None.INSTANCE);
+    rightTarget.compilation(QueryPagination.None.INSTANCE);
+    crossTarget.compilation(QueryPagination.None.INSTANCE);
+  }
+
+  @Test
+  void rejectsRequiredResultsOnTheFinalNullExtendedSideBeforeJdbc() {
+    SelectQuery<Pet, Owner> requiredOwner =
+        operations()
+            .select(OWNER_TABLE)
+            .from(PET_TABLE)
+            .leftJoin(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+    QueryValidationException ownerFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<Pet, Owner>) requiredOwner)
+                    .compilation(QueryPagination.None.INSTANCE));
+
+    assertTrue(ownerFailure.getMessage().contains("null-extended table occurrence #1"));
+    assertTrue(ownerFailure.getMessage().contains("selectNullable(table)"));
+
+    SelectQuery<Pet, Long> requiredOwnerId =
+        operations()
+            .select(OWNER_TABLE.id())
+            .from(PET_TABLE)
+            .leftJoin(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+    QueryValidationException scalarFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<Pet, Long>) requiredOwnerId)
+                    .compilation(QueryPagination.None.INSTANCE));
+    assertTrue(scalarFailure.getMessage().contains("selectNullable(column)"));
+
+    SelectQuery<Pet, Pet> requiredRoot =
+        operations()
+            .selectFrom(PET_TABLE)
+            .rightJoin(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+    QueryValidationException rootFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<Pet, Pet>) requiredRoot)
+                    .compilation(QueryPagination.None.INSTANCE));
+    assertTrue(rootFailure.getMessage().contains("null-extended table occurrence #0"));
+  }
+
+  @Test
+  void compilesNullableJoinedEntityAndScalarResultsWithTheirSelectedRuntimeModel()
+      throws Exception {
+    QueryPlanCatalog catalog = queryPlanCatalog();
+    QueryCondition on = PET_TABLE.ownerId().eq(OWNER_TABLE.id());
+    QueryCompilation<Owner> ownerCompilation =
+        compileSelection(
+            catalog,
+            PET_TABLE,
+            SelectedResult.nullableEntity(OWNER_TABLE, catalog.require(OWNER)),
+            List.of(new QueryJoin(io.skis.sql.ast.JoinType.LEFT, OWNER_TABLE, on)));
+
+    assertEquals(
+        "SELECT \"owner\".\"id\", \"owner\".\"owner_name\" "
+            + "FROM \"shelter\".\"pet\" LEFT JOIN \"shelter\".\"owner\" "
+            + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
+        ownerCompilation.plan().sql());
+    assertNull(
+        ownerCompilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of()), RowReadContext.EMPTY));
+    assertEquals(
+        new Owner(2L, "Ada"),
+        ownerCompilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of(1, 2L, 2, "Ada")), RowReadContext.EMPTY));
+
+    QueryCompilation<Long> idCompilation =
+        compileSelection(
+            catalog,
+            PET_TABLE,
+            SelectedResult.nullableScalar(
+                OWNER_TABLE,
+                catalog.require(OWNER),
+                Projection.nullableScalar(OWNER_TABLE.id())),
+            List.of(new QueryJoin(io.skis.sql.ast.JoinType.LEFT, OWNER_TABLE, on)));
+    assertNull(
+        idCompilation.plan().rowDecoder().decode(resultSet(Map.of()), RowReadContext.EMPTY));
+    assertEquals(
+        2L,
+        idCompilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of(1, 2L)), RowReadContext.EMPTY));
+  }
+
+  @Test
+  void rejectsNullableEntityWithoutPrimaryKeyDuringQueryCompilation() {
+    CountQuery countQuery =
+        operations().selectNullable(VIEW_TABLE).from(VIEW_TABLE).countQuery();
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> ((DefaultCountQuery) countQuery).compilation());
+
+    assertTrue(failure.getMessage().contains("requires complete non-null primary-key metadata"));
+    assertTrue(failure.getMessage().contains("table occurrence #0"));
+  }
+
+  @Test
+  void keysetUsesOuterJoinEffectiveNullabilityForPhysicalNonNullColumns() {
+    NullableSelectQuery<Pet, Pet> query =
+        operations()
+            .selectNullable(PET_TABLE)
+            .from(PET_TABLE)
+            .rightJoin(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()))
+            .orderBy(PET_TABLE.id().asc());
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> query.fetchSlice(SliceRequest.keysetFirst(10)));
+
+    assertTrue(failure.getMessage().contains("effectively nullable keyset ordering property 'id'"));
   }
 
   @Test
@@ -161,6 +327,52 @@ class JoinQueryDslTest {
     assertEquals(5, nextIndex);
     assertEquals(
         List.of(List.of("setString", 3, "Ada"), List.of("setLong", 4, 10L)), bindings);
+  }
+
+  @Test
+  void resolvesEveryAliasOccurrenceAndKeepsMultiJoinParameterOrder() {
+    OwnerTable reviewer = OWNER_TABLE.as("reviewer");
+    QueryCondition firstOn =
+        PET_TABLE
+            .ownerId()
+            .eq(OWNER_TABLE.id())
+            .and(OWNER_TABLE.name().eq("Ada"));
+    QueryCondition secondOn =
+        OWNER_TABLE.id().eq(reviewer.id()).and(reviewer.name().eq("Grace"));
+    DefaultSelectQuery<Pet, Pet> query =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .join(OWNER_TABLE)
+                .on(firstOn)
+                .join(reviewer)
+                .on(secondOn)
+                .where(PET_TABLE.name().eq("Mimi"));
+
+    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    CompiledQueryStructure structure =
+        QueryStructureCompiler.compile(
+            PET_TABLE,
+            List.of(
+                new QueryJoin(io.skis.sql.ast.JoinType.INNER, OWNER_TABLE, firstOn),
+                new QueryJoin(io.skis.sql.ast.JoinType.INNER, reviewer, secondOn)),
+            PET_TABLE.name().eq("Mimi"));
+    EntityRuntimeRegistry registry =
+        EntityRuntimeRegistry.of(List.of(petModel(), ownerModel(), readOnlyViewModel()));
+    TableRuntimeScope scope = TableRuntimeScope.resolve(registry, structure.fromClause());
+
+    assertEquals(
+        List.of(0, 1, 2),
+        structure.fromClause().occurrences().stream()
+            .map(io.skis.sql.ast.TableOccurrence::occurrenceOrdinal)
+            .toList());
+    assertSame(scope.require(OWNER_TABLE).model(), scope.require(reviewer).model());
+    assertEquals(List.of("Ada", "Grace", "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1, 2),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(slot -> slot.ordinal())
+            .toList());
   }
 
   @Test
@@ -300,9 +512,7 @@ class JoinQueryDslTest {
   }
 
   private static QueryOperations operations() {
-    EntityRuntimeRegistry registry =
-        EntityRuntimeRegistry.of(List.of(petModel(), ownerModel()));
-    return QueryRuntime.compile(registry, TestDialect.INSTANCE)
+    return queryPlanCatalog()
         .bind(
             new JdbcExecutor(
                 new ConnectionProvider() {
@@ -314,6 +524,32 @@ class JoinQueryDslTest {
                   @Override
                   public void release(Connection connection, ExecutionContext context) {}
                 }));
+  }
+
+  private static QueryPlanCatalog queryPlanCatalog() {
+    EntityRuntimeRegistry registry =
+        EntityRuntimeRegistry.of(List.of(petModel(), ownerModel(), readOnlyViewModel()));
+    return QueryRuntime.compile(registry, TestDialect.INSTANCE);
+  }
+
+  private static <E, R> QueryCompilation<R> compileSelection(
+      QueryPlanCatalog catalog,
+      QueryTable<E> root,
+      SelectedResult<?, R> selected,
+      List<QueryJoin> joins) {
+    EntityPlanSet<E> plans = catalog.require(root.entity());
+    return plans
+        .compiler()
+        .compileSelection(
+            plans.model(),
+            root,
+            selected,
+            joins,
+            null,
+            List.of(),
+            false,
+            QueryPagination.None.INSTANCE,
+            List.of());
   }
 
   private static EntityRuntimeModel<Pet> petModel() {
@@ -335,9 +571,69 @@ class JoinQueryDslTest {
             new PropertyRuntime<>(OWNER_NAME, JdbcCodecs.STRING)));
   }
 
+  private static EntityRuntimeModel<ReadOnlyView> readOnlyViewModel() {
+    return new EntityRuntimeModel<>(
+        READ_ONLY_VIEW,
+        layout -> (resultSet, context) -> new ReadOnlyView(1L),
+        List.of(new PropertyRuntime<>(VIEW_VALUE, JdbcCodecs.LONG)));
+  }
+
+  private static ResultSet resultSet(Map<Integer, Object> values) {
+    int[] lastIndex = new int[1];
+    return (ResultSet)
+        Proxy.newProxyInstance(
+            ResultSet.class.getClassLoader(),
+            new Class<?>[] {ResultSet.class},
+            (ignored, method, arguments) -> {
+              if (method.getName().equals("wasNull")) {
+                return values.get(lastIndex[0]) == null;
+              }
+              if (method.getName().equals("getLong")) {
+                int index = (Integer) arguments[0];
+                lastIndex[0] = index;
+                Object value = values.get(index);
+                return value == null ? 0L : ((Number) value).longValue();
+              }
+              return defaultValue(method.getReturnType());
+            });
+  }
+
+  private static Object defaultValue(Class<?> type) {
+    if (!type.isPrimitive() || type == void.class) {
+      return null;
+    }
+    if (type == boolean.class) {
+      return false;
+    }
+    if (type == char.class) {
+      return '\0';
+    }
+    if (type == byte.class) {
+      return (byte) 0;
+    }
+    if (type == short.class) {
+      return (short) 0;
+    }
+    if (type == int.class) {
+      return 0;
+    }
+    if (type == long.class) {
+      return 0L;
+    }
+    if (type == float.class) {
+      return 0F;
+    }
+    if (type == double.class) {
+      return 0D;
+    }
+    throw new AssertionError(type);
+  }
+
   private record Pet(Long id, Long ownerId, String name) {}
 
   private record Owner(Long id, String name) {}
+
+  private record ReadOnlyView(Long value) {}
 
   private record ConditionCompilation(
       SqlPredicate ast, List<QueryColumn<?, ?>> parameterColumns, List<Object> arguments) {}
@@ -408,6 +704,27 @@ class JoinQueryDslTest {
     @Override
     public OwnerTable as(Identifier alias) {
       return new OwnerTable(alias);
+    }
+  }
+
+  private static final class ReadOnlyViewTable extends QueryTable<ReadOnlyView> {
+
+    private ReadOnlyViewTable() {
+      super(READ_ONLY_VIEW);
+    }
+
+    private ReadOnlyViewTable(Identifier alias) {
+      super(READ_ONLY_VIEW, alias);
+    }
+
+    @Override
+    public ReadOnlyViewTable as(String alias) {
+      return new ReadOnlyViewTable(Identifier.of(alias));
+    }
+
+    @Override
+    public ReadOnlyViewTable as(Identifier alias) {
+      return new ReadOnlyViewTable(alias);
     }
   }
 

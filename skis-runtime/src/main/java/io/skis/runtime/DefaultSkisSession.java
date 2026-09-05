@@ -58,6 +58,12 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
+  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+    requireActive();
+    return queries.selectNullable(table);
+  }
+
+  @Override
   public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
     requireActive();
     return queries.select(column);
@@ -67,6 +73,12 @@ final class DefaultSkisSession implements SkisSession {
   public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
     requireActive();
     return queries.select(column);
+  }
+
+  @Override
+  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
+    requireActive();
+    return queries.selectNullable(column);
   }
 
   @Override

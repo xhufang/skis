@@ -329,7 +329,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                 .compileSelection(
                     plans.model(),
                     table,
-                    selection(),
+                    selected,
                     joins,
                     predicate,
                     orderBy,
@@ -353,7 +353,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                 .compileOrdered(
                     plans.model(),
                     table,
-                    selection(),
+                    selected,
                     joins,
                     predicate,
                     orderBy,
@@ -366,6 +366,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return pagination == QueryPagination.None.INSTANCE
         && joins.isEmpty()
         && selected.belongsTo(table)
+        && selected.supportsFastPath()
         && (predicate == null || predicate instanceof QueryPredicate<?>)
         && orderBy.isEmpty()
         && !distinct;
@@ -376,8 +377,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return new QueryCompilation<>(
         fastPlan(),
         fastArgument(),
-        new SelectStatement(
-            selection().expressions(), structure.fromClause(), structure.where()));
+        new SelectStatement(selected.expressions(), structure.fromClause(), structure.where()));
   }
 
   private CompiledQueryPlan<R, Object> fastPlan() {
@@ -396,9 +396,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       return new QueryCompilation<>(existing.plan(), conditionArgument(), existing.ast());
     }
     QueryCompilation<Long> compiled =
-        plans
-            .compiler()
-            .compileCount(plans.model(), table, selection(), joins, predicate, distinct);
+        plans.compiler().compileCount(plans.model(), table, selected, joins, predicate, distinct);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     return published == null
@@ -421,10 +419,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       }
     }
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
-  }
-
-  private QueryPlanCompiler.Selection<R> selection() {
-    return selected.selection();
   }
 
   private QueryCompilation<Long> requireExplicitCount(CountQuery explicitCountQuery) {
@@ -529,10 +523,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       }
     }
     if (keyset) {
+      CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
       for (SortSpecification<E> item : orderBy) {
-        if (item.column().nullable() && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
+        if (structure.fromClause().effectiveNullability(item.column().expression()).isNullable()
+            && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw new QueryValidationException(
-              "nullable keyset ordering property '"
+              "effectively nullable keyset ordering property '"
                   + item.column().property().name()
                   + "' must declare nullsFirst() or nullsLast()");
         }
@@ -544,8 +540,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (!distinct) {
       return false;
     }
-    List<SqlExpression<?>> selected = selection().expressions();
-    return selected.stream()
+    List<SqlExpression<?>> expressions = selected.expressions();
+    return expressions.stream()
         .allMatch(
             expression ->
                 orderBy.stream().anyMatch(item -> item.column().expression().equals(expression)));
@@ -570,7 +566,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (!distinct || orderBy.isEmpty()) {
       return;
     }
-    List<SqlExpression<?>> expressions = selection().expressions();
+    List<SqlExpression<?>> expressions = selected.expressions();
     for (SortSpecification<E> item : orderBy) {
       if (!expressions.contains(item.column().expression())) {
         throw new QueryValidationException(

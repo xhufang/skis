@@ -63,6 +63,11 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
+  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+    return queries.selectNullable(table);
+  }
+
+  @Override
   public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
     return queries.select(column);
   }
@@ -70,6 +75,11 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
     return queries.select(column);
+  }
+
+  @Override
+  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
+    return queries.selectNullable(column);
   }
 
   @Override

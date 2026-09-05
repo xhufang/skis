@@ -14,12 +14,14 @@ public final class FromClause {
   private final TableExpression<?> root;
   private final List<JoinClause> joins;
   private final List<TableOccurrence> occurrences;
+  private final IdentityHashMap<TableExpression<?>, Boolean> nullExtendedTables;
 
   /** Creates a FROM clause and assigns stable occurrence ordinals in declaration order. */
   public FromClause(TableExpression<?> root, List<JoinClause> joins) {
     this.root = Objects.requireNonNull(root, "root");
     this.joins = List.copyOf(Objects.requireNonNull(joins, "joins"));
     this.occurrences = createOccurrences(root, this.joins);
+    this.nullExtendedTables = EffectiveNullabilityResolver.finalTableState(this);
   }
 
   /** Creates a single-table FROM clause. */
@@ -51,6 +53,21 @@ public final class FromClause {
     return Optional.empty();
   }
 
+  /** Returns whether outer joins can replace this table occurrence with an all-NULL row. */
+  public boolean isNullExtended(TableExpression<?> table) {
+    Objects.requireNonNull(table, "table");
+    Boolean nullable = nullExtendedTables.get(table);
+    if (nullable == null) {
+      throw new IllegalArgumentException("table expression is not visible in this FROM clause");
+    }
+    return nullable;
+  }
+
+  /** Resolves an expression's effective nullability after every join in this FROM clause. */
+  public Nullability effectiveNullability(SqlExpression<?> expression) {
+    return EffectiveNullabilityResolver.resolve(expression, nullExtendedTables);
+  }
+
   @Override
   public boolean equals(Object other) {
     return this == other
@@ -72,11 +89,7 @@ public final class FromClause {
     addOccurrence(root, 0, result, ordinalsByReference, ordinalsByQualifier);
     for (int index = 0; index < joins.size(); index++) {
       addOccurrence(
-          joins.get(index).right(),
-          index + 1,
-          result,
-          ordinalsByReference,
-          ordinalsByQualifier);
+          joins.get(index).right(), index + 1, result, ordinalsByReference, ordinalsByQualifier);
     }
     return List.copyOf(result);
   }
@@ -97,8 +110,7 @@ public final class FromClause {
               + " and #"
               + ordinal);
     }
-    String qualifier =
-        table.alias().map(Identifier::value).orElse(table.entity().table().name());
+    String qualifier = table.alias().map(Identifier::value).orElse(table.entity().table().name());
     Integer previousQualifier = ordinalsByQualifier.putIfAbsent(qualifier, ordinal);
     if (previousQualifier != null) {
       TableExpression<?> previousTable = occurrences.get(previousQualifier).table();

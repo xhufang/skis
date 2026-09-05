@@ -42,17 +42,15 @@ public final class SemanticValidator {
       join.on()
           .ifPresent(
               predicate ->
-                  context.validateExpression(
-                      predicate, "SELECT FROM join #" + position + " ON"));
+                  context.validateExpression(predicate, "SELECT FROM join #" + position + " ON"));
+      context.applyJoin(join);
     }
     statement.selections().forEach(item -> context.validateExpression(item, "SELECT"));
     statement
         .hiddenSelections()
         .forEach(item -> context.validateExpression(item.expression(), "SELECT hidden item"));
     statement.where().ifPresent(item -> context.validateExpression(item, "WHERE"));
-    statement
-        .orderBy()
-        .forEach(item -> context.validateExpression(item.expression(), "ORDER BY"));
+    statement.orderBy().forEach(item -> context.validateExpression(item.expression(), "ORDER BY"));
     statement
         .pagination()
         .ifPresent(
@@ -84,6 +82,7 @@ public final class SemanticValidator {
           .ifPresent(
               predicate ->
                   context.validateExpression(predicate, "COUNT FROM join #" + position + " ON"));
+      context.applyJoin(join);
     }
     statement.predicate().ifPresent(item -> context.validateExpression(item, "COUNT WHERE"));
     statement
@@ -433,7 +432,11 @@ public final class SemanticValidator {
     private final Map<Integer, ParameterSlot<?>> parametersByOrdinal = new HashMap<>();
 
     private void addVisible(TableExpression<?> table) {
-      visibleTables.put(Objects.requireNonNull(table, "table"), Boolean.TRUE);
+      visibleTables.put(Objects.requireNonNull(table, "table"), Boolean.FALSE);
+    }
+
+    private void applyJoin(JoinClause join) {
+      EffectiveNullabilityResolver.applyJoin(join.type(), join.right(), visibleTables);
     }
 
     private void validateExpression(SqlExpression<?> expression, String clause) {
@@ -441,11 +444,6 @@ public final class SemanticValidator {
       Objects.requireNonNull(clause, "clause");
       requireJavaSqlDescriptor(expression.javaType(), expression.sqlType(), "expression");
       Objects.requireNonNull(expression.nullability(), "expression nullability");
-      if (expression.nullable() && expression.javaType().isPrimitive()) {
-        throw new IllegalArgumentException(
-            "a nullable expression cannot use a primitive Java type");
-      }
-
       switch (expression) {
         case ColumnExpression<?, ?> column -> validateColumn(column, clause);
         case ParameterSlot<?> parameter -> validateParameter(parameter);
@@ -499,6 +497,11 @@ public final class SemanticValidator {
         default -> {
           // Custom opaque leaf expressions expose no portable child traversal contract yet.
         }
+      }
+      if (EffectiveNullabilityResolver.resolve(expression, visibleTables).isNullable()
+          && expression.javaType().isPrimitive()) {
+        throw new IllegalArgumentException(
+            "a nullable expression cannot use a primitive Java type");
       }
     }
 

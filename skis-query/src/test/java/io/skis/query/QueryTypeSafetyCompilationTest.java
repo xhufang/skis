@@ -24,8 +24,7 @@ class QueryTypeSafetyCompilationTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void decouplesNonNullSelectionsButKeepsNullableScalarsOnTheirOwningTableUntilT09()
-      throws Exception {
+  void decouplesNullableAndNonNullSelectionsFromTheirFromRoot() throws Exception {
     String valid =
         """
         package samples;
@@ -52,18 +51,24 @@ class QueryTypeSafetyCompilationTest {
               QueryTable<Owner> owner,
               QueryCondition on) {
             SelectQuery<Pet, String> query = operations.select(ownerName).from(pet);
-            NullableScalarQuery<Owner, String> nullable =
-                operations.select(ownerNickname).from(owner);
+            NullableSelectQuery<Pet, String> nullable =
+                operations.select(ownerNickname).from(pet).leftJoin(owner).on(on);
+            NullableSelectQuery<Pet, String> explicitNullable =
+                operations.selectNullable(ownerName).from(pet).leftJoin(owner).on(on);
+            NullableSelectQuery<Pet, Owner> nullableEntity =
+                operations.selectNullable(owner).from(pet).leftJoin(owner).on(on);
             query.join(owner).on(on);
             nullable.where(ownerNickname.isNull());
+            explicitNullable.fetchOne();
+            nullableEntity.fetchOne();
           }
         }
         """;
-    String prematureNullableFromDecoupling =
+    String nullableFromDecoupling =
         """
         package samples;
         import io.skis.query.*;
-        final class PrematureNullableFromDecoupling {
+        final class NullableFromDecoupling {
           static final class Pet {}
           static final class Owner {}
           static void query(
@@ -81,11 +86,11 @@ class QueryTypeSafetyCompilationTest {
             "samples.JoinedTargetQuery",
             joinedTarget,
             temporaryDirectory.resolve("joined-target")));
-    assertFalse(
+    assertTrue(
         compile(
-            "samples.PrematureNullableFromDecoupling",
-            prematureNullableFromDecoupling,
-            temporaryDirectory.resolve("premature-nullable-from-decoupling")));
+            "samples.NullableFromDecoupling",
+            nullableFromDecoupling,
+            temporaryDirectory.resolve("nullable-from-decoupling")));
   }
 
   @Test
@@ -261,7 +266,7 @@ class QueryTypeSafetyCompilationTest {
               NullableQueryColumn<E, String> nickname,
               QueryTable<E> table) {
             SelectQuery<E, Long> ids = operations.select(id).from(table);
-            NullableScalarQuery<E, String> names = operations.select(nickname).from(table);
+            NullableSelectQuery<E, String> names = operations.select(nickname).from(table);
             SingleRow<String> row = names.fetchOne();
             names.orderBy(nickname.asc().nullsLast(), id.asc());
           }
