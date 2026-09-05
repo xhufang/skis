@@ -83,7 +83,12 @@ final class QueryPlanCompiler {
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
-    return compileResolvedCount(model, structure, runtimeScope, selection, distinct);
+    return compileResolvedCount(
+        model,
+        structure,
+        runtimeScope,
+        selection,
+        distinct ? selected.automaticDistinctCountExpression(!joins.isEmpty()) : null);
   }
 
   private <E, R> QueryCompilation<Long> compileResolvedCount(
@@ -91,7 +96,7 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
-      boolean distinct) {
+      @Nullable SqlExpression<?> distinctExpression) {
     validatedStatement(
         () ->
             new SelectStatement(
@@ -104,11 +109,7 @@ final class QueryPlanCompiler {
                 null));
     CountAst count =
         validatedStatement(
-            () ->
-                new CountAst(
-                    structure.fromClause(),
-                    structure.where(),
-                    countDistinctExpression(model, selection, distinct)));
+            () -> new CountAst(structure.fromClause(), structure.where(), distinctExpression));
     InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
     CompiledQueryPlan<Long, Object> plan =
         compilePlan(
@@ -125,25 +126,13 @@ final class QueryPlanCompiler {
     return new QueryCompilation<>(plan, inputs.argument(), count);
   }
 
-  private static <E, R> @Nullable SqlExpression<?> countDistinctExpression(
-      EntityRuntimeModel<E> model, ResolvedResultShape<R> selection, boolean distinct) {
-    if (!distinct || isCompleteEntitySelection(model, selection.expressions())) {
-      return null;
-    }
-    if (selection.expressions().size() != 1) {
-      throw new QueryValidationException(
-          "automatic count cannot preserve a multi-expression distinct result; provide an explicit count query");
-    }
-    return selection.expressions().getFirst();
-  }
-
   <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
       SelectedResult<?, R> selected,
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
-      List<SortSpecification<E>> orderBy,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     requireCanonicalModel(model, table);
@@ -160,7 +149,7 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
-      List<SortSpecification<E>> orderBy,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     List<HiddenSelection> hidden = new ArrayList<>();
@@ -180,7 +169,7 @@ final class QueryPlanCompiler {
       }
     }
     List<PropertyRuntime<?, ?>> resolvedOrderProperties = new ArrayList<>(orderBy.size());
-    for (SortSpecification<E> item : orderBy) {
+    for (SortSpecification<?> item : orderBy) {
       resolvedOrderProperties.add(runtimeScope.property(item.column()));
     }
     List<PropertyRuntime<?, ?>> orderProperties = List.copyOf(resolvedOrderProperties);
@@ -210,7 +199,7 @@ final class QueryPlanCompiler {
       SelectedResult<?, R> selected,
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
-      List<SortSpecification<E>> orderBy,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
@@ -228,7 +217,7 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
-      List<SortSpecification<E>> orderBy,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
@@ -431,21 +420,6 @@ final class QueryPlanCompiler {
     }
   }
 
-  private static boolean isCompleteEntitySelection(
-      EntityRuntimeModel<?> model, List<SqlExpression<?>> expressions) {
-    if (model.entity().primaryKey().isEmpty()
-        || expressions.size() != model.entity().properties().size()) {
-      return false;
-    }
-    for (int index = 0; index < expressions.size(); index++) {
-      if (!(expressions.get(index) instanceof ColumnExpression<?, ?> column)
-          || column.property() != model.entity().properties().get(index)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   private static <E, V> @Nullable V read(
       PropertyRuntime<E, V> runtime,
       java.sql.ResultSet resultSet,
@@ -554,7 +528,7 @@ final class QueryPlanCompiler {
     }
 
     private @Nullable SelectPagination pagination(
-        List<SortSpecification<E>> orderBy, QueryPagination pagination) {
+        List<? extends SortSpecification<?>> orderBy, QueryPagination pagination) {
       return switch (pagination) {
         case QueryPagination.None ignored -> null;
         case QueryPagination.LimitOnly limit -> new Limit(addInteger(limit.limit()));
@@ -566,7 +540,7 @@ final class QueryPlanCompiler {
     }
 
     private SqlPredicate keysetPredicate(
-        List<SortSpecification<E>> orderBy, List<@Nullable Object> values) {
+        List<? extends SortSpecification<?>> orderBy, List<@Nullable Object> values) {
       if (orderBy.size() != values.size() || orderBy.isEmpty()) {
         throw new QueryValidationException(
             "keyset continuation value count must match a non-empty ORDER BY");
@@ -575,7 +549,7 @@ final class QueryPlanCompiler {
       ParameterSlot<Object>[] slots = new ParameterSlot[values.size()];
       boolean[] nullable = new boolean[values.size()];
       for (int index = 0; index < values.size(); index++) {
-        SortSpecification<E> sort = orderBy.get(index);
+        SortSpecification<?> sort = orderBy.get(index);
         Object value = values.get(index);
         nullable[index] = runtimeScope.effectiveNullability(sort.column()).isNullable();
         if (nullable[index] && sort.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {

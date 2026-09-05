@@ -297,6 +297,33 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
+  void allowsOrderByColumnsFromTheFinalJoinScope() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class JoinedOrdering {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              SelectQuery<Pet, Pet> query,
+              QueryTable<Owner> owner,
+              NonNullQueryColumn<Pet, Long> petId,
+              NonNullQueryColumn<Owner, Long> ownerId,
+              QueryCondition on) {
+            query.join(owner).on(on).orderBy(ownerId.asc(), petId.asc());
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.JoinedOrdering",
+            valid,
+            temporaryDirectory.resolve("joined-ordering")));
+  }
+
+  @Test
   void checksColumnComparisonJavaTypesAtCompilationTime() throws Exception {
     String valid =
         """

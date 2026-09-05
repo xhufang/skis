@@ -83,9 +83,8 @@ final class DefaultNullableSelectQuery<F, R> implements NullableSelectQuery<F, R
     return wrap(delegate.withOptions(executionOptions));
   }
 
-  @SafeVarargs
   @Override
-  public final NullableSelectQuery<F, R> orderBy(SortSpecification<F>... specifications) {
+  public NullableSelectQuery<F, R> orderBy(SortSpecification<?>... specifications) {
     return wrap(delegate.orderBy(specifications));
   }
 

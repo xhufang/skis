@@ -117,6 +117,46 @@ final class SelectedResult<S, R> {
     };
   }
 
+  /**
+   * Returns the one expression that can preserve this DISTINCT result in an automatic count, or
+   * {@code null} when a single-table complete entity can safely use {@code COUNT(*)}.
+   */
+  @Nullable SqlExpression<?> automaticDistinctCountExpression(boolean hasJoins) {
+    return switch (kind) {
+      case REQUIRED_ENTITY, NULLABLE_ENTITY -> {
+        var primaryKey = requirePlans().entity().primaryKey().orElse(null);
+        if (primaryKey == null) {
+          if (requireTable().selections().size() == 1) {
+            yield requireTable().selections().getFirst();
+          }
+          throw new QueryValidationException(
+              "automatic count cannot preserve a multi-expression distinct complete entity "
+                  + "without primary-key metadata; provide an explicit count query");
+        }
+        if (!hasJoins) {
+          yield null;
+        }
+        if (primaryKey.composite()) {
+          throw new QueryValidationException(
+              "automatic count cannot preserve a distinct complete entity with a composite "
+                  + "primary key after JOIN; provide an explicit count query");
+        }
+        int ordinal = primaryKey.properties().getFirst().ordinal();
+        yield requireTable().selections().get(ordinal);
+      }
+      case REQUIRED_SCALAR, NULLABLE_SCALAR -> requireScalar().expression();
+      case GENERATED_PROJECTION -> {
+        List<SqlExpression<?>> expressions = expressions();
+        if (expressions.size() != 1) {
+          throw new QueryValidationException(
+              "automatic count cannot preserve a multi-expression distinct result; provide an "
+                  + "explicit count query");
+        }
+        yield expressions.getFirst();
+      }
+    };
+  }
+
   boolean supportsFastPath() {
     return kind == Kind.REQUIRED_ENTITY;
   }

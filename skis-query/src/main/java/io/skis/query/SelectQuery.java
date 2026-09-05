@@ -39,8 +39,13 @@ public interface SelectQuery<E, R> {
 
   SelectQuery<E, R> withOptions(ExecutionOptions executionOptions);
 
-  @SuppressWarnings("unchecked")
-  SelectQuery<E, R> orderBy(SortSpecification<E>... specifications);
+  /**
+   * Replaces the ordering with columns from the final query scope.
+   *
+   * <p>The ordering column need not belong to the FROM root. Its table occurrence is validated
+   * against the completed FROM/JOIN structure before SQL execution.
+   */
+  SelectQuery<E, R> orderBy(SortSpecification<?>... specifications);
 
   SelectQuery<E, R> thenByPrimaryKey(SortDirection direction);
 

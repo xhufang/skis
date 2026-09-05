@@ -160,7 +160,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       context.sql.append("COUNT(DISTINCT ");
       renderExpression(expression, context);
       context.sql.append(')');
-      if (expression.nullable()) {
+      if (statement.fromClause().effectiveNullability(expression).isNullable()) {
         context.sql.append(" + CASE WHEN COUNT(*) > COUNT(");
         renderExpression(expression, context);
         context.sql.append(") THEN 1 ELSE 0 END");

@@ -14,7 +14,8 @@ public final class CountAst implements StatementAst {
 
   /**
    * Creates {@code COUNT(*)} when {@code distinctExpression} is null, otherwise counts the distinct
-   * result values, including one result for {@code NULL} when the expression is nullable.
+   * result values. Renderers use the final FROM/JOIN effective nullability to include one result
+   * for {@code NULL} when necessary.
    */
   public CountAst(
       FromClause fromClause,

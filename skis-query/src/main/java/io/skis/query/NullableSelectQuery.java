@@ -39,8 +39,13 @@ public interface NullableSelectQuery<F, R> {
 
   NullableSelectQuery<F, R> withOptions(ExecutionOptions executionOptions);
 
-  @SuppressWarnings("unchecked")
-  NullableSelectQuery<F, R> orderBy(SortSpecification<F>... specifications);
+  /**
+   * Replaces the ordering with columns from the final query scope.
+   *
+   * <p>The ordering column need not belong to the FROM root. Its table occurrence is validated
+   * against the completed FROM/JOIN structure before SQL execution.
+   */
+  NullableSelectQuery<F, R> orderBy(SortSpecification<?>... specifications);
 
   NullableSelectQuery<F, R> thenByPrimaryKey(SortDirection direction);
 

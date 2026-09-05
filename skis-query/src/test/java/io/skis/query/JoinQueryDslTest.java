@@ -1,6 +1,7 @@
 package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -25,6 +26,7 @@ import io.skis.mapping.PropertyRuntime;
 import io.skis.mapping.RowReadContext;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
@@ -266,7 +268,7 @@ class JoinQueryDslTest {
             .from(PET_TABLE)
             .rightJoin(OWNER_TABLE)
             .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()))
-            .orderBy(PET_TABLE.id().asc());
+            .orderBy(PET_TABLE.id().asc(), OWNER_TABLE.id().asc());
 
     QueryValidationException failure =
         assertThrows(
@@ -274,6 +276,242 @@ class JoinQueryDslTest {
             () -> query.fetchSlice(SliceRequest.keysetFirst(10)));
 
     assertTrue(failure.getMessage().contains("effectively nullable keyset ordering property 'id'"));
+  }
+
+  @Test
+  void ordersByFinalJoinColumnsAndRequiresEveryOccurrencePrimaryKeyForPagination() {
+    SelectQuery<Pet, Pet> stable =
+        operations()
+            .selectFrom(PET_TABLE)
+            .orderBy(OWNER_TABLE.id().asc(), PET_TABLE.id().asc())
+            .join(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+
+    QueryCompilation<Pet> compilation =
+        ((DefaultSelectQuery<Pet, Pet>) stable)
+            .compilation(new QueryPagination.Offset(11, 20));
+    assertTrue(
+        compilation
+            .plan()
+            .sql()
+            .contains("ORDER BY \"owner\".\"id\" ASC, \"pet\".\"id\" ASC"));
+
+    SelectQuery<Pet, Pet> invisible =
+        operations().selectFrom(PET_TABLE).orderBy(OWNER_TABLE.id().asc());
+    assertThrows(
+        QueryValidationException.class,
+        () ->
+            ((DefaultSelectQuery<Pet, Pet>) invisible)
+                .compilation(QueryPagination.None.INSTANCE));
+
+    SelectQuery<Pet, Pet> rootOnly =
+        operations()
+            .selectFrom(PET_TABLE)
+            .join(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()))
+            .thenByPrimaryKey(SortDirection.ASC);
+    QueryValidationException missingJoinedKey =
+        assertThrows(
+            QueryValidationException.class,
+            () -> rootOnly.fetchSlice(SliceRequest.offset(0, 10)));
+    assertTrue(missingJoinedKey.getMessage().contains("table occurrence #1"));
+    assertTrue(missingJoinedKey.getMessage().contains("effective qualifier 'owner'"));
+    assertTrue(missingJoinedKey.getMessage().contains("missing primary-key property 'id'"));
+
+    SelectQuery<Pet, Pet> missingMetadata =
+        operations()
+            .selectFrom(PET_TABLE)
+            .crossJoin(VIEW_TABLE)
+            .orderBy(PET_TABLE.id().asc());
+    QueryValidationException missingViewKey =
+        assertThrows(
+            QueryValidationException.class,
+            () -> missingMetadata.fetchPage(PageRequest.page(0, 10)));
+    assertTrue(missingViewKey.getMessage().contains("table occurrence #1"));
+    assertTrue(missingViewKey.getMessage().contains("effective qualifier 'read_only_view'"));
+    assertTrue(missingViewKey.getMessage().contains("requires primary-key metadata"));
+
+    AssertionError reachedJdbc =
+        assertThrows(
+            AssertionError.class,
+            () -> stable.fetchSlice(SliceRequest.offset(0, 10)));
+    assertEquals("query compilation must not acquire JDBC", reachedJdbc.getMessage());
+  }
+
+  @Test
+  void replacingOrderingDoesNotReuseAStructurallyEqualForeignTableOccurrence() {
+    OwnerTable joinedOwner = OWNER_TABLE.as("ordered_owner");
+    OwnerTable foreignOwner = OWNER_TABLE.as("ordered_owner");
+    SelectQuery<Pet, Pet> original =
+        operations()
+            .selectFrom(PET_TABLE)
+            .join(joinedOwner)
+            .on(PET_TABLE.ownerId().eq(joinedOwner.id()))
+            .orderBy(joinedOwner.id().asc(), PET_TABLE.id().asc());
+
+    SelectQuery<Pet, Pet> replaced =
+        original.orderBy(foreignOwner.id().asc(), PET_TABLE.id().asc());
+
+    assertNotSame(original, replaced);
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<Pet, Pet>) replaced)
+                    .compilation(QueryPagination.None.INSTANCE));
+    assertTrue(failure.getMessage().contains("references invisible table entity 'Owner'"));
+    assertTrue(failure.getMessage().contains("table references are matched by object identity"));
+  }
+
+  @Test
+  void distinctPaginationUsesTheSelectedTupleInsteadOfJoinOccurrenceKeys() {
+    SelectQuery<Pet, String> stableDistinct =
+        operations()
+            .select(PET_TABLE.name())
+            .from(PET_TABLE)
+            .crossJoin(VIEW_TABLE)
+            .distinct()
+            .orderBy(PET_TABLE.name().asc());
+
+    AssertionError reachedJdbc =
+        assertThrows(
+            AssertionError.class,
+            () -> stableDistinct.fetchSlice(SliceRequest.offset(0, 10)));
+    assertEquals("query compilation must not acquire JDBC", reachedJdbc.getMessage());
+
+    SelectQuery<Pet, Pet> incompleteTuple =
+        operations()
+            .selectFrom(PET_TABLE)
+            .crossJoin(VIEW_TABLE)
+            .distinct()
+            .orderBy(PET_TABLE.id().asc());
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> incompleteTuple.fetchSlice(SliceRequest.offset(0, 10)));
+    assertTrue(failure.getMessage().contains("must cover every selected expression"));
+    assertTrue(failure.getMessage().contains("pet.ownerId"));
+  }
+
+  @Test
+  void complexDistinctJoinRequiresExplicitCountButStillAllowsSlice() {
+    ProjectionMapping<Object> tuple =
+        ProjectionMapping.generated(
+            GeneratedModelAbi.CURRENT,
+            Object.class,
+            "pet-owner-tuple",
+            List.of(
+                new ProjectionMapping.Parameter(
+                    0, "petId", Long.class, Nullability.NON_NULL, 0),
+                new ProjectionMapping.Parameter(
+                    1, "ownerName", String.class, Nullability.NULLABLE, 1)),
+            readers -> (resultSet, context) -> new Object());
+    SelectQuery<Pet, Object> query =
+        operations()
+            .select(tuple.bind(PET_TABLE.id(), OWNER_TABLE.name()))
+            .from(PET_TABLE)
+            .join(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()))
+            .distinct()
+            .orderBy(PET_TABLE.id().asc(), OWNER_TABLE.name().asc());
+
+    QueryValidationException countFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> ((DefaultCountQuery) query.countQuery()).compilation());
+    assertTrue(countFailure.getMessage().contains("multi-expression distinct result"));
+    assertTrue(countFailure.getMessage().contains("explicit count query"));
+
+    AssertionError reachedJdbc =
+        assertThrows(
+            AssertionError.class,
+            () -> query.fetchSlice(SliceRequest.offset(0, 10)));
+    assertEquals("query compilation must not acquire JDBC", reachedJdbc.getMessage());
+  }
+
+  @Test
+  void joinCountsPreserveRowsDistinctEntitiesAndNullableEntityAbsence() {
+    QueryCondition on = PET_TABLE.ownerId().eq(OWNER_TABLE.id());
+    SelectQuery<Pet, Pet> joined =
+        operations().selectFrom(PET_TABLE).join(OWNER_TABLE).on(on);
+    String rowCount = ((DefaultCountQuery) joined.countQuery()).compilation().plan().sql();
+    assertEquals(
+        "SELECT COUNT(*) FROM \"shelter\".\"pet\" INNER JOIN \"shelter\".\"owner\" "
+            + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
+        rowCount);
+
+    String rootEntityCount =
+        ((DefaultCountQuery) joined.distinct().countQuery()).compilation().plan().sql();
+    assertEquals(
+        "SELECT COUNT(DISTINCT \"pet\".\"id\") FROM \"shelter\".\"pet\" "
+            + "INNER JOIN \"shelter\".\"owner\" "
+            + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
+        rootEntityCount);
+
+    NullableSelectQuery<Pet, Owner> nullableOwner =
+        operations()
+            .selectNullable(OWNER_TABLE)
+            .from(PET_TABLE)
+            .leftJoin(OWNER_TABLE)
+            .on(on)
+            .distinct();
+    String nullableOwnerCount =
+        ((DefaultCountQuery) nullableOwner.countQuery()).compilation().plan().sql();
+    assertEquals(
+        "SELECT COUNT(DISTINCT \"owner\".\"id\") "
+            + "+ CASE WHEN COUNT(*) > COUNT(\"owner\".\"id\") THEN 1 ELSE 0 END "
+            + "FROM \"shelter\".\"pet\" LEFT JOIN \"shelter\".\"owner\" "
+            + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
+        nullableOwnerCount);
+  }
+
+  @Test
+  void joinFingerprintsSeparateStructureAndOccurrenceButNotParameterValues() {
+    OwnerTable primary = OWNER_TABLE.as("primary_owner");
+    OwnerTable secondary = OWNER_TABLE.as("secondary_owner");
+    DefaultSelectQuery<Pet, Pet> ada =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .join(primary)
+                .on(PET_TABLE.ownerId().eq(primary.id()).and(primary.name().eq("Ada")))
+                .orderBy(PET_TABLE.id().asc(), primary.id().asc());
+    DefaultSelectQuery<Pet, Pet> grace =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .join(primary)
+                .on(PET_TABLE.ownerId().eq(primary.id()).and(primary.name().eq("Grace")))
+                .orderBy(PET_TABLE.id().asc(), primary.id().asc());
+    DefaultSelectQuery<Pet, Pet> left =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .leftJoin(primary)
+                .on(PET_TABLE.ownerId().eq(primary.id()).and(primary.name().eq("Ada")))
+                .orderBy(PET_TABLE.id().asc(), primary.id().asc());
+    DefaultSelectQuery<Pet, Pet> secondOccurrence =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .join(primary)
+                .on(PET_TABLE.ownerId().eq(primary.id()))
+                .join(secondary)
+                .on(primary.id().eq(secondary.id()))
+                .orderBy(secondary.id().asc());
+    DefaultSelectQuery<Pet, Pet> firstOccurrence =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .join(primary)
+                .on(PET_TABLE.ownerId().eq(primary.id()))
+                .join(secondary)
+                .on(primary.id().eq(secondary.id()))
+                .orderBy(primary.id().asc());
+
+    assertEquals(ada.queryFingerprint(), grace.queryFingerprint());
+    assertNotEquals(ada.queryFingerprint(), left.queryFingerprint());
+    assertNotEquals(firstOccurrence.orderSignature(), secondOccurrence.orderSignature());
   }
 
   @Test
@@ -749,7 +987,11 @@ class JoinQueryDslTest {
             DialectFeature.LEFT_JOIN,
             DialectFeature.RIGHT_JOIN,
             DialectFeature.FULL_JOIN,
-            DialectFeature.CROSS_JOIN);
+            DialectFeature.CROSS_JOIN,
+            DialectFeature.PARAMETERIZED_LIMIT,
+            DialectFeature.PARAMETERIZED_OFFSET,
+            DialectFeature.NULLS_FIRST_LAST,
+            DialectFeature.COUNT_DISTINCT);
     private final SqlRenderer renderer =
         new StandardSqlRenderer(id(), identifierRules(), capabilities);
 
