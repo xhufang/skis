@@ -1,4 +1,3 @@
 io.skis.processor.SkisEntityProcessor
 io.skis.processor.SkisEntityIndexProcessor
 io.skis.processor.SkisProjectionProcessor
-io.skis.processor.SkisProjectionIndexProcessor

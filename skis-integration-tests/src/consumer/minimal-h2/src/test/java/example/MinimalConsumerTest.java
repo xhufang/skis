@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import example.skis.PetMeta;
+import example.skis.PetSummaryProjection;
 import example.skis.PetTable;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.runtime.SkisExecutor;
@@ -39,7 +40,8 @@ class MinimalConsumerTest {
 
     PetSummary summary =
         executor
-            .selectProjection(PetTable.PET, PetSummary.class)
+            .select(PetSummaryProjection.of(PetTable.PET.id(), PetTable.PET.name()))
+            .from(PetTable.PET)
             .where(PetTable.PET.id().eq(1L))
             .fetchOne()
             .orElseThrow();

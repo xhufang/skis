@@ -1,10 +1,10 @@
 package io.skis.metadata;
 
-/** Runtime contract shared by generated entity models and the SKIS metadata library. */
+/** Runtime contract shared by generated entity/projection models and SKIS libraries. */
 public final class GeneratedModelAbi {
 
   /** ABI implemented by this runtime. */
-  public static final int CURRENT = 4;
+  public static final int CURRENT = 5;
 
   private GeneratedModelAbi() {}
 

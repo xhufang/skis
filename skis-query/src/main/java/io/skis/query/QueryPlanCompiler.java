@@ -4,6 +4,7 @@ import io.skis.dialect.Dialect;
 import io.skis.dialect.RenderedSql;
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
+import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcWriteContext;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.mapping.RowDecoder;
@@ -38,12 +39,14 @@ import java.util.Objects;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
-/** Compiles immutable single-table query shapes into value-independent JDBC plans. */
+/** Compiles immutable query shapes into value-independent JDBC plans. */
 final class QueryPlanCompiler {
 
   private final Dialect dialect;
+  private final EntityRuntimeRegistry runtimeRegistry;
 
-  QueryPlanCompiler(Dialect dialect) {
+  QueryPlanCompiler(EntityRuntimeRegistry runtimeRegistry, Dialect dialect) {
+    this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
     this.dialect = Objects.requireNonNull(dialect, "dialect");
   }
 
@@ -68,110 +71,51 @@ final class QueryPlanCompiler {
     return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
   }
 
-  <E, R> CompiledQueryPlan<R, Object> compileProjection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate) {
-    requireCanonicalModel(model, table);
-    Selection<E, R> selection = projectionSelection(model, table, projection);
-    PredicateShape<E> shape = predicateShape(predicate);
-    SelectStatement statement =
-        validatedStatement(
-            () -> new SelectStatement(selection.expressions(), table, shape.ast()));
-    return compilePlanFromProperties(model, statement, shape.properties(), selection.decoder());
-  }
-
-  <E> QueryCompilation<E> compileEntity(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      @Nullable QueryPredicate<E> predicate,
-      List<SortSpecification<E>> orderBy,
-      boolean distinct,
-      QueryPagination pagination) {
-    return compileSelection(
-        model,
-        table,
-        Selection.of(table.selections(), model.fullRowDecoder()),
-        predicate,
-        orderBy,
-        distinct,
-        pagination,
-        List.of());
-  }
-
-  <E, R> QueryCompilation<R> compileProjection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate,
-      List<SortSpecification<E>> orderBy,
-      boolean distinct,
-      QueryPagination pagination) {
-    return compileSelection(
-        model,
-        table,
-        projectionSelection(model, table, projection),
-        predicate,
-        orderBy,
-        distinct,
-        pagination,
-        List.of());
-  }
-
-  <E> QueryCompilation<OrderedRow<E>> compileOrderedEntity(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      @Nullable QueryPredicate<E> predicate,
-      List<SortSpecification<E>> orderBy,
-      boolean distinct,
-      QueryPagination pagination) {
-    return compileOrdered(
-        model,
-        table,
-        Selection.of(table.selections(), model.fullRowDecoder()),
-        predicate,
-        orderBy,
-        distinct,
-        pagination);
-  }
-
-  <E, R> QueryCompilation<OrderedRow<R>> compileOrderedProjection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate,
-      List<SortSpecification<E>> orderBy,
-      boolean distinct,
-      QueryPagination pagination) {
-    return compileOrdered(
-        model,
-        table,
-        projectionSelection(model, table, projection),
-        predicate,
-        orderBy,
-        distinct,
-        pagination);
-  }
-
   <E, R> QueryCompilation<Long> compileCount(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      Selection<E, R> selection,
-      @Nullable QueryPredicate<E> predicate,
+      SelectedResult<?, R> selected,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition condition,
       boolean distinct) {
     requireCanonicalModel(model, table);
-    PredicateShape<E> shape = predicateShape(predicate);
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
+    TableRuntimeScope runtimeScope =
+        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
+    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
+    return compileResolvedCount(
+        model,
+        structure,
+        runtimeScope,
+        selection,
+        distinct ? selected.automaticDistinctCountExpression(!joins.isEmpty()) : null);
+  }
+
+  private <E, R> QueryCompilation<Long> compileResolvedCount(
+      EntityRuntimeModel<E> model,
+      CompiledQueryStructure structure,
+      TableRuntimeScope runtimeScope,
+      ResolvedResultShape<R> selection,
+      @Nullable SqlExpression<?> distinctExpression) {
+    validatedStatement(
+        () ->
+            new SelectStatement(
+                false,
+                selection.expressions(),
+                List.of(),
+                structure.fromClause(),
+                structure.where(),
+                List.of(),
+                null));
     CountAst count =
         validatedStatement(
-            () ->
-                new CountAst(
-                    table, shape.ast(), countDistinctExpression(model, selection, distinct)));
+            () -> new CountAst(structure.fromClause(), structure.where(), distinctExpression));
+    InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
     CompiledQueryPlan<Long, Object> plan =
-        compilePlanFromProperties(
+        compilePlan(
             model,
             count,
-            shape.properties(),
+            inputs.logicalParameters(),
             (resultSet, context) -> {
               long value = resultSet.getLong(1);
               if (resultSet.wasNull()) {
@@ -179,43 +123,33 @@ final class QueryPlanCompiler {
               }
               return value;
             });
-    return new QueryCompilation<>(plan, argument(shape.arguments()), count);
+    return new QueryCompilation<>(plan, inputs.argument(), count);
   }
 
-  private static <E, R> @Nullable SqlExpression<?> countDistinctExpression(
-      EntityRuntimeModel<E> model, Selection<E, R> selection, boolean distinct) {
-    if (!distinct || isCompleteEntitySelection(model, selection.expressions())) {
-      return null;
-    }
-    if (selection.expressions().size() != 1) {
-      throw new QueryValidationException(
-          "automatic count cannot preserve a multi-expression distinct result; provide an explicit count query");
-    }
-    return selection.expressions().getFirst();
-  }
-
-  <E> Selection<E, E> entitySelection(EntityRuntimeModel<E> model, QueryTable<E> table) {
-    requireCanonicalModel(model, table);
-    return Selection.of(table.selections(), model.fullRowDecoder());
-  }
-
-  <E, R> Selection<E, R> projectionSelection(
-      EntityRuntimeModel<E> model, QueryTable<E> table, Projection<E, R> projection) {
-    Objects.requireNonNull(projection, "projection").validateFrom(table);
-    List<QueryColumn<E, ?>> columns = projection.columns(table);
-    List<SqlExpression<?>> selections = new ArrayList<>(columns.size());
-    for (QueryColumn<E, ?> column : columns) {
-      selections.add(column.expression());
-    }
-    return new Selection<>(selections, projection.rowDecoder(model));
-  }
-
-  private <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
+  <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      Selection<E, R> selection,
-      @Nullable QueryPredicate<E> predicate,
-      List<SortSpecification<E>> orderBy,
+      SelectedResult<?, R> selected,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition condition,
+      List<? extends SortSpecification<?>> orderBy,
+      boolean distinct,
+      QueryPagination pagination) {
+    requireCanonicalModel(model, table);
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
+    TableRuntimeScope runtimeScope =
+        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
+    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
+    return compileResolvedOrdered(
+        model, structure, runtimeScope, selection, orderBy, distinct, pagination);
+  }
+
+  private <E, R> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
+      EntityRuntimeModel<E> model,
+      CompiledQueryStructure structure,
+      TableRuntimeScope runtimeScope,
+      ResolvedResultShape<R> selection,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     List<HiddenSelection> hidden = new ArrayList<>();
@@ -234,41 +168,72 @@ final class QueryPlanCompiler {
         hidden.add(new HiddenSelection(expression, Identifier.of("__skis_order_" + index)));
       }
     }
+    List<PropertyRuntime<?, ?>> resolvedOrderProperties = new ArrayList<>(orderBy.size());
+    for (SortSpecification<?> item : orderBy) {
+      resolvedOrderProperties.add(runtimeScope.property(item.column()));
+    }
+    List<PropertyRuntime<?, ?>> orderProperties = List.copyOf(resolvedOrderProperties);
     RowDecoder<OrderedRow<R>> decoder =
         (resultSet, context) -> {
           var value = selection.decoder().decode(resultSet, context);
           List<@Nullable Object> orderValues = new ArrayList<>(orderBy.size());
           for (int index = 0; index < orderBy.size(); index++) {
-            PropertyMeta<E, ?> property = orderBy.get(index).column().property();
-            orderValues.add(read(model.property(property), resultSet, indexes[index], context));
+            orderValues.add(read(orderProperties.get(index), resultSet, indexes[index], context));
           }
           return new OrderedRow<>(value, orderValues);
         };
-    return compileSelection(
+    return compileResolvedSelection(
         model,
-        table,
-        new Selection<>(selection.expressions(), decoder),
-        predicate,
+        structure,
+        runtimeScope,
+        new ResolvedResultShape<>(selection.expressions(), decoder, selection.selections()),
         orderBy,
         distinct,
         pagination,
         hidden);
   }
 
-  private <E, R> QueryCompilation<R> compileSelection(
+  <E, R> QueryCompilation<R> compileSelection(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      Selection<E, R> selection,
-      @Nullable QueryPredicate<E> predicate,
-      List<SortSpecification<E>> orderBy,
+      SelectedResult<?, R> selected,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition condition,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
     requireCanonicalModel(model, table);
-    PredicateShape<E> predicateShape = predicateShape(predicate);
-    InputsBuilder<E> inputs = new InputsBuilder<>(model, predicateShape);
-    SelectPagination paginationAst = inputs.pagination(orderBy, pagination);
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
+    TableRuntimeScope runtimeScope =
+        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
+    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
+    return compileResolvedSelection(
+        model, structure, runtimeScope, selection, orderBy, distinct, pagination, hidden);
+  }
+
+  private <E, R> QueryCompilation<R> compileResolvedSelection(
+      EntityRuntimeModel<E> model,
+      CompiledQueryStructure structure,
+      TableRuntimeScope runtimeScope,
+      ResolvedResultShape<R> selection,
+      List<? extends SortSpecification<?>> orderBy,
+      boolean distinct,
+      QueryPagination pagination,
+      List<HiddenSelection> hidden) {
     List<OrderByItem> orderAst = orderBy.stream().map(SortSpecification::ast).toList();
+    validatedStatement(
+        () ->
+            new SelectStatement(
+                distinct,
+                selection.expressions(),
+                hidden,
+                structure.fromClause(),
+                structure.where(),
+                orderAst,
+                null));
+    InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
+    SelectPagination paginationAst = inputs.pagination(orderBy, pagination);
     SelectStatement statement =
         validatedStatement(
             () ->
@@ -276,8 +241,8 @@ final class QueryPlanCompiler {
                     distinct,
                     selection.expressions(),
                     hidden,
-                    table,
-                    predicateShape.ast(),
+                    structure.fromClause(),
+                    structure.where(),
                     orderAst,
                     paginationAst));
     CompiledQueryPlan<R, Object> plan =
@@ -294,7 +259,7 @@ final class QueryPlanCompiler {
     for (int ordinal = 0; ordinal < properties.size(); ordinal++) {
       PropertyMeta<E, ?> property = properties.get(ordinal);
       parameters.add(
-          LogicalParameter.property(expectedSlot(ordinal, property), model.property(property)));
+          LogicalParameter.property(expectedSlot(ordinal, property), 0, model.property(property)));
     }
     return compilePlan(model, statement, parameters, rowDecoder);
   }
@@ -307,6 +272,8 @@ final class QueryPlanCompiler {
     Objects.requireNonNull(model, "model");
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(rowDecoder, "rowDecoder");
+    validateLogicalParameters(logicalParameters);
+    dialect.validate(statement);
     RenderedSql rendered = dialect.renderer().render(statement);
     List<RenderedBinding<E>> renderedBindings =
         renderedBindings(model, logicalParameters, rendered);
@@ -363,6 +330,19 @@ final class QueryPlanCompiler {
             + "'");
   }
 
+  private static void validateLogicalParameters(List<? extends LogicalParameter<?>> parameters) {
+    for (int ordinal = 0; ordinal < parameters.size(); ordinal++) {
+      LogicalParameter<?> parameter = Objects.requireNonNull(parameters.get(ordinal), "parameter");
+      if (parameter.descriptor().ordinal() != ordinal) {
+        throw new QueryValidationException(
+            "logical parameter ordinals must be dense from zero; expected "
+                + ordinal
+                + " but found "
+                + parameter.descriptor().ordinal());
+      }
+    }
+  }
+
   private static <S extends StatementAst> S validatedStatement(Supplier<S> factory) {
     try {
       return factory.get();
@@ -409,16 +389,16 @@ final class QueryPlanCompiler {
 
   private static <E> PredicateShape<E> predicateShape(@Nullable QueryPredicate<E> predicate) {
     if (predicate == null) {
-      return new PredicateShape<>(null, List.of(), List.of());
+      return new PredicateShape<>(null, List.of());
     }
     CompiledQueryPredicate<E> compiled = predicate.compile();
-    return new PredicateShape<>(compiled.ast(), compiled.properties(), compiled.arguments());
+    return new PredicateShape<>(compiled.ast(), compiled.properties());
   }
 
   private static <E> PredicateShape<E> equalityShape(
       QueryTable<E> table, @Nullable PropertyMeta<E, ?> property) {
     if (property == null) {
-      return new PredicateShape<>(null, List.of(), List.of());
+      return new PredicateShape<>(null, List.of());
     }
     return equalityShapeTyped(table, property);
   }
@@ -428,7 +408,7 @@ final class QueryPlanCompiler {
     ColumnExpression<E, V> column = table.expression(property);
     ParameterSlot<V> slot =
         new ParameterSlot<>(0, property.javaType(), column.sqlType(), Nullability.NON_NULL);
-    return new PredicateShape<>(column.eq(slot), List.of(property), List.of());
+    return new PredicateShape<>(column.eq(slot), List.of(property));
   }
 
   private static <E> void requireCanonicalModel(EntityRuntimeModel<E> model, QueryTable<E> table) {
@@ -440,21 +420,6 @@ final class QueryPlanCompiler {
     }
   }
 
-  private static boolean isCompleteEntitySelection(
-      EntityRuntimeModel<?> model, List<SqlExpression<?>> expressions) {
-    if (model.entity().primaryKey().isEmpty()
-        || expressions.size() != model.entity().properties().size()) {
-      return false;
-    }
-    for (int index = 0; index < expressions.size(); index++) {
-      if (!(expressions.get(index) instanceof ColumnExpression<?, ?> column)
-          || column.property() != model.entity().properties().get(index)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   private static <E, V> @Nullable V read(
       PropertyRuntime<E, V> runtime,
       java.sql.ResultSet resultSet,
@@ -464,29 +429,11 @@ final class QueryPlanCompiler {
     return runtime.codec().read(resultSet, index, context);
   }
 
-  record Selection<E, R>(List<SqlExpression<?>> expressions, RowDecoder<R> decoder) {
-
-    static <E, R> Selection<E, R> of(
-        List<? extends SqlExpression<?>> expressions, RowDecoder<R> decoder) {
-      List<SqlExpression<?>> copy = List.copyOf(expressions);
-      return new Selection<>(copy, decoder);
-    }
-
-    Selection {
-      expressions = List.copyOf(expressions);
-      if (expressions.isEmpty()) {
-        throw new QueryValidationException("a selection must contain at least one expression");
-      }
-      Objects.requireNonNull(decoder, "decoder");
-    }
-  }
-
   private record PredicateShape<E>(
-      @Nullable SqlPredicate ast, List<PropertyMeta<E, ?>> properties, List<Object> arguments) {
+      @Nullable SqlPredicate ast, List<PropertyMeta<E, ?>> properties) {
 
     private PredicateShape {
       properties = List.copyOf(properties);
-      arguments = List.copyOf(arguments);
     }
   }
 
@@ -500,26 +447,38 @@ final class QueryPlanCompiler {
 
   private record LogicalParameter<E>(
       ParameterSlot<?> descriptor,
-      @Nullable PropertyRuntime<E, ?> runtime,
+      int occurrenceOrdinal,
+      @Nullable PropertyRuntime<?, ?> runtime,
       ScalarBinding scalarBinding) {
 
     private LogicalParameter {
       Objects.requireNonNull(descriptor, "descriptor");
       Objects.requireNonNull(scalarBinding, "scalarBinding");
+      if (runtime != null && occurrenceOrdinal < 0) {
+        throw new IllegalArgumentException(
+            "property parameter occurrence ordinal must not be negative");
+      }
+      if (runtime == null && occurrenceOrdinal != -1) {
+        throw new IllegalArgumentException(
+            "scalar parameter must not declare a table occurrence ordinal");
+      }
     }
 
     static <E> LogicalParameter<E> property(
-        ParameterSlot<?> descriptor, PropertyRuntime<E, ?> runtime) {
+        ParameterSlot<?> descriptor, int occurrenceOrdinal, PropertyRuntime<?, ?> runtime) {
       return new LogicalParameter<>(
-          descriptor, Objects.requireNonNull(runtime, "runtime"), ScalarBinding.NONE);
+          descriptor,
+          occurrenceOrdinal,
+          Objects.requireNonNull(runtime, "runtime"),
+          ScalarBinding.NONE);
     }
 
     static <E> LogicalParameter<E> integer(ParameterSlot<Integer> descriptor) {
-      return new LogicalParameter<>(descriptor, null, ScalarBinding.INTEGER);
+      return new LogicalParameter<>(descriptor, -1, null, ScalarBinding.INTEGER);
     }
 
     static <E> LogicalParameter<E> longValue(ParameterSlot<Long> descriptor) {
-      return new LogicalParameter<>(descriptor, null, ScalarBinding.LONG);
+      return new LogicalParameter<>(descriptor, -1, null, ScalarBinding.LONG);
     }
 
     boolean matches(ParameterSlot<?> slot) {
@@ -556,21 +515,20 @@ final class QueryPlanCompiler {
 
   private static final class InputsBuilder<E> {
 
-    private final EntityRuntimeModel<E> model;
+    private final TableRuntimeScope runtimeScope;
     private final List<LogicalParameter<E>> logicalParameters = new ArrayList<>();
     private final List<Object> arguments = new ArrayList<>();
 
-    private InputsBuilder(EntityRuntimeModel<E> model, PredicateShape<E> predicate) {
-      this.model = Objects.requireNonNull(model, "model");
-      for (int index = 0; index < predicate.properties().size(); index++) {
-        PropertyMeta<E, ?> property = predicate.properties().get(index);
-        addProperty(
-            property, predicate.arguments().get(index), SqlType.fromJavaType(property.javaType()));
+    private InputsBuilder(TableRuntimeScope runtimeScope, CompiledQueryStructure structure) {
+      this.runtimeScope = Objects.requireNonNull(runtimeScope, "runtimeScope");
+      for (int index = 0; index < structure.parameterColumns().size(); index++) {
+        QueryColumn<?, ?> column = structure.parameterColumns().get(index);
+        addConditionProperty(column, structure.arguments().get(index));
       }
     }
 
     private @Nullable SelectPagination pagination(
-        List<SortSpecification<E>> orderBy, QueryPagination pagination) {
+        List<? extends SortSpecification<?>> orderBy, QueryPagination pagination) {
       return switch (pagination) {
         case QueryPagination.None ignored -> null;
         case QueryPagination.LimitOnly limit -> new Limit(addInteger(limit.limit()));
@@ -582,24 +540,26 @@ final class QueryPlanCompiler {
     }
 
     private SqlPredicate keysetPredicate(
-        List<SortSpecification<E>> orderBy, List<@Nullable Object> values) {
+        List<? extends SortSpecification<?>> orderBy, List<@Nullable Object> values) {
       if (orderBy.size() != values.size() || orderBy.isEmpty()) {
         throw new QueryValidationException(
             "keyset continuation value count must match a non-empty ORDER BY");
       }
       @SuppressWarnings("unchecked")
       ParameterSlot<Object>[] slots = new ParameterSlot[values.size()];
+      boolean[] nullable = new boolean[values.size()];
       for (int index = 0; index < values.size(); index++) {
-        SortSpecification<E> sort = orderBy.get(index);
+        SortSpecification<?> sort = orderBy.get(index);
         Object value = values.get(index);
-        if (sort.column().nullable() && sort.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
+        nullable[index] = runtimeScope.effectiveNullability(sort.column()).isNullable();
+        if (nullable[index] && sort.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw new QueryValidationException(
-              "nullable keyset ordering property '"
+              "effectively nullable keyset ordering property '"
                   + sort.column().property().name()
                   + "' must declare nullsFirst() or nullsLast()");
         }
         if (value == null) {
-          if (!sort.column().nullable()) {
+          if (!nullable[index]) {
             throw new QueryValidationException(
                 "keyset continuation contains null for non-null property '"
                     + sort.column().property().name()
@@ -618,7 +578,8 @@ final class QueryPlanCompiler {
 
       List<SqlPredicate> disjunctions = new ArrayList<>();
       for (int index = 0; index < orderBy.size(); index++) {
-        SqlPredicate after = after(orderBy.get(index), values.get(index), slots[index]);
+        SqlPredicate after =
+            after(orderBy.get(index), values.get(index), slots[index], nullable[index]);
         if (after == null) {
           continue;
         }
@@ -654,18 +615,34 @@ final class QueryPlanCompiler {
     }
 
     private <V> ParameterSlot<V> addProperty(
-        PropertyMeta<E, V> property, Object value, SqlType sqlType) {
+        QueryColumn<?, V> column,
+        Object value,
+        int occurrenceOrdinal,
+        PropertyRuntime<?, V> runtime) {
       int ordinal = arguments.size();
       ParameterSlot<V> slot =
-          new ParameterSlot<>(ordinal, property.javaType(), sqlType, Nullability.NON_NULL);
-      logicalParameters.add(LogicalParameter.property(slot, model.property(property)));
+          new ParameterSlot<>(ordinal, column.javaType(), column.sqlType(), Nullability.NON_NULL);
+      logicalParameters.add(LogicalParameter.property(slot, occurrenceOrdinal, runtime));
       arguments.add(value);
       return slot;
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private ParameterSlot<Object> addPropertyUntyped(QueryColumn<E, ?> column, Object value) {
-      return (ParameterSlot) addProperty((PropertyMeta) column.property(), value, column.sqlType());
+    private ParameterSlot<Object> addPropertyUntyped(QueryColumn<?, ?> column, Object value) {
+      TableRuntimeScope.Occurrence<?> occurrence = runtimeScope.require(column.table());
+      return (ParameterSlot)
+          addProperty(
+              column,
+              value,
+              occurrence.occurrenceOrdinal(),
+              (PropertyRuntime) runtimeScope.property((QueryColumn) column));
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private void addConditionProperty(QueryColumn<?, ?> column, Object value) {
+      TableRuntimeScope.Occurrence<?> occurrence = runtimeScope.require(column.table());
+      PropertyRuntime<?, ?> runtime = runtimeScope.property((QueryColumn) column);
+      addProperty(column, value, occurrence.occurrenceOrdinal(), (PropertyRuntime) runtime);
     }
 
     private List<LogicalParameter<E>> logicalParameters() {
@@ -688,7 +665,10 @@ final class QueryPlanCompiler {
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     private static @Nullable SqlPredicate after(
-        SortSpecification<?> sort, @Nullable Object value, @Nullable ParameterSlot<Object> slot) {
+        SortSpecification<?> sort,
+        @Nullable Object value,
+        @Nullable ParameterSlot<Object> slot,
+        boolean nullable) {
       ColumnExpression column = sort.column().expression();
       if (value == null) {
         return sort.nullPlacement() == NullPlacement.FIRST ? column.isNotNull() : null;
@@ -699,7 +679,7 @@ final class QueryPlanCompiler {
               : ComparisonOperator.LESS_THAN;
       SqlPredicate comparison =
           new ComparisonPredicate(column, operator, Objects.requireNonNull(slot, "slot"));
-      if (column.nullable() && sort.nullPlacement() == NullPlacement.LAST) {
+      if (nullable && sort.nullPlacement() == NullPlacement.LAST) {
         return new LogicalPredicate(LogicalOperator.OR, List.of(comparison, column.isNull()));
       }
       return comparison;

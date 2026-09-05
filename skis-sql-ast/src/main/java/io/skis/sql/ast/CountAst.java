@@ -1,32 +1,52 @@
 package io.skis.sql.ast;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-/** Independent single-table count plan; ordering and pagination never belong to this node. */
+/** Independent count plan; ordering and pagination never belong to this node. */
 public final class CountAst implements StatementAst {
 
-  private final TableExpression<?> source;
+  private final FromClause fromClause;
   private final @Nullable SqlPredicate predicate;
   private final @Nullable SqlExpression<?> distinctExpression;
 
   /**
    * Creates {@code COUNT(*)} when {@code distinctExpression} is null, otherwise counts the distinct
-   * result values, including one result for {@code NULL} when the expression is nullable.
+   * result values. Renderers use the final FROM/JOIN effective nullability to include one result
+   * for {@code NULL} when necessary.
    */
   public CountAst(
-      TableExpression<?> source,
+      FromClause fromClause,
       @Nullable SqlPredicate predicate,
       @Nullable SqlExpression<?> distinctExpression) {
-    this.source = Objects.requireNonNull(source, "source");
+    this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
     this.predicate = predicate;
     this.distinctExpression = distinctExpression;
     SemanticValidator.validate(this);
   }
 
+  /** Creates a single-table count plan. */
+  public CountAst(
+      TableExpression<?> source,
+      @Nullable SqlPredicate predicate,
+      @Nullable SqlExpression<?> distinctExpression) {
+    this(FromClause.of(source), predicate, distinctExpression);
+  }
+
+  public FromClause fromClause() {
+    return fromClause;
+  }
+
+  /** Returns the root table for source compatibility with the single-table AST. */
   public TableExpression<?> source() {
-    return source;
+    return fromClause.root();
+  }
+
+  /** Returns the ordered joins shared with the content query. */
+  public List<JoinClause> joins() {
+    return fromClause.joins();
   }
 
   public Optional<SqlPredicate> predicate() {
@@ -41,13 +61,13 @@ public final class CountAst implements StatementAst {
   public boolean equals(Object other) {
     return this == other
         || other instanceof CountAst count
-            && source.equals(count.source)
+            && fromClause.equals(count.fromClause)
             && Objects.equals(predicate, count.predicate)
             && Objects.equals(distinctExpression, count.distinctExpression);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(source, predicate, distinctExpression);
+    return Objects.hash(fromClause, predicate, distinctExpression);
   }
 }

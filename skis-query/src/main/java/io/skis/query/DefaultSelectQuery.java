@@ -7,9 +7,14 @@ import io.skis.jdbc.JdbcPageResult;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
+import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.TableOccurrence;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -32,10 +37,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final DefaultQueryOperations operations;
   private final EntityPlanSet<E> plans;
   private final QueryTable<E> table;
-  private final @Nullable Projection<E, R> projection;
-  private final @Nullable QueryPredicate<E> predicate;
+  private final SelectedResult<?, R> selected;
+  private final List<QueryJoin> joins;
+  private final @Nullable QueryCondition predicate;
   private final ExecutionContext executionContext;
-  private final List<SortSpecification<E>> orderBy;
+  private final List<SortSpecification<?>> orderBy;
   private final boolean distinct;
   private final AtomicReference<@Nullable CompiledQueryPlan<R, Object>> fastPlan =
       new AtomicReference<>();
@@ -43,22 +49,17 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final LocalPlanCache<OrderedRow<R>> orderedPlansByPagination = new LocalPlanCache<>();
   private final AtomicReference<@Nullable CachedPlan<Long>> countPlan = new AtomicReference<>();
 
-  static <E> DefaultSelectQuery<E, E> entity(
-      DefaultQueryOperations operations, EntityPlanSet<E> plans, QueryTable<E> table) {
-    return new DefaultSelectQuery<>(
-        operations, plans, table, null, null, ExecutionContext.EMPTY, List.of(), false);
-  }
-
-  static <E, R> DefaultSelectQuery<E, R> projection(
+  static <E, R> DefaultSelectQuery<E, R> create(
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      Projection<E, R> projection) {
+      SelectedResult<?, R> selected) {
     return new DefaultSelectQuery<>(
         operations,
         plans,
         table,
-        Objects.requireNonNull(projection, "projection"),
+        selected,
+        List.of(),
         null,
         ExecutionContext.EMPTY,
         List.of(),
@@ -69,15 +70,17 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      @Nullable Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate,
+      SelectedResult<?, R> selected,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition predicate,
       ExecutionContext executionContext,
-      List<SortSpecification<E>> orderBy,
+      List<? extends SortSpecification<?>> orderBy,
       boolean distinct) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
     this.table = Objects.requireNonNull(table, "table");
-    this.projection = projection;
+    this.selected = Objects.requireNonNull(selected, "selected");
+    this.joins = List.copyOf(joins);
     this.predicate = predicate;
     this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
     this.orderBy = List.copyOf(orderBy);
@@ -86,6 +89,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   @Override
   public DefaultSelectQuery<E, R> where(QueryPredicate<E> newPredicate) {
+    return where((QueryCondition) newPredicate);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> where(QueryCondition newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate != null) {
       throw new QueryValidationException("where(...) may only be called once per query");
@@ -95,12 +103,52 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   @Override
   public DefaultSelectQuery<E, R> and(QueryPredicate<E> newPredicate) {
+    return chainNarrow(newPredicate, true);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> and(QueryCondition newPredicate) {
     return chain(newPredicate, true);
   }
 
   @Override
   public DefaultSelectQuery<E, R> or(QueryPredicate<E> newPredicate) {
+    return chainNarrow(newPredicate, false);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> or(QueryCondition newPredicate) {
     return chain(newPredicate, false);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> join(QueryTable<J> joinedTable) {
+    return innerJoin(joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> innerJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.INNER, joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> leftJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.LEFT, joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> rightJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.RIGHT, joinedTable);
+  }
+
+  @Override
+  public <J> JoinOnStep<E, R, J> fullJoin(QueryTable<J> joinedTable) {
+    return joinOn(JoinType.FULL, joinedTable);
+  }
+
+  @Override
+  public <J> DefaultSelectQuery<E, R> crossJoin(QueryTable<J> joinedTable) {
+    return appendJoin(JoinType.CROSS, Objects.requireNonNull(joinedTable, "table"), null);
   }
 
   @Override
@@ -112,16 +160,17 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         : copy(predicate, context, orderBy, distinct);
   }
 
-  @SafeVarargs
   @Override
-  public final DefaultSelectQuery<E, R> orderBy(SortSpecification<E>... specifications) {
+  public DefaultSelectQuery<E, R> orderBy(SortSpecification<?>... specifications) {
     Objects.requireNonNull(specifications, "specifications");
     if (specifications.length == 0) {
       throw new QueryValidationException("orderBy requires at least one ordering item");
     }
-    List<SortSpecification<E>> items = List.copyOf(Arrays.asList(specifications.clone()));
-    validateOrderOwnership(items);
-    return orderBy.equals(items) ? this : copy(predicate, executionContext, items, distinct);
+    List<SortSpecification<?>> items = List.copyOf(Arrays.asList(specifications.clone()));
+    validateOrderItems(items);
+    return hasSameOrderOccurrences(orderBy, items)
+        ? this
+        : copy(predicate, executionContext, items, distinct);
   }
 
   @Override
@@ -137,9 +186,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                         "thenByPrimaryKey requires primary-key metadata for entity '"
                             + plans.entity().entityName()
                             + "'"));
-    List<SortSpecification<E>> items = new ArrayList<>(orderBy);
+    List<SortSpecification<?>> items = new ArrayList<>(orderBy);
     for (PropertyMeta<E, ?> property : primaryKey.properties()) {
-      boolean present = items.stream().anyMatch(item -> item.column().property() == property);
+      boolean present =
+          items.stream()
+              .anyMatch(
+                  item -> item.column().table() == table && item.column().property() == property);
       if (!present) {
         items.add(
             new SortSpecification<>(
@@ -162,7 +214,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   @Override
   public Optional<R> fetchOne() {
     if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return operations.fetchOne(fastPlan(), plans.argument(predicate), executionContext);
+      return operations.fetchOne(fastPlan(), fastArgument(), executionContext);
     }
     QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
     return operations.fetchOne(query.plan(), query.argument(), executionContext);
@@ -185,7 +237,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private List<@Nullable R> fetchListResult() {
     if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return operations.fetchList(fastPlan(), plans.argument(predicate), executionContext);
+      return operations.fetchList(fastPlan(), fastArgument(), executionContext);
     }
     QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
     return operations.fetchList(query.plan(), query.argument(), executionContext);
@@ -212,8 +264,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return fetchPageResult(request, countCompilation());
   }
 
-  Page<@Nullable R> fetchNullablePage(
-      PageRequest request, CountQuery explicitCountQuery) {
+  Page<@Nullable R> fetchNullablePage(PageRequest request, CountQuery explicitCountQuery) {
     validatePageRequest(request);
     return fetchPageResult(
         request,
@@ -281,12 +332,18 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return plansByPagination.getOrCompile(
         pagination,
         () ->
-            projection == null
-                ? entityCompilation(pagination)
-                : plans
-                    .compiler()
-                    .compileProjection(
-                        plans.model(), table, projection, predicate, orderBy, distinct, pagination),
+            plans
+                .compiler()
+                .compileSelection(
+                    plans.model(),
+                    table,
+                    selected,
+                    joins,
+                    predicate,
+                    orderBy,
+                    distinct,
+                    pagination,
+                    List.of()),
         paginationArgument(pagination));
   }
 
@@ -299,80 +356,64 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return orderedPlansByPagination.getOrCompile(
         pagination,
         () ->
-            projection == null
-                ? orderedEntityCompilation(pagination)
-                : plans
-                    .compiler()
-                    .compileOrderedProjection(
-                        plans.model(), table, projection, predicate, orderBy, distinct, pagination),
+            plans
+                .compiler()
+                .compileOrdered(
+                    plans.model(),
+                    table,
+                    selected,
+                    joins,
+                    predicate,
+                    orderBy,
+                    distinct,
+                    pagination),
         paginationArgument(pagination));
   }
 
   private boolean isFastPathShape(QueryPagination pagination) {
-    return pagination == QueryPagination.None.INSTANCE && orderBy.isEmpty() && !distinct;
+    return pagination == QueryPagination.None.INSTANCE
+        && joins.isEmpty()
+        && selected.belongsTo(table)
+        && selected.supportsFastPath()
+        && (predicate == null || predicate instanceof QueryPredicate<?>)
+        && orderBy.isEmpty()
+        && !distinct;
   }
 
   private QueryCompilation<R> unpaginatedCompilation() {
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
     return new QueryCompilation<>(
         fastPlan(),
-        plans.argument(predicate),
-        new SelectStatement(
-            selection().expressions(),
-            table,
-            predicate == null ? null : predicate.compile().ast()));
+        fastArgument(),
+        new SelectStatement(selected.expressions(), structure.fromClause(), structure.where()));
   }
 
-  @SuppressWarnings("unchecked")
   private CompiledQueryPlan<R, Object> fastPlan() {
     CompiledQueryPlan<R, Object> existing = fastPlan.get();
     if (existing != null) {
       return existing;
     }
-    CompiledQueryPlan<R, Object> compiled =
-        projection == null
-            ? (CompiledQueryPlan<R, Object>) plans.selectPlan(table, predicate)
-            : plans.projectionPlan(table, projection, predicate);
+    CompiledQueryPlan<R, Object> compiled = selected.fastPlan(fastPredicate());
     CompiledQueryPlan<R, Object> published = fastPlan.compareAndExchange(null, compiled);
     return published == null ? compiled : published;
-  }
-
-  @SuppressWarnings("unchecked")
-  private QueryCompilation<R> entityCompilation(QueryPagination pagination) {
-    return (QueryCompilation<R>)
-        plans
-            .compiler()
-            .compileEntity(plans.model(), table, predicate, orderBy, distinct, pagination);
-  }
-
-  @SuppressWarnings("unchecked")
-  private QueryCompilation<OrderedRow<R>> orderedEntityCompilation(QueryPagination pagination) {
-    return (QueryCompilation<OrderedRow<R>>)
-        (QueryCompilation<?>)
-            plans
-                .compiler()
-                .compileOrderedEntity(
-                    plans.model(), table, predicate, orderBy, distinct, pagination);
   }
 
   QueryCompilation<Long> countCompilation() {
     CachedPlan<Long> existing = countPlan.get();
     if (existing != null) {
-      return new QueryCompilation<>(existing.plan(), plans.argument(predicate), existing.ast());
+      return new QueryCompilation<>(existing.plan(), conditionArgument(), existing.ast());
     }
     QueryCompilation<Long> compiled =
-        plans.compiler().compileCount(plans.model(), table, selection(), predicate, distinct);
+        plans.compiler().compileCount(plans.model(), table, selected, joins, predicate, distinct);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     return published == null
         ? compiled
-        : new QueryCompilation<>(published.plan(), plans.argument(predicate), published.ast());
+        : new QueryCompilation<>(published.plan(), conditionArgument(), published.ast());
   }
 
   private Object paginationArgument(QueryPagination pagination) {
-    List<Object> arguments = new ArrayList<>();
-    if (predicate != null) {
-      arguments.addAll(predicate.compile().arguments());
-    }
+    List<Object> arguments = new ArrayList<>(conditionArguments());
     switch (pagination) {
       case QueryPagination.None ignored -> {}
       case QueryPagination.LimitOnly limit -> arguments.add(limit.limit());
@@ -386,18 +427,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       }
     }
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
-  }
-
-  private QueryPlanCompiler.Selection<E, R> selection() {
-    if (projection != null) {
-      return plans.compiler().projectionSelection(plans.model(), table, projection);
-    }
-    @SuppressWarnings("unchecked")
-    QueryPlanCompiler.Selection<E, R> entity =
-        (QueryPlanCompiler.Selection<E, R>)
-            (QueryPlanCompiler.Selection<?, ?>)
-                plans.compiler().entitySelection(plans.model(), table);
-    return entity;
   }
 
   private QueryCompilation<Long> requireExplicitCount(CountQuery explicitCountQuery) {
@@ -483,29 +512,32 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (orderBy.isEmpty()) {
       throw new QueryValidationException("pagination requires explicit stable ORDER BY");
     }
-    if (!hasStableDistinctOrdering()) {
-      PrimaryKeyMeta<E> primaryKey =
-          plans
-              .entity()
-              .primaryKey()
-              .orElseThrow(
-                  () ->
-                      new QueryValidationException(
-                          "pagination requires primary-key metadata for stable ordering"));
-      for (PropertyMeta<E, ?> property : primaryKey.properties()) {
-        if (orderBy.stream().noneMatch(item -> item.column().property() == property)) {
-          throw new QueryValidationException(
-              "pagination ORDER BY must include the complete primary key; missing property '"
-                  + property.name()
-                  + "'");
-        }
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
+    validateOrderScope(structure.fromClause());
+    if (distinct) {
+      if (!hasStableDistinctOrdering()) {
+        SqlExpression<?> missing =
+            selected.expressions().stream()
+                .filter(
+                    expression ->
+                        orderBy.stream()
+                            .noneMatch(item -> item.column().expression().equals(expression)))
+                .findFirst()
+                .orElseThrow();
+        throw new QueryValidationException(
+            "distinct pagination ORDER BY must cover every selected expression; missing '"
+                + expressionSummary(missing)
+                + "'");
       }
+    } else {
+      validateOccurrencePrimaryKeys(structure.fromClause());
     }
     if (keyset) {
-      for (SortSpecification<E> item : orderBy) {
-        if (item.column().nullable() && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
+      for (SortSpecification<?> item : orderBy) {
+        if (structure.fromClause().effectiveNullability(item.column().expression()).isNullable()
+            && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw new QueryValidationException(
-              "nullable keyset ordering property '"
+              "effectively nullable keyset ordering property '"
                   + item.column().property().name()
                   + "' must declare nullsFirst() or nullsLast()");
         }
@@ -517,24 +549,81 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (!distinct) {
       return false;
     }
-    List<SqlExpression<?>> selected = selection().expressions();
-    return selected.stream()
+    List<SqlExpression<?>> expressions = selected.expressions();
+    return expressions.stream()
         .allMatch(
             expression ->
                 orderBy.stream().anyMatch(item -> item.column().expression().equals(expression)));
   }
 
-  private void validateOrderOwnership(List<SortSpecification<E>> items) {
-    Set<PropertyMeta<E, ?>> properties = new HashSet<>();
-    for (SortSpecification<E> item : items) {
+  private void validateOrderItems(List<SortSpecification<?>> items) {
+    Set<SqlExpression<?>> expressions = new HashSet<>();
+    for (SortSpecification<?> item : items) {
       Objects.requireNonNull(item, "ordering item");
-      if (!item.column().expression().table().equals(table)) {
+      if (!expressions.add(item.column().expression())) {
         throw new QueryValidationException(
-            "ORDER BY column belongs to a different table expression");
+            "ORDER BY repeats expression '" + expressionSummary(item.column().expression()) + "'");
       }
-      if (!properties.add(item.column().property())) {
+    }
+  }
+
+  private static boolean hasSameOrderOccurrences(
+      List<? extends SortSpecification<?>> current,
+      List<? extends SortSpecification<?>> replacement) {
+    if (current.size() != replacement.size()) {
+      return false;
+    }
+    for (int index = 0; index < current.size(); index++) {
+      SortSpecification<?> existing = current.get(index);
+      SortSpecification<?> candidate = replacement.get(index);
+      if (existing.column().table() != candidate.column().table()
+          || existing.column().property() != candidate.column().property()
+          || existing.direction() != candidate.direction()
+          || existing.nullPlacement() != candidate.nullPlacement()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private void validateOrderScope(FromClause fromClause) {
+    for (SortSpecification<?> item : orderBy) {
+      if (fromClause.occurrenceOf(item.column().table()).isEmpty()) {
         throw new QueryValidationException(
-            "ORDER BY repeats property '" + item.column().property().name() + "'");
+            "ORDER BY expression '"
+                + expressionSummary(item.column().expression())
+                + "' is not visible in the final FROM/JOIN scope");
+      }
+    }
+  }
+
+  private void validateOccurrencePrimaryKeys(FromClause fromClause) {
+    for (TableOccurrence occurrence : fromClause.occurrences()) {
+      PrimaryKeyMeta<?> primaryKey =
+          occurrence
+              .table()
+              .entity()
+              .primaryKey()
+              .orElseThrow(
+                  () ->
+                      new QueryValidationException(
+                          "pagination ORDER BY requires primary-key metadata for "
+                              + occurrenceDescription(occurrence)));
+      for (PropertyMeta<?, ?> property : primaryKey.properties()) {
+        boolean present =
+            orderBy.stream()
+                .anyMatch(
+                    item ->
+                        item.column().table() == occurrence.table()
+                            && item.column().property() == property);
+        if (!present) {
+          throw new QueryValidationException(
+              "pagination ORDER BY is not stable for "
+                  + occurrenceDescription(occurrence)
+                  + "; missing primary-key property '"
+                  + property.name()
+                  + "'");
+        }
       }
     }
   }
@@ -543,8 +632,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (!distinct || orderBy.isEmpty()) {
       return;
     }
-    List<SqlExpression<?>> expressions = selection().expressions();
-    for (SortSpecification<E> item : orderBy) {
+    List<SqlExpression<?>> expressions = selected.expressions();
+    for (SortSpecification<?> item : orderBy) {
       if (!expressions.contains(item.column().expression())) {
         throw new QueryValidationException(
             "distinct ORDER BY property '"
@@ -573,7 +662,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         throw new QueryValidationException("continuation ordering value count does not match");
       }
       for (int index = 0; index < orderBy.size(); index++) {
-        SortSpecification<E> sort = orderBy.get(index);
+        SortSpecification<?> sort = orderBy.get(index);
         Object value = values.get(index);
         if (continuation.sqlTypes().get(index) != sort.column().sqlType()
             || continuation.nullMarkers().get(index) != (value == null)
@@ -587,19 +676,27 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
   }
 
-  private String queryFingerprint() {
+  String queryFingerprint() {
     QueryCompilation<R> structure = compilation(QueryPagination.None.INSTANCE);
+    FromClause fromClause = QueryStructureCompiler.compile(table, joins, predicate).fromClause();
     MessageDigest digest = sha256();
+    updateDigest(digest, "join-query-fingerprint-v1");
     updateDigest(digest, structure.plan().dialectId());
     updateDigest(digest, structure.plan().sql());
-    updateDigest(
-        digest,
-        projection == null
-            ? "entity:" + plans.entity().javaType().getName()
-            : "projection:"
-                + projection.resultType().getName()
-                + ':'
-                + projection.mapping().mappingType().getName());
+    updateDigest(digest, selected.structuralIdentity());
+    for (TableOccurrence occurrence : fromClause.occurrences()) {
+      var entity = occurrence.table().entity();
+      var physicalTable = entity.table();
+      updateDigest(digest, Integer.toString(occurrence.occurrenceOrdinal()));
+      updateDigest(digest, entity.javaType().getName());
+      updateDigest(digest, entity.entityName());
+      updateDigest(digest, entity.mode().name());
+      updateDigest(digest, physicalTable.catalog());
+      updateDigest(digest, physicalTable.schema());
+      updateDigest(digest, physicalTable.name());
+      updateDigest(digest, occurrence.table().alias().map(Identifier::value).orElse("<unaliased>"));
+    }
+    fromClause.joins().forEach(join -> updateDigest(digest, join.type().name()));
     structure
         .plan()
         .renderedSql()
@@ -614,11 +711,33 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return HexFormat.of().formatHex(digest.digest());
   }
 
-  private String orderSignature() {
+  String orderSignature() {
+    FromClause fromClause = QueryStructureCompiler.compile(table, joins, predicate).fromClause();
     StringBuilder signature = new StringBuilder();
-    for (SortSpecification<E> item : orderBy) {
+    for (SortSpecification<?> item : orderBy) {
+      TableOccurrence occurrence =
+          fromClause
+              .occurrenceOf(item.column().table())
+              .orElseThrow(
+                  () ->
+                      new QueryValidationException(
+                          "ORDER BY expression '"
+                              + expressionSummary(item.column().expression())
+                              + "' is not visible in the final FROM/JOIN scope"));
       signature
+          .append(occurrence.occurrenceOrdinal())
+          .append(':')
+          .append(occurrence.effectiveQualifier())
+          .append(':')
+          .append(occurrence.table().entity().javaType().getName())
+          .append(':')
           .append(item.column().property().ordinal())
+          .append(':')
+          .append(item.column().property().name())
+          .append(':')
+          .append(item.column().javaType().getName())
+          .append(':')
+          .append(item.column().sqlType())
           .append(':')
           .append(item.direction())
           .append(':')
@@ -628,9 +747,32 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return signature.isEmpty() ? "unordered" : signature.toString();
   }
 
+  private static String occurrenceDescription(TableOccurrence occurrence) {
+    return "table occurrence #"
+        + occurrence.occurrenceOrdinal()
+        + " with effective qualifier '"
+        + occurrence.effectiveQualifier()
+        + "' and entity '"
+        + occurrence.table().entity().entityName()
+        + "'";
+  }
+
+  private static String expressionSummary(SqlExpression<?> expression) {
+    if (expression instanceof ColumnExpression<?, ?> column) {
+      String qualifier =
+          column
+              .table()
+              .alias()
+              .map(Identifier::value)
+              .orElse(column.table().entity().table().name());
+      return qualifier + '.' + column.property().name();
+    }
+    return expression.getClass().getSimpleName();
+  }
+
   private String parameterDigest() {
     MessageDigest digest = sha256();
-    List<Object> arguments = predicate == null ? List.of() : predicate.compile().arguments();
+    List<Object> arguments = conditionArguments();
     for (Object argument : arguments) {
       updateDigest(digest, argument.getClass().getName());
       updateDigest(digest, deepValue(argument));
@@ -661,7 +803,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         : String.valueOf(value);
   }
 
-  private DefaultSelectQuery<E, R> chain(QueryPredicate<E> newPredicate, boolean conjunction) {
+  private DefaultSelectQuery<E, R> chain(QueryCondition newPredicate, boolean conjunction) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate == null) {
       throw new QueryValidationException(
@@ -674,13 +816,76 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         distinct);
   }
 
+  private DefaultSelectQuery<E, R> chainNarrow(
+      QueryPredicate<E> newPredicate, boolean conjunction) {
+    Objects.requireNonNull(newPredicate, "predicate");
+    if (predicate == null) {
+      throw new QueryValidationException(
+          (conjunction ? "and" : "or") + "(...) requires an existing where predicate");
+    }
+    QueryCondition combined =
+        predicate instanceof QueryPredicate<?> existing
+            ? combineNarrow(existing, newPredicate, conjunction)
+            : (conjunction ? predicate.and(newPredicate) : predicate.or(newPredicate));
+    return copy(combined, executionContext, orderBy, distinct);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <E> QueryPredicate<E> combineNarrow(
+      QueryPredicate<?> existing, QueryPredicate<E> added, boolean conjunction) {
+    QueryPredicate<E> typed = (QueryPredicate<E>) existing;
+    return conjunction ? typed.and(added) : typed.or(added);
+  }
+
   private DefaultSelectQuery<E, R> copy(
-      @Nullable QueryPredicate<E> newPredicate,
+      @Nullable QueryCondition newPredicate,
       ExecutionContext context,
-      List<SortSpecification<E>> newOrderBy,
+      List<? extends SortSpecification<?>> newOrderBy,
       boolean newDistinct) {
     return new DefaultSelectQuery<>(
-        operations, plans, table, projection, newPredicate, context, newOrderBy, newDistinct);
+        operations, plans, table, selected, joins, newPredicate, context, newOrderBy, newDistinct);
+  }
+
+  private <J> JoinOnStep<E, R, J> joinOn(JoinType type, QueryTable<J> joinedTable) {
+    return new DefaultJoinOnStep<>(this, type, Objects.requireNonNull(joinedTable, "table"));
+  }
+
+  DefaultSelectQuery<E, R> appendJoin(
+      JoinType type, QueryTable<?> joinedTable, @Nullable QueryCondition on) {
+    List<QueryJoin> appended = new ArrayList<>(joins.size() + 1);
+    appended.addAll(joins);
+    appended.add(new QueryJoin(type, joinedTable, on));
+    return new DefaultSelectQuery<>(
+        operations,
+        plans,
+        table,
+        selected,
+        appended,
+        predicate,
+        executionContext,
+        orderBy,
+        distinct);
+  }
+
+  private List<Object> conditionArguments() {
+    if (joins.isEmpty() && predicate == null) {
+      return List.of();
+    }
+    return QueryStructureCompiler.compile(table, joins, predicate).arguments();
+  }
+
+  private Object conditionArgument() {
+    List<Object> arguments = conditionArguments();
+    return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
+  }
+
+  private Object fastArgument() {
+    return plans.argument(fastPredicate());
+  }
+
+  @SuppressWarnings("unchecked")
+  private @Nullable QueryPredicate<E> fastPredicate() {
+    return predicate == null ? null : (QueryPredicate<E>) predicate;
   }
 
   private static int sizePlusOne(int pageSize) {

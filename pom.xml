@@ -6,7 +6,7 @@
 
   <groupId>io.github.xhufang</groupId>
   <artifactId>skis-parent</artifactId>
-  <version>0.2.3-SNAPSHOT</version>
+  <version>0.2.4-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>skis-parent</name>
@@ -480,7 +480,7 @@
                 <breakBuildOnSourceIncompatibleModifications>true
                 </breakBuildOnSourceIncompatibleModifications>
                 <reportOnlyFilename>true</reportOnlyFilename>
-                <!-- Exact 0.2.2/0.2.3 internal-line breaks approved by the development plan.
+                <!-- Exact 0.2.2-0.2.4 internal-line breaks approved by the development plan.
                      Keep this list at class/member granularity. -->
                 <excludes>
                   <exclude>io.skis.query.EntitySelectQuery</exclude>
@@ -490,8 +490,33 @@
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NonNullQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NullableQueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.ProjectionSelection)</exclude>
+                  <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.NonNullQueryColumn)</exclude>
+                  <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
-                  <exclude>io.skis.query.SelectFromStep#from(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.annotations.ProjectionProperty</exclude>
+                  <exclude>io.skis.annotations.SkisProjection#entity()</exclude>
+                  <exclude>io.skis.query.Projection</exclude>
+                  <exclude>io.skis.query.ProjectionProvider</exclude>
+                  <exclude>io.skis.query.ProjectionRegistry</exclude>
+                  <exclude>io.skis.processor.SkisProjectionIndexProcessor</exclude>
+                  <exclude>io.skis.query.QueryRuntime#create(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect,io.skis.jdbc.JdbcExecutor)</exclude>
+                  <exclude>io.skis.query.QueryRuntime#compile(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect)</exclude>
+                  <exclude>io.skis.query.QueryRuntime#compile(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect,int,java.time.Duration)</exclude>
+                  <exclude>io.skis.runtime.SkisExecutorFactory$Builder#projectionRegistry(io.skis.query.ProjectionRegistry)</exclude>
+                  <exclude>io.skis.query.NullableScalarQuery</exclude>
+                  <exclude>io.skis.query.NullableSelectFromStep</exclude>
+                  <exclude>io.skis.query.SelectFromStep</exclude>
+                  <exclude>io.skis.query.SelectQuery#where(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectQuery#and(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectQuery#or(io.skis.query.QueryCondition)</exclude>
+                  <exclude>io.skis.query.SelectQuery#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#crossJoin(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
                   <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>

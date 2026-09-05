@@ -3,6 +3,7 @@ package io.skis.testmodel.pet;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisSession;
 import io.skis.testmodel.pet.skis.PetMeta;
+import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.util.List;
@@ -56,13 +57,17 @@ public final class PetService {
 
   /** Map several selected columns to a user-owned record through generated projection metadata. */
   public List<PetSummary> findAllSummaries() {
-    return skisExecutor.selectProjection(PET, PetSummary.class).fetchList();
+    return skisExecutor
+        .select(PetSummaryProjection.of(PET.id(), PET.name(), PET.weight()))
+        .from(PET)
+        .fetchList();
   }
 
   /** Reuse the immutable projection with different predicates and bound values. */
   public Optional<PetSummary> findSummaryById(long id) {
     return skisExecutor
-        .selectProjection(PET, PetSummary.class)
+        .select(PetSummaryProjection.of(PET.id(), PET.name(), PET.weight()))
+        .from(PET)
         .where(PET.id().eq(id))
         .fetchOne();
   }
@@ -77,12 +82,13 @@ public final class PetService {
   }
 
   /**
-   * Bind the registered projection to the same aliased table expression used by the predicate.
+   * Bind the generated result shape to the same aliased table expression used by the predicate.
    */
   public List<PetSummary> findSummariesByNameUsingAlias(String name) {
     PetTable pet = PET.as("p");
     return skisExecutor
-        .selectProjection(pet, PetSummary.class)
+        .select(PetSummaryProjection.of(pet.id(), pet.name(), pet.weight()))
+        .from(pet)
         .where(pet.name().eq(name))
         .fetchList();
   }
@@ -122,7 +128,8 @@ public final class PetService {
         session -> {
           session.insert(PetMeta.ENTITY, pet);
           return session
-              .selectProjection(PET, PetSummary.class)
+              .select(PetSummaryProjection.of(PET.id(), PET.name(), PET.weight()))
+              .from(PET)
               .where(PET.id().eq(pet.id()))
               .fetchOne()
               .orElseThrow();

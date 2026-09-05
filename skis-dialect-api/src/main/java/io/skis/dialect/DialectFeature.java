@@ -18,5 +18,20 @@ public enum DialectFeature {
   NULLS_FIRST_LAST,
 
   /** COUNT(DISTINCT expression) is supported. */
-  COUNT_DISTINCT
+  COUNT_DISTINCT,
+
+  /** SELECT supports INNER JOIN with an ON predicate. */
+  INNER_JOIN,
+
+  /** SELECT supports LEFT JOIN with an ON predicate. */
+  LEFT_JOIN,
+
+  /** SELECT supports RIGHT JOIN with an ON predicate. */
+  RIGHT_JOIN,
+
+  /** SELECT supports FULL JOIN with an ON predicate. */
+  FULL_JOIN,
+
+  /** SELECT supports CROSS JOIN without an ON predicate. */
+  CROSS_JOIN
 }

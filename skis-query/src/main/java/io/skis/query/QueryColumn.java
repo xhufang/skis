@@ -13,7 +13,8 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Shared predicate and ordering DSL for generated nullable and non-null columns. */
-public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, NullableQueryColumn {
+public abstract sealed class QueryColumn<E, V> implements Selectable<V>
+    permits NonNullQueryColumn, NullableQueryColumn {
 
   private final ColumnExpression<E, V> expression;
 
@@ -45,8 +46,18 @@ public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, Nulla
     return comparison(ComparisonOperator.EQUAL, value);
   }
 
+  /** Compares this column with another table column using portable equality rules. */
+  public final <O> QueryCondition eq(QueryColumn<O, V> other) {
+    return columnComparison(ComparisonOperator.EQUAL, other);
+  }
+
   public final QueryPredicate<E> ne(@Nullable V value) {
     return comparison(ComparisonOperator.NOT_EQUAL, value);
+  }
+
+  /** Compares this column with another table column using portable inequality rules. */
+  public final <O> QueryCondition ne(QueryColumn<O, V> other) {
+    return columnComparison(ComparisonOperator.NOT_EQUAL, other);
   }
 
   public final QueryPredicate<E> gt(@Nullable V value) {
@@ -54,9 +65,19 @@ public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, Nulla
     return comparison(ComparisonOperator.GREATER_THAN, value);
   }
 
+  /** Compares this column with another table column using portable ordering rules. */
+  public final <O> QueryCondition gt(QueryColumn<O, V> other) {
+    return columnComparison(ComparisonOperator.GREATER_THAN, other);
+  }
+
   public final QueryPredicate<E> ge(@Nullable V value) {
     requireOrdering("ge");
     return comparison(ComparisonOperator.GREATER_THAN_OR_EQUAL, value);
+  }
+
+  /** Compares this column with another table column using portable ordering rules. */
+  public final <O> QueryCondition ge(QueryColumn<O, V> other) {
+    return columnComparison(ComparisonOperator.GREATER_THAN_OR_EQUAL, other);
   }
 
   public final QueryPredicate<E> lt(@Nullable V value) {
@@ -64,9 +85,19 @@ public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, Nulla
     return comparison(ComparisonOperator.LESS_THAN, value);
   }
 
+  /** Compares this column with another table column using portable ordering rules. */
+  public final <O> QueryCondition lt(QueryColumn<O, V> other) {
+    return columnComparison(ComparisonOperator.LESS_THAN, other);
+  }
+
   public final QueryPredicate<E> le(@Nullable V value) {
     requireOrdering("le");
     return comparison(ComparisonOperator.LESS_THAN_OR_EQUAL, value);
+  }
+
+  /** Compares this column with another table column using portable ordering rules. */
+  public final <O> QueryCondition le(QueryColumn<O, V> other) {
+    return columnComparison(ComparisonOperator.LESS_THAN_OR_EQUAL, other);
   }
 
   public final QueryPredicate<E> isNull() {
@@ -113,12 +144,23 @@ public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, Nulla
     return new SortSpecification<>(this, SortDirection.DESC, NullPlacement.DIALECT_DEFAULT);
   }
 
-  final ColumnExpression<E, V> expression() {
+  @Override
+  public final ColumnExpression<E, V> expression() {
     return expression;
+  }
+
+  final QueryTable<E> table() {
+    return (QueryTable<E>) expression.table();
   }
 
   private QueryPredicate<E> comparison(ComparisonOperator operator, @Nullable V value) {
     return QueryPredicate.comparison(this, operator, requireValue(operator.name(), value));
+  }
+
+  private <O> QueryCondition columnComparison(
+      ComparisonOperator operator, QueryColumn<O, V> other) {
+    return FrameworkQueryCondition.comparison(
+        this, operator, Objects.requireNonNull(other, "other"));
   }
 
   private QueryPredicate<E> membership(Collection<? extends V> values, boolean negated) {

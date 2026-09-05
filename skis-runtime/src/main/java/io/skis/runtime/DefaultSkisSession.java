@@ -8,10 +8,12 @@ import io.skis.mutation.MutationOperations;
 import io.skis.query.NonNullQueryColumn;
 import io.skis.query.NullableQueryColumn;
 import io.skis.query.NullableSelectFromStep;
+import io.skis.query.ProjectionSelectFromStep;
+import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
 import io.skis.query.SelectFromStep;
+import io.skis.query.SelectQuery;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -52,6 +54,18 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
+  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+    requireActive();
+    return queries.select(table);
+  }
+
+  @Override
+  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+    requireActive();
+    return queries.selectNullable(table);
+  }
+
+  @Override
   public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
     requireActive();
     return queries.select(column);
@@ -64,9 +78,15 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType) {
+  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
     requireActive();
-    return queries.selectProjection(table, projectionType);
+    return queries.selectNullable(column);
+  }
+
+  @Override
+  public <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection) {
+    requireActive();
+    return queries.select(projection);
   }
 
   @Override

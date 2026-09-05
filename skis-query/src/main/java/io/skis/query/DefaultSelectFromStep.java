@@ -2,19 +2,19 @@ package io.skis.query;
 
 import java.util.Objects;
 
-/** Immutable FROM stage returned after selecting a scalar or user projection. */
-final class DefaultSelectFromStep<E, R> implements SelectFromStep<E, R> {
+/** Immutable FROM stage returned after selecting an entity, scalar, or user projection. */
+final class DefaultSelectFromStep<S, R> implements SelectFromStep<S, R> {
 
   private final DefaultQueryOperations operations;
-  private final Projection<E, R> projection;
+  private final SelectedResult<S, R> selected;
 
-  DefaultSelectFromStep(DefaultQueryOperations operations, Projection<E, R> projection) {
+  DefaultSelectFromStep(DefaultQueryOperations operations, SelectedResult<S, R> selected) {
     this.operations = Objects.requireNonNull(operations, "operations");
-    this.projection = Objects.requireNonNull(projection, "projection");
+    this.selected = Objects.requireNonNull(selected, "selected");
   }
 
   @Override
-  public SelectQuery<E, R> from(QueryTable<E> table) {
-    return operations.selectFrom(projection, Objects.requireNonNull(table, "table"));
+  public <F> SelectQuery<F, R> from(QueryTable<F> table) {
+    return operations.selectFrom(selected, Objects.requireNonNull(table, "table"));
   }
 }

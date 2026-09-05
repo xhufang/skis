@@ -9,14 +9,43 @@ public interface SelectQuery<E, R> {
 
   SelectQuery<E, R> where(QueryPredicate<E> predicate);
 
+  SelectQuery<E, R> where(QueryCondition condition);
+
   SelectQuery<E, R> and(QueryPredicate<E> predicate);
+
+  SelectQuery<E, R> and(QueryCondition condition);
 
   SelectQuery<E, R> or(QueryPredicate<E> predicate);
 
+  SelectQuery<E, R> or(QueryCondition condition);
+
+  /** Starts an INNER JOIN whose ON condition is required before query execution is available. */
+  <J> JoinOnStep<E, R, J> join(QueryTable<J> table);
+
+  /** Starts an explicit INNER JOIN whose ON condition is required. */
+  <J> JoinOnStep<E, R, J> innerJoin(QueryTable<J> table);
+
+  /** Starts a LEFT JOIN whose ON condition is required. */
+  <J> JoinOnStep<E, R, J> leftJoin(QueryTable<J> table);
+
+  /** Starts a RIGHT JOIN whose ON condition is required. */
+  <J> JoinOnStep<E, R, J> rightJoin(QueryTable<J> table);
+
+  /** Starts a FULL JOIN whose ON condition is required. */
+  <J> JoinOnStep<E, R, J> fullJoin(QueryTable<J> table);
+
+  /** Appends a CROSS JOIN directly; CROSS JOIN never accepts an ON condition. */
+  <J> SelectQuery<E, R> crossJoin(QueryTable<J> table);
+
   SelectQuery<E, R> withOptions(ExecutionOptions executionOptions);
 
-  @SuppressWarnings("unchecked")
-  SelectQuery<E, R> orderBy(SortSpecification<E>... specifications);
+  /**
+   * Replaces the ordering with columns from the final query scope.
+   *
+   * <p>The ordering column need not belong to the FROM root. Its table occurrence is validated
+   * against the completed FROM/JOIN structure before SQL execution.
+   */
+  SelectQuery<E, R> orderBy(SortSpecification<?>... specifications);
 
   SelectQuery<E, R> thenByPrimaryKey(SortDirection direction);
 

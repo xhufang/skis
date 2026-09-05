@@ -12,8 +12,6 @@ final class ProjectionGenerator {
 
   String render(ProjectionModel model) {
     String className = model.projectionName() + "Projection";
-    EntityModel entity = model.entity();
-    String entityMetaType = entity.generatedPackage() + "." + entity.entityName() + "Meta";
     List<ProjectionModel.ProjectionParameter> parameters = model.parameters();
     Set<String> usedNames = new HashSet<>();
     parameters.forEach(parameter -> usedNames.add(parameter.name()));
@@ -24,11 +22,14 @@ final class ProjectionGenerator {
     for (int index = 0; index < parameters.size(); index++) {
       valueNames[index] = uniqueName("$skisValue" + index, usedNames);
     }
-    StringBuilder source = new StringBuilder(4096 + parameters.size() * 256);
+    StringBuilder source = new StringBuilder(4096 + parameters.size() * 320);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.query.Projection;\n");
-    source.append("import io.skis.query.ProjectionProvider;\n");
+    source.append("import io.skis.query.NonNullSelectable;\n");
+    source.append("import io.skis.query.ProjectionMapping;\n");
+    source.append("import io.skis.query.ProjectionSelection;\n");
+    source.append("import io.skis.query.Selectable;\n");
+    source.append("import io.skis.sql.ast.Nullability;\n");
     source.append("import java.util.List;\n\n");
     source
         .append("@javax.annotation.processing.Generated(\n")
@@ -36,45 +37,42 @@ final class ProjectionGenerator {
         .append("    comments = \"Projection ABI ")
         .append(SourceText.GENERATED_ABI)
         .append("\")\n");
+    source.append("public final class ").append(className).append(" {\n\n");
     source
-        .append("public final class ")
-        .append(className)
-        .append(" implements ProjectionProvider {\n\n");
-    source
-        .append("  private static final Projection.Mapping<")
+        .append("  private static final ProjectionMapping<")
         .append(model.projectionTypeName())
         .append("> MAPPING =\n")
-        .append("      Projection.mapping(")
-        .append(className)
-        .append(".class);\n\n");
-    source
-        .append("  private static final Projection<")
-        .append(entity.entityTypeName())
-        .append(", ")
-        .append(model.projectionTypeName())
-        .append("> PROJECTION =\n")
-        .append("      Projection.generated(\n")
+        .append("      ProjectionMapping.generated(\n")
+        .append("          ")
+        .append(SourceText.GENERATED_ABI)
+        .append(",\n")
         .append("          ")
         .append(model.projectionTypeName())
         .append(".class,\n")
         .append("          ")
-        .append(entityMetaType)
-        .append(".ENTITY,\n")
-        .append("          MAPPING,\n")
+        .append(SourceText.string(model.mappingId()))
+        .append(",\n")
         .append("          List.of(\n");
     for (int index = 0; index < parameters.size(); index++) {
+      ProjectionModel.ProjectionParameter parameter = parameters.get(index);
       source
-          .append("              ")
-          .append(entityMetaType)
-          .append('.')
-          .append(parameters.get(index).property().fieldName())
-          .append(index + 1 == parameters.size() ? "),\n" : ",\n");
+          .append("              new ProjectionMapping.Parameter(")
+          .append(index)
+          .append(", ")
+          .append(SourceText.string(parameter.name()))
+          .append(", ")
+          .append(parameter.classLiteral())
+          .append(", Nullability.")
+          .append(parameter.nullable() ? "NULLABLE" : "NON_NULL")
+          .append(", ")
+          .append(index)
+          .append(index + 1 == parameters.size() ? ")),\n" : "),\n");
     }
     source.append("          ").append(readersName).append(" -> {\n");
     for (int index = 0; index < parameters.size(); index++) {
       ProjectionModel.ProjectionParameter parameter = parameters.get(index);
       source
-          .append("            Projection.ValueReader<")
+          .append("            ProjectionMapping.ValueReader<")
           .append(parameter.typeName())
           .append("> ")
           .append(valueNames[index])
@@ -84,9 +82,7 @@ final class ProjectionGenerator {
           .append(".reader(")
           .append(index)
           .append(", ")
-          .append(entityMetaType)
-          .append('.')
-          .append(parameter.property().fieldName())
+          .append(parameter.classLiteral())
           .append(");\n");
     }
     source
@@ -99,8 +95,10 @@ final class ProjectionGenerator {
         .append(model.projectionTypeName())
         .append("(\n");
     for (int index = 0; index < parameters.size(); index++) {
+      ProjectionModel.ProjectionParameter parameter = parameters.get(index);
       source
           .append("                    ")
+          .append(parameter.primitive() ? "(" + parameter.constructorTypeName() + ") " : "")
           .append(valueNames[index])
           .append(".read(")
           .append(resultSetName)
@@ -110,16 +108,28 @@ final class ProjectionGenerator {
           .append(index + 1 == parameters.size() ? ");\n" : ",\n");
     }
     source.append("          });\n\n");
-    source.append("  public ").append(className).append("() {}\n\n");
+    source.append("  private ").append(className).append("() {}\n\n");
     source
-        .append("  @Override\n")
-        .append("  public Projection<")
-        .append(entity.entityTypeName())
-        .append(", ")
+        .append("  public static ProjectionSelection<")
         .append(model.projectionTypeName())
-        .append("> projection() {\n")
-        .append("    return PROJECTION;\n")
-        .append("  }\n");
+        .append("> of(\n");
+    for (int index = 0; index < parameters.size(); index++) {
+      ProjectionModel.ProjectionParameter parameter = parameters.get(index);
+      source
+          .append("      ")
+          .append(parameter.nullable() ? "Selectable<" : "NonNullSelectable<")
+          .append(parameter.typeName())
+          .append("> ")
+          .append(parameter.name())
+          .append(index + 1 == parameters.size() ? ") {\n" : ",\n");
+    }
+    source.append("    return ").append(className).append(".MAPPING.bind(");
+    for (int index = 0; index < parameters.size(); index++) {
+      source
+          .append(parameters.get(index).name())
+          .append(index + 1 == parameters.size() ? ");\n" : ", ");
+    }
+    source.append("  }\n");
     source.append("}\n");
     return source.toString();
   }
