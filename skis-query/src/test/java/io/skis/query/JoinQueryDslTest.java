@@ -397,13 +397,15 @@ class JoinQueryDslTest {
         " LEFT JOIN ");
     assertJoinSql(
         operations()
-            .selectFrom(PET_TABLE)
+            .selectNullable(PET_TABLE)
+            .from(PET_TABLE)
             .rightJoin(OWNER_TABLE)
             .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id())),
         " RIGHT JOIN ");
     assertJoinSql(
         operations()
-            .selectFrom(PET_TABLE)
+            .selectNullable(PET_TABLE)
+            .from(PET_TABLE)
             .fullJoin(OWNER_TABLE)
             .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id())),
         " FULL JOIN ");
@@ -500,6 +502,15 @@ class JoinQueryDslTest {
             .compilation(QueryPagination.None.INSTANCE)
             .plan()
             .sql();
+    assertJoinSql(sql, keyword);
+  }
+
+  private static void assertJoinSql(NullableSelectQuery<Pet, Pet> query, String keyword) {
+    String sql = ((DefaultCountQuery) query.countQuery()).compilation().plan().sql();
+    assertJoinSql(sql, keyword);
+  }
+
+  private static void assertJoinSql(String sql, String keyword) {
     assertTrue(sql.contains(keyword));
     assertEquals(keyword.contains("CROSS"), !sql.contains(" ON "));
   }
