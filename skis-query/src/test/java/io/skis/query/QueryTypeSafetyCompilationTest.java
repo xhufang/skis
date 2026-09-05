@@ -94,7 +94,7 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
-  void routesAProjectionPredicateFromAnotherEntityThroughTheWideConditionOverload()
+  void keepsProjectionResultAndFromRootGenericsIndependent()
       throws Exception {
     String valid =
         """
@@ -106,8 +106,9 @@ class QueryTypeSafetyCompilationTest {
           static void query(
               QueryOperations operations,
               QueryTable<Pet> table,
+              ProjectionSelection<Summary> selection,
               QueryPredicate<Pet> predicate) {
-            operations.selectProjection(table, Summary.class).where(predicate);
+            operations.select(selection).from(table).where(predicate);
           }
         }
         """;
@@ -122,8 +123,9 @@ class QueryTypeSafetyCompilationTest {
           static void query(
               QueryOperations operations,
               QueryTable<Pet> table,
+              ProjectionSelection<Summary> selection,
               QueryPredicate<Owner> predicate) {
-            operations.selectProjection(table, Summary.class).where(predicate);
+            operations.select(selection).from(table).where(predicate);
           }
         }
         """;
@@ -136,6 +138,90 @@ class QueryTypeSafetyCompilationTest {
             "samples.InvalidProjectionQuery",
             invalid,
             temporaryDirectory.resolve("invalid-projection")));
+  }
+
+  @Test
+  void generatedProjectionSignaturesRejectArityTypeAndNullnessMismatches() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidGeneratedProjectionCall {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(
+              NonNullQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+            ProjectionSelection<Summary> selection = of(id, name);
+          }
+        }
+        """;
+    String wrongOrder =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongProjectionOrder {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(
+              NonNullQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+            of(name, id);
+          }
+        }
+        """;
+    String wrongNullness =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongProjectionNullness {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(
+              NullableQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+            of(id, name);
+          }
+        }
+        """;
+    String wrongArity =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongProjectionArity {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(NonNullQueryColumn<Pet, Long> id) {
+            of(id);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidGeneratedProjectionCall",
+            valid,
+            temporaryDirectory.resolve("valid-generated-projection")));
+    assertFalse(
+        compile(
+            "samples.WrongProjectionOrder",
+            wrongOrder,
+            temporaryDirectory.resolve("wrong-projection-order")));
+    assertFalse(
+        compile(
+            "samples.WrongProjectionNullness",
+            wrongNullness,
+            temporaryDirectory.resolve("wrong-projection-nullness")));
+    assertFalse(
+        compile(
+            "samples.WrongProjectionArity",
+            wrongArity,
+            temporaryDirectory.resolve("wrong-projection-arity")));
   }
 
   @Test

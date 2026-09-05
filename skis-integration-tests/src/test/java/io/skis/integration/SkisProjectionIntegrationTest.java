@@ -9,6 +9,7 @@ import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
 import io.skis.testmodel.pet.skis.PetMeta;
+import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -43,7 +44,10 @@ class SkisProjectionIntegrationTest {
             .fetch();
     PetSummary projected =
         executor
-            .selectProjection(PetTable.PET, PetSummary.class)
+            .select(
+                PetSummaryProjection.of(
+                    PetTable.PET.id(), PetTable.PET.name(), PetTable.PET.weight()))
+            .from(PetTable.PET)
             .where(PetTable.PET.id().eq(7L))
             .fetchOne()
             .orElseThrow();
@@ -61,11 +65,11 @@ class SkisProjectionIntegrationTest {
     assertEquals(new PetSummary(7L, "Mimi", new BigDecimal("12.50")), projected);
     assertEquals("Mimi", transactionalName);
     assertEquals(
-        new QueryPlanCacheStatistics(1, 2, 0, 0, 2, 2),
+        new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 2),
         executor.queryPlanCacheStatistics());
     executor.clearQueryPlanCache();
     assertEquals(0, executor.queryPlanCacheStatistics().size());
-    assertEquals(2, executor.queryPlanCacheStatistics().invalidationCount());
+    assertEquals(0, executor.queryPlanCacheStatistics().invalidationCount());
   }
 
   @Test

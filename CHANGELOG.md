@@ -21,7 +21,7 @@
 - 新增五类独立 Join 方言能力和统一映射；PostgreSQL 渲染 INNER/LEFT/RIGHT/FULL/CROSS JOIN，H2
   渲染其真实支持的 INNER/LEFT/RIGHT/CROSS JOIN，并在输出 SQL 前明确拒绝 FULL JOIN。
 - 新增统一的 `SelectQuery<E, R>`、独立 nullable result `NullableSelectQuery<F, R>` 与 `SingleRow<R>`；
-  APT 生成列按元数据区分 `NonNullQueryColumn`/`NullableQueryColumn`，生成模型 ABI 提升为 4。
+  APT 生成列按元数据区分 `NonNullQueryColumn`/`NullableQueryColumn`，生成模型 ABI 最终提升为 5。
 - 新增多列排序、ASC/DESC、显式 null placement、distinct、显式主键 tie-breaker，以及 PostgreSQL/H2
   原生 NULLS FIRST/LAST 能力。
 - 新增唯一分页结果 `Page<R>`/`Slice<R>`、offset/keyset `SliceContinuation`、独立 count AST、
@@ -30,6 +30,10 @@
 - 新增 `QueryCursor` 与 `CloseableQueryStream`，固定 ResultSet → Statement → Connection release 关闭顺序，
   保留读取、关闭和 release 失败的主异常/suppressed 关系，并安全检测和告警未关闭游标。
 - 新增 Page/Slice 与 Cursor/Stream 指南，并扩展 SQL DSL 指南说明 SELECT 排序、分页、隐藏选择和独立 count AST。
+- 新增框架控制的 `Selectable`/`NonNullSelectable` 结果表达式契约，以及查询无关的
+  `ProjectionMapping<R>`、查询绑定的 `ProjectionSelection<R>` 和内部统一 `ResolvedResultShape<R>`。
+- 投影 APT 生成固定参数数量和具体 Java 泛型的 `*Projection.of(...)`；结果可按顺序组合任意最终可见表的列，
+  Join 完成后统一校验作用域、SQL 类型、Codec 和有效 nullability，并只按一基 JDBC 下标解码。
 
 - 新增表达式级标准 SQL 类型与显式 nullability 模型，集中定义相等、排序、LIKE、BETWEEN、IN 的
   类型兼容及 SQL 三值逻辑传播规则。
@@ -68,6 +72,10 @@
   nullable keyset 的 null 形状变化使用独立且有界的本地计划槽。
 - 无排序、无分页、非 distinct 的实体与投影 `fetchOne/fetchList` 继续直接使用原子缓存的 Fast Path 计划。
 - `RowDecoder.decode` 明确返回可空值；JDBC 列表、分页与 cursor 保留 SQL NULL，非空查询门面在结果边界统一校验。
+- `@SkisProjection` 改为只声明结果行构造，不再绑定实体；查询改用
+  `select(ResultTypeProjection.of(...)).from(root)`。删除 `@ProjectionProperty`、实体绑定 `Projection<E,R>`、
+  `selectProjection(table, type)`、投影 Provider/Registry/Loader 和 `META-INF/skis/projections.idx`。
+- 生成模型 ABI 提升为 5；旧生成代码与新 runtime 不兼容，必须使用匹配版本的 processor 重新生成实体和投影源码。
 
 - `EntitySelectQuery` 与 `ProjectedSelectQuery` 新增抽象 `and/or`，`SqlExpression` 新增 SQL 类型/nullability
   契约，`ParameterSlot` record 结构扩展；这是为 `0.3.0` SQL DSL 批准的破坏性变更，第三方查询/表达式实现及

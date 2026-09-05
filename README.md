@@ -8,9 +8,9 @@ its API may still change before 1.0 and it is not yet a production-support relea
 
 ## Implemented scope
 
-- compile-time entity metadata, typed table expressions, row decoders, binders, and projection indexes;
+- compile-time entity metadata, typed table expressions, row decoders, binders, and projection companions;
 - application-assigned single-column IDs and optional optimistic locking with `@Version`;
-- `findById`, single-table entity/scalar/generated-projection queries with immutable complex predicates;
+- `findById`, entity/scalar and generated result-row queries with immutable predicates and explicit joins;
 - typed ordering, distinct results, offset/keyset `Page`/`Slice`, and explicit cursor/stream reading;
 - generated `insert`, `updateById`, and `deleteById` operations;
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
@@ -24,6 +24,9 @@ expressions, and centralized pre-render semantic validation.
 The `0.2.3` milestone unifies non-null query types, separates nullable scalar row presence, and adds
 stable sorting, pagination, independent count plans, opaque continuations, and resource-owning
 cursor/stream terminal operations.
+The `0.2.4` milestone adds explicit joins and replaces entity-bound projection discovery with
+generated result-row companions. A projection now binds an ordered list of visible table columns,
+so the same API covers single-table and joined results without reflection or startup registration.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [page and slice pagination](docs/pagination.md),
@@ -101,6 +104,22 @@ executor.updateById(PetMeta.ENTITY, new Pet(1L, "Momo", stored.version()));
 executor.deleteById(PetMeta.ENTITY, 1L);
 ```
 
+For a generated result row, declare only its constructor contract and bind columns explicitly:
+
+```java
+@SkisProjection
+public record PetSummary(Long id, String name) {}
+
+List<PetSummary> rows =
+    executor
+        .select(PetSummaryProjection.of(pet.id(), pet.name()))
+        .from(pet)
+        .fetchList();
+```
+
+The generated `of(...)` method has fixed, typed parameters. Joined projections use the same entry
+point; final Join scope and effective nullability are validated before SQL execution.
+
 See the complete [plain Java + H2 example](skis-examples/skis-example-h2) for schema creation,
 annotation processing, typed queries, mutations, and transactions.
 
@@ -122,10 +141,10 @@ JDBC drivers are deliberately supplied and versioned by the application.
 
 ## Current limitations
 
-Version 0.2 intentionally does not provide joins, associations, generated-key retrieval, composite
-ID lookup, reverse keyset traversal, native SQL entry points, schema migration, batch writes,
-upsert, graph writes, second-level caching, multitenancy, or Spring Boot auto-configuration.
-Predicates remain single-table only; subqueries and large-`IN` strategies are deferred. Enum, LOB,
+Version 0.2 intentionally does not provide implicit joins or association navigation, generated-key
+retrieval, composite ID lookup, reverse keyset traversal, native SQL entry points, schema migration,
+batch writes, upsert, graph writes, second-level caching, multitenancy, or Spring Boot
+auto-configuration. Subqueries and large-`IN` strategies are deferred. Enum, LOB,
 custom converter, database array, and structured JSON object mappings are also deferred.
 Applications own DDL and assign identifiers before insert.
 
@@ -139,6 +158,7 @@ Applications own DDL and assign identifiers before insert.
 - [Cursor and stream resource ownership](docs/cursor-and-stream.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
+- [0.2.4 projection API compatibility ledger](docs/api-compatibility-0.2.4.md)
 - [Formal release checklist and component boundary](docs/release-checklist.md)
 - [Fast Path performance smoke](docs/benchmark/fast-path-smoke.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)

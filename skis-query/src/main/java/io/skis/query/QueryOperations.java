@@ -46,6 +46,6 @@ public interface QueryOperations {
   /** Explicitly allows a physically non-null column to become nullable through an outer join. */
   <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column);
 
-  /** Selects one registered user projection from the supplied typed table expression. */
-  <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType);
+  /** Selects one APT-generated result-row shape before choosing an independent FROM root. */
+  <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection);
 }

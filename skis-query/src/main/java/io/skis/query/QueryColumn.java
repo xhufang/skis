@@ -13,7 +13,8 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Shared predicate and ordering DSL for generated nullable and non-null columns. */
-public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, NullableQueryColumn {
+public abstract sealed class QueryColumn<E, V> implements Selectable<V>
+    permits NonNullQueryColumn, NullableQueryColumn {
 
   private final ColumnExpression<E, V> expression;
 
@@ -143,7 +144,8 @@ public abstract sealed class QueryColumn<E, V> permits NonNullQueryColumn, Nulla
     return new SortSpecification<>(this, SortDirection.DESC, NullPlacement.DIALECT_DEFAULT);
   }
 
-  final ColumnExpression<E, V> expression() {
+  @Override
+  public final ColumnExpression<E, V> expression() {
     return expression;
   }
 

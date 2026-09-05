@@ -71,19 +71,6 @@ final class QueryPlanCompiler {
     return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
   }
 
-  <E, R> CompiledQueryPlan<R, Object> compileProjection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      Projection<E, R> projection,
-      @Nullable QueryPredicate<E> predicate) {
-    requireCanonicalModel(model, table);
-    Selection<R> selection = projectionSelection(model, table, projection);
-    PredicateShape<E> shape = predicateShape(predicate);
-    SelectStatement statement =
-        validatedStatement(() -> new SelectStatement(selection.expressions(), table, shape.ast()));
-    return compilePlanFromProperties(model, statement, shape.properties(), selection.decoder());
-  }
-
   <E, R> QueryCompilation<Long> compileCount(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
@@ -95,7 +82,7 @@ final class QueryPlanCompiler {
     CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
-    Selection<R> selection = selected.resolve(runtimeScope);
+    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
     return compileResolvedCount(model, structure, runtimeScope, selection, distinct);
   }
 
@@ -103,7 +90,7 @@ final class QueryPlanCompiler {
       EntityRuntimeModel<E> model,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
-      Selection<R> selection,
+      ResolvedResultShape<R> selection,
       boolean distinct) {
     validatedStatement(
         () ->
@@ -139,7 +126,7 @@ final class QueryPlanCompiler {
   }
 
   private static <E, R> @Nullable SqlExpression<?> countDistinctExpression(
-      EntityRuntimeModel<E> model, Selection<R> selection, boolean distinct) {
+      EntityRuntimeModel<E> model, ResolvedResultShape<R> selection, boolean distinct) {
     if (!distinct || isCompleteEntitySelection(model, selection.expressions())) {
       return null;
     }
@@ -148,22 +135,6 @@ final class QueryPlanCompiler {
           "automatic count cannot preserve a multi-expression distinct result; provide an explicit count query");
     }
     return selection.expressions().getFirst();
-  }
-
-  <E> Selection<E> entitySelection(EntityRuntimeModel<E> model, QueryTable<E> table) {
-    requireCanonicalModel(model, table);
-    return Selection.of(table.selections(), model.fullRowDecoder());
-  }
-
-  <E, R> Selection<R> projectionSelection(
-      EntityRuntimeModel<E> model, QueryTable<E> table, Projection<E, R> projection) {
-    Objects.requireNonNull(projection, "projection").validateFrom(table);
-    List<QueryColumn<E, ?>> columns = projection.columns(table);
-    List<SqlExpression<?>> selections = new ArrayList<>(columns.size());
-    for (QueryColumn<E, ?> column : columns) {
-      selections.add(column.expression());
-    }
-    return new Selection<>(selections, projection.rowDecoder(model));
   }
 
   <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
@@ -179,7 +150,7 @@ final class QueryPlanCompiler {
     CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
-    Selection<R> selection = selected.resolve(runtimeScope);
+    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
     return compileResolvedOrdered(
         model, structure, runtimeScope, selection, orderBy, distinct, pagination);
   }
@@ -188,7 +159,7 @@ final class QueryPlanCompiler {
       EntityRuntimeModel<E> model,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
-      Selection<R> selection,
+      ResolvedResultShape<R> selection,
       List<SortSpecification<E>> orderBy,
       boolean distinct,
       QueryPagination pagination) {
@@ -226,7 +197,7 @@ final class QueryPlanCompiler {
         model,
         structure,
         runtimeScope,
-        new Selection<>(selection.expressions(), decoder),
+        new ResolvedResultShape<>(selection.expressions(), decoder, selection.selections()),
         orderBy,
         distinct,
         pagination,
@@ -247,7 +218,7 @@ final class QueryPlanCompiler {
     CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
-    Selection<R> selection = selected.resolve(runtimeScope);
+    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
     return compileResolvedSelection(
         model, structure, runtimeScope, selection, orderBy, distinct, pagination, hidden);
   }
@@ -256,7 +227,7 @@ final class QueryPlanCompiler {
       EntityRuntimeModel<E> model,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
-      Selection<R> selection,
+      ResolvedResultShape<R> selection,
       List<SortSpecification<E>> orderBy,
       boolean distinct,
       QueryPagination pagination,
@@ -482,23 +453,6 @@ final class QueryPlanCompiler {
       RowReadContext context)
       throws SQLException {
     return runtime.codec().read(resultSet, index, context);
-  }
-
-  record Selection<R>(List<SqlExpression<?>> expressions, RowDecoder<R> decoder) {
-
-    static <R> Selection<R> of(
-        List<? extends SqlExpression<?>> expressions, RowDecoder<R> decoder) {
-      List<SqlExpression<?>> copy = List.copyOf(expressions);
-      return new Selection<>(copy, decoder);
-    }
-
-    Selection {
-      expressions = List.copyOf(expressions);
-      if (expressions.isEmpty()) {
-        throw new QueryValidationException("a selection must contain at least one expression");
-      }
-      Objects.requireNonNull(decoder, "decoder");
-    }
   }
 
   private record PredicateShape<E>(

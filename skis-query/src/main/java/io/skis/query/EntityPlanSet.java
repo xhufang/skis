@@ -10,12 +10,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import org.jspecify.annotations.Nullable;
 
-/** Fixed entity plan slots plus a shared bounded cache for dynamic projection shapes. */
+/** Fixed entity Fast Path plan slots plus the compiler used by immutable query objects. */
 final class EntityPlanSet<E> {
 
   private final EntityRuntimeModel<E> model;
   private final QueryPlanCompiler compiler;
-  private final ProjectionPlanCache projectionPlans;
   private final RuntimeQueryTable<E> canonicalTable;
   private final AtomicReference<@Nullable CompiledQueryPlan<E, Object>> selectAll =
       new AtomicReference<>();
@@ -23,13 +22,9 @@ final class EntityPlanSet<E> {
   private final @Nullable PropertyMeta<E, ?> findByIdProperty;
   private final @Nullable CompiledQueryPlan<E, Object> findByIdPlan;
 
-  EntityPlanSet(
-      EntityRuntimeModel<E> model,
-      QueryPlanCompiler compiler,
-      ProjectionPlanCache projectionPlans) {
+  EntityPlanSet(EntityRuntimeModel<E> model, QueryPlanCompiler compiler) {
     this.model = Objects.requireNonNull(model, "model");
     this.compiler = Objects.requireNonNull(compiler, "compiler");
-    this.projectionPlans = Objects.requireNonNull(projectionPlans, "projectionPlans");
     this.canonicalTable = new RuntimeQueryTable<>(model.entity());
     this.equalities = new AtomicReferenceArray<>(model.entity().properties().size());
     this.findByIdProperty = resolveFindByIdProperty();
@@ -76,24 +71,6 @@ final class EntityPlanSet<E> {
     return table.alias().isEmpty()
         ? equalityPlan(property.ordinal())
         : compiler.compileQuery(model, table, predicate);
-  }
-
-  <R> CompiledQueryPlan<R, Object> projectionPlan(
-      QueryTable<E> table, Projection<E, R> projection, @Nullable QueryPredicate<E> predicate) {
-    Objects.requireNonNull(projection, "projection").validateFrom(table);
-    PropertyMeta<E, ?> property =
-        predicate == null ? null : predicate.simpleEqualityProperty(table);
-    if (table.alias().isPresent()) {
-      return compiler.compileProjection(model, table, projection, predicate);
-    }
-    if (predicate != null && property == null) {
-      return compiler.compileProjection(model, table, projection, predicate);
-    }
-    return projectionPlans.getOrCompile(
-        model.entity(),
-        projection,
-        property,
-        () -> compiler.compileProjection(model, table, projection, predicate));
   }
 
   Object argument(@Nullable QueryPredicate<E> predicate) {

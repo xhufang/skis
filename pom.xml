@@ -494,6 +494,15 @@
                   <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.NonNullQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
+                  <exclude>io.skis.annotations.ProjectionProperty</exclude>
+                  <exclude>io.skis.annotations.SkisProjection#entity()</exclude>
+                  <exclude>io.skis.query.Projection</exclude>
+                  <exclude>io.skis.query.ProjectionProvider</exclude>
+                  <exclude>io.skis.query.ProjectionRegistry</exclude>
+                  <exclude>io.skis.query.QueryRuntime#create(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect,io.skis.jdbc.JdbcExecutor)</exclude>
+                  <exclude>io.skis.query.QueryRuntime#compile(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect)</exclude>
+                  <exclude>io.skis.query.QueryRuntime#compile(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect,int,java.time.Duration)</exclude>
+                  <exclude>io.skis.runtime.SkisExecutorFactory$Builder#projectionRegistry(io.skis.query.ProjectionRegistry)</exclude>
                   <exclude>io.skis.query.NullableScalarQuery</exclude>
                   <exclude>io.skis.query.NullableSelectFromStep</exclude>
                   <exclude>io.skis.query.SelectFromStep</exclude>

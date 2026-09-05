@@ -1,7 +1,6 @@
 package io.skis.query;
 
 import io.skis.jdbc.CompiledQueryPlan;
-import io.skis.mapping.RowLayout;
 import io.skis.sql.ast.SqlExpression;
 import java.util.List;
 import java.util.Objects;
@@ -10,95 +9,91 @@ import org.jspecify.annotations.Nullable;
 /** Query result target kept independent from the FROM root until final scope validation. */
 final class SelectedResult<S, R> {
 
-  private final QueryTable<S> table;
-  private final EntityPlanSet<S> plans;
-  private final @Nullable Projection<S, R> projection;
+  private final @Nullable QueryTable<S> table;
+  private final @Nullable EntityPlanSet<S> plans;
+  private final @Nullable QueryColumn<S, R> scalar;
+  private final @Nullable ProjectionSelection<R> projection;
   private final Kind kind;
 
   private SelectedResult(
-      QueryTable<S> table,
-      EntityPlanSet<S> plans,
-      @Nullable Projection<S, R> projection,
+      @Nullable QueryTable<S> table,
+      @Nullable EntityPlanSet<S> plans,
+      @Nullable QueryColumn<S, R> scalar,
+      @Nullable ProjectionSelection<R> projection,
       Kind kind) {
-    this.table = Objects.requireNonNull(table, "table");
-    this.plans = Objects.requireNonNull(plans, "plans");
+    this.table = table;
+    this.plans = plans;
+    this.scalar = scalar;
     this.projection = projection;
     this.kind = Objects.requireNonNull(kind, "kind");
-    if (projection != null) {
-      projection.validateFrom(table);
+    if (kind == Kind.GENERATED_PROJECTION) {
+      Objects.requireNonNull(projection, "projection");
+      if (table != null || plans != null || scalar != null) {
+        throw new IllegalArgumentException(
+            "a generated projection result must not be bound to one selected table");
+      }
+    } else {
+      Objects.requireNonNull(table, "table");
+      Objects.requireNonNull(plans, "plans");
+      if (projection != null) {
+        throw new IllegalArgumentException(
+            "an entity or scalar result must not carry a generated projection mapping");
+      }
     }
   }
 
   static <S> SelectedResult<S, S> entity(QueryTable<S> table, EntityPlanSet<S> plans) {
-    return new SelectedResult<>(table, plans, null, Kind.REQUIRED_ENTITY);
+    return new SelectedResult<>(table, plans, null, null, Kind.REQUIRED_ENTITY);
   }
 
   static <S> SelectedResult<S, S> nullableEntity(QueryTable<S> table, EntityPlanSet<S> plans) {
-    return new SelectedResult<>(table, plans, null, Kind.NULLABLE_ENTITY);
+    return new SelectedResult<>(table, plans, null, null, Kind.NULLABLE_ENTITY);
   }
 
   static <S, R> SelectedResult<S, R> requiredScalar(
-      QueryTable<S> table, EntityPlanSet<S> plans, Projection<S, R> projection) {
+      QueryTable<S> table, EntityPlanSet<S> plans, QueryColumn<S, R> column) {
     return new SelectedResult<>(
-        table, plans, Objects.requireNonNull(projection, "projection"), Kind.REQUIRED_SCALAR);
+        table, plans, Objects.requireNonNull(column, "column"), null, Kind.REQUIRED_SCALAR);
   }
 
   static <S, R> SelectedResult<S, R> nullableScalar(
-      QueryTable<S> table, EntityPlanSet<S> plans, Projection<S, R> projection) {
+      QueryTable<S> table, EntityPlanSet<S> plans, QueryColumn<S, R> column) {
     return new SelectedResult<>(
-        table, plans, Objects.requireNonNull(projection, "projection"), Kind.NULLABLE_SCALAR);
+        table, plans, Objects.requireNonNull(column, "column"), null, Kind.NULLABLE_SCALAR);
   }
 
-  static <S, R> SelectedResult<S, R> projection(
-      QueryTable<S> table, EntityPlanSet<S> plans, Projection<S, R> projection) {
+  static <R> SelectedResult<R, R> projection(ProjectionSelection<R> selection) {
     return new SelectedResult<>(
-        table, plans, Objects.requireNonNull(projection, "projection"), Kind.LEGACY_PROJECTION);
+        null,
+        null,
+        null,
+        Objects.requireNonNull(selection, "selection"),
+        Kind.GENERATED_PROJECTION);
   }
 
-  private QueryPlanCompiler.Selection<R> selection() {
-    if (kind == Kind.NULLABLE_ENTITY) {
-      return nullableEntitySelection(plans, table);
-    }
-    return projection == null
-        ? entitySelection(plans.compiler(), plans, table)
-        : plans.compiler().projectionSelection(plans.model(), table, projection);
-  }
-
-  QueryPlanCompiler.Selection<R> resolve(TableRuntimeScope scope) {
-    TableRuntimeScope.Occurrence<S> occurrence = scope.require(table);
-    if (occurrence.model() != plans.model()) {
-      throw new QueryValidationException(
-          occurrence.description() + " does not use the selected target's canonical runtime model");
-    }
-    if (kind == Kind.NULLABLE_ENTITY) {
-      if (plans.entity().primaryKey().isEmpty()) {
-        throw new QueryValidationException(
-            "selectNullable(table) requires complete non-null primary-key metadata for "
-                + occurrence.description());
-      }
-      return nullableEntitySelection(plans, table);
-    }
-    if (scope.isNullExtended(table)) {
-      switch (kind) {
-        case REQUIRED_ENTITY ->
-            throw nullableSelectionFailure(occurrence, "entity", "selectNullable(table)");
-        case REQUIRED_SCALAR ->
-            throw nullableSelectionFailure(occurrence, "scalar", "selectNullable(column)");
-        case LEGACY_PROJECTION ->
-            throw nullableSelectionFailure(
-                occurrence, "projection", "a nullable generated result shape");
-        case NULLABLE_SCALAR -> {
-          // These result contracts explicitly preserve SQL NULL.
-        }
-      }
-    }
-    return selection();
+  ResolvedResultShape<R> resolve(TableRuntimeScope scope) {
+    Objects.requireNonNull(scope, "scope");
+    return switch (kind) {
+      case REQUIRED_ENTITY -> entityShape(scope, false);
+      case NULLABLE_ENTITY -> entityShape(scope, true);
+      case REQUIRED_SCALAR ->
+          ResolvedResultShape.scalar(requireTable(), requirePlans(), requireScalar(), scope, false);
+      case NULLABLE_SCALAR ->
+          ResolvedResultShape.scalar(requireTable(), requirePlans(), requireScalar(), scope, true);
+      case GENERATED_PROJECTION -> ResolvedResultShape.projection(requireProjection(), scope);
+    };
   }
 
   List<SqlExpression<?>> expressions() {
-    return projection == null
-        ? List.copyOf(table.selections())
-        : plans.compiler().projectionSelection(plans.model(), table, projection).expressions();
+    if (kind == Kind.GENERATED_PROJECTION) {
+      return requireProjection().selections().stream()
+          .<SqlExpression<?>>map(Selectable::expression)
+          .toList();
+    }
+    QueryColumn<S, R> selectedScalar = scalar;
+    return selectedScalar == null
+        ? List.copyOf(requireTable().selections())
+        : List.of(selectedScalar.expression());
   }
 
   boolean belongsTo(QueryTable<?> candidate) {
@@ -107,54 +102,53 @@ final class SelectedResult<S, R> {
 
   CompiledQueryPlan<R, Object> fastPlan(@Nullable QueryPredicate<?> predicate) {
     if (!supportsFastPath()) {
-      throw new IllegalStateException(
-          "nullable entity selection does not use an existing Fast Path");
+      throw new IllegalStateException("only complete non-null entity selections use a Fast Path");
     }
-    return projection == null
-        ? entityFastPlan(plans, table, predicate)
-        : projectionFastPlan(plans, table, projection, predicate);
+    return entityFastPlan(requirePlans(), requireTable(), predicate);
   }
 
   String structuralIdentity() {
-    return projection == null
-        ? (kind == Kind.NULLABLE_ENTITY ? "nullable-entity:" : "entity:")
-            + plans.entity().javaType().getName()
-        : "projection:"
-            + projection.resultType().getName()
-            + ':'
-            + projection.mapping().mappingType().getName()
-            + ':'
-            + kind;
+    return switch (kind) {
+      case REQUIRED_ENTITY -> "entity:" + requirePlans().entity().javaType().getName();
+      case NULLABLE_ENTITY -> "nullable-entity:" + requirePlans().entity().javaType().getName();
+      case REQUIRED_SCALAR -> scalarIdentity("scalar:");
+      case NULLABLE_SCALAR -> scalarIdentity("nullable-scalar:");
+      case GENERATED_PROJECTION -> "projection:" + requireProjection().mappingId();
+    };
   }
 
   boolean supportsFastPath() {
-    return kind != Kind.NULLABLE_ENTITY;
+    return kind == Kind.REQUIRED_ENTITY;
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
-  private static <S, R> QueryPlanCompiler.Selection<R> entitySelection(
-      QueryPlanCompiler compiler, EntityPlanSet<S> plans, QueryTable<S> table) {
-    return (QueryPlanCompiler.Selection) compiler.entitySelection(plans.model(), table);
+  private ResolvedResultShape<R> entityShape(TableRuntimeScope scope, boolean nullable) {
+    return (ResolvedResultShape)
+        ResolvedResultShape.entity(requireTable(), requirePlans(), scope, nullable);
   }
 
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  private static <S, R> QueryPlanCompiler.Selection<R> nullableEntitySelection(
-      EntityPlanSet<S> plans, QueryTable<S> table) {
-    RowLayout layout = RowLayout.contiguous(plans.model().properties().size(), 1);
-    return (QueryPlanCompiler.Selection)
-        QueryPlanCompiler.Selection.of(
-            table.selections(), plans.model().nullableRowDecoder(layout));
+  private String scalarIdentity(String prefix) {
+    QueryColumn<S, R> column = requireScalar();
+    return prefix
+        + column.table().entity().javaType().getName()
+        + ':'
+        + column.property().ordinal();
   }
 
-  private static QueryValidationException nullableSelectionFailure(
-      TableRuntimeScope.Occurrence<?> occurrence, String resultKind, String nullableEntry) {
-    return new QueryValidationException(
-        "non-null "
-            + resultKind
-            + " selection references null-extended "
-            + occurrence.description()
-            + "; use "
-            + nullableEntry);
+  private QueryTable<S> requireTable() {
+    return Objects.requireNonNull(table, "selected table");
+  }
+
+  private EntityPlanSet<S> requirePlans() {
+    return Objects.requireNonNull(plans, "selected table plans");
+  }
+
+  private QueryColumn<S, R> requireScalar() {
+    return Objects.requireNonNull(scalar, "selected scalar");
+  }
+
+  private ProjectionSelection<R> requireProjection() {
+    return Objects.requireNonNull(projection, "projection selection");
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -163,20 +157,11 @@ final class SelectedResult<S, R> {
     return (CompiledQueryPlan) plans.selectPlan(table, (QueryPredicate) predicate);
   }
 
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  private static <S, R> CompiledQueryPlan<R, Object> projectionFastPlan(
-      EntityPlanSet<S> plans,
-      QueryTable<S> table,
-      Projection<S, R> projection,
-      @Nullable QueryPredicate<?> predicate) {
-    return plans.projectionPlan(table, projection, (QueryPredicate) predicate);
-  }
-
   private enum Kind {
     REQUIRED_ENTITY,
     NULLABLE_ENTITY,
     REQUIRED_SCALAR,
     NULLABLE_SCALAR,
-    LEGACY_PROJECTION
+    GENERATED_PROJECTION
   }
 }

@@ -141,8 +141,7 @@ class EntityPlanSetTest {
         new EntityPlanSet<>(
             model(),
             new QueryPlanCompiler(
-                EntityRuntimeRegistry.empty(), ReorderedParameterDialect.INSTANCE),
-            projectionPlans());
+                EntityRuntimeRegistry.empty(), ReorderedParameterDialect.INSTANCE));
     QueryPredicate<Pet> predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
@@ -320,15 +319,7 @@ class EntityPlanSetTest {
   private static EntityPlanSet<Pet> plans() {
     return new EntityPlanSet<>(
         model(),
-        new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE),
-        projectionPlans());
-  }
-
-  private static ProjectionPlanCache projectionPlans() {
-    return new ProjectionPlanCache(
-        ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE,
-        ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS,
-        System::nanoTime);
+        new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE));
   }
 
   private static EntityRuntimeModel<Pet> model() {

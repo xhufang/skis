@@ -1,4 +1,3 @@
 io.skis.processor.SkisEntityProcessor,isolating
 io.skis.processor.SkisEntityIndexProcessor,aggregating
 io.skis.processor.SkisProjectionProcessor,isolating
-io.skis.processor.SkisProjectionIndexProcessor,aggregating

@@ -1,11 +1,9 @@
 package io.skis.processor;
 
 import io.skis.annotations.ProjectionConstructor;
-import io.skis.annotations.ProjectionProperty;
 import io.skis.annotations.SkisProjection;
 import java.util.ArrayList;
 import java.util.List;
-import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -28,16 +26,14 @@ import javax.lang.model.util.Types;
 
 final class ProjectionModelScanner {
 
-  private static final String SKIS_PROJECTION = SkisProjection.class.getCanonicalName();
+  private static final String NULLABLE = "org.jspecify.annotations.Nullable";
 
   private final Elements elements;
   private final Types types;
-  private final EntityModelScanner entityScanner;
 
   ProjectionModelScanner(Elements elements, Types types) {
     this.elements = elements;
     this.types = types;
-    this.entityScanner = new EntityModelScanner(elements, types);
   }
 
   ProjectionModel scan(TypeElement type, boolean deferLombokSettlement)
@@ -69,6 +65,36 @@ final class ProjectionModelScanner {
           "Lombok may still be changing the projection constructor shape");
     }
     ExecutableElement constructor = selectConstructor(type);
+    validateConstructor(constructor);
+    String generatedPackage = packageName + ".skis";
+    List<ProjectionModel.ProjectionParameter> parameters =
+        new ArrayList<>(constructor.getParameters().size());
+    for (VariableElement parameter : constructor.getParameters()) {
+      requireResolvedType(parameter);
+      requireAccessibleType(parameter, generatedPackage);
+      TypeMirror parameterType = parameter.asType();
+      TypeDescriptor descriptor = describe(parameterType);
+      parameters.add(
+          new ProjectionModel.ProjectionParameter(
+              parameter.getSimpleName().toString(),
+              descriptor.typeName(),
+              descriptor.erasedTypeName(),
+              descriptor.classLiteral(),
+              descriptor.primitive(),
+              descriptor.constructorTypeName(),
+              acceptsNull(parameter)));
+    }
+    return new ProjectionModel(
+        type,
+        generatedPackage,
+        type.getSimpleName().toString(),
+        type.getQualifiedName().toString(),
+        elements.getBinaryName(type).toString(),
+        constructorDescriptor(constructor),
+        parameters);
+  }
+
+  private void validateConstructor(ExecutableElement constructor) throws ProjectionScanException {
     if (!constructor.getModifiers().contains(Modifier.PUBLIC)) {
       throw failure("SKIS207", "the selected projection constructor must be public", constructor);
     }
@@ -88,144 +114,6 @@ final class ProjectionModelScanner {
       throw failure(
           "SKIS210", "a projection constructor must not declare thrown types", constructor);
     }
-    String generatedPackage = packageName + ".skis";
-    EntityModel entity = scanEntity(type, deferLombokSettlement);
-    List<ProjectionModel.ProjectionParameter> parameters =
-        new ArrayList<>(constructor.getParameters().size());
-    for (VariableElement parameter : constructor.getParameters()) {
-      requireResolvedType(parameter);
-      requireAccessibleType(parameter, generatedPackage);
-      String parameterName = parameter.getSimpleName().toString();
-      String propertyName = projectionPropertyName(parameter, parameterName);
-      PropertyModel property =
-          entity.properties().stream()
-              .filter(candidate -> candidate.name().equals(propertyName))
-              .findFirst()
-              .orElseThrow(
-                  () ->
-                      failure(
-                          "SKIS221",
-                          "projection constructor parameter '"
-                              + parameterName
-                              + "' selects unknown property '"
-                              + propertyName
-                              + "' from entity '"
-                              + entity.entityName()
-                              + "'",
-                          parameter));
-      String parameterType = queryValueType(parameter.asType());
-      if (!isSameQueryValueType(parameter.asType(), propertyType(property))) {
-        throw failure(
-            "SKIS222",
-            "projection constructor parameter '"
-                + parameterName
-                + "' has type '"
-                + parameterType
-                + "' but entity property '"
-                + propertyName
-                + "' has type '"
-                + property.typeName()
-                + "'",
-            parameter);
-      }
-      boolean primitive = parameter.asType().getKind().isPrimitive();
-      if (primitive && property.column().nullable()) {
-        throw failure(
-            "SKIS223",
-            "primitive projection constructor parameter '"
-                + parameterName
-                + "' cannot select nullable entity property '"
-                + propertyName
-                + "'",
-            parameter);
-      }
-      parameters.add(
-          new ProjectionModel.ProjectionParameter(parameterName, parameterType, property));
-    }
-    return new ProjectionModel(
-        type,
-        generatedPackage,
-        type.getSimpleName().toString(),
-        type.getQualifiedName().toString(),
-        entity,
-        parameters);
-  }
-
-  private EntityModel scanEntity(TypeElement projection, boolean deferLombokSettlement)
-      throws ProjectionScanException, ProjectionScanDeferredException {
-    TypeMirror entityType = projectionEntityType(projection);
-    if (containsUnresolvedType(entityType)) {
-      throw new ProjectionScanDeferredException(
-          "projection entity type is still unresolved: '" + entityType + "'");
-    }
-    if (!(types.asElement(entityType) instanceof TypeElement entity)) {
-      throw failure(
-          "SKIS219", "@SkisProjection entity must name a declared entity type", projection);
-    }
-    if (deferLombokSettlement && LombokShapeDetector.isPresent(entity)) {
-      throw new ProjectionScanDeferredException(
-          "Lombok may still be changing projection entity '" + entity.getQualifiedName() + "'");
-    }
-    try {
-      return entityScanner.scan(entity);
-    } catch (EntityScanDeferredException deferred) {
-      throw new ProjectionScanDeferredException(
-          "projection entity '"
-              + entity.getQualifiedName()
-              + "' is not resolved: "
-              + deferred.getMessage());
-    } catch (EntityScanException failure) {
-      if (LombokShapeDetector.isPresent(entity)
-          && LombokShapeDetector.mayAffectEntityShape(failure.code())) {
-        throw new ProjectionScanDeferredException(
-            "Lombok-backed projection entity '"
-                + entity.getQualifiedName()
-                + "' has not reached a supported Simple Entity shape; last structural diagnostic was ["
-                + failure.code()
-                + "] "
-                + failure.getMessage());
-      }
-      throw new ProjectionScanException(
-          "SKIS220",
-          "invalid projection entity '"
-              + entity.getQualifiedName()
-              + "': ["
-              + failure.code()
-              + "] "
-              + failure.getMessage(),
-          projection);
-    }
-  }
-
-  private TypeMirror projectionEntityType(TypeElement projection) throws ProjectionScanException {
-    for (AnnotationMirror annotation : projection.getAnnotationMirrors()) {
-      if (!annotation.getAnnotationType().toString().equals(SKIS_PROJECTION)) {
-        continue;
-      }
-      for (var entry : elements.getElementValuesWithDefaults(annotation).entrySet()) {
-        if (entry.getKey().getSimpleName().contentEquals("entity")) {
-          Object value = entry.getValue().getValue();
-          if (value instanceof TypeMirror type) {
-            return type;
-          }
-        }
-      }
-    }
-    throw failure("SKIS219", "@SkisProjection must declare an entity type", projection);
-  }
-
-  private static String projectionPropertyName(VariableElement parameter, String parameterName)
-      throws ProjectionScanException {
-    ProjectionProperty mapping = parameter.getAnnotation(ProjectionProperty.class);
-    if (mapping == null) {
-      return parameterName;
-    }
-    String propertyName = mapping.value().trim();
-    if (propertyName.isEmpty()) {
-      throw failure(
-          "SKIS224", "@ProjectionProperty must name a persistent entity property", parameter);
-    }
-    return propertyName;
   }
 
   private ExecutableElement selectConstructor(TypeElement type)
@@ -297,28 +185,103 @@ final class ProjectionModelScanner {
     throw failure("SKIS213", "cannot resolve the record canonical constructor", type);
   }
 
-  private String queryValueType(TypeMirror type) {
-    TypeKind kind = type.getKind();
-    if (kind.isPrimitive()) {
-      return types.boxedClass((PrimitiveType) type).getQualifiedName().toString();
+  private TypeDescriptor describe(TypeMirror type) {
+    if (type.getKind().isPrimitive()) {
+      String boxed = types.boxedClass((PrimitiveType) type).getQualifiedName().toString();
+      return new TypeDescriptor(boxed, boxed, boxed + ".class", true, type.toString());
     }
-    return type.toString();
+    String erasedTypeName = erasedTypeName(type);
+    String sourceTypeName = sourceTypeName(type);
+    return new TypeDescriptor(
+        sourceTypeName, erasedTypeName, erasedTypeName + ".class", false, sourceTypeName);
   }
 
-  private boolean isSameQueryValueType(TypeMirror projectionType, TypeMirror entityPropertyType) {
-    return types.isSameType(boxedType(projectionType), boxedType(entityPropertyType));
+  private String sourceTypeName(TypeMirror type) {
+    return switch (type.getKind()) {
+      case ARRAY -> sourceTypeName(((ArrayType) type).getComponentType()) + "[]";
+      case DECLARED -> sourceDeclaredTypeName((DeclaredType) type);
+      case WILDCARD -> sourceWildcardTypeName((WildcardType) type);
+      default -> type.toString();
+    };
   }
 
-  private TypeMirror boxedType(TypeMirror type) {
-    if (!type.getKind().isPrimitive()) {
-      return type;
+  private String sourceDeclaredTypeName(DeclaredType type) {
+    TypeElement element = (TypeElement) type.asElement();
+    TypeMirror enclosing = type.getEnclosingType();
+    String rawName =
+        enclosing.getKind() == TypeKind.NONE
+            ? element.getQualifiedName().toString()
+            : sourceTypeName(enclosing) + "." + element.getSimpleName();
+    if (type.getTypeArguments().isEmpty()) {
+      return rawName;
     }
-    return types.boxedClass((PrimitiveType) type).asType();
+    return rawName
+        + "<"
+        + type.getTypeArguments().stream()
+            .map(this::sourceTypeName)
+            .collect(java.util.stream.Collectors.joining(", "))
+        + ">";
   }
 
-  private static TypeMirror propertyType(PropertyModel property) {
-    Element element = property.element();
-    return element instanceof ExecutableElement method ? method.getReturnType() : element.asType();
+  private String sourceWildcardTypeName(WildcardType type) {
+    if (type.getExtendsBound() != null) {
+      return "? extends " + sourceTypeName(type.getExtendsBound());
+    }
+    if (type.getSuperBound() != null) {
+      return "? super " + sourceTypeName(type.getSuperBound());
+    }
+    return "?";
+  }
+
+  private String erasedTypeName(TypeMirror type) {
+    if (type.getKind() == TypeKind.ARRAY) {
+      return erasedTypeName(((ArrayType) type).getComponentType()) + "[]";
+    }
+    if (type.getKind().isPrimitive()) {
+      return type.toString();
+    }
+    DeclaredType erased = (DeclaredType) types.erasure(type);
+    return ((TypeElement) erased.asElement()).getQualifiedName().toString();
+  }
+
+  private String constructorDescriptor(ExecutableElement constructor) {
+    StringBuilder descriptor = new StringBuilder("(");
+    for (VariableElement parameter : constructor.getParameters()) {
+      descriptor.append(jvmDescriptor(parameter.asType()));
+    }
+    return descriptor.append(")V").toString();
+  }
+
+  private String jvmDescriptor(TypeMirror type) {
+    return switch (type.getKind()) {
+      case BOOLEAN -> "Z";
+      case BYTE -> "B";
+      case SHORT -> "S";
+      case INT -> "I";
+      case LONG -> "J";
+      case CHAR -> "C";
+      case FLOAT -> "F";
+      case DOUBLE -> "D";
+      case ARRAY -> "[" + jvmDescriptor(((ArrayType) type).getComponentType());
+      case DECLARED -> declaredDescriptor((DeclaredType) types.erasure(type));
+      default ->
+          throw new IllegalArgumentException("unsupported constructor parameter type " + type);
+    };
+  }
+
+  private String declaredDescriptor(DeclaredType type) {
+    TypeElement element = (TypeElement) type.asElement();
+    return "L" + elements.getBinaryName(element).toString().replace('.', '/') + ";";
+  }
+
+  private static boolean acceptsNull(VariableElement parameter) {
+    if (parameter.asType().getKind().isPrimitive()) {
+      return false;
+    }
+    return parameter.getAnnotationMirrors().stream()
+            .anyMatch(annotation -> annotation.getAnnotationType().toString().equals(NULLABLE))
+        || parameter.asType().getAnnotationMirrors().stream()
+            .anyMatch(annotation -> annotation.getAnnotationType().toString().equals(NULLABLE));
   }
 
   private void requireResolvedType(VariableElement parameter)
@@ -447,4 +410,11 @@ final class ProjectionModelScanner {
   private static ProjectionScanException failure(String code, String message, Element element) {
     return new ProjectionScanException(code, message, element);
   }
+
+  private record TypeDescriptor(
+      String typeName,
+      String erasedTypeName,
+      String classLiteral,
+      boolean primitive,
+      String constructorTypeName) {}
 }

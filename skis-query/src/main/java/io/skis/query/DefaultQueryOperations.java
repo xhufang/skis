@@ -18,14 +18,9 @@ final class DefaultQueryOperations implements QueryOperations {
 
   private final JdbcExecutor jdbcExecutor;
   private final QueryPlanCatalog planCatalog;
-  private final ProjectionRegistry projectionRegistry;
 
-  DefaultQueryOperations(
-      QueryPlanCatalog planCatalog,
-      ProjectionRegistry projectionRegistry,
-      JdbcExecutor jdbcExecutor) {
+  DefaultQueryOperations(QueryPlanCatalog planCatalog, JdbcExecutor jdbcExecutor) {
     this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
-    this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
     this.jdbcExecutor = Objects.requireNonNull(jdbcExecutor, "jdbcExecutor");
   }
 
@@ -78,7 +73,7 @@ final class DefaultQueryOperations implements QueryOperations {
     QueryTable<E> selectedTable = column.table();
     EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
     return new DefaultSelectFromStep<>(
-        this, SelectedResult.requiredScalar(selectedTable, plans, Projection.scalar(column)));
+        this, SelectedResult.requiredScalar(selectedTable, plans, column));
   }
 
   @Override
@@ -87,8 +82,7 @@ final class DefaultQueryOperations implements QueryOperations {
     QueryTable<E> selectedTable = column.table();
     EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
     return new DefaultNullableSelectFromStep<>(
-        this,
-        SelectedResult.nullableScalar(selectedTable, plans, Projection.nullableScalar(column)));
+        this, SelectedResult.nullableScalar(selectedTable, plans, column));
   }
 
   @Override
@@ -97,16 +91,13 @@ final class DefaultQueryOperations implements QueryOperations {
     QueryTable<E> selectedTable = column.table();
     EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
     return new DefaultNullableSelectFromStep<>(
-        this,
-        SelectedResult.nullableScalar(selectedTable, plans, Projection.nullableScalar(column)));
+        this, SelectedResult.nullableScalar(selectedTable, plans, column));
   }
 
   @Override
-  public <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType) {
-    Objects.requireNonNull(table, "table");
-    Projection<E, R> projection = projectionRegistry.require(table, projectionType);
-    EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return selectFrom(SelectedResult.projection(table, plans, projection), table);
+  public <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection) {
+    return new DefaultProjectionSelectFromStep<>(
+        this, Objects.requireNonNull(projection, "projection"));
   }
 
   <F, S, R> DefaultSelectQuery<F, R> selectFrom(

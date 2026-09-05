@@ -232,7 +232,7 @@ class JoinQueryDslTest {
             SelectedResult.nullableScalar(
                 OWNER_TABLE,
                 catalog.require(OWNER),
-                Projection.nullableScalar(OWNER_TABLE.id())),
+                OWNER_TABLE.id()),
             List.of(new QueryJoin(io.skis.sql.ast.JoinType.LEFT, OWNER_TABLE, on)));
     assertNull(
         idCompilation.plan().rowDecoder().decode(resultSet(Map.of()), RowReadContext.EMPTY));

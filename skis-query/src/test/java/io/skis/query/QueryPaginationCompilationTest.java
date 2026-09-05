@@ -20,6 +20,7 @@ import io.skis.mapping.JdbcCodecs;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
@@ -28,6 +29,7 @@ import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.OffsetLimit;
+import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SelectStatement;
 import java.sql.Connection;
 import java.util.List;
@@ -121,7 +123,7 @@ class QueryPaginationCompilationTest {
     QueryCompilation<OrderedRow<Long>> query =
         compileOrderedProjection(
             fixture,
-            Projection.scalar(TABLE.id()),
+            TABLE.id(),
             List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
             false,
             new QueryPagination.LimitOnly(11));
@@ -146,7 +148,7 @@ class QueryPaginationCompilationTest {
             fixture.model(),
             TABLE,
             SelectedResult.requiredScalar(
-                TABLE, fixture.plans(), Projection.scalar(TABLE.name())),
+                TABLE, fixture.plans(), TABLE.name()),
             List.of(),
             null,
             true);
@@ -158,7 +160,7 @@ class QueryPaginationCompilationTest {
             fixture.model(),
             TABLE,
             SelectedResult.nullableScalar(
-                TABLE, fixture.plans(), Projection.nullableScalar(TABLE.nickname())),
+                TABLE, fixture.plans(), TABLE.nickname()),
             List.of(),
             null,
             true);
@@ -176,12 +178,16 @@ class QueryPaginationCompilationTest {
             null,
             true);
     assertEquals("SELECT COUNT(*) FROM \"shelter\".\"pet\"", entityCount.plan().sql());
-    Projection<Pet, Object> unsafeTuple =
-        Projection.generated(
+    ProjectionMapping<Object> unsafeTuple =
+        ProjectionMapping.generated(
+            GeneratedModelAbi.CURRENT,
             Object.class,
-            PET,
-            Projection.mapping(QueryPaginationCompilationTest.class),
-            List.of(ID, NAME),
+            "unsafe-tuple",
+            List.of(
+                new ProjectionMapping.Parameter(
+                    0, "id", Long.class, Nullability.NON_NULL, 0),
+                new ProjectionMapping.Parameter(
+                    1, "name", String.class, Nullability.NON_NULL, 1)),
             readers -> (resultSet, context) -> new Object());
     assertThrows(
         QueryValidationException.class,
@@ -189,7 +195,7 @@ class QueryPaginationCompilationTest {
             compiler.compileCount(
                 fixture.model(),
                 TABLE,
-                SelectedResult.projection(TABLE, fixture.plans(), unsafeTuple),
+                SelectedResult.projection(unsafeTuple.bind(TABLE.id(), TABLE.name())),
                 List.of(),
                 null,
                 true));
@@ -301,7 +307,7 @@ class QueryPaginationCompilationTest {
 
   private static <R> QueryCompilation<OrderedRow<R>> compileOrderedProjection(
       CompilerFixture fixture,
-      Projection<Pet, R> projection,
+      QueryColumn<Pet, R> projection,
       List<SortSpecification<Pet>> orderBy,
       boolean distinct,
       QueryPagination pagination) {

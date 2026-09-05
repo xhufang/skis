@@ -15,6 +15,10 @@
   </properties>
   <dependencies>
     <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-annotations</artifactId>
     </dependency>
@@ -63,7 +67,6 @@
             <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisEntityIndexProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisProjectionProcessor</annotationProcessor>
-            <annotationProcessor>io.skis.processor.SkisProjectionIndexProcessor</annotationProcessor>
           </annotationProcessors>
         </configuration>
       </plugin>
