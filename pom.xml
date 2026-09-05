@@ -491,6 +491,7 @@
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NonNullQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.NullableQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#select(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.QueryOperations#select(io.skis.query.ProjectionSelection)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.NonNullQueryColumn)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectNullable(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.QueryOperations#selectProjection(io.skis.query.QueryTable,java.lang.Class)</exclude>
