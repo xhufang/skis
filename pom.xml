@@ -500,6 +500,7 @@
                   <exclude>io.skis.query.Projection</exclude>
                   <exclude>io.skis.query.ProjectionProvider</exclude>
                   <exclude>io.skis.query.ProjectionRegistry</exclude>
+                  <exclude>io.skis.processor.SkisProjectionIndexProcessor</exclude>
                   <exclude>io.skis.query.QueryRuntime#create(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect,io.skis.jdbc.JdbcExecutor)</exclude>
                   <exclude>io.skis.query.QueryRuntime#compile(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect)</exclude>
                   <exclude>io.skis.query.QueryRuntime#compile(io.skis.mapping.EntityRuntimeRegistry,io.skis.query.ProjectionRegistry,io.skis.dialect.Dialect,int,java.time.Duration)</exclude>
