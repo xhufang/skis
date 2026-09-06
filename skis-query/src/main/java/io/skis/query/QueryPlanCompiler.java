@@ -64,11 +64,24 @@ final class QueryPlanCompiler {
 
   <E> CompiledQueryPlan<E, Object> compileQuery(
       EntityRuntimeModel<E> model, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
+    return compileQuery(
+        model, table, QueryStructureCompiler.compile(table, List.of(), predicate));
+  }
+
+  <E> CompiledQueryPlan<E, Object> compileQuery(
+      EntityRuntimeModel<E> model, QueryTable<E> table, CompiledQueryStructure structure) {
     requireCanonicalModel(model, table);
-    PredicateShape<E> shape = predicateShape(predicate);
+    Objects.requireNonNull(structure, "structure");
     SelectStatement statement =
-        validatedStatement(() -> new SelectStatement(table.selections(), table, shape.ast()));
-    return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
+        validatedStatement(
+            () ->
+                new SelectStatement(
+                    table.selections(), structure.fromClause(), structure.where()));
+    List<PropertyMeta<E, ?>> properties = new ArrayList<>(structure.parameterColumns().size());
+    for (QueryColumn<?, ?> column : structure.parameterColumns()) {
+      properties.add(property(column));
+    }
+    return compilePlanFromProperties(model, statement, properties, model.fullRowDecoder());
   }
 
   <E, R> QueryCompilation<Long> compileCount(
@@ -78,8 +91,22 @@ final class QueryPlanCompiler {
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
       boolean distinct) {
+    return compileCount(
+        model,
+        table,
+        selected,
+        QueryStructureCompiler.compile(table, joins, condition),
+        distinct);
+  }
+
+  <E, R> QueryCompilation<Long> compileCount(
+      EntityRuntimeModel<E> model,
+      QueryTable<E> table,
+      SelectedResult<?, R> selected,
+      CompiledQueryStructure structure,
+      boolean distinct) {
     requireCanonicalModel(model, table);
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
+    Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
@@ -88,7 +115,9 @@ final class QueryPlanCompiler {
         structure,
         runtimeScope,
         selection,
-        distinct ? selected.automaticDistinctCountExpression(!joins.isEmpty()) : null);
+        distinct
+            ? selected.automaticDistinctCountExpression(!structure.fromClause().joins().isEmpty())
+            : null);
   }
 
   private <E, R> QueryCompilation<Long> compileResolvedCount(
@@ -135,8 +164,26 @@ final class QueryPlanCompiler {
       List<? extends SortSpecification<?>> orderBy,
       boolean distinct,
       QueryPagination pagination) {
+    return compileOrdered(
+        model,
+        table,
+        selected,
+        QueryStructureCompiler.compile(table, joins, condition),
+        orderBy,
+        distinct,
+        pagination);
+  }
+
+  <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
+      EntityRuntimeModel<E> model,
+      QueryTable<E> table,
+      SelectedResult<?, R> selected,
+      CompiledQueryStructure structure,
+      List<? extends SortSpecification<?>> orderBy,
+      boolean distinct,
+      QueryPagination pagination) {
     requireCanonicalModel(model, table);
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
+    Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
@@ -203,8 +250,28 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
+    return compileSelection(
+        model,
+        table,
+        selected,
+        QueryStructureCompiler.compile(table, joins, condition),
+        orderBy,
+        distinct,
+        pagination,
+        hidden);
+  }
+
+  <E, R> QueryCompilation<R> compileSelection(
+      EntityRuntimeModel<E> model,
+      QueryTable<E> table,
+      SelectedResult<?, R> selected,
+      CompiledQueryStructure structure,
+      List<? extends SortSpecification<?>> orderBy,
+      boolean distinct,
+      QueryPagination pagination,
+      List<HiddenSelection> hidden) {
     requireCanonicalModel(model, table);
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, condition);
+    Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
@@ -387,14 +454,6 @@ final class QueryPlanCompiler {
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
-  private static <E> PredicateShape<E> predicateShape(@Nullable QueryPredicate<E> predicate) {
-    if (predicate == null) {
-      return new PredicateShape<>(null, List.of());
-    }
-    CompiledQueryPredicate<E> compiled = predicate.compile();
-    return new PredicateShape<>(compiled.ast(), compiled.properties());
-  }
-
   private static <E> PredicateShape<E> equalityShape(
       QueryTable<E> table, @Nullable PropertyMeta<E, ?> property) {
     if (property == null) {
@@ -511,6 +570,11 @@ final class QueryPlanCompiler {
       }
       return type.cast(value);
     }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <E> PropertyMeta<E, ?> property(QueryColumn<?, ?> column) {
+    return (PropertyMeta<E, ?>) column.property();
   }
 
   private static final class InputsBuilder<E> {

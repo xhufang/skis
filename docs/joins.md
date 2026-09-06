@@ -152,3 +152,8 @@ Single-table unfiltered and single-property equality entity queries retain their
 plans. `findById` and single-entity mutation continue to use their precompiled paths and do not build
 Join structures. Join and generated projection plans stay immutable and query-local; no unbounded
 cache, runtime annotation scan, SQL parser, or per-row reflection is introduced.
+
+Each immutable query object analyzes its FROM/Join/ON/WHERE structure and ordinary parameter layout
+once, on first use. Selection, count, offset and keyset plan shapes reuse that analysis. A local plan
+cache hit only supplies the already captured predicate values plus the current pagination values;
+it does not reconstruct condition or Join AST nodes.

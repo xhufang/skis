@@ -43,8 +43,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final ExecutionContext executionContext;
   private final List<SortSpecification<?>> orderBy;
   private final boolean distinct;
-  private final AtomicReference<@Nullable CompiledQueryPlan<R, Object>> fastPlan =
-      new AtomicReference<>();
+  private volatile @Nullable QueryAnalysis analysis;
+  private final AtomicReference<@Nullable CachedPlan<R>> fastPlan = new AtomicReference<>();
   private final LocalPlanCache<R> plansByPagination = new LocalPlanCache<>();
   private final LocalPlanCache<OrderedRow<R>> orderedPlansByPagination = new LocalPlanCache<>();
   private final AtomicReference<@Nullable CachedPlan<Long>> countPlan = new AtomicReference<>();
@@ -214,7 +214,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   @Override
   public Optional<R> fetchOne() {
     if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return operations.fetchOne(fastPlan(), fastArgument(), executionContext);
+      return operations.fetchOne(fastPlan().plan(), fastArgument(), executionContext);
     }
     QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
     return operations.fetchOne(query.plan(), query.argument(), executionContext);
@@ -237,7 +237,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private List<@Nullable R> fetchListResult() {
     if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return operations.fetchList(fastPlan(), fastArgument(), executionContext);
+      return operations.fetchList(fastPlan().plan(), fastArgument(), executionContext);
     }
     QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
     return operations.fetchList(query.plan(), query.argument(), executionContext);
@@ -329,6 +329,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (isFastPathShape(pagination)) {
       return unpaginatedCompilation();
     }
+    QueryAnalysis queryAnalysis = analysis();
     return plansByPagination.getOrCompile(
         pagination,
         () ->
@@ -338,13 +339,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                     plans.model(),
                     table,
                     selected,
-                    joins,
-                    predicate,
+                    queryAnalysis.structure(),
                     orderBy,
                     distinct,
                     pagination,
                     List.of()),
-        paginationArgument(pagination));
+        paginationArgument(queryAnalysis, pagination));
   }
 
   ExecutionContext executionContext() {
@@ -353,6 +353,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private QueryCompilation<OrderedRow<R>> orderedCompilation(QueryPagination pagination) {
     validateDistinctOrdering();
+    QueryAnalysis queryAnalysis = analysis();
     return orderedPlansByPagination.getOrCompile(
         pagination,
         () ->
@@ -362,12 +363,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                     plans.model(),
                     table,
                     selected,
-                    joins,
-                    predicate,
+                    queryAnalysis.structure(),
                     orderBy,
                     distinct,
                     pagination),
-        paginationArgument(pagination));
+        paginationArgument(queryAnalysis, pagination));
   }
 
   private boolean isFastPathShape(QueryPagination pagination) {
@@ -381,39 +381,50 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private QueryCompilation<R> unpaginatedCompilation() {
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
-    return new QueryCompilation<>(
-        fastPlan(),
-        fastArgument(),
-        new SelectStatement(selected.expressions(), structure.fromClause(), structure.where()));
+    QueryAnalysis queryAnalysis = analysis();
+    CachedPlan<R> cached = fastPlan();
+    return new QueryCompilation<>(cached.plan(), queryAnalysis.argument(), cached.ast());
   }
 
-  private CompiledQueryPlan<R, Object> fastPlan() {
-    CompiledQueryPlan<R, Object> existing = fastPlan.get();
+  private CachedPlan<R> fastPlan() {
+    CachedPlan<R> existing = fastPlan.get();
     if (existing != null) {
       return existing;
     }
-    CompiledQueryPlan<R, Object> compiled = selected.fastPlan(fastPredicate());
-    CompiledQueryPlan<R, Object> published = fastPlan.compareAndExchange(null, compiled);
+    QueryAnalysis queryAnalysis = analysis();
+    CompiledQueryPlan<R, Object> plan =
+        selected.fastPlan(fastPredicate(), queryAnalysis.structure());
+    SelectStatement ast =
+        new SelectStatement(
+            selected.expressions(),
+            queryAnalysis.structure().fromClause(),
+            queryAnalysis.structure().where());
+    CachedPlan<R> compiled = new CachedPlan<>(plan, ast);
+    CachedPlan<R> published = fastPlan.compareAndExchange(null, compiled);
     return published == null ? compiled : published;
   }
 
   QueryCompilation<Long> countCompilation() {
+    QueryAnalysis queryAnalysis = analysis();
     CachedPlan<Long> existing = countPlan.get();
     if (existing != null) {
-      return new QueryCompilation<>(existing.plan(), conditionArgument(), existing.ast());
+      return new QueryCompilation<>(existing.plan(), queryAnalysis.argument(), existing.ast());
     }
     QueryCompilation<Long> compiled =
-        plans.compiler().compileCount(plans.model(), table, selected, joins, predicate, distinct);
+        plans
+            .compiler()
+            .compileCount(plans.model(), table, selected, queryAnalysis.structure(), distinct);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
-    return published == null
-        ? compiled
-        : new QueryCompilation<>(published.plan(), conditionArgument(), published.ast());
+    CachedPlan<Long> effective = published == null ? cached : published;
+    return new QueryCompilation<>(effective.plan(), queryAnalysis.argument(), effective.ast());
   }
 
-  private Object paginationArgument(QueryPagination pagination) {
-    List<Object> arguments = new ArrayList<>(conditionArguments());
+  private Object paginationArgument(QueryAnalysis queryAnalysis, QueryPagination pagination) {
+    if (pagination == QueryPagination.None.INSTANCE) {
+      return queryAnalysis.argument();
+    }
+    List<Object> arguments = new ArrayList<>(queryAnalysis.structure().arguments());
     switch (pagination) {
       case QueryPagination.None ignored -> {}
       case QueryPagination.LimitOnly limit -> arguments.add(limit.limit());
@@ -512,7 +523,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (orderBy.isEmpty()) {
       throw new QueryValidationException("pagination requires explicit stable ORDER BY");
     }
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
+    CompiledQueryStructure structure = analysis().structure();
     validateOrderScope(structure.fromClause());
     if (distinct) {
       if (!hasStableDistinctOrdering()) {
@@ -678,7 +689,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   String queryFingerprint() {
     QueryCompilation<R> structure = compilation(QueryPagination.None.INSTANCE);
-    FromClause fromClause = QueryStructureCompiler.compile(table, joins, predicate).fromClause();
+    FromClause fromClause = analysis().structure().fromClause();
     MessageDigest digest = sha256();
     updateDigest(digest, "join-query-fingerprint-v1");
     updateDigest(digest, structure.plan().dialectId());
@@ -712,7 +723,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   String orderSignature() {
-    FromClause fromClause = QueryStructureCompiler.compile(table, joins, predicate).fromClause();
+    FromClause fromClause = analysis().structure().fromClause();
     StringBuilder signature = new StringBuilder();
     for (SortSpecification<?> item : orderBy) {
       TableOccurrence occurrence =
@@ -868,19 +879,31 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private List<Object> conditionArguments() {
-    if (joins.isEmpty() && predicate == null) {
-      return List.of();
-    }
-    return QueryStructureCompiler.compile(table, joins, predicate).arguments();
-  }
-
-  private Object conditionArgument() {
-    List<Object> arguments = conditionArguments();
-    return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
+    return analysis().structure().arguments();
   }
 
   private Object fastArgument() {
-    return plans.argument(fastPredicate());
+    return analysis().argument();
+  }
+
+  private QueryAnalysis analysis() {
+    QueryAnalysis existing = analysis;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = analysis;
+      if (existing == null) {
+        CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
+        Object argument =
+            structure.arguments().isEmpty()
+                ? NoParameters.INSTANCE
+                : new QueryArguments(structure.arguments());
+        existing = new QueryAnalysis(structure, argument);
+        analysis = existing;
+      }
+      return existing;
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -934,6 +957,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return (List<T>) (List<?>) values;
   }
 
+  private record QueryAnalysis(CompiledQueryStructure structure, Object argument) {
+
+    private QueryAnalysis {
+      Objects.requireNonNull(structure, "structure");
+      Objects.requireNonNull(argument, "argument");
+    }
+  }
+
   private record PaginationShape(String mode, List<Boolean> nullMarkers) {
 
     private static PaginationShape of(QueryPagination pagination) {
@@ -975,7 +1006,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         entries.next();
         entries.remove();
       }
-      return compiled;
+      return new QueryCompilation<>(compiled.plan(), argument, compiled.ast());
     }
   }
 }

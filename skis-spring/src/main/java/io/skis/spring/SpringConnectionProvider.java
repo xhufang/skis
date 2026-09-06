@@ -3,6 +3,7 @@ package io.skis.spring;
 import io.skis.core.ExecutionContext;
 import io.skis.jdbc.ConnectionProvider;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Objects;
 import javax.sql.DataSource;
@@ -38,6 +39,25 @@ public final class SpringConnectionProvider implements ConnectionProvider {
         throw sqlFailure;
       }
       throw new SQLException("Spring could not acquire a DataSource connection", failure);
+    }
+  }
+
+  @Override
+  public void configureStatement(
+      PreparedStatement statement, ExecutionContext context, int queryTimeoutSeconds)
+      throws SQLException {
+    Objects.requireNonNull(statement, "statement");
+    Objects.requireNonNull(context, "context");
+    if (queryTimeoutSeconds < -1) {
+      throw new IllegalArgumentException("queryTimeoutSeconds must be -1, zero, or positive");
+    }
+
+    DataSourceUtils.applyTransactionTimeout(statement, dataSource);
+    if (queryTimeoutSeconds > 0) {
+      int appliedTimeoutSeconds = statement.getQueryTimeout();
+      if (appliedTimeoutSeconds <= 0 || appliedTimeoutSeconds > queryTimeoutSeconds) {
+        statement.setQueryTimeout(queryTimeoutSeconds);
+      }
     }
   }
 

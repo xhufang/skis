@@ -31,6 +31,19 @@ The initial cross-dialect set contains:
 `IncrementExpression<T>` remains as the specialized version-column `+ 1` node used by the
 mutation Fast Path. General arithmetic should use `ArithmeticExpression<T>`.
 
+## Parameter value capture
+
+Ordinary values remain outside the AST and plan cache key, but an immutable query must also own a
+stable value snapshot. Predicate construction therefore copies every array value recursively and
+clones the built-in mutable JDBC representations `java.sql.Date`, `Time`, and `Timestamp`.
+Comparison and between bounds as well as every `IN`/`NOT IN` element use this same capture boundary.
+Copying happens once when the predicate is created, never per row or per JDBC bind.
+
+Other supported Java values are immutable and remain allocation-free at capture. A custom
+`JdbcTypeCodec` whose values participate in predicates must use a deeply immutable value type, and
+its `bind` implementation must not mutate the supplied value; SKIS cannot infer a safe copy for an
+arbitrary custom object.
+
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
 `BigInteger`. Cast both operands to `BigDecimal` before division when fractional results are

@@ -103,6 +103,10 @@ selection and predicate structure, ordering direction/null placement, SQL and Ja
 predicate-parameter digest, format version and generated-model ABI. It never exposes or prints raw
 ordering values. `0.2.3` supports forward continuation only.
 
+Mutable keyset representations are defensively copied both when the continuation is created and
+when its internal values are read for resume. This includes arrays and the built-in
+`java.sql.Date`/`Time`/`Timestamp` representations.
+
 For Join queries, the structural identity also includes Join kind and order, every table occurrence
 and alias, ON structure, selected shape, and distinct state. Two occurrences of the same physical
 table cannot exchange continuations.

@@ -109,6 +109,11 @@ operation reference does not close that Connection. Spring alone commits, rolls 
 at transaction completion. Outside a transaction, the connection is released immediately after the
 operation.
 
+The provider also applies the current Spring transaction's remaining timeout to every SKIS
+PreparedStatement before execution. When a SKIS statement timeout is also configured, the shorter
+positive limit wins; a SKIS zero/unlimited value cannot disable the surrounding transaction
+deadline. An already expired transaction fails before SQL execution and is marked rollback-only.
+
 The provider deliberately reports that it does not support SKIS local transactions, so
 `beginTransaction` and `inTransaction` fail before acquiring a Connection. Use Spring transaction
 synchronization for post-commit work instead of `SkisSession.afterCommit`:

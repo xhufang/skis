@@ -64,6 +64,9 @@
 - 新增 `SkisPersistenceException` 统一安全 JDBC 诊断，以及 `skis-spring` 的
   `SkisExceptionTranslator`/`PersistenceExceptionTranslator` 集成入口。
 - 新增 ADR-0002 和执行选项/异常翻译指南，记录兼容性、热路径、query tag 安全及回滚方案。
+- `ConnectionProvider` 新增默认 Statement 配置扩展点，允许外部事务集成在参数绑定和 SKIS 执行选项之后、SQL
+  执行之前收紧语句约束；新增 ADR-0004 记录生命周期、兼容性和更短 timeout 优先规则。
+- 新增 ADR-0005，记录谓词参数的捕获时快照边界、自定义 Codec 不可变值合同，以及查询对象局部分析复用策略。
 
 ### Changed
 
@@ -105,6 +108,12 @@
   已编译调用方在类型模型迁移中的无关二进制变化。
 - Statement 选项设置失败现在标记为 `statement-configuration` 阶段，并继续保留 Statement close 与
   Connection release 失败的原始 cause/suppressed 顺序；异常消息不包含 SQL、参数或 query tag。
+- `SpringConnectionProvider` 现在把 Spring 事务剩余时限应用到每个 JDBC Statement；与 SKIS timeout 冲突时取
+  更短限制，显式零不能取消事务期限，已过期事务在 SQL 执行前失败。
+- 查询谓词现在在创建时快照数组及 `java.sql.Date`/`Time`/`Timestamp`，`IN`/`NOT IN` 的每个元素同样处理；
+  continuation 对这些可变锚点也执行输入和输出防御性复制。
+- 同一个不可变查询对象现在只分析一次 FROM/Join/ON/WHERE 和普通参数布局；普通、count、offset/keyset 与实体
+  Fast Path 的局部计划命中不再重建条件或 Join AST。
 - `fetchOne()` 与 nullable scalar `fetchOne()` 在有效 `maxRows` 为 1 时内部读取上限提升到 2，避免驱动截断
   第二行后绕过非唯一结果检查。
 - H2 显式 null placement 改用原生 `NULLS FIRST/LAST`，避免 distinct 查询因 CASE 排名表达式未进入

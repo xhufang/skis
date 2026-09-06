@@ -726,6 +726,35 @@ class JoinQueryDslTest {
   }
 
   @Test
+  void reusesOneJoinAnalysisForPlanAndCountCacheHits() {
+    @SuppressWarnings("unchecked")
+    DefaultSelectQuery<Pet, Pet> query =
+        (DefaultSelectQuery<Pet, Pet>)
+            operations()
+                .selectFrom(PET_TABLE)
+                .join(OWNER_TABLE)
+                .on(
+                    PET_TABLE
+                        .ownerId()
+                        .eq(OWNER_TABLE.id())
+                        .and(OWNER_TABLE.name().eq("Ada")))
+                .where(PET_TABLE.name().eq("Mimi"));
+
+    QueryCompilation<Pet> first = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> second = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> firstCount = query.countCompilation();
+    QueryCompilation<Long> secondCount = query.countCompilation();
+
+    assertSame(first.plan(), second.plan());
+    assertSame(first.ast(), second.ast());
+    assertSame(first.argument(), second.argument());
+    assertEquals(List.of("Ada", "Mimi"), ((QueryArguments) first.argument()).values());
+    assertSame(firstCount.plan(), secondCount.plan());
+    assertSame(firstCount.ast(), secondCount.ast());
+    assertSame(firstCount.argument(), secondCount.argument());
+  }
+
+  @Test
   @SuppressWarnings({"rawtypes", "unchecked"})
   void rejectsRawColumnComparisonsThatBypassTheGenericJavaTypeCheck() {
     QueryColumn ownerId = PET_TABLE.ownerId();

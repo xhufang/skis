@@ -100,11 +100,12 @@ final class SelectedResult<S, R> {
     return table == candidate;
   }
 
-  CompiledQueryPlan<R, Object> fastPlan(@Nullable QueryPredicate<?> predicate) {
+  CompiledQueryPlan<R, Object> fastPlan(
+      @Nullable QueryPredicate<?> predicate, CompiledQueryStructure structure) {
     if (!supportsFastPath()) {
       throw new IllegalStateException("only complete non-null entity selections use a Fast Path");
     }
-    return entityFastPlan(requirePlans(), requireTable(), predicate);
+    return entityFastPlan(requirePlans(), requireTable(), predicate, structure);
   }
 
   String structuralIdentity() {
@@ -193,8 +194,12 @@ final class SelectedResult<S, R> {
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static <S, R> CompiledQueryPlan<R, Object> entityFastPlan(
-      EntityPlanSet<S> plans, QueryTable<S> table, @Nullable QueryPredicate<?> predicate) {
-    return (CompiledQueryPlan) plans.selectPlan(table, (QueryPredicate) predicate);
+      EntityPlanSet<S> plans,
+      QueryTable<S> table,
+      @Nullable QueryPredicate<?> predicate,
+      CompiledQueryStructure structure) {
+    return (CompiledQueryPlan)
+        plans.selectPlan(table, (QueryPredicate) predicate, Objects.requireNonNull(structure));
   }
 
   private enum Kind {

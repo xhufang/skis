@@ -73,6 +73,23 @@ final class EntityPlanSet<E> {
         : compiler.compileQuery(model, table, predicate);
   }
 
+  CompiledQueryPlan<E, Object> selectPlan(
+      QueryTable<E> table,
+      @Nullable QueryPredicate<E> predicate,
+      CompiledQueryStructure structure) {
+    Objects.requireNonNull(structure, "structure");
+    if (predicate == null) {
+      return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
+    }
+    PropertyMeta<E, ?> property = predicate.simpleEqualityProperty(table);
+    if (property == null) {
+      return compiler.compileQuery(model, table, structure);
+    }
+    return table.alias().isEmpty()
+        ? equalityPlan(property.ordinal())
+        : compiler.compileQuery(model, table, structure);
+  }
+
   Object argument(@Nullable QueryPredicate<E> predicate) {
     if (predicate == null) {
       return NoParameters.INSTANCE;

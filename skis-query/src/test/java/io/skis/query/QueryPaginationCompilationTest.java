@@ -1,6 +1,7 @@
 package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -229,15 +230,25 @@ class QueryPaginationCompilationTest {
         query.compilation(new QueryPagination.Keyset(21, List.of(9L)));
     QueryCompilation<Pet> keysetThree =
         query.compilation(new QueryPagination.Keyset(21, List.of(3L)));
+    QueryCompilation<Pet> unpagedFirst = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> unpagedSecond = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> countFirst = query.countCompilation();
+    QueryCompilation<Long> countSecond = query.countCompilation();
 
-    assertTrue(first.plan() == third.plan());
-    assertEquals(first.ast(), third.ast());
+    assertSame(first.plan(), third.plan());
+    assertSame(first.ast(), third.ast());
     assertEquals(List.of("Mimi", 20, 0L), arguments(first));
     assertEquals(List.of("Mimi", 20, 40L), arguments(third));
-    assertTrue(keysetNine.plan() == keysetThree.plan());
-    assertEquals(keysetNine.ast(), keysetThree.ast());
+    assertSame(keysetNine.plan(), keysetThree.plan());
+    assertSame(keysetNine.ast(), keysetThree.ast());
     assertEquals(List.of("Mimi", 9L, 21), arguments(keysetNine));
     assertEquals(List.of("Mimi", 3L, 21), arguments(keysetThree));
+    assertSame(unpagedFirst.plan(), unpagedSecond.plan());
+    assertSame(unpagedFirst.ast(), unpagedSecond.ast());
+    assertSame(unpagedFirst.argument(), unpagedSecond.argument());
+    assertSame(countFirst.plan(), countSecond.plan());
+    assertSame(countFirst.ast(), countSecond.ast());
+    assertSame(countFirst.argument(), countSecond.argument());
   }
 
   @Test
@@ -279,6 +290,7 @@ class QueryPaginationCompilationTest {
         (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE).where(predicate);
 
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> repeated = query.compilation(QueryPagination.None.INSTANCE);
     @SuppressWarnings("unchecked")
     DefaultSelectQuery<Pet, Pet> unfiltered =
         (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE);
@@ -286,6 +298,9 @@ class QueryPaginationCompilationTest {
         unfiltered.compilation(QueryPagination.None.INSTANCE);
 
     assertTrue(compilation.plan() == catalog.require(PET).selectPlan(TABLE, predicate));
+    assertSame(compilation.plan(), repeated.plan());
+    assertSame(compilation.ast(), repeated.ast());
+    assertSame(compilation.argument(), repeated.argument());
     assertTrue(
         unfilteredCompilation.plan() == catalog.require(PET).selectPlan(TABLE, null));
     assertTrue(((SelectStatement) compilation.ast()).joins().isEmpty());

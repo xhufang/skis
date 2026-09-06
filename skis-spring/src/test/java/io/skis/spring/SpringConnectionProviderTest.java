@@ -8,21 +8,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionContext;
 import io.skis.core.TransactionException;
+import io.skis.dialect.RenderedSql;
+import io.skis.jdbc.CompiledQueryPlan;
+import io.skis.jdbc.JdbcExecutor;
 import io.skis.jdbc.JdbcTransaction;
+import io.skis.jdbc.QueryExecutionException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.SQLTimeoutException;
 import java.sql.Statement;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.jdbc.support.JdbcTransactionManager;
+import org.springframework.transaction.TransactionTimedOutException;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class SpringConnectionProviderTest {
@@ -90,6 +99,96 @@ class SpringConnectionProviderTest {
         });
 
     assertEquals(0, countRows(dataSource));
+  }
+
+  @Test
+  void appliesTheShorterOfSpringTransactionAndSkisStatementTimeouts() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions =
+        new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    transactions.setTimeout(20);
+    AtomicInteger shorterSkisTimeout = new AtomicInteger(2);
+    AtomicInteger shorterTransactionTimeout = new AtomicInteger(60);
+    AtomicInteger transactionOnlyTimeout = new AtomicInteger(0);
+    AtomicInteger explicitUnlimitedTimeout = new AtomicInteger(0);
+
+    transactions.executeWithoutResult(
+        status -> {
+          configureTimeout(provider, timeoutStatement(shorterSkisTimeout), 2);
+          configureTimeout(provider, timeoutStatement(shorterTransactionTimeout), 60);
+          configureTimeout(provider, timeoutStatement(transactionOnlyTimeout), -1);
+          configureTimeout(provider, timeoutStatement(explicitUnlimitedTimeout), 0);
+        });
+
+    assertEquals(2, shorterSkisTimeout.get());
+    assertTrue(shorterTransactionTimeout.get() > 0);
+    assertTrue(shorterTransactionTimeout.get() <= 20);
+    assertTrue(transactionOnlyTimeout.get() > 0);
+    assertTrue(transactionOnlyTimeout.get() <= 20);
+    assertTrue(explicitUnlimitedTimeout.get() > 0);
+    assertTrue(explicitUnlimitedTimeout.get() <= 20);
+  }
+
+  @Test
+  void rejectsStatementConfigurationWhenTheSpringTransactionHasExpired() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    try (Connection connection = dataSource.getConnection()) {
+      ConnectionHolder holder = new ConnectionHolder(connection);
+      holder.setTimeoutInMillis(-1);
+      TransactionSynchronizationManager.bindResource(dataSource, holder);
+      try {
+        assertThrows(
+            TransactionTimedOutException.class,
+            () ->
+                provider.configureStatement(
+                    timeoutStatement(new AtomicInteger()), ExecutionContext.EMPTY, -1));
+        assertTrue(holder.isRollbackOnly());
+      } finally {
+        TransactionSynchronizationManager.unbindResource(dataSource);
+      }
+    }
+  }
+
+  @Test
+  void appliesTransactionTimeoutBeforeDriverExecution() {
+    AtomicInteger queryTimeoutSeconds = new AtomicInteger();
+    SQLTimeoutException timeoutFailure = new SQLTimeoutException("driver query timeout");
+    PreparedStatement statement = timeoutStatement(queryTimeoutSeconds, timeoutFailure);
+    Connection connection =
+        proxy(
+            Connection.class,
+            (ignored, method, arguments) ->
+                method.getName().equals("prepareStatement")
+                    ? statement
+                    : defaultValue(method.getReturnType()));
+    DataSource dataSource = dataSourceReturning(connection);
+    ConnectionHolder holder = new ConnectionHolder(connection);
+    holder.setTimeoutInSeconds(5);
+    TransactionSynchronizationManager.bindResource(dataSource, holder);
+    try {
+      CompiledQueryPlan<String, Object> plan =
+          new CompiledQueryPlan<>(
+              "test",
+              new RenderedSql("SELECT 1", List.of()),
+              (preparedStatement, firstIndex, parameters, context) -> firstIndex,
+              (resultSet, context) -> resultSet.getString(1));
+
+      QueryExecutionException thrown =
+          assertThrows(
+              QueryExecutionException.class,
+              () ->
+                  new JdbcExecutor(new SpringConnectionProvider(dataSource))
+                      .fetchList(plan, new Object()));
+
+      assertSame(timeoutFailure, thrown.getCause());
+      assertEquals("execution", thrown.phase());
+      assertTrue(queryTimeoutSeconds.get() > 0);
+      assertTrue(queryTimeoutSeconds.get() <= 5);
+    } finally {
+      TransactionSynchronizationManager.unbindResource(dataSource);
+    }
   }
 
   @Test
@@ -186,6 +285,40 @@ class SpringConnectionProviderTest {
     } catch (SQLException failure) {
       throw new AssertionError("unexpected connection release failure", failure);
     }
+  }
+
+  private static void configureTimeout(
+      SpringConnectionProvider provider, PreparedStatement statement, int queryTimeoutSeconds) {
+    try {
+      provider.configureStatement(statement, ExecutionContext.EMPTY, queryTimeoutSeconds);
+    } catch (SQLException failure) {
+      throw new AssertionError("unexpected statement configuration failure", failure);
+    }
+  }
+
+  private static PreparedStatement timeoutStatement(AtomicInteger queryTimeoutSeconds) {
+    return timeoutStatement(queryTimeoutSeconds, null);
+  }
+
+  private static PreparedStatement timeoutStatement(
+      AtomicInteger queryTimeoutSeconds, SQLException executionFailure) {
+    return proxy(
+        PreparedStatement.class,
+        (ignored, method, arguments) ->
+            switch (method.getName()) {
+              case "getQueryTimeout" -> queryTimeoutSeconds.get();
+              case "setQueryTimeout" -> {
+                queryTimeoutSeconds.set((Integer) arguments[0]);
+                yield null;
+              }
+              case "executeQuery" -> {
+                if (executionFailure != null) {
+                  throw executionFailure;
+                }
+                yield null;
+              }
+              default -> defaultValue(method.getReturnType());
+            });
   }
 
   private static void executeUpdate(Connection connection, String sql) {

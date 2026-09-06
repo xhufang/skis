@@ -91,6 +91,80 @@ class JdbcExecutorTest {
   }
 
   @Test
+  void invokesProviderStatementConfigurationEvenWhenSkisTimeoutIsUnset() {
+    Scenario scenario = new Scenario(List.of());
+    ConnectionProvider delegate = scenario.provider();
+    AtomicInteger configuredTimeout = new AtomicInteger(Integer.MIN_VALUE);
+    AtomicReference<ExecutionContext> configuredContext = new AtomicReference<>();
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) throws SQLException {
+            return delegate.acquire(context);
+          }
+
+          @Override
+          public void configureStatement(
+              PreparedStatement statement, ExecutionContext context, int queryTimeoutSeconds) {
+            configuredTimeout.set(queryTimeoutSeconds);
+            configuredContext.set(context);
+            scenario.executionEvents.add("provider-configuration");
+          }
+
+          @Override
+          public void release(Connection connection, ExecutionContext context) throws SQLException {
+            delegate.release(connection, context);
+          }
+        };
+
+    new JdbcExecutor(provider).fetchList(plan(), 17L);
+
+    assertEquals(-1, configuredTimeout.get());
+    assertSame(ExecutionContext.EMPTY, configuredContext.get());
+    assertEquals(
+        List.of("bind-long", "provider-configuration", "execute-query"),
+        scenario.executionEvents);
+  }
+
+  @Test
+  void reportsProviderStatementConfigurationFailureAndClosesOwnedResources() {
+    Scenario scenario = new Scenario(List.of());
+    ConnectionProvider delegate = scenario.provider();
+    SQLException configurationFailure =
+        new SQLException("provider configuration failed", "HY000", 91);
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) throws SQLException {
+            return delegate.acquire(context);
+          }
+
+          @Override
+          public void configureStatement(
+              PreparedStatement statement, ExecutionContext context, int queryTimeoutSeconds)
+              throws SQLException {
+            throw configurationFailure;
+          }
+
+          @Override
+          public void release(Connection connection, ExecutionContext context) throws SQLException {
+            delegate.release(connection, context);
+          }
+        };
+
+    QueryExecutionException thrown =
+        assertThrows(
+            QueryExecutionException.class,
+            () -> new JdbcExecutor(provider).fetchList(plan(), 17L));
+
+    assertSame(configurationFailure, thrown.getCause());
+    assertEquals("statement-configuration", thrown.phase());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
+    assertEquals(List.of("statement", "connection"), scenario.resourceCloseEvents);
+  }
+
+  @Test
   void explicitZeroValuesAndClearedTagOverrideExecutorDefaultsForMutation() {
     Scenario scenario = new Scenario(List.of());
     ExecutionOptions defaults =
