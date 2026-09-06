@@ -9,6 +9,7 @@ import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.Identifier;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -110,6 +111,10 @@ class QueryValueSnapshotsTest {
       super(SNAPSHOT_ROW);
     }
 
+    private SnapshotTable(Identifier alias) {
+      super(SNAPSHOT_ROW, alias);
+    }
+
     private NonNullQueryColumn<SnapshotRow, byte[]> bytes() {
       return bytes;
     }
@@ -124,6 +129,16 @@ class QueryValueSnapshotsTest {
 
     private NonNullQueryColumn<SnapshotRow, Time> time() {
       return time;
+    }
+
+    @Override
+    public SnapshotTable as(String alias) {
+      return new SnapshotTable(Identifier.of(alias));
+    }
+
+    @Override
+    public SnapshotTable as(Identifier alias) {
+      return new SnapshotTable(alias);
     }
   }
 }
