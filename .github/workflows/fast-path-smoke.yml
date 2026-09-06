@@ -30,7 +30,7 @@ concurrency:
 
 jobs:
   postgres-find-by-id:
-    name: PostgreSQL findById smoke
+    name: PostgreSQL Fast Path smoke
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -92,11 +92,11 @@ jobs:
           chmod +x mvnw
           ./mvnw -B -ntp -pl skis-benchmark/skis-benchmark-runner -am -DskipTests package
 
-      - name: Run JDBC and SKIS smoke
+      - name: Run JDBC and SKIS Fast Path smoke
         shell: bash
         run: |
           java -jar skis-benchmark/skis-benchmark-runner/target/benchmarks.jar \
-            '.*UserFindByIdBenchmark\.(jdbc|skis)$' \
+            '.*(UserFindByIdBenchmark\.(jdbc|skis)|UserQueryFastPathBenchmark\.(jdbcAll|skisAll|jdbcEquality|skisEquality))$' \
             -wi 3 -i 5 -f 1 -w 500ms -r 500ms \
             -prof gc -rf json \
             -rff skis-benchmark/skis-benchmark-runner/target/fast-path-smoke.json

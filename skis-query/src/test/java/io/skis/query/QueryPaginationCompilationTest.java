@@ -269,7 +269,7 @@ class QueryPaginationCompilationTest {
   }
 
   @Test
-  void unifiedQueryKeepsTheExistingUnpaginatedFastPathPlan() {
+  void unifiedQueryKeepsUnconditionalAndEqualityFastPathPlans() {
     QueryPlanCatalog catalog =
         QueryRuntime.compile(EntityRuntimeRegistry.of(List.of(model())), TestDialect.INSTANCE);
     QueryOperations operations = bind(catalog);
@@ -279,8 +279,17 @@ class QueryPaginationCompilationTest {
         (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE).where(predicate);
 
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    @SuppressWarnings("unchecked")
+    DefaultSelectQuery<Pet, Pet> unfiltered =
+        (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE);
+    QueryCompilation<Pet> unfilteredCompilation =
+        unfiltered.compilation(QueryPagination.None.INSTANCE);
 
     assertTrue(compilation.plan() == catalog.require(PET).selectPlan(TABLE, predicate));
+    assertTrue(
+        unfilteredCompilation.plan() == catalog.require(PET).selectPlan(TABLE, null));
+    assertTrue(compilation.ast().joins().isEmpty());
+    assertTrue(unfilteredCompilation.ast().joins().isEmpty());
   }
 
   private static List<Object> arguments(QueryCompilation<?> compilation) {

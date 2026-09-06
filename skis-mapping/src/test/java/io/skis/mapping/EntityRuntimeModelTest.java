@@ -114,7 +114,8 @@ class EntityRuntimeModelTest {
   }
 
   @Test
-  void nullableEntityDecoderRejectsPartiallyNullCompositePrimaryKey() {
+  void nullableEntityDecoderDistinguishesEveryCompositePrimaryKeyPresenceState()
+      throws Exception {
     PropertyMeta<CompositePet, Long> tenantId =
         new PropertyMeta<>(0, "tenantId", Long.class, ColumnMeta.of("tenant_id", false));
     PropertyMeta<CompositePet, Long> petId =
@@ -136,6 +137,10 @@ class EntityRuntimeModelTest {
     RowDecoder<CompositePet> decoder =
         model.nullableRowDecoder(RowLayout.contiguous(2, 1));
 
+    assertNull(decoder.decode(resultSet(Map.of()), RowReadContext.EMPTY));
+    assertEquals(
+        new CompositePet(1L, 2L),
+        decoder.decode(resultSet(Map.of(1, 1L, 2, 2L)), RowReadContext.EMPTY));
     assertThrows(
         SQLException.class,
         () -> decoder.decode(resultSet(Map.of(1, 1L)), RowReadContext.EMPTY));

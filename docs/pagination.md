@@ -26,6 +26,13 @@ database default is rejected because it cannot define a portable continuation.
 PostgreSQL and H2 use native `NULLS FIRST`/`NULLS LAST`. The keyset predicate applies the same
 null-ranking rules as the rendered order.
 
+For a non-distinct Join, the current conservative proof requires the complete primary key of the
+root and every joined occurrence that can contribute a different result-row combination. Calling
+`thenByPrimaryKey(...)` adds only the root key. A distinct Join instead uses the visible selected
+tuple as its row identity and does not add hidden joined keys. Effective outer-join nullability is
+used for keyset validation, so a physically non-null column on a null-extended side still requires
+explicit null placement.
+
 ## Page
 
 `PageRequest.page(pageIndex, pageSize)` uses a zero-based page index:
@@ -60,6 +67,12 @@ The count source carries its own table, predicate, distinct shape and parameter 
 discarded. It must be a built-in SKIS query in the same executor/session and use the same execution
 options as the content query.
 
+Join count retains the exact FROM/JOIN/ON/WHERE structure. Ordinary count therefore preserves
+Join-expanded duplicate rows. A distinct complete entity with a single-column primary key counts
+that selected occurrence's key; a nullable outer-joined entity also counts one absent entity result
+when unmatched rows exist. Multi-expression distinct results and composite-key shapes that cannot
+be expressed portably require the explicit count form above.
+
 ## Offset slice
 
 An offset slice executes only content SQL and reads one internal extra row:
@@ -89,6 +102,10 @@ Slice<Pet> second =
 selection and predicate structure, ordering direction/null placement, SQL and Java types,
 predicate-parameter digest, format version and generated-model ABI. It never exposes or prints raw
 ordering values. `0.2.3` supports forward continuation only.
+
+For Join queries, the structural identity also includes Join kind and order, every table occurrence
+and alias, ON structure, selected shape, and distinct state. Two occurrences of the same physical
+table cannot exchange continuations.
 
 For projections, keyset execution may select hidden ordering columns such as
 `__skis_order_0`. User decoders still receive only their declared visible fields. A distinct query

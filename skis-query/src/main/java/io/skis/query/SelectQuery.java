@@ -47,11 +47,24 @@ public interface SelectQuery<E, R> {
    */
   SelectQuery<E, R> orderBy(SortSpecification<?>... specifications);
 
+  /**
+   * Appends the FROM root's complete primary key to the ordering.
+   *
+   * <p>For paginated Joins, the caller must still order by the required keys of other participating
+   * table occurrences.
+   */
   SelectQuery<E, R> thenByPrimaryKey(SortDirection direction);
 
+  /** Applies SQL DISTINCT to the complete visible result tuple. */
   SelectQuery<E, R> distinct();
 
-  /** Creates an independent count plan from this query's source, predicate, and distinct shape. */
+  /**
+   * Creates an independent count descriptor from this query's FROM/JOIN/ON/WHERE and distinct
+   * shape.
+   *
+   * <p>The count is validated and compiled when it is supplied to a page operation. A distinct
+   * result with no portable equivalent count is rejected at that point.
+   */
   CountQuery countQuery();
 
   Optional<R> fetchOne();

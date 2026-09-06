@@ -47,11 +47,24 @@ public interface NullableSelectQuery<F, R> {
    */
   NullableSelectQuery<F, R> orderBy(SortSpecification<?>... specifications);
 
+  /**
+   * Appends the FROM root's complete primary key to the ordering.
+   *
+   * <p>For paginated Joins, the caller must still order by the required keys of other participating
+   * table occurrences.
+   */
   NullableSelectQuery<F, R> thenByPrimaryKey(SortDirection direction);
 
+  /** Applies SQL DISTINCT to the complete visible result tuple, including one possible NULL row. */
   NullableSelectQuery<F, R> distinct();
 
-  /** Creates an independent count plan from this query's source, predicate, and distinct shape. */
+  /**
+   * Creates an independent count descriptor from this query's FROM/JOIN/ON/WHERE and distinct
+   * shape.
+   *
+   * <p>The count is validated and compiled when it is supplied to a page operation. A distinct
+   * result with no portable equivalent count is rejected at that point.
+   */
   CountQuery countQuery();
 
   SingleRow<R> fetchOne();

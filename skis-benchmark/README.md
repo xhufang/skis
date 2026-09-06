@@ -43,9 +43,11 @@ $env:SKIS_BENCHMARK_DB_PASSWORD = Read-Host "PostgreSQL password"
 java -jar skis-benchmark/skis-benchmark-runner/target/benchmarks.jar
 ```
 
-JMH runs the `jdbc`, `skis`, `jimmer`, `mybatis`, `mybatisFlex`, `mybatisPlus`, and `jooq` methods
-independently. Use a JMH include expression to run only one implementation when diagnosing it, but
-use the unified run for comparison reports.
+JMH runs the `jdbc`, `skis`, `jimmer`, `mybatis`, `mybatisFlex`, `mybatisPlus`, and `jooq` find-by-ID
+methods independently. The runner also contains `UserQueryFastPathBenchmark`, which compares
+hand-written JDBC with SKIS for an unfiltered entity query and a single-property equality query.
+Use a JMH include expression to run only one implementation when diagnosing it, but use matching
+JDBC/SKIS methods and the same trial for comparison reports.
 
 ## Comparison framework versions
 

@@ -29,6 +29,7 @@ generated result-row companions. A projection now binds an ordered list of visib
 so the same API covers single-table and joined results without reflection or startup registration.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
+[explicit joins and generated result rows](docs/joins.md),
 [page and slice pagination](docs/pagination.md),
 [cursor and stream ownership](docs/cursor-and-stream.md), and
 [execution options and exception translation](docs/execution-options-and-exception-translation.md).
@@ -120,6 +121,23 @@ List<PetSummary> rows =
 The generated `of(...)` method has fixed, typed parameters. Joined projections use the same entry
 point; final Join scope and effective nullability are validated before SQL execution.
 
+Explicit joins use generated table expressions and a mandatory ON stage for every non-CROSS form:
+
+```java
+List<PetOwnerView> rows =
+    executor
+        .select(PetOwnerViewProjection.of(pet.id(), pet.name(), owner.name()))
+        .from(pet)
+        .leftJoin(owner)
+        .on(pet.ownerId().eq(owner.id()))
+        .fetchList();
+```
+
+Join rows are not deduplicated by entity ID. Outer-join selections must explicitly accept effective
+SQL NULL, and paginated joins must order by enough occurrence keys to identify each final row. See
+the [Join guide](docs/joins.md) for aliases, ON scope, nullable entities, distinct, count, and
+continuation rules.
+
 See the complete [plain Java + H2 example](skis-examples/skis-example-h2) for schema creation,
 annotation processing, typed queries, mutations, and transactions.
 
@@ -133,8 +151,8 @@ semantics.
 
 | Database | 0.2 status |
 | --- | --- |
-| PostgreSQL 16 / pgJDBC 42.7.11 | Query, sorting/pagination, mutation, transaction, projection, and JDBC type contract |
-| H2 2.4.240 | Query and pagination development dialect, consumer smoke, example, and integration tests |
+| PostgreSQL 16 / pgJDBC 42.7.11 | Query, all five explicit Join forms, sorting/pagination, mutation, transaction, projection, and JDBC type contract |
+| H2 2.4.240 | Query, INNER/LEFT/RIGHT/CROSS Join, pagination, consumer smoke, example, and integration tests; FULL JOIN fails before JDBC |
 | MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.2 |
 
 JDBC drivers are deliberately supplied and versioned by the application.
@@ -154,6 +172,7 @@ Applications own DDL and assign identifiers before insert.
 - [Local JDBC and Spring transaction management](docs/transaction-management.md)
 - [JDBC execution options and Spring exception translation](docs/execution-options-and-exception-translation.md)
 - [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md)
+- [Explicit joins and generated result rows](docs/joins.md)
 - [Page and slice pagination](docs/pagination.md)
 - [Cursor and stream resource ownership](docs/cursor-and-stream.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)

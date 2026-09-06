@@ -97,8 +97,8 @@ validation and is still rejected by `StandardSqlRenderer`; a future traversal SP
 separate architecture decision.
 
 INSERT values have no visible table-column scope. UPDATE expressions and predicates may reference
-only the target table expression. DELETE predicates may reference only the target. SELECT currently
-has exactly one visible FROM table expression.
+only the target table expression. DELETE predicates may reference only the target. SELECT uses an
+ordered `FromClause`: the root and each completed Join occurrence form its visible scope.
 
 Subqueries, derived tables, joins, and CTEs were not represented by the `0.2.2` AST. Explicit joins
 are added by the `0.2.4` scope described below; subqueries, derived tables, and CTEs remain deferred.
@@ -118,7 +118,7 @@ descriptors, but not bound limit, offset, predicate or keyset values. Repeated p
 are legal when their Java type, SQL type and nullability descriptors agree; this permits a typed
 keyset anchor to appear in multiple branches of a lexicographic seek predicate.
 
-`SemanticValidator` checks that order and hidden expressions belong to the single visible table,
+`SemanticValidator` checks that order and hidden expressions belong to the completed Join scope,
 pagination slots use the required non-null integer/long descriptors, offset/keyset pagination has
 an order, and all parameter ordinals remain dense. Dialect rendering then requires explicit
 parameterized limit/offset capabilities and either uses native null ordering or a semantically
@@ -151,3 +151,7 @@ After every Join is known, query compilation resolves each column to an occurren
 codec, checks exact boxed Java type, portable SQL compatibility, and effective nullability, then
 builds a decoder with fixed one-based ResultSet indexes. Row decoding performs no reflection,
 column-name matching, `getObject` guessing, registry lookup, or per-row codec lookup.
+
+The complete Join contract—including Join forms, aliases, staged ON visibility, nullable entity
+presence, duplicate rows, pagination stability, count semantics, and dialect support—is documented
+in [Explicit joins and generated result rows](joins.md).

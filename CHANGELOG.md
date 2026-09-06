@@ -34,6 +34,13 @@
   `ProjectionMapping<R>`、查询绑定的 `ProjectionSelection<R>` 和内部统一 `ResolvedResultShape<R>`。
 - 投影 APT 生成固定参数数量和具体 Java 泛型的 `*Projection.of(...)`；结果可按顺序组合任意最终可见表的列，
   Join 完成后统一校验作用域、SQL 类型、Codec 和有效 nullability，并只按一基 JDBC 下标解码。
+- 新增 H2/PostgreSQL 共用的真实 Join 合同，覆盖外连接 null 扩展、nullable entity、同表双别名、重复行、
+  ON/WHERE 差异、实体/标量/生成投影、分页/count/distinct/keyset，并在 PostgreSQL 上断言 ResultSet、
+  PreparedStatement 和 Connection 的关闭边界。
+- 新增 Join 专题指南及 PostgreSQL/H2 组合 SQL golden；分页和 README 同步记录方言支持、occurrence
+  稳定排序、distinct/count 与 continuation 规则。
+- Fast Path 性能 smoke 增加无条件实体查询和单属性等值查询的同轮手写 JDBC 对照，防止 Join 通用化使既有
+  有界预编译路径发生明显耗时或分配量回退。
 
 - 新增表达式级标准 SQL 类型与显式 nullability 模型，集中定义相等、排序、LIKE、BETWEEN、IN 的
   类型兼容及 SQL 三值逻辑传播规则。
