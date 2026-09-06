@@ -288,8 +288,8 @@ class QueryPaginationCompilationTest {
     assertTrue(compilation.plan() == catalog.require(PET).selectPlan(TABLE, predicate));
     assertTrue(
         unfilteredCompilation.plan() == catalog.require(PET).selectPlan(TABLE, null));
-    assertTrue(compilation.ast().joins().isEmpty());
-    assertTrue(unfilteredCompilation.ast().joins().isEmpty());
+    assertTrue(((SelectStatement) compilation.ast()).joins().isEmpty());
+    assertTrue(((SelectStatement) unfilteredCompilation.ast()).joins().isEmpty());
   }
 
   private static List<Object> arguments(QueryCompilation<?> compilation) {
