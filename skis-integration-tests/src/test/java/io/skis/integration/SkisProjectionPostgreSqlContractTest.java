@@ -22,6 +22,7 @@ import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
 import io.skis.testmodel.pet.skis.PetMeta;
+import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -53,7 +54,8 @@ class SkisProjectionPostgreSqlContractTest {
           executor.select(pet.name()).from(pet).where(pet.name().eq(name)).fetchList();
       PetSummary projected =
           executor
-              .selectProjection(pet, PetSummary.class)
+              .select(PetSummaryProjection.of(pet.id(), pet.name(), pet.weight()))
+              .from(pet)
               .where(pet.id().eq(id))
               .fetchOne()
               .orElseThrow();

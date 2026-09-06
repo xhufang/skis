@@ -4,7 +4,7 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.2.3-SNAPSHOT</version>
+    <version>0.2.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-test-model</artifactId>
@@ -14,6 +14,10 @@
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
   <dependencies>
+    <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+    </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-annotations</artifactId>
@@ -63,7 +67,6 @@
             <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisEntityIndexProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisProjectionProcessor</annotationProcessor>
-            <annotationProcessor>io.skis.processor.SkisProjectionIndexProcessor</annotationProcessor>
           </annotationProcessors>
         </configuration>
       </plugin>

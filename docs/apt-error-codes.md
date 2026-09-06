@@ -355,14 +355,14 @@ meanings stable; those milestones are not separately published versions.
 
 - Cause: a projection scan was requested for a type without `@SkisProjection`.
 - Invalid: `public record PetSummary(Long id) {}` submitted directly to the projection processor.
-- Valid: add `@SkisProjection(entity = Pet.class)`.
+- Valid: add marker annotation `@SkisProjection`.
 - Fix: annotate the result type or do not submit it for projection processing.
 - First public version: `0.1.0`.
 
 ### SKIS202
 
 - Cause: the projection is neither a class nor a record.
-- Invalid: `@SkisProjection(entity = Pet.class) public interface PetSummary`.
+- Invalid: `@SkisProjection public interface PetSummary`.
 - Valid: use a concrete class or record result type.
 - Fix: change the projection declaration kind.
 - First public version: `0.1.0`.
@@ -372,7 +372,7 @@ meanings stable; those milestones are not separately published versions.
 - Cause: the projection is nested.
 - Invalid: a projection record declared inside `PetViews`.
 - Valid: move `PetSummary` to a top-level source file.
-- Fix: generated projection providers require a top-level user result type.
+- Fix: generated projection companions require a top-level user result type.
 - First public version: `0.1.0`.
 
 ### SKIS204
@@ -404,7 +404,7 @@ meanings stable; those milestones are not separately published versions.
 - Cause: the selected projection constructor is not public.
 - Invalid: `@ProjectionConstructor private PetSummary(Long id)`.
 - Valid: make the selected constructor public.
-- Fix: expose the constructor to the generated provider.
+- Fix: expose the constructor to the generated companion.
 - First public version: `0.1.0`.
 
 ### SKIS208
@@ -412,7 +412,7 @@ meanings stable; those milestones are not separately published versions.
 - Cause: the selected projection constructor has no parameters.
 - Invalid: `public PetSummary() {}`.
 - Valid: `public PetSummary(Long id) { ... }`.
-- Fix: declare at least one parameter backed by an entity property.
+- Fix: declare at least one result-row constructor parameter.
 - First public version: `0.1.0`.
 
 ### SKIS209
@@ -479,11 +479,11 @@ meanings stable; those milestones are not separately published versions.
 - Fix: remove constructor type parameters.
 - First public version: `0.1.0`.
 
-## Projection resolution and entity binding
+## Projection parameter resolution and historical entity binding
 
 ### SKIS217
 
-- Cause: a projection constructor parameter, source entity, or Lombok-backed projection dependency
+- Cause: a projection constructor parameter or Lombok-backed projection dependency
   remains unresolved in the final processing round.
 - Invalid: a constructor uses `GeneratedMoney` but no active processor generates that type.
 - Valid: generate or compile every referenced type before processing ends.
@@ -500,67 +500,59 @@ meanings stable; those milestones are not separately published versions.
 
 ### SKIS219
 
-- Cause: `@SkisProjection.entity` does not name a declared reference type.
-- Invalid: `@SkisProjection(entity = int.class)`.
-- Valid: `@SkisProjection(entity = Pet.class)` where `Pet` is an entity declaration.
-- Fix: select a concrete declared entity type.
+- Historical status: emitted before 0.2.4 when `@SkisProjection.entity` did not name a declared
+  reference type. The marker annotation no longer has an `entity` element, so this code is retired
+  and must not be reassigned.
 - First public version: `0.1.0`.
 
 ### SKIS220
 
-- Cause: the projection's source entity fails its own entity-model validation.
-- Invalid: a projection targets a writable entity with no `@Id` or an unsupported Bean shape.
-- Valid: fix the nested `[SKISxxx]` entity diagnostic first.
-- Fix: compile the source entity successfully before compiling its projection.
+- Historical status: emitted before 0.2.4 when an entity-bound projection's source entity failed
+  entity-model validation. Result-row projections no longer scan a source entity; this code is
+  retired and must not be reassigned.
 - First public version: `0.1.0`.
 
 ### SKIS221
 
-- Cause: a projection constructor parameter selects no persistent entity property.
-- Invalid: `record PetSummary(String label)` when the entity property is named `name`.
-- Valid: rename the parameter to `name` or add `@ProjectionProperty("name")`.
-- Fix: bind every parameter to an existing persistent property.
+- Historical status: emitted before 0.2.4 when a constructor parameter did not match a persistent
+  entity property. Parameter names no longer perform property lookup; this code is retired and must
+  not be reassigned.
 - First public version: `0.1.0`.
 
 ### SKIS222
 
-- Cause: a projection parameter type does not match its entity property type after boxing.
-- Invalid: `String id` for an entity `Long id` property.
-- Valid: use `Long id`.
-- Fix: make the Java types exactly compatible; SKIS performs no implicit conversion.
+- Historical status: emitted before 0.2.4 for entity-property Java type mismatches. Fixed generated
+  `of(...)` signatures now provide normal javac checks and the query compiler performs defensive
+  validation; this code is retired and must not be reassigned.
 - First public version: `0.1.0`.
 
 ### SKIS223
 
-- Cause: a primitive projection parameter selects a nullable entity property.
-- Invalid: primitive `long ownerId` selecting nullable `Long ownerId`.
-- Valid: use `Long ownerId`, or make the entity column non-null.
-- Fix: preserve SQL `NULL` in the result type.
+- Historical status: emitted before 0.2.4 when a primitive parameter selected a nullable entity
+  property. Generated `NonNullSelectable` signatures and final Join nullability validation replace
+  that check; this code is retired and must not be reassigned.
 - First public version: `0.1.0`.
 
 ### SKIS224
 
-- Cause: `@ProjectionProperty` contains a blank property name.
-- Invalid: `@ProjectionProperty("  ") String name`.
-- Valid: `@ProjectionProperty("name") String label`.
-- Fix: name a real persistent entity property.
+- Historical status: emitted before 0.2.4 for a blank `@ProjectionProperty` value. The annotation
+  has been removed; this code is retired and must not be reassigned.
 - First public version: `0.1.0`.
 
 ## Projection generated output
 
 ### SKIS298
 
-- Cause: `META-INF/skis/projections.idx` cannot be created.
-- Invalid build: duplicate index aggregators or a stale conflicting class-output resource.
-- Valid build: one `SkisProjectionIndexProcessor` owns the projection index.
-- Fix: remove duplicate processor configuration and clean the conflicting output.
+- Historical status: emitted before 0.2.4 when `META-INF/skis/projections.idx` could not be created.
+  Projection discovery and its index processor have been removed; this code is retired and must not
+  be reassigned.
 - First public version: `0.1.0`.
 
 ### SKIS299
 
-- Cause: a generated projection Provider source cannot be created.
+- Cause: a generated projection companion source cannot be created.
 - Invalid build: a user source already owns `<ResultType>Projection` in the `.skis` package.
-- Valid build: reserve generated projection provider names for SKIS.
+- Valid build: reserve generated projection companion names for SKIS.
 - Fix: rename/remove the conflicting source and verify generated-source output permissions.
 - First public version: `0.1.0`.
 
@@ -574,8 +566,9 @@ reject:
 - a missing, invalid, duplicate, or incompatible generated-model ABI header;
 - duplicate Provider entries within one index or across multiple dependency indexes;
 - different entity Providers supplying the same canonical metadata or Java entity type;
-- different projection Providers supplying the same user result type;
-- missing, incorrectly typed, non-constructible, null-returning, or link-incompatible Providers.
+- missing, incorrectly typed, non-constructible, null-returning, or link-incompatible entity
+  Providers.
 
 Do not merge or shade generated indexes by silently discarding entries. Re-run APT for the owning
-module and keep exactly one Provider for each entity Java type and projection result type.
+module and keep exactly one Provider for each entity Java type. Projection companions are referenced
+directly by application code and have no runtime index.

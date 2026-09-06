@@ -180,7 +180,7 @@ public final class SliceContinuation {
   private static List<@Nullable Object> immutableValues(List<@Nullable Object> values) {
     Objects.requireNonNull(values, "keysetValues");
     List<@Nullable Object> copy = new ArrayList<>(values.size());
-    values.forEach(value -> copy.add(copyArray(value)));
+    values.forEach(value -> copy.add(QueryValueSnapshots.copy(value)));
     return Collections.unmodifiableList(copy);
   }
 
@@ -208,17 +208,5 @@ public final class SliceContinuation {
       result = 31 * result + deepValueHash(Array.get(value, index));
     }
     return result;
-  }
-
-  private static @Nullable Object copyArray(@Nullable Object value) {
-    if (value == null || !value.getClass().isArray()) {
-      return value;
-    }
-    int length = Array.getLength(value);
-    Object copy = Array.newInstance(value.getClass().getComponentType(), length);
-    for (int index = 0; index < length; index++) {
-      Array.set(copy, index, copyArray(Array.get(value, index)));
-    }
-    return copy;
   }
 }

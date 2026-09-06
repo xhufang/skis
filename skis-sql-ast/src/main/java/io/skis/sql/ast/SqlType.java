@@ -102,7 +102,7 @@ public enum SqlType {
   public boolean equalityCompatibleWith(SqlType other) {
     Objects.requireNonNull(other, "other");
     if (this == OTHER || other == OTHER) {
-      return this == other;
+      return false;
     }
     return family == other.family;
   }

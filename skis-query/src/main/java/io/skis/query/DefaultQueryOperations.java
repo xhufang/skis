@@ -18,14 +18,9 @@ final class DefaultQueryOperations implements QueryOperations {
 
   private final JdbcExecutor jdbcExecutor;
   private final QueryPlanCatalog planCatalog;
-  private final ProjectionRegistry projectionRegistry;
 
-  DefaultQueryOperations(
-      QueryPlanCatalog planCatalog,
-      ProjectionRegistry projectionRegistry,
-      JdbcExecutor jdbcExecutor) {
+  DefaultQueryOperations(QueryPlanCatalog planCatalog, JdbcExecutor jdbcExecutor) {
     this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
-    this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
     this.jdbcExecutor = Objects.requireNonNull(jdbcExecutor, "jdbcExecutor");
   }
 
@@ -55,30 +50,61 @@ final class DefaultQueryOperations implements QueryOperations {
   public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return DefaultSelectQuery.entity(this, plans, table);
+    return DefaultSelectQuery.create(this, plans, table, SelectedResult.entity(table, plans));
+  }
+
+  @Override
+  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+    Objects.requireNonNull(table, "table");
+    EntityPlanSet<R> plans = requirePlanSet(table.entity());
+    return new DefaultSelectFromStep<>(this, SelectedResult.entity(table, plans));
+  }
+
+  @Override
+  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+    Objects.requireNonNull(table, "table");
+    EntityPlanSet<R> plans = requirePlanSet(table.entity());
+    return new DefaultNullableSelectFromStep<>(this, SelectedResult.nullableEntity(table, plans));
   }
 
   @Override
   public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
-    return new DefaultSelectFromStep<>(this, Projection.scalar(column));
+    Objects.requireNonNull(column, "column");
+    QueryTable<E> selectedTable = column.table();
+    EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
+    return new DefaultSelectFromStep<>(
+        this, SelectedResult.requiredScalar(selectedTable, plans, column));
   }
 
   @Override
   public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
-    return new DefaultNullableSelectFromStep<>(this, Projection.nullableScalar(column));
+    Objects.requireNonNull(column, "column");
+    QueryTable<E> selectedTable = column.table();
+    EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
+    return new DefaultNullableSelectFromStep<>(
+        this, SelectedResult.nullableScalar(selectedTable, plans, column));
   }
 
   @Override
-  public <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType) {
-    Objects.requireNonNull(table, "table");
-    Projection<E, R> projection = projectionRegistry.require(table, projectionType);
-    return selectFrom(projection, table);
+  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
+    Objects.requireNonNull(column, "column");
+    QueryTable<E> selectedTable = column.table();
+    EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
+    return new DefaultNullableSelectFromStep<>(
+        this, SelectedResult.nullableScalar(selectedTable, plans, column));
   }
 
-  <E, R> DefaultSelectQuery<E, R> selectFrom(Projection<E, R> projection, QueryTable<E> table) {
-    projection.validateFrom(table);
-    EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return DefaultSelectQuery.projection(this, plans, table, projection);
+  @Override
+  public <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection) {
+    return new DefaultProjectionSelectFromStep<>(
+        this, Objects.requireNonNull(projection, "projection"));
+  }
+
+  <F, S, R> DefaultSelectQuery<F, R> selectFrom(
+      SelectedResult<S, R> selected, QueryTable<F> table) {
+    Objects.requireNonNull(selected, "selected");
+    EntityPlanSet<F> plans = requirePlanSet(table.entity());
+    return DefaultSelectQuery.create(this, plans, table, selected);
   }
 
   <R> Optional<R> fetchOne(

@@ -3,6 +3,7 @@ package io.skis.jdbc;
 import io.skis.core.ExecutionContext;
 import io.skis.core.TransactionException;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -278,6 +279,13 @@ public final class JdbcTransaction implements AutoCloseable {
         throw new SQLException("transaction connection is no longer active");
       }
       return connection;
+    }
+
+    @Override
+    public void configureStatement(
+        PreparedStatement statement, ExecutionContext context, int queryTimeoutSeconds)
+        throws SQLException {
+      owner.configureStatement(statement, context, queryTimeoutSeconds);
     }
 
     @Override

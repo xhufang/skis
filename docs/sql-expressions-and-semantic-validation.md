@@ -1,8 +1,8 @@
 # SQL expressions and semantic validation
 
-This document describes the expression contract implemented by the internal `0.2.2-SNAPSHOT` and
-`0.2.3-SNAPSHOT` milestones. It accumulates toward the public `0.3.0` SQL DSL and is not part of
-the published `0.2.0` API.
+This document describes the expression contract implemented by the internal `0.2.2-SNAPSHOT`
+through `0.2.4-SNAPSHOT` milestones. It accumulates toward the public `0.3.0` SQL DSL and is not
+part of the published `0.2.0` API.
 
 ## Expression descriptors
 
@@ -30,6 +30,19 @@ The initial cross-dialect set contains:
 
 `IncrementExpression<T>` remains as the specialized version-column `+ 1` node used by the
 mutation Fast Path. General arithmetic should use `ArithmeticExpression<T>`.
+
+## Parameter value capture
+
+Ordinary values remain outside the AST and plan cache key, but an immutable query must also own a
+stable value snapshot. Predicate construction therefore copies every array value recursively and
+clones the built-in mutable JDBC representations `java.sql.Date`, `Time`, and `Timestamp`.
+Comparison and between bounds as well as every `IN`/`NOT IN` element use this same capture boundary.
+Copying happens once when the predicate is created, never per row or per JDBC bind.
+
+Other supported Java values are immutable and remain allocation-free at capture. A custom
+`JdbcTypeCodec` whose values participate in predicates must use a deeply immutable value type, and
+its `bind` implementation must not mutate the supplied value; SKIS cannot infer a safe copy for an
+arbitrary custom object.
 
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
@@ -97,12 +110,12 @@ validation and is still rejected by `StandardSqlRenderer`; a future traversal SP
 separate architecture decision.
 
 INSERT values have no visible table-column scope. UPDATE expressions and predicates may reference
-only the target table expression. DELETE predicates may reference only the target. SELECT currently
-has exactly one visible FROM table expression.
+only the target table expression. DELETE predicates may reference only the target. SELECT uses an
+ordered `FromClause`: the root and each completed Join occurrence form its visible scope.
 
-Subqueries, derived tables, joins, and CTEs are not represented by the `0.2.2` AST. Their outer and
-inner visibility rules will be added with those nodes in later `0.2.x` milestones; the validator
-does not claim to validate syntax that the AST cannot yet express.
+Subqueries, derived tables, joins, and CTEs were not represented by the `0.2.2` AST. Explicit joins
+are added by the `0.2.4` scope described below; subqueries, derived tables, and CTEs remain deferred.
+The validator does not claim to validate syntax that the AST cannot yet express.
 
 ## SELECT ordering, pagination and count
 
@@ -118,8 +131,40 @@ descriptors, but not bound limit, offset, predicate or keyset values. Repeated p
 are legal when their Java type, SQL type and nullability descriptors agree; this permits a typed
 keyset anchor to appear in multiple branches of a lexicographic seek predicate.
 
-`SemanticValidator` checks that order and hidden expressions belong to the single visible table,
+`SemanticValidator` checks that order and hidden expressions belong to the completed Join scope,
 pagination slots use the required non-null integer/long descriptors, offset/keyset pagination has
 an order, and all parameter ordinals remain dense. Dialect rendering then requires explicit
 parameterized limit/offset capabilities and either uses native null ordering or a semantically
 equivalent `CASE` fallback.
+
+## Join scope and generated result rows
+
+The `0.2.4` query structure replaces the earlier single-table scope with an ordered `FromClause`.
+The root is occurrence 0 and joined tables receive dense occurrence ordinals. Aliases are distinct
+table-expression objects, including two aliases of the same entity. ON, WHERE, ordering, visible
+selections, and hidden pagination selections are all validated against this final scope.
+
+`@SkisProjection` now describes only how to construct one result row. Its generated companion has
+a fixed-arity, typed `of(...)` method:
+
+```java
+@SkisProjection
+public record PetOwnerView(Long petId, @Nullable String ownerName) {}
+
+executor
+    .select(PetOwnerViewProjection.of(pet.id(), owner.name()))
+    .from(pet)
+    .leftJoin(owner)
+    .on(pet.ownerId().eq(owner.id()))
+    .fetchList();
+```
+
+The companion binds a query-independent `ProjectionMapping` to the supplied `Selectable` columns.
+After every Join is known, query compilation resolves each column to an occurrence and canonical
+codec, checks exact boxed Java type, portable SQL compatibility, and effective nullability, then
+builds a decoder with fixed one-based ResultSet indexes. Row decoding performs no reflection,
+column-name matching, `getObject` guessing, registry lookup, or per-row codec lookup.
+
+The complete Join contract—including Join forms, aliases, staged ON visibility, nullable entity
+presence, duplicate rows, pagination stability, count semantics, and dialect support—is documented
+in [Explicit joins and generated result rows](joins.md).

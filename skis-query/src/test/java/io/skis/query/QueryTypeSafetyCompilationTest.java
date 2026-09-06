@@ -24,7 +24,7 @@ class QueryTypeSafetyCompilationTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void keepsTheSelectedColumnEntityTypeThroughTheFromStage() throws Exception {
+  void decouplesNullableAndNonNullSelectionsFromTheirFromRoot() throws Exception {
     String valid =
         """
         package samples;
@@ -36,28 +36,66 @@ class QueryTypeSafetyCompilationTest {
           }
         }
         """;
-    String invalid =
+    String joinedTarget =
         """
         package samples;
         import io.skis.query.*;
-        final class InvalidQuery {
+        final class JoinedTargetQuery {
           static final class Pet {}
           static final class Owner {}
           static void query(
               QueryOperations operations,
-              NonNullQueryColumn<Pet, String> column,
-              QueryTable<Owner> table) {
-            operations.select(column).from(table);
+              NonNullQueryColumn<Owner, String> ownerName,
+              NullableQueryColumn<Owner, String> ownerNickname,
+              QueryTable<Pet> pet,
+              QueryTable<Owner> owner,
+              QueryCondition on) {
+            SelectQuery<Pet, String> query = operations.select(ownerName).from(pet);
+            NullableSelectQuery<Pet, String> nullable =
+                operations.select(ownerNickname).from(pet).leftJoin(owner).on(on);
+            NullableSelectQuery<Pet, String> explicitNullable =
+                operations.selectNullable(ownerName).from(pet).leftJoin(owner).on(on);
+            NullableSelectQuery<Pet, Owner> nullableEntity =
+                operations.selectNullable(owner).from(pet).leftJoin(owner).on(on);
+            query.join(owner).on(on);
+            nullable.where(ownerNickname.isNull());
+            explicitNullable.fetchOne();
+            nullableEntity.fetchOne();
+          }
+        }
+        """;
+    String nullableFromDecoupling =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class NullableFromDecoupling {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              QueryOperations operations,
+              NullableQueryColumn<Owner, String> ownerNickname,
+              QueryTable<Pet> pet) {
+            operations.select(ownerNickname).from(pet);
           }
         }
         """;
 
     assertTrue(compile("samples.ValidQuery", valid, temporaryDirectory.resolve("valid")));
-    assertFalse(compile("samples.InvalidQuery", invalid, temporaryDirectory.resolve("invalid")));
+    assertTrue(
+        compile(
+            "samples.JoinedTargetQuery",
+            joinedTarget,
+            temporaryDirectory.resolve("joined-target")));
+    assertTrue(
+        compile(
+            "samples.NullableFromDecoupling",
+            nullableFromDecoupling,
+            temporaryDirectory.resolve("nullable-from-decoupling")));
   }
 
   @Test
-  void rejectsAProjectionPredicateFromAnotherEntityAtCompilationTime() throws Exception {
+  void keepsProjectionResultAndFromRootGenericsIndependent()
+      throws Exception {
     String valid =
         """
         package samples;
@@ -68,8 +106,9 @@ class QueryTypeSafetyCompilationTest {
           static void query(
               QueryOperations operations,
               QueryTable<Pet> table,
+              ProjectionSelection<Summary> selection,
               QueryPredicate<Pet> predicate) {
-            operations.selectProjection(table, Summary.class).where(predicate);
+            operations.select(selection).from(table).where(predicate);
           }
         }
         """;
@@ -84,8 +123,9 @@ class QueryTypeSafetyCompilationTest {
           static void query(
               QueryOperations operations,
               QueryTable<Pet> table,
+              ProjectionSelection<Summary> selection,
               QueryPredicate<Owner> predicate) {
-            operations.selectProjection(table, Summary.class).where(predicate);
+            operations.select(selection).from(table).where(predicate);
           }
         }
         """;
@@ -93,7 +133,7 @@ class QueryTypeSafetyCompilationTest {
     assertTrue(
         compile(
             "samples.ValidProjectionQuery", valid, temporaryDirectory.resolve("valid-projection")));
-    assertFalse(
+    assertTrue(
         compile(
             "samples.InvalidProjectionQuery",
             invalid,
@@ -101,7 +141,91 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
-  void keepsEntityTypeAcrossQueryLevelAndOrChains() throws Exception {
+  void generatedProjectionSignaturesRejectArityTypeAndNullnessMismatches() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidGeneratedProjectionCall {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(
+              NonNullQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+            ProjectionSelection<Summary> selection = of(id, name);
+          }
+        }
+        """;
+    String wrongOrder =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongProjectionOrder {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(
+              NonNullQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+            of(name, id);
+          }
+        }
+        """;
+    String wrongNullness =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongProjectionNullness {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(
+              NullableQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+            of(id, name);
+          }
+        }
+        """;
+    String wrongArity =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongProjectionArity {
+          static final class Pet {}
+          static final class Summary {}
+          static ProjectionSelection<Summary> of(
+              NonNullSelectable<Long> id, Selectable<String> name) { return null; }
+          static void query(NonNullQueryColumn<Pet, Long> id) {
+            of(id);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidGeneratedProjectionCall",
+            valid,
+            temporaryDirectory.resolve("valid-generated-projection")));
+    assertFalse(
+        compile(
+            "samples.WrongProjectionOrder",
+            wrongOrder,
+            temporaryDirectory.resolve("wrong-projection-order")));
+    assertFalse(
+        compile(
+            "samples.WrongProjectionNullness",
+            wrongNullness,
+            temporaryDirectory.resolve("wrong-projection-nullness")));
+    assertFalse(
+        compile(
+            "samples.WrongProjectionArity",
+            wrongArity,
+            temporaryDirectory.resolve("wrong-projection-arity")));
+  }
+
+  @Test
+  void keepsNarrowPredicatesAndAllowsWideConditionChains() throws Exception {
     String valid =
         """
         package samples;
@@ -115,11 +239,11 @@ class QueryTypeSafetyCompilationTest {
           }
         }
         """;
-    String invalid =
+    String wide =
         """
         package samples;
         import io.skis.query.*;
-        final class InvalidChain {
+        final class WideChain {
           static final class Pet {}
           static final class Owner {}
           static void query(
@@ -132,8 +256,114 @@ class QueryTypeSafetyCompilationTest {
         """;
 
     assertTrue(compile("samples.ValidChain", valid, temporaryDirectory.resolve("valid-chain")));
+    assertTrue(
+        compile("samples.WideChain", wide, temporaryDirectory.resolve("wide-chain")));
+  }
+
+  @Test
+  void requiresOnBeforeAJoinCanReachTerminalOperations() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidJoin {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              SelectQuery<Pet, Pet> query,
+              QueryTable<Owner> owner,
+              QueryCondition condition) {
+            query.join(owner).on(condition).fetchList();
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class IncompleteJoin {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(SelectQuery<Pet, Pet> query, QueryTable<Owner> owner) {
+            query.join(owner).fetchList();
+          }
+        }
+        """;
+
+    assertTrue(compile("samples.ValidJoin", valid, temporaryDirectory.resolve("valid-join")));
     assertFalse(
-        compile("samples.InvalidChain", invalid, temporaryDirectory.resolve("invalid-chain")));
+        compile(
+            "samples.IncompleteJoin", invalid, temporaryDirectory.resolve("incomplete-join")));
+  }
+
+  @Test
+  void allowsOrderByColumnsFromTheFinalJoinScope() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class JoinedOrdering {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              SelectQuery<Pet, Pet> query,
+              QueryTable<Owner> owner,
+              NonNullQueryColumn<Pet, Long> petId,
+              NonNullQueryColumn<Owner, Long> ownerId,
+              QueryCondition on) {
+            query.join(owner).on(on).orderBy(ownerId.asc(), petId.asc());
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.JoinedOrdering",
+            valid,
+            temporaryDirectory.resolve("joined-ordering")));
+  }
+
+  @Test
+  void checksColumnComparisonJavaTypesAtCompilationTime() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidColumnComparison {
+          static final class Pet {}
+          static final class Owner {}
+          static QueryCondition condition(
+              NonNullQueryColumn<Pet, Long> ownerId,
+              NonNullQueryColumn<Owner, Long> id) {
+            return ownerId.eq(id).and(ownerId.ge(id));
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidColumnComparison {
+          static final class Pet {}
+          static final class Owner {}
+          static QueryCondition condition(
+              NonNullQueryColumn<Pet, Long> ownerId,
+              NonNullQueryColumn<Owner, String> id) {
+            return ownerId.eq(id);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidColumnComparison",
+            valid,
+            temporaryDirectory.resolve("valid-column-comparison")));
+    assertFalse(
+        compile(
+            "samples.InvalidColumnComparison",
+            invalid,
+            temporaryDirectory.resolve("invalid-column-comparison")));
   }
 
   @Test
@@ -149,7 +379,7 @@ class QueryTypeSafetyCompilationTest {
               NullableQueryColumn<E, String> nickname,
               QueryTable<E> table) {
             SelectQuery<E, Long> ids = operations.select(id).from(table);
-            NullableScalarQuery<E, String> names = operations.select(nickname).from(table);
+            NullableSelectQuery<E, String> names = operations.select(nickname).from(table);
             SingleRow<String> row = names.fetchOne();
             names.orderBy(nickname.asc().nullsLast(), id.asc());
           }

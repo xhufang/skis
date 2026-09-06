@@ -6,10 +6,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
 
-/** Hand-written JDBC-by-index implementation used as the performance baseline. */
+/** Handwritten JDBC-by-index implementation used as the performance baseline. */
 public final class JdbcUserRepository {
 
   private static final String FIND_BY_ID_SQL =
@@ -17,6 +19,21 @@ public final class JdbcUserRepository {
       SELECT id, username, password, create_stamp, modify_stamp, sex, birthday, deleted, version
       FROM skis_user
       WHERE id = ?
+      """;
+  private static final String FIND_ALL_SQL =
+      """
+      SELECT "skis_user"."id", "skis_user"."username", "skis_user"."password",
+             "skis_user"."create_stamp", "skis_user"."modify_stamp", "skis_user"."sex",
+             "skis_user"."birthday", "skis_user"."deleted", "skis_user"."version"
+      FROM "skis_user"
+      """;
+  private static final String FIND_BY_USERNAME_SQL =
+      """
+      SELECT "skis_user"."id", "skis_user"."username", "skis_user"."password",
+             "skis_user"."create_stamp", "skis_user"."modify_stamp", "skis_user"."sex",
+             "skis_user"."birthday", "skis_user"."deleted", "skis_user"."version"
+      FROM "skis_user"
+      WHERE "skis_user"."username" = ?
       """;
 
   private final DataSource dataSource;
@@ -35,6 +52,36 @@ public final class JdbcUserRepository {
     } catch (SQLException exception) {
       throw new IllegalStateException("JDBC benchmark query failed", exception);
     }
+  }
+
+  public List<JdbcUser> findAll() {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(FIND_ALL_SQL);
+        ResultSet resultSet = statement.executeQuery()) {
+      return readUsers(resultSet);
+    } catch (SQLException exception) {
+      throw new IllegalStateException("JDBC benchmark query failed", exception);
+    }
+  }
+
+  public List<JdbcUser> findByUsername(String username) {
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement(FIND_BY_USERNAME_SQL)) {
+      statement.setString(1, username);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        return readUsers(resultSet);
+      }
+    } catch (SQLException exception) {
+      throw new IllegalStateException("JDBC benchmark query failed", exception);
+    }
+  }
+
+  private static List<JdbcUser> readUsers(ResultSet resultSet) throws SQLException {
+    List<JdbcUser> result = new ArrayList<>();
+    while (resultSet.next()) {
+      result.add(readUser(resultSet));
+    }
+    return result;
   }
 
   private static JdbcUser readUser(ResultSet resultSet) throws SQLException {

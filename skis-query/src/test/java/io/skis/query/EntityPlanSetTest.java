@@ -138,7 +138,10 @@ class EntityPlanSetTest {
   @Test
   void followsRendererParameterOrderWhenDialectReordersPlaceholders() throws Exception {
     EntityPlanSet<Pet> plans =
-        new EntityPlanSet<>(model(), new QueryPlanCompiler(ReorderedParameterDialect.INSTANCE));
+        new EntityPlanSet<>(
+            model(),
+            new QueryPlanCompiler(
+                EntityRuntimeRegistry.empty(), ReorderedParameterDialect.INSTANCE));
     QueryPredicate<Pet> predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
@@ -255,7 +258,7 @@ class EntityPlanSetTest {
   void rejectsAmbiguousNullAndPredicatesFromAnotherTable() {
     PetTable alias = TABLE.as("p");
 
-    assertThrows(QueryValidationException.class, () -> TABLE.name().eq(null));
+    assertThrows(QueryValidationException.class, () -> TABLE.name().eq((String) null));
     assertThrows(
         QueryValidationException.class, () -> plans().selectPlan(TABLE, alias.name().eq("Mimi")));
     assertThrows(
@@ -314,7 +317,9 @@ class EntityPlanSetTest {
   }
 
   private static EntityPlanSet<Pet> plans() {
-    return new EntityPlanSet<>(model(), new QueryPlanCompiler(TestDialect.INSTANCE));
+    return new EntityPlanSet<>(
+        model(),
+        new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE));
   }
 
   private static EntityRuntimeModel<Pet> model() {

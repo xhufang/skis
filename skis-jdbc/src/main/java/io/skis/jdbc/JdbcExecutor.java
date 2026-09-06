@@ -24,6 +24,7 @@ import org.jspecify.annotations.Nullable;
 public final class JdbcExecutor {
 
   private static final int NO_MINIMUM_MAX_ROWS = 0;
+  private static final int UNCONFIGURED_QUERY_TIMEOUT = -1;
   private static final int FETCH_ONE_CARDINALITY_ROWS = 2;
   private static final System.Logger LOGGER = System.getLogger(JdbcExecutor.class.getName());
 
@@ -137,13 +138,13 @@ public final class JdbcExecutor {
     return row.present() ? Optional.of(Objects.requireNonNull(row.value())) : Optional.empty();
   }
 
-  /** Executes one nullable scalar row while preserving the distinction between no row and NULL. */
+  /** Executes one nullable result row while preserving the distinction between no row and NULL. */
   public <R, P> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     return fetchSingleRow(plan, parameters, executionContext, true, true);
   }
 
-  /** Executes one SQL-limited nullable scalar row without cardinality checking. */
+  /** Executes one SQL-limited nullable result row without cardinality checking. */
   public <R, P> JdbcRow<R> fetchNullableFirst(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     return fetchSingleRow(plan, parameters, executionContext, true, false);
@@ -424,12 +425,15 @@ public final class JdbcExecutor {
                 + " but expected "
                 + expectedNextIndex);
       }
-      if (optionsConfigured) {
-        try {
-          applyExecutionOptions(statement, statementOptions, minimumMaxRows);
-        } catch (SQLException failure) {
-          throw new PhasedSqlFailure(JdbcFailureDiagnostics.Phase.CONFIGURE, failure);
-        }
+      try {
+        int queryTimeoutSeconds =
+            optionsConfigured
+                ? applyExecutionOptions(statement, statementOptions, minimumMaxRows)
+                : UNCONFIGURED_QUERY_TIMEOUT;
+        connectionProvider.configureStatement(
+            statement, executionContext, queryTimeoutSeconds);
+      } catch (SQLException failure) {
+        throw new PhasedSqlFailure(JdbcFailureDiagnostics.Phase.CONFIGURE, failure);
       }
       return statement;
     } catch (PhasedSqlFailure failure) {
@@ -441,13 +445,16 @@ public final class JdbcExecutor {
     }
   }
 
-  private void applyExecutionOptions(
+  private int applyExecutionOptions(
       PreparedStatement statement, ExecutionOptions statementOptions, int minimumMaxRows)
       throws SQLException {
+    int queryTimeoutSeconds = UNCONFIGURED_QUERY_TIMEOUT;
     if (statementOptions.hasStatementTimeout()) {
-      statement.setQueryTimeout(statementOptions.queryTimeoutSeconds());
+      queryTimeoutSeconds = statementOptions.queryTimeoutSeconds();
+      statement.setQueryTimeout(queryTimeoutSeconds);
     } else if (defaultExecutionOptions.hasStatementTimeout()) {
-      statement.setQueryTimeout(defaultExecutionOptions.queryTimeoutSeconds());
+      queryTimeoutSeconds = defaultExecutionOptions.queryTimeoutSeconds();
+      statement.setQueryTimeout(queryTimeoutSeconds);
     }
 
     if (statementOptions.hasFetchSize()) {
@@ -461,6 +468,7 @@ public final class JdbcExecutor {
     } else if (defaultExecutionOptions.hasMaxRows()) {
       statement.setMaxRows(adjustMaxRows(defaultExecutionOptions.maxRows(), minimumMaxRows));
     }
+    return queryTimeoutSeconds;
   }
 
   private static int adjustMaxRows(int configuredMaxRows, int minimumMaxRows) {

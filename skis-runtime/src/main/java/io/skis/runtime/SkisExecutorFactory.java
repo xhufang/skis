@@ -11,7 +11,6 @@ import io.skis.mapping.RowReadContext;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
 import io.skis.mutation.MutationRuntime;
-import io.skis.query.ProjectionRegistry;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryRuntime;
@@ -49,7 +48,6 @@ public final class SkisExecutorFactory {
     private @Nullable Dialect dialect;
     private @Nullable ClassLoader classLoader;
     private @Nullable EntityRuntimeRegistry runtimeRegistry;
-    private @Nullable ProjectionRegistry projectionRegistry;
     private int planCacheMaximumSize = QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE;
     private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
     private ExecutionOptions executionOptions = ExecutionOptions.NONE;
@@ -85,12 +83,6 @@ public final class SkisExecutorFactory {
       return this;
     }
 
-    /** Supplies an already loaded projection registry for containers, tests, or AOT assembly. */
-    public Builder projectionRegistry(ProjectionRegistry projectionRegistry) {
-      this.projectionRegistry = Objects.requireNonNull(projectionRegistry, "projectionRegistry");
-      return this;
-    }
-
     /**
      * Sets immutable statement defaults for this executor and every transaction session it opens.
      *
@@ -102,7 +94,7 @@ public final class SkisExecutorFactory {
       return this;
     }
 
-    /** Sets the maximum number of dynamic projection plans shared by this executor. */
+    /** Configures the retained dynamic-plan capacity used by the future general plan cache. */
     public Builder planCacheMaximumSize(int maximumSize) {
       if (maximumSize < 1) {
         throw new IllegalArgumentException("planCacheMaximumSize must be positive");
@@ -111,7 +103,7 @@ public final class SkisExecutorFactory {
       return this;
     }
 
-    /** Sets how long an unused dynamic projection plan remains eligible for reuse. */
+    /** Configures the retained dynamic-plan idle duration used by the future general plan cache. */
     public Builder planCacheExpireAfterAccess(Duration expireAfterAccess) {
       Objects.requireNonNull(expireAfterAccess, "expireAfterAccess");
       if (expireAfterAccess.isZero() || expireAfterAccess.isNegative()) {
@@ -130,10 +122,6 @@ public final class SkisExecutorFactory {
       if (selectedRegistry == null) {
         selectedRegistry = EntityRuntimeModelLoader.load(resolveClassLoader(classLoader));
       }
-      ProjectionRegistry selectedProjections = projectionRegistry;
-      if (selectedProjections == null) {
-        selectedProjections = ProjectionModelLoader.load(resolveClassLoader(classLoader));
-      }
       JdbcExecutor jdbcExecutor =
           new JdbcExecutor(
               provider,
@@ -143,11 +131,7 @@ public final class SkisExecutorFactory {
               selectedDialect.exceptionClassifier());
       QueryPlanCatalog queryPlans =
           QueryRuntime.compile(
-              selectedRegistry,
-              selectedProjections,
-              selectedDialect,
-              planCacheMaximumSize,
-              planCacheExpireAfterAccess);
+              selectedRegistry, selectedDialect, planCacheMaximumSize, planCacheExpireAfterAccess);
       MutationPlanCatalog mutationPlans =
           MutationRuntime.compile(selectedRegistry, selectedDialect);
       QueryOperations queries = queryPlans.bind(jdbcExecutor);

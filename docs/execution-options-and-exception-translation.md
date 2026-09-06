@@ -114,6 +114,27 @@ rows. All three are applied before execute. A setter failure is reported with ph
 `statement-configuration`; statement-close and connection-release failures remain attached in
 their ownership order as suppressed exceptions.
 
+## Spring transaction timeout
+
+`SpringConnectionProvider` also applies the remaining timeout of the current Spring transaction to
+every prepared statement. This works with the normal DataSource shared by
+`JdbcTransactionManager`; a `TransactionAwareDataSourceProxy` is not required for SKIS statements.
+
+The effective timeout is the shorter positive limit:
+
+- a per-statement SKIS timeout can shorten, but never extend, the remaining Spring transaction;
+- a longer Spring transaction cannot extend a shorter SKIS timeout;
+- SKIS timeout zero disables only the SKIS limit and does not disable a Spring transaction limit;
+- when SKIS leaves timeout unset, the Spring transaction limit still applies.
+
+If the Spring transaction has already expired, statement configuration fails before execute and
+Spring marks its transaction resource rollback-only. The prepared statement is closed and the
+transaction-bound connection remains owned by Spring.
+
+The JDBC boundary is the default `ConnectionProvider.configureStatement(...)` method. Non-Spring
+providers retain their previous no-op behavior unless they explicitly integrate another external
+transaction manager.
+
 ## Query tag security
 
 `QueryTag` accepts 1–128 ASCII characters: letters, digits, ordinary spaces and `. _ : / -`.

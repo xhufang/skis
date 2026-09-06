@@ -14,11 +14,13 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
@@ -38,13 +40,15 @@ import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
+import io.skis.sql.ast.TableOccurrence;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
-/** Renderer for the portable single-table query and mutation subset shared by initial dialects. */
+/** Renderer for the portable SELECT/Join and single-table mutation subset shared by dialects. */
 public final class StandardSqlRenderer implements SqlRenderer {
 
   private final String dialectId;
@@ -66,6 +70,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   @Override
   public RenderedSql render(StatementAst statement) {
     Objects.requireNonNull(statement, "statement");
+    DialectJoinFeatures.validate(dialectId, capabilities, statement);
     return switch (statement) {
       case SelectStatement select -> renderSelect(select);
       case CountAst count -> renderCount(count);
@@ -77,7 +82,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private RenderedSql renderSelect(SelectStatement statement) {
-    RenderContext context = new RenderContext(statement.from(), true);
+    RenderContext context = new RenderContext(statement.fromClause());
     context.sql.append("SELECT ");
     if (statement.distinct()) {
       context.sql.append("DISTINCT ");
@@ -94,7 +99,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       context.sql.append(" AS ").append(identifierRules.quote(selection.alias().value()));
     }
     context.sql.append(" FROM ");
-    renderTable(statement.from(), context.sql);
+    renderFromClause(statement.fromClause(), context);
     boolean hasWhere = statement.where().isPresent();
     boolean hasSeek = statement.pagination().filter(KeysetSeek.class::isInstance).isPresent();
     if (hasWhere || hasSeek) {
@@ -147,7 +152,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private RenderedSql renderCount(CountAst statement) {
-    RenderContext context = new RenderContext(statement.source(), true);
+    RenderContext context = new RenderContext(statement.fromClause());
     context.sql.append("SELECT ");
     if (statement.distinctExpression().isPresent()) {
       require(DialectFeature.COUNT_DISTINCT, "distinct count");
@@ -155,7 +160,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       context.sql.append("COUNT(DISTINCT ");
       renderExpression(expression, context);
       context.sql.append(')');
-      if (expression.nullable()) {
+      if (statement.fromClause().effectiveNullability(expression).isNullable()) {
         context.sql.append(" + CASE WHEN COUNT(*) > COUNT(");
         renderExpression(expression, context);
         context.sql.append(") THEN 1 ELSE 0 END");
@@ -164,7 +169,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       context.sql.append("COUNT(*)");
     }
     context.sql.append(" FROM ");
-    renderTable(statement.source(), context.sql);
+    renderFromClause(statement.fromClause(), context);
     statement
         .predicate()
         .ifPresent(
@@ -197,7 +202,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private RenderedSql renderInsert(InsertStatement statement) {
     requireUnaliasedMutationTarget(statement.target());
-    RenderContext context = new RenderContext(statement.target(), false);
+    RenderContext context = new RenderContext(statement.target());
     context.sql.append("INSERT INTO ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" (");
@@ -220,7 +225,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private RenderedSql renderUpdate(UpdateStatement statement) {
     requireUnaliasedMutationTarget(statement.target());
-    RenderContext context = new RenderContext(statement.target(), false);
+    RenderContext context = new RenderContext(statement.target());
     context.sql.append("UPDATE ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" SET ");
@@ -244,7 +249,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private RenderedSql renderDelete(DeleteStatement statement) {
     requireUnaliasedMutationTarget(statement.target());
-    RenderContext context = new RenderContext(statement.target(), false);
+    RenderContext context = new RenderContext(statement.target());
     context.sql.append("DELETE FROM ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" WHERE ");
@@ -532,17 +537,17 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderColumn(ColumnExpression<?, ?> column, RenderContext context) {
-    if (!column.table().equals(context.from)) {
+    TableExpression<?> table = context.resolve(column.table());
+    if (table == null) {
       throw new SqlRenderException(
-          "dialect '" + dialectId + "' cannot render a column outside the single FROM table");
+          "dialect '" + dialectId + "' cannot render a column outside the FROM scope");
     }
     if (context.qualifyColumns) {
       String qualifier =
-          column
-              .table()
+          table
               .alias()
               .map(Identifier::value)
-              .orElse(column.table().entity().table().name());
+              .orElse(table.entity().table().name());
       context.sql.append(identifierRules.quote(qualifier));
       context.sql.append('.');
     }
@@ -550,7 +555,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderColumnName(ColumnExpression<?, ?> column, RenderContext context) {
-    if (!column.table().equals(context.from)) {
+    if (context.resolve(column.table()) == null) {
       throw new SqlRenderException(
           "dialect '" + dialectId + "' cannot render a mutation column outside its target table");
     }
@@ -571,6 +576,20 @@ public final class StandardSqlRenderer implements SqlRenderer {
     table
         .alias()
         .ifPresent(alias -> sql.append(" AS ").append(identifierRules.quote(alias.value())));
+  }
+
+  private void renderFromClause(FromClause fromClause, RenderContext context) {
+    renderTable(fromClause.root(), context.sql);
+    for (JoinClause join : fromClause.joins()) {
+      context.sql.append(' ').append(DialectJoinFeatures.keyword(join.type())).append(' ');
+      renderTable(join.right(), context.sql);
+      join.on()
+          .ifPresent(
+              predicate -> {
+                context.sql.append(" ON ");
+                renderPredicate(predicate, context);
+              });
+    }
   }
 
   private void require(DialectFeature feature, String description) {
@@ -597,14 +616,29 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private static final class RenderContext {
-    private final TableExpression<?> from;
+    private final @Nullable FromClause fromClause;
+    private final @Nullable TableExpression<?> mutationTarget;
     private final boolean qualifyColumns;
     private final StringBuilder sql = new StringBuilder();
     private final List<ParameterSlot<?>> parameters = new ArrayList<>();
 
-    private RenderContext(TableExpression<?> from, boolean qualifyColumns) {
-      this.from = from;
-      this.qualifyColumns = qualifyColumns;
+    private RenderContext(FromClause fromClause) {
+      this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
+      this.mutationTarget = null;
+      this.qualifyColumns = true;
+    }
+
+    private RenderContext(TableExpression<?> mutationTarget) {
+      this.fromClause = null;
+      this.mutationTarget = Objects.requireNonNull(mutationTarget, "mutationTarget");
+      this.qualifyColumns = false;
+    }
+
+    private @Nullable TableExpression<?> resolve(TableExpression<?> table) {
+      if (fromClause != null) {
+        return fromClause.occurrenceOf(table).map(TableOccurrence::table).orElse(null);
+      }
+      return mutationTarget == table ? mutationTarget : null;
     }
   }
 }

@@ -54,7 +54,7 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void loadsGeneratedProvidersFromIndexWithoutClasspathScanning() throws Exception {
-    writeIndex("# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=5\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
@@ -92,7 +92,7 @@ class EntityRuntimeModelLoaderTest {
 
   @Test
   void reportsNullProviderModelAsAnAssemblyConfigurationFailure() throws Exception {
-    writeIndex("# skis-generated-abi=4\n" + NullProvider.class.getName() + "\n");
+    writeIndex("# skis-generated-abi=5\n" + NullProvider.class.getName() + "\n");
     try (URLClassLoader classLoader =
         new URLClassLoader(
             new java.net.URL[] {temporaryDirectory.toUri().toURL()}, getClass().getClassLoader())) {
@@ -108,7 +108,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void rejectsDuplicateAbiHeadersWithBothLineNumbers() throws Exception {
     writeIndex(
-        "# skis-generated-abi=4\n# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n");
+        "# skis-generated-abi=5\n# skis-generated-abi=5\n" + TestProvider.class.getName() + "\n");
     try (URLClassLoader classLoader = classLoader(temporaryDirectory)) {
       var failure =
           assertThrows(
@@ -122,7 +122,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void rejectsDuplicateProviderLinesWithinOneIndex() throws Exception {
     writeIndex(
-        "# skis-generated-abi=4\n"
+        "# skis-generated-abi=5\n"
             + TestProvider.class.getName()
             + "\n"
             + TestProvider.class.getName()
@@ -142,7 +142,7 @@ class EntityRuntimeModelLoaderTest {
   void rejectsTheSameProviderDeclaredByTwoModuleIndexes() throws Exception {
     Path firstModule = temporaryDirectory.resolve("first-module");
     Path secondModule = temporaryDirectory.resolve("second-module");
-    String content = "# skis-generated-abi=4\n" + TestProvider.class.getName() + "\n";
+    String content = "# skis-generated-abi=5\n" + TestProvider.class.getName() + "\n";
     writeIndex(firstModule, content);
     writeIndex(secondModule, content);
 
@@ -160,7 +160,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void reportsBothProvidersThatSupplyTheSameEntityJavaType() throws Exception {
     writeIndex(
-        "# skis-generated-abi=4\n"
+        "# skis-generated-abi=5\n"
             + TestProvider.class.getName()
             + "\n"
             + DuplicateTypeProvider.class.getName()
@@ -181,7 +181,7 @@ class EntityRuntimeModelLoaderTest {
   @Test
   void reportsBothProvidersThatSupplyTheSameCanonicalEntityMetadata() throws Exception {
     writeIndex(
-        "# skis-generated-abi=4\n"
+        "# skis-generated-abi=5\n"
             + TestProvider.class.getName()
             + "\n"
             + DuplicateCanonicalProvider.class.getName()

@@ -78,7 +78,6 @@
             <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisEntityIndexProcessor</annotationProcessor>
             <annotationProcessor>io.skis.processor.SkisProjectionProcessor</annotationProcessor>
-            <annotationProcessor>io.skis.processor.SkisProjectionIndexProcessor</annotationProcessor>
           </annotationProcessors>
         </configuration>
       </plugin>

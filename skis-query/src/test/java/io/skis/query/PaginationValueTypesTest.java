@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.sql.ast.SqlType;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -71,6 +72,26 @@ class PaginationValueTypesTest {
     assertArrayEquals(new byte[] {1, 2}, (byte[]) first.keysetValues().getFirst());
     assertEquals(first, sameValue);
     assertEquals(first.hashCode(), sameValue.hashCode());
+  }
+
+  @Test
+  void continuationCopiesMutableSqlTimestampAnchorsOnInputAndOutput() {
+    Timestamp source = Timestamp.valueOf("2026-09-06 12:34:56.123456789");
+    Timestamp expected = (Timestamp) source.clone();
+    SliceContinuation continuation =
+        SliceContinuation.keyset(
+            "query",
+            "order",
+            List.of(SqlType.TIMESTAMP),
+            List.of(false),
+            List.of(source),
+            "parameters");
+
+    source.setTime(0);
+    Timestamp firstRead = (Timestamp) continuation.keysetValues().getFirst();
+    firstRead.setTime(1);
+
+    assertEquals(expected, continuation.keysetValues().getFirst());
   }
 
   @Test

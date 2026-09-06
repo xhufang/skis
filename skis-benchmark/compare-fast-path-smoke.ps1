@@ -24,6 +24,33 @@ function Ratio([double]$Numerator, [double]$Denominator, [string]$Description) {
   return $Numerator / $Denominator
 }
 
+function Assert-CurrentPair(
+  [string]$Name,
+  [string]$JdbcSuffix,
+  [string]$SkisSuffix,
+  [double]$MaximumTimeRatio,
+  [double]$MaximumAllocationRatio
+) {
+  $currentJdbcResult = Read-Result $CurrentPath $JdbcSuffix
+  $currentSkisResult = Read-Result $CurrentPath $SkisSuffix
+  $timeRatio = Ratio `
+    $currentSkisResult.primaryMetric.score `
+    $currentJdbcResult.primaryMetric.score `
+    "$Name time"
+  $allocationRatio = Ratio `
+    $currentSkisResult.secondaryMetrics.'gc.alloc.rate.norm'.score `
+    $currentJdbcResult.secondaryMetrics.'gc.alloc.rate.norm'.score `
+    "$Name allocation"
+
+  Write-Host ("{0}: time={1:P2}, allocation={2:P2}" -f $Name, $timeRatio, $allocationRatio)
+  if ($timeRatio -gt $MaximumTimeRatio) {
+    throw ("$Name SKIS/JDBC time ratio {0:N3} exceeds smoke limit {1:N3}" -f $timeRatio, $MaximumTimeRatio)
+  }
+  if ($allocationRatio -gt $MaximumAllocationRatio) {
+    throw ("$Name SKIS/JDBC allocation ratio {0:N3} exceeds smoke limit {1:N3}" -f $allocationRatio, $MaximumAllocationRatio)
+  }
+}
+
 $baselineJdbc = Read-Result $BaselinePath ".jdbc"
 $baselineSkis = Read-Result $BaselinePath ".skis"
 $currentJdbc = Read-Result $CurrentPath ".jdbc"
@@ -52,4 +79,7 @@ if ($currentAllocationRatio -gt $maximumAllocationRatio) {
   throw ("SKIS/JDBC allocation ratio {0:N3} exceeds smoke limit {1:N3}" -f $currentAllocationRatio, $maximumAllocationRatio)
 }
 
-Write-Host "Fast Path smoke remains within the maintenance-line guardrails."
+Assert-CurrentPair "Unconditional entity query" ".jdbcAll" ".skisAll" 1.35 1.50
+Assert-CurrentPair "Single-equality entity query" ".jdbcEquality" ".skisEquality" 1.35 1.50
+
+Write-Host "Fast Path smoke remains within the configured guardrails."

@@ -9,8 +9,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Immutable typed reference to an entity table in a SQL statement.
  *
- * <p>Generated entity metadata is a canonical symbol. Table equality therefore combines the
- * generated table-expression class, metadata identity, and optional alias.
+ * <p>Structural equality uses the stable entity/table descriptor and optional alias, never a JVM
+ * object address. Query-local scope resolution deliberately uses table object reference identity
+ * instead, so independently created aliases cannot impersonate one another.
  */
 public abstract class TableExpression<E> {
 
@@ -64,16 +65,17 @@ public abstract class TableExpression<E> {
   @Override
   public boolean equals(Object other) {
     return this == other
-        || other != null
-            && getClass() == other.getClass()
-            && entity == ((TableExpression<?>) other).entity
-            && Objects.equals(alias, ((TableExpression<?>) other).alias);
+        || other instanceof TableExpression<?> table
+            && entity.javaType().getName().equals(table.entity.javaType().getName())
+            && entity.entityName().equals(table.entity.entityName())
+            && entity.mode() == table.entity.mode()
+            && entity.table().equals(table.entity.table())
+            && Objects.equals(alias, table.alias);
   }
 
   @Override
   public int hashCode() {
-    int result = getClass().hashCode();
-    result = 31 * result + System.identityHashCode(entity);
-    return 31 * result + Objects.hashCode(alias);
+    return Objects.hash(
+        entity.javaType().getName(), entity.entityName(), entity.mode(), entity.table(), alias);
   }
 }

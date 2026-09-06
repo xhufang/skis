@@ -5,7 +5,7 @@ import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardSqlRenderer;
 import io.skis.sql.ast.StatementAst;
 
-/** H2 renderer for the portable single-table SELECT subset. */
+/** H2 renderer for the portable SELECT/Join and single-table mutation subset. */
 public final class H2Renderer implements SqlRenderer {
 
   /** Stateless shared renderer instance. */

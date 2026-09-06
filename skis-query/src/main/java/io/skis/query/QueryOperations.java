@@ -28,8 +28,14 @@ public interface QueryOperations {
     return findById(entity, id);
   }
 
-  /** Starts an immutable full-entity single-table query. */
+  /** Starts an immutable full-entity query rooted at the supplied table. */
   <E> SelectQuery<E, E> selectFrom(QueryTable<E> table);
+
+  /** Selects one complete entity table before choosing an independent root. */
+  <R> SelectFromStep<R, R> select(QueryTable<R> table);
+
+  /** Selects an entity that may be absent on a null-extended outer-join side. */
+  <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table);
 
   /** Starts a non-null scalar projection without constructing an intermediate tuple. */
   <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column);
@@ -37,6 +43,9 @@ public interface QueryOperations {
   /** Starts a nullable scalar projection whose row-presence contract is {@link SingleRow}. */
   <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column);
 
-  /** Selects one registered user projection from the supplied typed table expression. */
-  <E, R> SelectQuery<E, R> selectProjection(QueryTable<E> table, Class<R> projectionType);
+  /** Explicitly allows a physically non-null column to become nullable through an outer join. */
+  <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column);
+
+  /** Selects one APT-generated result-row shape before choosing an independent FROM root. */
+  <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection);
 }

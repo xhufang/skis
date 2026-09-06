@@ -1,6 +1,7 @@
 package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,6 +21,7 @@ import io.skis.mapping.JdbcCodecs;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
@@ -28,9 +30,11 @@ import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.OffsetLimit;
+import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SelectStatement;
 import java.sql.Connection;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class QueryPaginationCompilationTest {
@@ -52,17 +56,28 @@ class QueryPaginationCompilationTest {
 
   @Test
   void compilesOffsetContentAndIndependentCountPlans() {
-    QueryPlanCompiler compiler = compiler();
+    CompilerFixture fixture = compilerFixture();
     QueryPredicate<Pet> predicate = TABLE.id().ge(10L);
     List<SortSpecification<Pet>> order =
         List.of(TABLE.nickname().desc().nullsLast(), TABLE.id().desc());
 
     QueryCompilation<Pet> content =
-        compiler.compileEntity(
-            model(), TABLE, predicate, order, false, new QueryPagination.Offset(20, 40));
+        compileEntity(
+            fixture,
+            predicate,
+            order,
+            false,
+            new QueryPagination.Offset(20, 40));
     QueryCompilation<Long> count =
-        compiler.compileCount(
-            model(), TABLE, compiler.entitySelection(model(), TABLE), predicate, false);
+        fixture
+            .compiler()
+            .compileCount(
+                fixture.model(),
+                TABLE,
+                SelectedResult.entity(TABLE, fixture.plans()),
+                List.of(),
+                predicate,
+                false);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\", \"pet\".\"nickname\" "
@@ -81,15 +96,14 @@ class QueryPaginationCompilationTest {
 
   @Test
   void compilesNullableLexicographicKeysetWithTypedRepeatedBindings() {
+    CompilerFixture fixture = compilerFixture();
     QueryCompilation<Pet> query =
-        compiler()
-            .compileEntity(
-                model(),
-                TABLE,
-                null,
-                List.of(TABLE.nickname().desc().nullsLast(), TABLE.id().desc()),
-                false,
-                new QueryPagination.Keyset(21, List.of("Mimi", 9L)));
+        compileEntity(
+            fixture,
+            null,
+            List.of(TABLE.nickname().desc().nullsLast(), TABLE.id().desc()),
+            false,
+            new QueryPagination.Keyset(21, List.of("Mimi", 9L)));
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\", \"pet\".\"nickname\" "
@@ -106,16 +120,14 @@ class QueryPaginationCompilationTest {
 
   @Test
   void addsHiddenOrderingSelectionsWithoutChangingTheUserProjectionDecoder() {
+    CompilerFixture fixture = compilerFixture();
     QueryCompilation<OrderedRow<Long>> query =
-        compiler()
-            .compileOrderedProjection(
-                model(),
-                TABLE,
-                Projection.scalar(TABLE.id()),
-                null,
-                List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
-                false,
-                new QueryPagination.LimitOnly(11));
+        compileOrderedProjection(
+            fixture,
+            TABLE.id(),
+            List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
+            false,
+            new QueryPagination.LimitOnly(11));
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"nickname\" AS \"__skis_order_0\" "
@@ -130,12 +142,15 @@ class QueryPaginationCompilationTest {
 
   @Test
   void autoCountUsesSingleDistinctExpressionAndRejectsUnsafeTuples() {
-    QueryPlanCompiler compiler = compiler();
+    CompilerFixture fixture = compilerFixture();
+    QueryPlanCompiler compiler = fixture.compiler();
     QueryCompilation<Long> count =
         compiler.compileCount(
-            model(),
+            fixture.model(),
             TABLE,
-            compiler.projectionSelection(model(), TABLE, Projection.scalar(TABLE.name())),
+            SelectedResult.requiredScalar(
+                TABLE, fixture.plans(), TABLE.name()),
+            List.of(),
             null,
             true);
 
@@ -143,10 +158,11 @@ class QueryPaginationCompilationTest {
         "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"", count.plan().sql());
     QueryCompilation<Long> nullableCount =
         compiler.compileCount(
-            model(),
+            fixture.model(),
             TABLE,
-            compiler.projectionSelection(
-                model(), TABLE, Projection.nullableScalar(TABLE.nickname())),
+            SelectedResult.nullableScalar(
+                TABLE, fixture.plans(), TABLE.nickname()),
+            List.of(),
             null,
             true);
     assertEquals(
@@ -155,17 +171,33 @@ class QueryPaginationCompilationTest {
             + "FROM \"shelter\".\"pet\"",
         nullableCount.plan().sql());
     QueryCompilation<Long> entityCount =
-        compiler.compileCount(model(), TABLE, compiler.entitySelection(model(), TABLE), null, true);
+        compiler.compileCount(
+            fixture.model(),
+            TABLE,
+            SelectedResult.entity(TABLE, fixture.plans()),
+            List.of(),
+            null,
+            true);
     assertEquals("SELECT COUNT(*) FROM \"shelter\".\"pet\"", entityCount.plan().sql());
+    ProjectionMapping<Object> unsafeTuple =
+        ProjectionMapping.generated(
+            GeneratedModelAbi.CURRENT,
+            Object.class,
+            "unsafe-tuple",
+            List.of(
+                new ProjectionMapping.Parameter(
+                    0, "id", Long.class, Nullability.NON_NULL, 0),
+                new ProjectionMapping.Parameter(
+                    1, "name", String.class, Nullability.NON_NULL, 1)),
+            readers -> (resultSet, context) -> new Object());
     assertThrows(
         QueryValidationException.class,
         () ->
             compiler.compileCount(
-                model(),
+                fixture.model(),
                 TABLE,
-                new QueryPlanCompiler.Selection<>(
-                    List.of(TABLE.id().expression(), TABLE.name().expression()),
-                    (resultSet, context) -> new Object()),
+                SelectedResult.projection(unsafeTuple.bind(TABLE.id(), TABLE.name())),
+                List.of(),
                 null,
                 true));
   }
@@ -198,15 +230,25 @@ class QueryPaginationCompilationTest {
         query.compilation(new QueryPagination.Keyset(21, List.of(9L)));
     QueryCompilation<Pet> keysetThree =
         query.compilation(new QueryPagination.Keyset(21, List.of(3L)));
+    QueryCompilation<Pet> unpagedFirst = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> unpagedSecond = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> countFirst = query.countCompilation();
+    QueryCompilation<Long> countSecond = query.countCompilation();
 
-    assertTrue(first.plan() == third.plan());
-    assertEquals(first.ast(), third.ast());
+    assertSame(first.plan(), third.plan());
+    assertSame(first.ast(), third.ast());
     assertEquals(List.of("Mimi", 20, 0L), arguments(first));
     assertEquals(List.of("Mimi", 20, 40L), arguments(third));
-    assertTrue(keysetNine.plan() == keysetThree.plan());
-    assertEquals(keysetNine.ast(), keysetThree.ast());
+    assertSame(keysetNine.plan(), keysetThree.plan());
+    assertSame(keysetNine.ast(), keysetThree.ast());
     assertEquals(List.of("Mimi", 9L, 21), arguments(keysetNine));
     assertEquals(List.of("Mimi", 3L, 21), arguments(keysetThree));
+    assertSame(unpagedFirst.plan(), unpagedSecond.plan());
+    assertSame(unpagedFirst.ast(), unpagedSecond.ast());
+    assertSame(unpagedFirst.argument(), unpagedSecond.argument());
+    assertSame(countFirst.plan(), countSecond.plan());
+    assertSame(countFirst.ast(), countSecond.ast());
+    assertSame(countFirst.argument(), countSecond.argument());
   }
 
   @Test
@@ -238,7 +280,7 @@ class QueryPaginationCompilationTest {
   }
 
   @Test
-  void unifiedQueryKeepsTheExistingUnpaginatedFastPathPlan() {
+  void unifiedQueryKeepsUnconditionalAndEqualityFastPathPlans() {
     QueryPlanCatalog catalog =
         QueryRuntime.compile(EntityRuntimeRegistry.of(List.of(model())), TestDialect.INSTANCE);
     QueryOperations operations = bind(catalog);
@@ -248,16 +290,68 @@ class QueryPaginationCompilationTest {
         (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE).where(predicate);
 
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> repeated = query.compilation(QueryPagination.None.INSTANCE);
+    @SuppressWarnings("unchecked")
+    DefaultSelectQuery<Pet, Pet> unfiltered =
+        (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE);
+    QueryCompilation<Pet> unfilteredCompilation =
+        unfiltered.compilation(QueryPagination.None.INSTANCE);
 
     assertTrue(compilation.plan() == catalog.require(PET).selectPlan(TABLE, predicate));
+    assertSame(compilation.plan(), repeated.plan());
+    assertSame(compilation.ast(), repeated.ast());
+    assertSame(compilation.argument(), repeated.argument());
+    assertTrue(
+        unfilteredCompilation.plan() == catalog.require(PET).selectPlan(TABLE, null));
+    assertTrue(((SelectStatement) compilation.ast()).joins().isEmpty());
+    assertTrue(((SelectStatement) unfilteredCompilation.ast()).joins().isEmpty());
   }
 
   private static List<Object> arguments(QueryCompilation<?> compilation) {
     return ((QueryArguments) compilation.argument()).values();
   }
 
-  private static QueryPlanCompiler compiler() {
-    return new QueryPlanCompiler(TestDialect.INSTANCE);
+  private static QueryCompilation<Pet> compileEntity(
+      CompilerFixture fixture,
+      @Nullable QueryPredicate<Pet> predicate,
+      List<SortSpecification<Pet>> orderBy,
+      boolean distinct,
+      QueryPagination pagination) {
+    return fixture.compiler().compileSelection(
+        fixture.model(),
+        TABLE,
+        SelectedResult.entity(TABLE, fixture.plans()),
+        List.of(),
+        predicate,
+        orderBy,
+        distinct,
+        pagination,
+        List.of());
+  }
+
+  private static <R> QueryCompilation<OrderedRow<R>> compileOrderedProjection(
+      CompilerFixture fixture,
+      QueryColumn<Pet, R> projection,
+      List<SortSpecification<Pet>> orderBy,
+      boolean distinct,
+      QueryPagination pagination) {
+    return fixture.compiler().compileOrdered(
+        fixture.model(),
+        TABLE,
+        SelectedResult.requiredScalar(TABLE, fixture.plans(), projection),
+        List.of(),
+        null,
+        orderBy,
+        distinct,
+        pagination);
+  }
+
+  private static CompilerFixture compilerFixture() {
+    EntityRuntimeModel<Pet> model = model();
+    QueryPlanCatalog catalog =
+        QueryRuntime.compile(EntityRuntimeRegistry.of(List.of(model)), TestDialect.INSTANCE);
+    EntityPlanSet<Pet> plans = catalog.require(PET);
+    return new CompilerFixture(model, plans.compiler(), plans);
   }
 
   private static QueryOperations operations() {
@@ -291,6 +385,9 @@ class QueryPaginationCompilationTest {
   }
 
   private record Pet(Long id, String name, String nickname) {}
+
+  private record CompilerFixture(
+      EntityRuntimeModel<Pet> model, QueryPlanCompiler compiler, EntityPlanSet<Pet> plans) {}
 
   private static final class PetTable extends QueryTable<Pet> {
 

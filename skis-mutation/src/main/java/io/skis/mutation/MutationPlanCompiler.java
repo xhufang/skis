@@ -7,6 +7,7 @@ import io.skis.mapping.EntityMutationBinders;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
@@ -48,7 +49,8 @@ final class MutationPlanCompiler {
                     new MutationException(
                         "entity '"
                             + entity.entityName()
-                            + "' has no generated mutation binders; regenerate it with ABI 4"));
+                            + "' has no generated mutation binders; regenerate it with ABI "
+                            + GeneratedModelAbi.CURRENT));
     PropertyMeta<E, ?> id = requireSinglePrimaryKey(entity);
     RuntimeMutationTable<E> table = new RuntimeMutationTable<>(entity);
     CompiledMutationPlan<E> insert = compileInsert(entity, table, binders);

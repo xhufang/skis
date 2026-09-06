@@ -5,7 +5,7 @@ import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardSqlRenderer;
 import io.skis.sql.ast.StatementAst;
 
-/** PostgreSQL renderer for the portable single-table SELECT subset. */
+/** PostgreSQL renderer for the portable SELECT/Join and single-table mutation subset. */
 public final class PostgreSqlRenderer implements SqlRenderer {
 
   /** Stateless shared renderer instance. */

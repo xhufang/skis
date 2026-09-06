@@ -19,7 +19,12 @@ public final class PostgreSqlDialect implements Dialect {
           DialectFeature.PARAMETERIZED_LIMIT,
           DialectFeature.PARAMETERIZED_OFFSET,
           DialectFeature.NULLS_FIRST_LAST,
-          DialectFeature.COUNT_DISTINCT);
+          DialectFeature.COUNT_DISTINCT,
+          DialectFeature.INNER_JOIN,
+          DialectFeature.LEFT_JOIN,
+          DialectFeature.RIGHT_JOIN,
+          DialectFeature.FULL_JOIN,
+          DialectFeature.CROSS_JOIN);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();

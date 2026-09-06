@@ -6,8 +6,22 @@
 
 ### Added
 
-- 新增统一的 `SelectQuery<E, R>`、独立 nullable scalar `NullableScalarQuery<E, V>` 与 `SingleRow<V>`；
-  APT 生成列按元数据区分 `NonNullQueryColumn`/`NullableQueryColumn`，生成模型 ABI 提升为 4。
+- 新增 `join/innerJoin/leftJoin/rightJoin/fullJoin/crossJoin` 查询 DSL；非 CROSS Join 通过不暴露终止操作的
+  `JoinOnStep` 强制完成 `.on(...)`，Join 链保持不可变并复用既有 Join AST、作用域校验和方言能力预检。
+- 新增 sealed `QueryCondition` 多表条件抽象以及六种强类型列间比较；列比较不创建参数槽，Java/SQL 类型兼容性
+  继续由集中规则验证，ON 与 WHERE 的普通参数按语句顺序统一分配稠密 ordinal。
+- 新增 `select(QueryTable<R>)` 完整实体选择入口；非空标量和完整实体的 FROM 阶段允许选择目标与根表解耦，
+  最终表可见性延迟到完整 Join 建立后的查询编译阶段验证。
+- 新增 `selectNullable(table/nonNullColumn)` 与统一 `NullableSelectQuery<F, R>`；外连接按 Join 顺序传播查询局部
+  有效 nullability，nullable entity 通过完整非空主键按列下标区分目标缺失、存在和复合键部分 NULL。
+- 新增查询局部 `TableRuntimeScope`，按稳定 occurrence 解析全部表的规范 RuntimeModel、PropertyRuntime 与
+  Codec；ON、WHERE、keyset、limit、offset 共用稠密逻辑参数序号，计划仅保存值无关绑定描述。
+- 新增查询块局部的 `FromClause`、稳定表 occurrence、五类 `JoinClause` 与引用身份作用域校验；
+  SELECT 和独立 count 共享相同的有序 FROM/Join 结构，重复别名、重复无别名表及前向 ON 引用在渲染前失败。
+- 新增五类独立 Join 方言能力和统一映射；PostgreSQL 渲染 INNER/LEFT/RIGHT/FULL/CROSS JOIN，H2
+  渲染其真实支持的 INNER/LEFT/RIGHT/CROSS JOIN，并在输出 SQL 前明确拒绝 FULL JOIN。
+- 新增统一的 `SelectQuery<E, R>`、独立 nullable result `NullableSelectQuery<F, R>` 与 `SingleRow<R>`；
+  APT 生成列按元数据区分 `NonNullQueryColumn`/`NullableQueryColumn`，生成模型 ABI 最终提升为 5。
 - 新增多列排序、ASC/DESC、显式 null placement、distinct、显式主键 tie-breaker，以及 PostgreSQL/H2
   原生 NULLS FIRST/LAST 能力。
 - 新增唯一分页结果 `Page<R>`/`Slice<R>`、offset/keyset `SliceContinuation`、独立 count AST、
@@ -16,6 +30,17 @@
 - 新增 `QueryCursor` 与 `CloseableQueryStream`，固定 ResultSet → Statement → Connection release 关闭顺序，
   保留读取、关闭和 release 失败的主异常/suppressed 关系，并安全检测和告警未关闭游标。
 - 新增 Page/Slice 与 Cursor/Stream 指南，并扩展 SQL DSL 指南说明 SELECT 排序、分页、隐藏选择和独立 count AST。
+- 新增框架控制的 `Selectable`/`NonNullSelectable` 结果表达式契约，以及查询无关的
+  `ProjectionMapping<R>`、查询绑定的 `ProjectionSelection<R>` 和内部统一 `ResolvedResultShape<R>`。
+- 投影 APT 生成固定参数数量和具体 Java 泛型的 `*Projection.of(...)`；结果可按顺序组合任意最终可见表的列，
+  Join 完成后统一校验作用域、SQL 类型、Codec 和有效 nullability，并只按一基 JDBC 下标解码。
+- 新增 H2/PostgreSQL 共用的真实 Join 合同，覆盖外连接 null 扩展、nullable entity、同表双别名、重复行、
+  ON/WHERE 差异、实体/标量/生成投影、分页/count/distinct/keyset，并在 PostgreSQL 上断言 ResultSet、
+  PreparedStatement 和 Connection 的关闭边界。
+- 新增 Join 专题指南及 PostgreSQL/H2 组合 SQL golden；分页和 README 同步记录方言支持、occurrence
+  稳定排序、distinct/count 与 continuation 规则。
+- Fast Path 性能 smoke 增加无条件实体查询和单属性等值查询的同轮手写 JDBC 对照，防止 Join 通用化使既有
+  有界预编译路径发生明显耗时或分配量回退。
 
 - 新增表达式级标准 SQL 类型与显式 nullability 模型，集中定义相等、排序、LIKE、BETWEEN、IN 的
   类型兼容及 SQL 三值逻辑传播规则。
@@ -39,16 +64,28 @@
 - 新增 `SkisPersistenceException` 统一安全 JDBC 诊断，以及 `skis-spring` 的
   `SkisExceptionTranslator`/`PersistenceExceptionTranslator` 集成入口。
 - 新增 ADR-0002 和执行选项/异常翻译指南，记录兼容性、热路径、query tag 安全及回滚方案。
+- `ConnectionProvider` 新增默认 Statement 配置扩展点，允许外部事务集成在参数绑定和 SKIS 执行选项之后、SQL
+  执行之前收紧语句约束；新增 ADR-0004 记录生命周期、兼容性和更短 timeout 优先规则。
+- 新增 ADR-0005，记录谓词参数的捕获时快照边界、自定义 Codec 不可变值合同，以及查询对象局部分析复用策略。
 
 ### Changed
 
-- Reactor 进入 `0.2.3-SNAPSHOT`。删除 `EntitySelectQuery`/`ProjectedSelectQuery`，三个查询入口统一返回
-  `SelectQuery` 或 `NullableScalarQuery`；这是已批准的内部开发线破坏性调整。
+- `SelectFromStep#from` 改为独立根实体泛型方法；`SelectQuery` 和当前 nullable scalar 查询接口新增宽
+  `QueryCondition` 条件重载，`SelectQuery` 新增 Join 抽象方法。这些是 `0.2.0 → 0.3.0` 已批准的源码实现契约
+  变化，第三方查询门面实现需要迁移。
+- `NullableScalarQuery<E, V>` 泛化并更名为 `NullableSelectQuery<F, R>`，nullable FROM 阶段与选择目标解耦，
+  并增加与非空查询一致的显式 Join 链；这是已批准的内部生成/查询 API 迁移。
+- Reactor 进入 `0.2.4-SNAPSHOT`。删除 `EntitySelectQuery`/`ProjectedSelectQuery`，三个查询入口统一返回
+  `SelectQuery` 或 nullable 查询接口；这是已批准的内部开发线破坏性调整。
 - `fetchFirst`、offset/page/keyset 限制进入 SELECT AST；Page 固定执行内容与 count，Slice 明确不执行 count。
 - 相同不可变查询的不同 offset/limit/keyset 值复用值无关计划；实际页位置与锚点只进入绑定参数，
   nullable keyset 的 null 形状变化使用独立且有界的本地计划槽。
 - 无排序、无分页、非 distinct 的实体与投影 `fetchOne/fetchList` 继续直接使用原子缓存的 Fast Path 计划。
 - `RowDecoder.decode` 明确返回可空值；JDBC 列表、分页与 cursor 保留 SQL NULL，非空查询门面在结果边界统一校验。
+- `@SkisProjection` 改为只声明结果行构造，不再绑定实体；查询改用
+  `select(ResultTypeProjection.of(...)).from(root)`。删除 `@ProjectionProperty`、实体绑定 `Projection<E,R>`、
+  `selectProjection(table, type)`、投影 Provider/Registry/Loader 和 `META-INF/skis/projections.idx`。
+- 生成模型 ABI 提升为 5；旧生成代码与新 runtime 不兼容，必须使用匹配版本的 processor 重新生成实体和投影源码。
 
 - `EntitySelectQuery` 与 `ProjectedSelectQuery` 新增抽象 `and/or`，`SqlExpression` 新增 SQL 类型/nullability
   契约，`ParameterSlot` record 结构扩展；这是为 `0.3.0` SQL DSL 批准的破坏性变更，第三方查询/表达式实现及
@@ -71,6 +108,12 @@
   已编译调用方在类型模型迁移中的无关二进制变化。
 - Statement 选项设置失败现在标记为 `statement-configuration` 阶段，并继续保留 Statement close 与
   Connection release 失败的原始 cause/suppressed 顺序；异常消息不包含 SQL、参数或 query tag。
+- `SpringConnectionProvider` 现在把 Spring 事务剩余时限应用到每个 JDBC Statement；与 SKIS timeout 冲突时取
+  更短限制，显式零不能取消事务期限，已过期事务在 SQL 执行前失败。
+- 查询谓词现在在创建时快照数组及 `java.sql.Date`/`Time`/`Timestamp`，`IN`/`NOT IN` 的每个元素同样处理；
+  continuation 对这些可变锚点也执行输入和输出防御性复制。
+- 同一个不可变查询对象现在只分析一次 FROM/Join/ON/WHERE 和普通参数布局；普通、count、offset/keyset 与实体
+  Fast Path 的局部计划命中不再重建条件或 Join AST。
 - `fetchOne()` 与 nullable scalar `fetchOne()` 在有效 `maxRows` 为 1 时内部读取上限提升到 2，避免驱动截断
   第二行后绕过非唯一结果检查。
 - H2 显式 null placement 改用原生 `NULLS FIRST/LAST`，避免 distinct 查询因 CASE 排名表达式未进入

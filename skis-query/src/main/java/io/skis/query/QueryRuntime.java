@@ -18,33 +18,10 @@ public final class QueryRuntime {
         .bind(Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
   }
 
-  /** Creates query operations with registered user projections. */
-  public static QueryOperations create(
-      EntityRuntimeRegistry runtimeRegistry,
-      ProjectionRegistry projectionRegistry,
-      Dialect dialect,
-      JdbcExecutor jdbcExecutor) {
-    return compile(runtimeRegistry, projectionRegistry, dialect)
-        .bind(Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
-  }
-
   /** Compiles one shareable plan catalog for subsequent ordinary and transactional execution. */
   public static QueryPlanCatalog compile(EntityRuntimeRegistry runtimeRegistry, Dialect dialect) {
     return compile(
         runtimeRegistry,
-        dialect,
-        QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE,
-        QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS);
-  }
-
-  /** Compiles one shareable plan catalog with registered user projections. */
-  public static QueryPlanCatalog compile(
-      EntityRuntimeRegistry runtimeRegistry,
-      ProjectionRegistry projectionRegistry,
-      Dialect dialect) {
-    return compile(
-        runtimeRegistry,
-        projectionRegistry,
         dialect,
         QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE,
         QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS);
@@ -58,21 +35,6 @@ public final class QueryRuntime {
       Duration expireAfterAccess) {
     return new QueryPlanCatalog(
         Objects.requireNonNull(runtimeRegistry, "runtimeRegistry"),
-        Objects.requireNonNull(dialect, "dialect"),
-        maximumSize,
-        Objects.requireNonNull(expireAfterAccess, "expireAfterAccess"));
-  }
-
-  /** Compiles a plan catalog with registered projections and explicit cache governance. */
-  public static QueryPlanCatalog compile(
-      EntityRuntimeRegistry runtimeRegistry,
-      ProjectionRegistry projectionRegistry,
-      Dialect dialect,
-      int maximumSize,
-      Duration expireAfterAccess) {
-    return new QueryPlanCatalog(
-        Objects.requireNonNull(runtimeRegistry, "runtimeRegistry"),
-        Objects.requireNonNull(projectionRegistry, "projectionRegistry"),
         Objects.requireNonNull(dialect, "dialect"),
         maximumSize,
         Objects.requireNonNull(expireAfterAccess, "expireAfterAccess"));

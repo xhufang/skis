@@ -96,7 +96,7 @@ class StandardSqlRendererTest {
             IllegalArgumentException.class,
             () -> new SelectStatement(List.of(other.name()), pet));
 
-    assertTrue(failure.getMessage().contains("different table expression"));
+    assertTrue(failure.getMessage().contains("invisible table"));
   }
 
   @Test

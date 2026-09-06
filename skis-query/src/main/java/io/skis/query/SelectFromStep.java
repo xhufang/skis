@@ -1,8 +1,8 @@
 package io.skis.query;
 
-/** FROM stage for a selected non-null scalar. */
-public interface SelectFromStep<E, R> {
+/** FROM stage for a selected non-null scalar or complete entity. */
+public interface SelectFromStep<S, R> {
 
-  /** Selects the single table expression that owns every projection column. */
-  SelectQuery<E, R> from(QueryTable<E> table);
+  /** Chooses an independent of root; the selected target must be in the final join scope. */
+  <F> SelectQuery<F, R> from(QueryTable<F> table);
 }

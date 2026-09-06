@@ -19,7 +19,11 @@ public final class H2Dialect implements Dialect {
           DialectFeature.PARAMETERIZED_LIMIT,
           DialectFeature.PARAMETERIZED_OFFSET,
           DialectFeature.COUNT_DISTINCT,
-          DialectFeature.NULLS_FIRST_LAST);
+          DialectFeature.NULLS_FIRST_LAST,
+          DialectFeature.INNER_JOIN,
+          DialectFeature.LEFT_JOIN,
+          DialectFeature.RIGHT_JOIN,
+          DialectFeature.CROSS_JOIN);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();

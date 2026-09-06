@@ -5,7 +5,7 @@ import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import java.util.Objects;
 
-/** Immutable, entity-scoped ordering item produced by a generated query column. */
+/** Immutable ordering item produced by a generated query column. */
 public final class SortSpecification<E> {
 
   private final QueryColumn<E, ?> column;

@@ -5,13 +5,13 @@ import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable single-table SELECT with explicit ordering, hidden items, and pagination. */
+/** Immutable SELECT with an ordered FROM/JOIN clause, result items, ordering, and pagination. */
 public final class SelectStatement implements StatementAst {
 
   private final boolean distinct;
   private final List<SqlExpression<?>> selections;
   private final List<HiddenSelection> hiddenSelections;
-  private final TableExpression<?> from;
+  private final FromClause fromClause;
   private final @Nullable SqlPredicate where;
   private final List<OrderByItem> orderBy;
   private final @Nullable SelectPagination pagination;
@@ -21,7 +21,7 @@ public final class SelectStatement implements StatementAst {
       boolean distinct,
       List<? extends SqlExpression<?>> selections,
       List<HiddenSelection> hiddenSelections,
-      TableExpression<?> from,
+      FromClause fromClause,
       @Nullable SqlPredicate where,
       List<OrderByItem> orderBy,
       @Nullable SelectPagination pagination) {
@@ -33,11 +33,30 @@ public final class SelectStatement implements StatementAst {
     }
     this.hiddenSelections =
         List.copyOf(Objects.requireNonNull(hiddenSelections, "hiddenSelections"));
-    this.from = Objects.requireNonNull(from, "from");
+    this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
     this.where = where;
     this.orderBy = List.copyOf(Objects.requireNonNull(orderBy, "orderBy"));
     this.pagination = pagination;
     SemanticValidator.validate(this);
+  }
+
+  /** Creates a complete single-table SELECT tree. */
+  public SelectStatement(
+      boolean distinct,
+      List<? extends SqlExpression<?>> selections,
+      List<HiddenSelection> hiddenSelections,
+      TableExpression<?> from,
+      @Nullable SqlPredicate where,
+      List<OrderByItem> orderBy,
+      @Nullable SelectPagination pagination) {
+    this(
+        distinct,
+        selections,
+        hiddenSelections,
+        FromClause.of(from),
+        where,
+        orderBy,
+        pagination);
   }
 
   /** Creates a single-table SELECT statement. */
@@ -48,9 +67,22 @@ public final class SelectStatement implements StatementAst {
     this(false, selections, List.of(), from, where, List.of(), null);
   }
 
+  /** Creates a SELECT statement over an explicit FROM/JOIN clause. */
+  public SelectStatement(
+      List<? extends SqlExpression<?>> selections,
+      FromClause fromClause,
+      @Nullable SqlPredicate where) {
+    this(false, selections, List.of(), fromClause, where, List.of(), null);
+  }
+
   /** Creates a SELECT without a WHERE clause. */
   public SelectStatement(List<? extends SqlExpression<?>> selections, TableExpression<?> from) {
     this(selections, from, null);
+  }
+
+  /** Creates a SELECT over an explicit FROM/JOIN clause without a WHERE predicate. */
+  public SelectStatement(List<? extends SqlExpression<?>> selections, FromClause fromClause) {
+    this(selections, fromClause, null);
   }
 
   public List<SqlExpression<?>> selections() {
@@ -65,8 +97,18 @@ public final class SelectStatement implements StatementAst {
     return hiddenSelections;
   }
 
+  public FromClause fromClause() {
+    return fromClause;
+  }
+
+  /** Returns the root table for source compatibility with the single-table AST. */
   public TableExpression<?> from() {
-    return from;
+    return fromClause.root();
+  }
+
+  /** Returns the ordered joins in this query block. */
+  public List<JoinClause> joins() {
+    return fromClause.joins();
   }
 
   public Optional<SqlPredicate> where() {
@@ -88,7 +130,7 @@ public final class SelectStatement implements StatementAst {
             && distinct == statement.distinct
             && selections.equals(statement.selections)
             && hiddenSelections.equals(statement.hiddenSelections)
-            && from.equals(statement.from)
+            && fromClause.equals(statement.fromClause)
             && Objects.equals(where, statement.where)
             && orderBy.equals(statement.orderBy)
             && Objects.equals(pagination, statement.pagination);
@@ -99,7 +141,7 @@ public final class SelectStatement implements StatementAst {
     int result = Boolean.hashCode(distinct);
     result = 31 * result + selections.hashCode();
     result = 31 * result + hiddenSelections.hashCode();
-    result = 31 * result + from.hashCode();
+    result = 31 * result + fromClause.hashCode();
     result = 31 * result + Objects.hashCode(where);
     result = 31 * result + orderBy.hashCode();
     return 31 * result + Objects.hashCode(pagination);

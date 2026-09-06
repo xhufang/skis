@@ -4,12 +4,12 @@
   <parent>
     <groupId>io.github.xhufang</groupId>
     <artifactId>skis-parent</artifactId>
-    <version>0.2.3-SNAPSHOT</version>
+    <version>0.2.4-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>skis-query</artifactId>
   <name>skis-query</name>
-  <description>Typed single-table entity, scalar, and generated projection queries</description>
+  <description>Typed entity, scalar, generated projection, and explicit Join queries</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
