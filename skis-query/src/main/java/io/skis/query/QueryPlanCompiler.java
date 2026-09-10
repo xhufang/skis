@@ -27,6 +27,7 @@ import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectPagination;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -412,7 +413,9 @@ final class QueryPlanCompiler {
 
   private static <S extends StatementAst> S validatedStatement(Supplier<S> factory) {
     try {
-      return factory.get();
+      S statement = factory.get();
+      SemanticValidator.validateComplete(statement);
+      return statement;
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
     }

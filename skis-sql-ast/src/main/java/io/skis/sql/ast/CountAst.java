@@ -41,7 +41,10 @@ public final class CountAst implements StatementAst {
 
   /** Returns the root table for source compatibility with the single-table AST. */
   public TableExpression<?> source() {
-    return fromClause.root();
+    return fromClause
+        .root()
+        .entityTable()
+        .orElseThrow(() -> new IllegalStateException("COUNT root is not an entity table"));
   }
 
   /** Returns the ordered joins shared with the content query. */

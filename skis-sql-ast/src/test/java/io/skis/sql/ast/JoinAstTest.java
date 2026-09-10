@@ -50,11 +50,42 @@ class JoinAstTest {
     assertEquals(
         List.of("pet", "parent_pet", "guardian_pet"),
         fromClause.occurrences().stream().map(TableOccurrence::effectiveQualifier).toList());
-    assertSame(root, fromClause.occurrences().get(0).table());
-    assertSame(parent, fromClause.occurrenceOf(parent).orElseThrow().table());
+    assertTrue(fromClause.root() instanceof EntityRelationSource);
+    assertSame(root, fromClause.occurrences().get(0).entityTable().orElseThrow());
+    assertSame(parent, fromClause.occurrenceOf(parent).orElseThrow().entityTable().orElseThrow());
     assertFalse(fromClause.occurrenceOf(root.as("parent_pet")).isPresent());
     assertThrows(UnsupportedOperationException.class, () -> fromClause.joins().clear());
     assertThrows(UnsupportedOperationException.class, () -> fromClause.occurrences().clear());
+  }
+
+  @Test
+  void acceptsExplicitEntitySourcesAndKeepsLegacyTableConstructionEquivalent() {
+    PetTable root = new PetTable();
+    PetTable joined = root.as("joined_pet");
+    EntityRelationSource rootSource = new EntityRelationSource(root);
+    EntityRelationSource joinedSource = new EntityRelationSource(joined);
+    FromClause explicit =
+        new FromClause(
+            rootSource,
+            List.of(
+                new JoinClause(
+                    JoinType.INNER, joinedSource, root.id().eq(joined.id()))));
+    FromClause legacy =
+        new FromClause(
+            root,
+            List.of(
+                new JoinClause(JoinType.INNER, joined, root.id().eq(joined.id()))));
+
+    assertSame(rootSource, explicit.root());
+    assertSame(joinedSource, explicit.joins().getFirst().right());
+    assertSame(root, explicit.occurrenceOf(rootSource).orElseThrow().entityTable().orElseThrow());
+    assertSame(
+        joined,
+        explicit.occurrenceOf(joinedSource).orElseThrow().entityTable().orElseThrow());
+    assertSame(
+        joined, legacy.joins().getFirst().right().entityTable().orElseThrow());
+    assertEquals(legacy, explicit);
+    assertEquals(legacy.hashCode(), explicit.hashCode());
   }
 
   @Test
@@ -201,10 +232,9 @@ class JoinAstTest {
             List.of(
                 new JoinClause(JoinType.INNER, first, root.id().eq(second.id())),
                 new JoinClause(JoinType.LEFT, second, first.id().eq(second.id()))));
+    SelectStatement incomplete = new SelectStatement(List.of(root.id()), forwardReference);
     IllegalArgumentException failure =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> new SelectStatement(List.of(root.id()), forwardReference));
+        assertThrows(IllegalArgumentException.class, () -> SemanticValidator.validate(incomplete));
     assertTrue(failure.getMessage().contains("SELECT FROM join #1 ON"));
     assertTrue(failure.getMessage().contains("alias 'second_pet'"));
   }
@@ -220,22 +250,62 @@ class JoinAstTest {
             List.of(new JoinClause(JoinType.INNER, joined, root.id().eq(joined.id()))));
 
     assertEquals(joined, impersonator);
+    SelectStatement invalidSelection = new SelectStatement(List.of(impersonator.name()), from);
     IllegalArgumentException selectionFailure =
         assertThrows(
-            IllegalArgumentException.class,
-            () -> new SelectStatement(List.of(impersonator.name()), from));
+            IllegalArgumentException.class, () -> SemanticValidator.validate(invalidSelection));
     assertTrue(selectionFailure.getMessage().contains("SELECT column 'name'"));
     assertTrue(selectionFailure.getMessage().contains("object identity"));
 
+    SelectStatement invalidEmptyIn =
+        new SelectStatement(
+            List.of(root.id()),
+            from,
+            new InPredicate<>(impersonator.id(), List.of(), false));
     IllegalArgumentException emptyInFailure =
         assertThrows(
-            IllegalArgumentException.class,
-            () ->
-                new SelectStatement(
-                    List.of(root.id()),
-                    from,
-                    new InPredicate<>(impersonator.id(), List.of(), false)));
+            IllegalArgumentException.class, () -> SemanticValidator.validate(invalidEmptyIn));
     assertTrue(emptyInFailure.getMessage().contains("WHERE column 'id'"));
+  }
+
+  @Test
+  void completeValidationTraversesReservedGroupingClauses() {
+    PetTable root = new PetTable();
+    PetTable invisible = root.as("invisible_pet");
+    SelectStatement invalidGroupBy =
+        new SelectStatement(
+            false,
+            List.of(root.id()),
+            List.of(),
+            root,
+            null,
+            List.of(invisible.name()),
+            null,
+            List.of(),
+            null);
+    SelectStatement invalidHaving =
+        new SelectStatement(
+            false,
+            List.of(root.id()),
+            List.of(),
+            root,
+            null,
+            List.of(root.id()),
+            invisible.id().isNotNull(),
+            List.of(),
+            null);
+
+    IllegalArgumentException groupFailure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> SemanticValidator.validateComplete(invalidGroupBy));
+    IllegalArgumentException havingFailure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> SemanticValidator.validateComplete(invalidHaving));
+
+    assertTrue(groupFailure.getMessage().contains("GROUP BY column 'name'"));
+    assertTrue(havingFailure.getMessage().contains("HAVING column 'id'"));
   }
 
   @Test

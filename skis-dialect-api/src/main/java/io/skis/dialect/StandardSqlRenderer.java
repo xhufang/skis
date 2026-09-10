@@ -14,6 +14,7 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.EntityRelationSource;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
@@ -34,7 +35,9 @@ import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -70,6 +73,13 @@ public final class StandardSqlRenderer implements SqlRenderer {
   @Override
   public RenderedSql render(StatementAst statement) {
     Objects.requireNonNull(statement, "statement");
+    if (statement instanceof SelectStatement
+        || statement instanceof CountAst
+        || statement instanceof InsertStatement
+        || statement instanceof UpdateStatement
+        || statement instanceof DeleteStatement) {
+      SemanticValidator.validateComplete(statement);
+    }
     DialectJoinFeatures.validate(dialectId, capabilities, statement);
     return switch (statement) {
       case SelectStatement select -> renderSelect(select);
@@ -82,6 +92,13 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private RenderedSql renderSelect(SelectStatement statement) {
+    if (!statement.groupBy().isEmpty() || statement.having().isPresent()) {
+      throw new SqlRenderException(
+          "dialect '"
+              + dialectId
+              + "' cannot render reserved GROUP BY/HAVING structure before that capability "
+              + "is enabled");
+    }
     RenderContext context = new RenderContext(statement.fromClause());
     context.sql.append("SELECT ");
     if (statement.distinct()) {
@@ -579,16 +596,22 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderFromClause(FromClause fromClause, RenderContext context) {
-    renderTable(fromClause.root(), context.sql);
+    renderRelation(fromClause.root(), context.sql);
     for (JoinClause join : fromClause.joins()) {
       context.sql.append(' ').append(DialectJoinFeatures.keyword(join.type())).append(' ');
-      renderTable(join.right(), context.sql);
+      renderRelation(join.right(), context.sql);
       join.on()
           .ifPresent(
               predicate -> {
                 context.sql.append(" ON ");
                 renderPredicate(predicate, context);
               });
+    }
+  }
+
+  private void renderRelation(RelationSource source, StringBuilder sql) {
+    switch (source) {
+      case EntityRelationSource entity -> renderTable(entity.table(), sql);
     }
   }
 
@@ -636,7 +659,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
     private @Nullable TableExpression<?> resolve(TableExpression<?> table) {
       if (fromClause != null) {
-        return fromClause.occurrenceOf(table).map(TableOccurrence::table).orElse(null);
+        return fromClause.occurrenceOf(table).flatMap(TableOccurrence::entityTable).orElse(null);
       }
       return mutationTarget == table ? mutationTarget : null;
     }

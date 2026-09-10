@@ -94,9 +94,30 @@ class StandardSqlRendererTest {
     IllegalArgumentException failure =
         assertThrows(
             IllegalArgumentException.class,
-            () -> new SelectStatement(List.of(other.name()), pet));
+            () -> RENDERER.render(new SelectStatement(List.of(other.name()), pet)));
 
     assertTrue(failure.getMessage().contains("invisible table"));
+  }
+
+  @Test
+  void doesNotSilentlyDropReservedGroupingStructure() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement grouped =
+        new SelectStatement(
+            false,
+            List.of(pet.name()),
+            List.of(),
+            pet,
+            null,
+            List.of(pet.name()),
+            null,
+            List.of(),
+            null);
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(grouped));
+
+    assertTrue(failure.getMessage().contains("GROUP BY/HAVING"));
   }
 
   @Test

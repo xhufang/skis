@@ -231,11 +231,12 @@ class SqlAstStructureTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new SelectStatement(
-                List.of(
-                    new CoalesceExpression<>(
-                        List.of(table.name(), new ParameterSlot<>(1, String.class, false)))),
-                table));
+            SemanticValidator.validate(
+                new SelectStatement(
+                    List.of(
+                        new CoalesceExpression<>(
+                            List.of(table.name(), new ParameterSlot<>(1, String.class, false)))),
+                    table)));
   }
 
   @Test
@@ -329,16 +330,18 @@ class SqlAstStructureTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new SelectStatement(
-                List.of(
-                    new CaseExpression<>(
-                        List.of(new CaseWhen<>(table.id().eq(id), other.name())), table.name())),
-                table));
+            SemanticValidator.validate(
+                new SelectStatement(
+                    List.of(
+                        new CaseExpression<>(
+                            List.of(new CaseWhen<>(table.id().eq(id), other.name())), table.name())),
+                    table)));
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new SelectStatement(
-                List.of(table.id()), table, new InPredicate<>(other.id(), List.of(), false)));
+            SemanticValidator.validate(
+                new SelectStatement(
+                    List.of(table.id()), table, new InPredicate<>(other.id(), List.of(), false))));
     assertThrows(
         IllegalArgumentException.class,
         () -> new InsertStatement(table, List.of(table.id()), List.of(other.id())));
@@ -385,6 +388,55 @@ class SqlAstStructureTest {
 
     assertEquals(List.of(table.id()), statement.selections());
     assertThrows(UnsupportedOperationException.class, () -> statement.selections().clear());
+  }
+
+  @Test
+  void selectDefensivelyCopiesGroupingAndIncludesGroupingInStructure() {
+    PetTable table = new PetTable();
+    List<SqlExpression<?>> groupBy = new ArrayList<>();
+    groupBy.add(table.name());
+    SqlPredicate having = table.id().gt(new ParameterSlot<>(0, Long.class, false));
+
+    SelectStatement grouped =
+        new SelectStatement(
+            false,
+            List.of(table.name()),
+            List.of(),
+            table,
+            null,
+            groupBy,
+            having,
+            List.of(),
+            null);
+    groupBy.add(table.id());
+
+    assertEquals(List.of(table.name()), grouped.groupBy());
+    assertEquals(having, grouped.having().orElseThrow());
+    assertThrows(UnsupportedOperationException.class, () -> grouped.groupBy().clear());
+    assertNotEquals(
+        grouped,
+        new SelectStatement(
+            false,
+            grouped.selections(),
+            List.of(),
+            table,
+            null,
+            List.of(table.id()),
+            having,
+            List.of(),
+            null));
+    assertNotEquals(
+        grouped,
+        new SelectStatement(
+            false,
+            grouped.selections(),
+            List.of(),
+            table,
+            null,
+            grouped.groupBy(),
+            null,
+            List.of(),
+            null));
   }
 
   @Test
@@ -458,7 +510,7 @@ class SqlAstStructureTest {
   }
 
   @Test
-  void rejectsConflictingDescriptorsForTheSameParameterOrdinal() {
+  void rejectsConflictingDescriptorsForTheSameParameterOrdinalDuringSelectConstruction() {
     PetTable table = new PetTable();
     ParameterSlot<Long> requiredId = new ParameterSlot<>(0, Long.class, false);
 
@@ -481,6 +533,41 @@ class SqlAstStructureTest {
 
     assertTrue(typeConflict.getMessage().contains("parameter ordinal 0"));
     assertTrue(nullabilityConflict.getMessage().contains("parameter ordinal 0"));
+  }
+
+  @Test
+  void selectConstructionValidatesLocalExpressionDescriptors() {
+    PetTable table = new PetTable();
+    ParameterSlot<String> invalidType =
+        new ParameterSlot<>(0, String.class, SqlType.BIGINT, Nullability.NON_NULL);
+    SqlExpression<Integer> nullablePrimitive =
+        new SqlExpression<>() {
+          @Override
+          public Class<Integer> javaType() {
+            return int.class;
+          }
+
+          @Override
+          public SqlType sqlType() {
+            return SqlType.INTEGER;
+          }
+
+          @Override
+          public Nullability nullability() {
+            return Nullability.NULLABLE;
+          }
+
+          @Override
+          public boolean nullable() {
+            return true;
+          }
+        };
+
+    assertThrows(
+        IllegalArgumentException.class, () -> new SelectStatement(List.of(invalidType), table));
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new SelectStatement(List.of(nullablePrimitive), table));
   }
 
   @Test
@@ -516,10 +603,12 @@ class SqlAstStructureTest {
     ParameterSlot<Long> gappedId = new ParameterSlot<>(1, Long.class, false);
     ParameterSlot<String> gappedName = new ParameterSlot<>(2, String.class, true);
     ParameterSlot<Long> firstId = new ParameterSlot<>(0, Long.class, false);
+    SelectStatement gappedSelect =
+        new SelectStatement(List.of(table.id()), table, table.id().eq(gappedId));
 
     assertThrows(
         IllegalArgumentException.class,
-        () -> new SelectStatement(List.of(table.id()), table, table.id().eq(gappedId)));
+        () -> SemanticValidator.validateComplete(gappedSelect));
     assertThrows(
         IllegalArgumentException.class,
         () -> new InsertStatement(table, List.of(table.id()), List.of(gappedId)));

@@ -4,18 +4,18 @@ import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable right-hand table join in a left-deep {@link FromClause}. */
+/** Immutable right-hand relation join in a left-deep {@link FromClause}. */
 public final class JoinClause {
 
   private final JoinType type;
-  private final TableExpression<?> right;
+  private final RelationSource right;
   private final @Nullable SqlPredicate on;
 
   /**
    * Creates a join while enforcing its local structural invariant: CROSS has no ON predicate and
    * every other join has one.
    */
-  public JoinClause(JoinType type, TableExpression<?> right, @Nullable SqlPredicate on) {
+  public JoinClause(JoinType type, RelationSource right, @Nullable SqlPredicate on) {
     this.type = Objects.requireNonNull(type, "type");
     this.right = Objects.requireNonNull(right, "right");
     if (type == JoinType.CROSS && on != null) {
@@ -27,11 +27,16 @@ public final class JoinClause {
     this.on = on;
   }
 
+  /** Creates a join by adapting the entity table without losing its object identity. */
+  public JoinClause(JoinType type, TableExpression<?> right, @Nullable SqlPredicate on) {
+    this(type, RelationSource.entity(right), on);
+  }
+
   public JoinType type() {
     return type;
   }
 
-  public TableExpression<?> right() {
+  public RelationSource right() {
     return right;
   }
 
