@@ -1,8 +1,8 @@
 # SQL expressions and semantic validation
 
 This document describes the expression contract implemented by the internal `0.2.2-SNAPSHOT`
-through `0.2.4-SNAPSHOT` milestones. It accumulates toward the public `0.3.0` SQL DSL and is not
-part of the published `0.2.0` API.
+through the current `0.2.5-SNAPSHOT` milestone. It accumulates toward the public `0.3.0` SQL DSL and
+is not part of the published `0.2.0` API.
 
 ## Expression descriptors
 
@@ -114,8 +114,23 @@ only the target table expression. DELETE predicates may reference only the targe
 ordered `FromClause`: the root and each completed Join occurrence form its visible scope.
 
 Subqueries, derived tables, joins, and CTEs were not represented by the `0.2.2` AST. Explicit joins
-are added by the `0.2.4` scope described below; subqueries, derived tables, and CTEs remain deferred.
-The validator does not claim to validate syntax that the AST cannot yet express.
+were added by the `0.2.4` scope described below. The `0.2.5` AST now routes the FROM root, Join
+right-hand sides, and occurrences through sealed `RelationSource` nodes; the first slice provides
+only the entity adapter and retains the original `TableExpression<?>` reference. Derived and
+subquery source nodes remain deferred to their later capability slices, and CTEs remain deferred to
+0.2.6.
+
+SELECT validation has two boundaries. Construction enforces context-free local invariants,
+traverses every expression to validate its Java/SQL/nullability descriptor, rejects conflicting
+descriptors for a repeated parameter ordinal within the query block, and defensively freezes all
+lists, including the reserved ordered `groupBy` structure. Complete scope, effective-nullability,
+and statement-wide dense parameter-layout checks run through
+`SemanticValidator.validateComplete(...)` after the query block has its embedding context. Query
+plan compilation and every built-in Renderer invoke this complete boundary before SQL output, so a
+reusable fragment can defer parent-dependent checks without allowing a direct AST rendering path to
+bypass validation. The optional `having` and ordered `groupBy` containers are structural only in
+this first slice; renderers reject them until the aggregate/grouping capability slice enables SQL
+generation.
 
 ## SELECT ordering, pagination and count
 

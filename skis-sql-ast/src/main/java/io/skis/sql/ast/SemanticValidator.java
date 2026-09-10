@@ -13,11 +13,23 @@ public final class SemanticValidator {
 
   private SemanticValidator() {}
 
-  /** Validates any statement node supported by the current portable AST. */
+  /**
+   * Validates any complete statement supported by the current portable AST.
+   *
+   * <p>This compatibility entry point delegates to {@link #validateComplete(StatementAst)}.
+   */
   public static void validate(StatementAst statement) {
+    validateComplete(statement);
+  }
+
+  /**
+   * Validates a complete statement with the query-block context required for scope and parameter
+   * checks.
+   */
+  public static void validateComplete(StatementAst statement) {
     Objects.requireNonNull(statement, "statement");
     switch (statement) {
-      case SelectStatement select -> validate(select);
+      case SelectStatement select -> validateComplete(select);
       case CountAst count -> validate(count);
       case InsertStatement insert ->
           validateInsert(insert.target(), insert.columns(), insert.values());
@@ -30,11 +42,38 @@ public final class SemanticValidator {
     }
   }
 
-  /** Validates SELECT scopes in join order and then validates the final expression tree. */
+  /** Compatibility overload for complete SELECT validation. */
   public static void validate(SelectStatement statement) {
+    validateComplete(statement);
+  }
+
+  /** Validates SELECT scopes in join order and then validates the final expression tree. */
+  public static void validateComplete(SelectStatement statement) {
     Objects.requireNonNull(statement, "statement");
+    validatePaginationOrdering(statement);
     ValidationContext context = new ValidationContext();
-    context.addVisible(statement.from());
+    validateSelectExpressions(statement, context);
+    context.requireDenseParameterOrdinals();
+  }
+
+  /** Validates invariants that do not require a parent or completed query-block scope. */
+  static void validateLocal(SelectStatement statement) {
+    Objects.requireNonNull(statement, "statement");
+    validatePaginationOrdering(statement);
+    validateSelectExpressions(statement, new ValidationContext(false));
+  }
+
+  private static void validatePaginationOrdering(SelectStatement statement) {
+    if (statement.pagination().isPresent()
+        && !(statement.pagination().orElseThrow() instanceof Limit)
+        && statement.orderBy().isEmpty()) {
+      throw new IllegalArgumentException("paginated SELECT requires ORDER BY");
+    }
+  }
+
+  private static void validateSelectExpressions(
+      SelectStatement statement, ValidationContext context) {
+    context.addVisible(statement.fromClause().root());
     for (int index = 0; index < statement.joins().size(); index++) {
       JoinClause join = statement.joins().get(index);
       context.addVisible(join.right());
@@ -50,14 +89,13 @@ public final class SemanticValidator {
         .hiddenSelections()
         .forEach(item -> context.validateExpression(item.expression(), "SELECT hidden item"));
     statement.where().ifPresent(item -> context.validateExpression(item, "WHERE"));
+    statement.groupBy().forEach(item -> context.validateExpression(item, "GROUP BY"));
+    statement.having().ifPresent(item -> context.validateExpression(item, "HAVING"));
     statement.orderBy().forEach(item -> context.validateExpression(item.expression(), "ORDER BY"));
     statement
         .pagination()
         .ifPresent(
             pagination -> {
-              if (!(pagination instanceof Limit) && statement.orderBy().isEmpty()) {
-                throw new IllegalArgumentException("paginated SELECT requires ORDER BY");
-              }
               if (pagination instanceof KeysetSeek keyset) {
                 context.validateExpression(keyset.predicate(), "pagination seek");
               }
@@ -66,14 +104,13 @@ public final class SemanticValidator {
                 context.validateExpression(offset.offset(), "pagination offset");
               }
             });
-    context.requireDenseParameterOrdinals();
   }
 
   /** Validates an independent COUNT plan. */
   public static void validate(CountAst statement) {
     Objects.requireNonNull(statement, "statement");
     ValidationContext context = new ValidationContext();
-    context.addVisible(statement.source());
+    context.addVisible(statement.fromClause().root());
     for (int index = 0; index < statement.joins().size(); index++) {
       JoinClause join = statement.joins().get(index);
       context.addVisible(join.right());
@@ -427,16 +464,41 @@ public final class SemanticValidator {
 
   private static final class ValidationContext {
 
+    private final boolean validatesQueryContext;
     private final IdentityHashMap<TableExpression<?>, Boolean> visibleTables =
         new IdentityHashMap<>();
     private final Map<Integer, ParameterSlot<?>> parametersByOrdinal = new HashMap<>();
+
+    private ValidationContext() {
+      this(true);
+    }
+
+    private ValidationContext(boolean validatesQueryContext) {
+      this.validatesQueryContext = validatesQueryContext;
+    }
+
+    private void addVisible(RelationSource source) {
+      if (!validatesQueryContext) {
+        return;
+      }
+      switch (Objects.requireNonNull(source, "source")) {
+        case EntityRelationSource entity -> addVisible(entity.table());
+      }
+    }
 
     private void addVisible(TableExpression<?> table) {
       visibleTables.put(Objects.requireNonNull(table, "table"), Boolean.FALSE);
     }
 
     private void applyJoin(JoinClause join) {
-      EffectiveNullabilityResolver.applyJoin(join.type(), join.right(), visibleTables);
+      if (!validatesQueryContext) {
+        return;
+      }
+      switch (join.right()) {
+        case EntityRelationSource entity ->
+            EffectiveNullabilityResolver.applyJoin(
+                join.type(), entity.table(), visibleTables);
+      }
     }
 
     private void validateExpression(SqlExpression<?> expression, String clause) {
@@ -498,14 +560,20 @@ public final class SemanticValidator {
           // Custom opaque leaf expressions expose no portable child traversal contract yet.
         }
       }
-      if (EffectiveNullabilityResolver.resolve(expression, visibleTables).isNullable()
-          && expression.javaType().isPrimitive()) {
+      Nullability resolvedNullability =
+          validatesQueryContext
+              ? EffectiveNullabilityResolver.resolve(expression, visibleTables)
+              : expression.nullability();
+      if (resolvedNullability.isNullable() && expression.javaType().isPrimitive()) {
         throw new IllegalArgumentException(
             "a nullable expression cannot use a primitive Java type");
       }
     }
 
     private void validateColumn(ColumnExpression<?, ?> column, String clause) {
+      if (!validatesQueryContext) {
+        return;
+      }
       if (!visibleTables.containsKey(column.table())) {
         throw new IllegalArgumentException(
             clause

@@ -58,6 +58,23 @@ final class EffectiveNullabilityResolver {
   static IdentityHashMap<TableExpression<?>, Boolean> finalTableState(FromClause fromClause) {
     Objects.requireNonNull(fromClause, "fromClause");
     IdentityHashMap<TableExpression<?>, Boolean> state = new IdentityHashMap<>();
+    IdentityHashMap<RelationSource, Boolean> sourceState = finalSourceState(fromClause);
+    for (TableOccurrence occurrence : fromClause.occurrences()) {
+      TableExpression<?> table = occurrence.entityTable().orElse(null);
+      if (table != null) {
+        Boolean nullExtended = sourceState.get(occurrence.source());
+        if (nullExtended == null) {
+          throw new IllegalStateException("relation occurrence has no null-extension state");
+        }
+        state.put(table, nullExtended);
+      }
+    }
+    return state;
+  }
+
+  static IdentityHashMap<RelationSource, Boolean> finalSourceState(FromClause fromClause) {
+    Objects.requireNonNull(fromClause, "fromClause");
+    IdentityHashMap<RelationSource, Boolean> state = new IdentityHashMap<>();
     state.put(fromClause.root(), Boolean.FALSE);
     for (JoinClause join : fromClause.joins()) {
       state.put(join.right(), Boolean.FALSE);
@@ -66,8 +83,7 @@ final class EffectiveNullabilityResolver {
     return state;
   }
 
-  static void applyJoin(
-      JoinType type, TableExpression<?> right, IdentityHashMap<TableExpression<?>, Boolean> state) {
+  static <S> void applyJoin(JoinType type, S right, IdentityHashMap<S, Boolean> state) {
     Objects.requireNonNull(type, "type");
     Objects.requireNonNull(right, "right");
     Objects.requireNonNull(state, "state");
@@ -82,11 +98,10 @@ final class EffectiveNullabilityResolver {
     }
   }
 
-  private static void markLeftNullable(
-      TableExpression<?> right, IdentityHashMap<TableExpression<?>, Boolean> state) {
-    for (TableExpression<?> table : state.keySet()) {
-      if (table != right) {
-        state.put(table, Boolean.TRUE);
+  private static <S> void markLeftNullable(S right, IdentityHashMap<S, Boolean> state) {
+    for (S source : state.keySet()) {
+      if (source != right) {
+        state.put(source, Boolean.TRUE);
       }
     }
   }

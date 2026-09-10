@@ -35,7 +35,16 @@ final class TableRuntimeScope {
     List<Occurrence<?>> occurrences = new ArrayList<>(fromClause.occurrences().size());
     IdentityHashMap<TableExpression<?>, Integer> indexed = new IdentityHashMap<>();
     for (TableOccurrence occurrence : fromClause.occurrences()) {
-      if (!(occurrence.table() instanceof QueryTable<?> table)) {
+      TableExpression<?> sourceTable =
+          occurrence
+              .entityTable()
+              .orElseThrow(
+                  () ->
+                      new QueryValidationException(
+                          "relation occurrence #"
+                              + occurrence.occurrenceOrdinal()
+                              + " is not backed by an entity table"));
+      if (!(sourceTable instanceof QueryTable<?> table)) {
         throw new QueryValidationException(
             "table occurrence #"
                 + occurrence.occurrenceOrdinal()

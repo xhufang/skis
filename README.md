@@ -16,7 +16,7 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
 - PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
-The repository currently uses the internal `0.2.4-SNAPSHOT` version. The completed `0.2.1`
+The repository currently uses the internal `0.2.5-SNAPSHOT` version. The completed `0.2.1`
 milestone added immutable JDBC execution options and dialect-aware Spring exception translation.
 The `0.2.2` development milestone adds explicit SQL type/nullability metadata, immutable complex
 single-table predicates, query-level `where(...).and(...).or(...)` chaining, portable standard
@@ -24,9 +24,10 @@ expressions, and centralized pre-render semantic validation.
 The `0.2.3` milestone unifies non-null query types, separates nullable scalar row presence, and adds
 stable sorting, pagination, independent count plans, opaque continuations, and resource-owning
 cursor/stream terminal operations.
-The `0.2.4` milestone adds explicit joins and replaces entity-bound projection discovery with
+The completed `0.2.4` milestone adds explicit joins and replaces entity-bound projection discovery with
 generated result-row companions. A projection now binds an ordered list of visible table columns,
 so the same API covers single-table and joined results without reflection or startup registration.
+The `0.2.5` milestone is the next development phase for subqueries, derived tables, and aggregation.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [explicit joins and generated result rows](docs/joins.md),
@@ -178,6 +179,7 @@ Applications own DDL and assign identifiers before insert.
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
 - [0.2.4 projection API compatibility ledger](docs/api-compatibility-0.2.4.md)
+- [0.2.5 AST API compatibility ledger](docs/api-compatibility-0.2.5.md)
 - [Formal release checklist and component boundary](docs/release-checklist.md)
 - [Fast Path performance smoke](docs/benchmark/fast-path-smoke.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)

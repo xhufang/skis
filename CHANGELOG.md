@@ -6,6 +6,13 @@
 
 ### Added
 
+- 新增框架控制的 sealed `RelationSource` 与 `EntityRelationSource` 适配节点；`FromClause`、
+  `JoinClause` 和 query-block occurrence 统一保存关系来源，同时保留接受 `TableExpression<?>` 的便捷构造入口
+  及其原始对象身份。
+- `SelectStatement` 新增有序 `groupBy` 与可选 `having` 结构容器并执行防御性复制；聚合 DSL 与方言渲染仍按
+  0.2.5 后续步骤开放，当前 Renderer 对该预留结构明确失败而不会静默丢弃。
+- 新增显式完整语义校验入口 `SemanticValidator.validateComplete(...)`；查询计划编译与内置直接 Renderer
+  均强制调用，允许需要父查询上下文的 SELECT 片段先完成不可变构造。
 - 新增 `join/innerJoin/leftJoin/rightJoin/fullJoin/crossJoin` 查询 DSL；非 CROSS Join 通过不暴露终止操作的
   `JoinOnStep` 强制完成 `.on(...)`，Join 链保持不可变并复用既有 Join AST、作用域校验和方言能力预检。
 - 新增 sealed `QueryCondition` 多表条件抽象以及六种强类型列间比较；列比较不创建参数槽，Java/SQL 类型兼容性
@@ -67,9 +74,15 @@
 - `ConnectionProvider` 新增默认 Statement 配置扩展点，允许外部事务集成在参数绑定和 SKIS 执行选项之后、SQL
   执行之前收紧语句约束；新增 ADR-0004 记录生命周期、兼容性和更短 timeout 优先规则。
 - 新增 ADR-0005，记录谓词参数的捕获时快照边界、自定义 Codec 不可变值合同，以及查询对象局部分析复用策略。
+- 新增 ADR-0006，记录粗粒度方言能力、集中聚合类型规则、递归能力校验与方言 AST lowering 的职责边界。
 
 ### Changed
 
+- `FromClause.root()`、`JoinClause.right()` 与 `TableOccurrence` 的主结构从实体表改为
+  `RelationSource`；直接 AST 调用方应通过来源种类区分实体与后续派生来源。SELECT 构造期不再报告需要完整
+  查询块上下文的作用域/参数布局错误，这些错误统一延后到完整校验、查询编译或直接 Renderer，仍早于 JDBC。
+- 0.2.4 开发完成，Reactor 及独立消费者的 SKIS 依赖基线进入 `0.2.5-SNAPSHOT`，开始子查询、派生表与聚合内部开发里程碑；
+  继续累计到 `0.3.0` 正式发布，本次版本切换不表示这些新增能力已实现。
 - `SelectFromStep#from` 改为独立根实体泛型方法；`SelectQuery` 和当前 nullable scalar 查询接口新增宽
   `QueryCondition` 条件重载，`SelectQuery` 新增 Join 抽象方法。这些是 `0.2.0 → 0.3.0` 已批准的源码实现契约
   变化，第三方查询门面实现需要迁移。

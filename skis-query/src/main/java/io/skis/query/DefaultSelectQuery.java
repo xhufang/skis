@@ -14,6 +14,7 @@ import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.TableOccurrence;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -610,9 +611,9 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private void validateOccurrencePrimaryKeys(FromClause fromClause) {
     for (TableOccurrence occurrence : fromClause.occurrences()) {
+      TableExpression<?> occurrenceTable = entityTable(occurrence);
       PrimaryKeyMeta<?> primaryKey =
-          occurrence
-              .table()
+          occurrenceTable
               .entity()
               .primaryKey()
               .orElseThrow(
@@ -625,7 +626,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
             orderBy.stream()
                 .anyMatch(
                     item ->
-                        item.column().table() == occurrence.table()
+                        item.column().table() == occurrenceTable
                             && item.column().property() == property);
         if (!present) {
           throw new QueryValidationException(
@@ -696,7 +697,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     updateDigest(digest, structure.plan().sql());
     updateDigest(digest, selected.structuralIdentity());
     for (TableOccurrence occurrence : fromClause.occurrences()) {
-      var entity = occurrence.table().entity();
+      TableExpression<?> occurrenceTable = entityTable(occurrence);
+      var entity = occurrenceTable.entity();
       var physicalTable = entity.table();
       updateDigest(digest, Integer.toString(occurrence.occurrenceOrdinal()));
       updateDigest(digest, entity.javaType().getName());
@@ -705,7 +707,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       updateDigest(digest, physicalTable.catalog());
       updateDigest(digest, physicalTable.schema());
       updateDigest(digest, physicalTable.name());
-      updateDigest(digest, occurrence.table().alias().map(Identifier::value).orElse("<unaliased>"));
+      updateDigest(
+          digest, occurrenceTable.alias().map(Identifier::value).orElse("<unaliased>"));
     }
     fromClause.joins().forEach(join -> updateDigest(digest, join.type().name()));
     structure
@@ -740,7 +743,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
           .append(':')
           .append(occurrence.effectiveQualifier())
           .append(':')
-          .append(occurrence.table().entity().javaType().getName())
+          .append(entityTable(occurrence).entity().javaType().getName())
           .append(':')
           .append(item.column().property().ordinal())
           .append(':')
@@ -764,8 +767,19 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         + " with effective qualifier '"
         + occurrence.effectiveQualifier()
         + "' and entity '"
-        + occurrence.table().entity().entityName()
+        + entityTable(occurrence).entity().entityName()
         + "'";
+  }
+
+  private static TableExpression<?> entityTable(TableOccurrence occurrence) {
+    return occurrence
+        .entityTable()
+        .orElseThrow(
+            () ->
+                new QueryValidationException(
+                    "relation occurrence #"
+                        + occurrence.occurrenceOrdinal()
+                        + " is not backed by an entity table"));
   }
 
   private static String expressionSummary(SqlExpression<?> expression) {
