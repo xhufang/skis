@@ -42,6 +42,7 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class JoinQueryDslTest {
@@ -786,7 +787,9 @@ class JoinQueryDslTest {
     QueryConditionCompiler compiler = new QueryConditionCompiler();
     SqlPredicate ast = QueryConditions.compile(condition, compiler);
     return new ConditionCompilation(
-        ast, compiler.parameterColumns(), compiler.arguments());
+        ast,
+        compiler.parameterColumns(),
+        compiler.parameters().valuesFor(compiler.parameterReferences()));
   }
 
   private static QueryOperations operations() {
@@ -914,7 +917,9 @@ class JoinQueryDslTest {
   private record ReadOnlyView(Long value) {}
 
   private record ConditionCompilation(
-      SqlPredicate ast, List<QueryColumn<?, ?>> parameterColumns, List<Object> arguments) {}
+      SqlPredicate ast,
+      List<QueryColumn<?, ?>> parameterColumns,
+      List<@Nullable Object> arguments) {}
 
   private static final class PetTable extends QueryTable<Pet> {
 

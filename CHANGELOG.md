@@ -6,6 +6,10 @@
 
 ### Added
 
+- 新增不含值和 ordinal 的强类型 `QueryParameter<V>`、按引用身份保存捕获快照的不可变
+  `QueryParameters`，以及 `Sql.parameter(Class<V>)` 参数构造入口；同一逻辑引用可稳定映射到多个 JDBC
+  占位符，缺失、额外、重复及类型错误绑定在 JDBC 前失败。完整查询描述的绑定校验与最终语句的参数投影分离；
+  查询参数按自身 nullability 和规范属性 Codec 绑定，不继承 mutation 列写入的非空限制。
 - 新增框架控制的 sealed `RelationSource` 与 `EntityRelationSource` 适配节点；`FromClause`、
   `JoinClause` 和 query-block occurrence 统一保存关系来源，同时保留接受 `TableExpression<?>` 的便捷构造入口
   及其原始对象身份。

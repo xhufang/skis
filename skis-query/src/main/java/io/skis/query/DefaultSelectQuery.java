@@ -425,7 +425,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (pagination == QueryPagination.None.INSTANCE) {
       return queryAnalysis.argument();
     }
-    List<Object> arguments = new ArrayList<>(queryAnalysis.structure().arguments());
+    List<@Nullable Object> arguments = new ArrayList<>(queryAnalysis.arguments());
     switch (pagination) {
       case QueryPagination.None ignored -> {}
       case QueryPagination.LimitOnly limit -> arguments.add(limit.limit());
@@ -797,10 +797,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private String parameterDigest() {
     MessageDigest digest = sha256();
-    List<Object> arguments = conditionArguments();
-    for (Object argument : arguments) {
-      updateDigest(digest, argument.getClass().getName());
-      updateDigest(digest, deepValue(argument));
+    List<@Nullable Object> arguments = conditionArguments();
+    for (@Nullable Object argument : arguments) {
+      if (argument == null) {
+        updateDigest(digest, "<null>");
+      } else {
+        updateDigest(digest, argument.getClass().getName());
+        updateDigest(digest, deepValue(argument));
+      }
     }
     return HexFormat.of().formatHex(digest.digest());
   }
@@ -892,8 +896,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         distinct);
   }
 
-  private List<Object> conditionArguments() {
-    return analysis().structure().arguments();
+  private List<@Nullable Object> conditionArguments() {
+    return analysis().arguments();
   }
 
   private Object fastArgument() {
@@ -909,10 +913,9 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       existing = analysis;
       if (existing == null) {
         CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
+        List<@Nullable Object> arguments = structure.arguments();
         Object argument =
-            structure.arguments().isEmpty()
-                ? NoParameters.INSTANCE
-                : new QueryArguments(structure.arguments());
+            arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
         existing = new QueryAnalysis(structure, argument);
         analysis = existing;
       }
@@ -976,6 +979,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     private QueryAnalysis {
       Objects.requireNonNull(structure, "structure");
       Objects.requireNonNull(argument, "argument");
+    }
+
+    private List<@Nullable Object> arguments() {
+      return argument instanceof QueryArguments(List<@Nullable Object> values)
+          ? values
+          : List.of();
     }
   }
 

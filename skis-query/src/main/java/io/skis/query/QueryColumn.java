@@ -191,7 +191,7 @@ public abstract sealed class QueryColumn<E, V> implements Selectable<V>
               + " but received "
               + value.getClass().getTypeName());
     }
-    return QueryValueSnapshots.capture(javaType().cast(value));
+    return javaType().cast(value);
   }
 
   private void requireOrdering(String operation) {
