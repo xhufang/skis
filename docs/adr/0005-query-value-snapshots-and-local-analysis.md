@@ -47,7 +47,8 @@ Codec 最了解自定义类型，但查询列当前只携带结构元数据，�
 
 采用方案三：
 
-- `QueryColumn` 在完成 null 和 Java 类型验证后立即调用集中快照逻辑。数组按运行时组件类型递归复制；
+- 查询层在完成 null 和 Java 类型验证后，通过独立 `QueryParameters` 参数环境调用集中快照逻辑。现有
+  `QueryColumn` 值型便捷入口会先降低为匿名 `QueryParameter`，再在该环境的绑定边界捕获；数组按运行时组件类型递归复制；
   `java.sql.Date`、`Time` 和 `Timestamp` 使用 `clone()` 保留具体运行时类型及 Timestamp 纳秒精度。
 - comparison、between、like 和 `IN`/`NOT IN` 的每个元素都经过同一捕获边界。不可变类型直接复用原对象，不产生额外
   分配。

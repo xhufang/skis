@@ -73,16 +73,15 @@ final class QueryPlanCompiler {
       EntityRuntimeModel<E> model, QueryTable<E> table, CompiledQueryStructure structure) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
+    TableRuntimeScope runtimeScope =
+        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     SelectStatement statement =
         validatedStatement(
             () ->
                 new SelectStatement(
                     table.selections(), structure.fromClause(), structure.where()));
-    List<PropertyMeta<E, ?>> properties = new ArrayList<>(structure.parameterColumns().size());
-    for (QueryColumn<?, ?> column : structure.parameterColumns()) {
-      properties.add(property(column));
-    }
-    return compilePlanFromProperties(model, statement, properties, model.fullRowDecoder());
+    InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
+    return compilePlan(model, statement, inputs.logicalParameters(), model.fullRowDecoder());
   }
 
   <E, R> QueryCompilation<Long> compileCount(
@@ -437,7 +436,7 @@ final class QueryPlanCompiler {
       }
       return List.of();
     }
-    if (argument instanceof QueryArguments(List<Object> values)) {
+    if (argument instanceof QueryArguments(List<@Nullable Object> values)) {
       if (values.size() != expectedCount) {
         throw new SQLException(
             "compiled query requires "
@@ -453,7 +452,7 @@ final class QueryPlanCompiler {
     throw new SQLException("compiled query requires " + expectedCount + " logical parameters");
   }
 
-  private static Object argument(List<Object> arguments) {
+  private static Object argument(List<@Nullable Object> arguments) {
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
@@ -550,10 +549,18 @@ final class QueryPlanCompiler {
           && descriptor.nullability() == slot.nullability();
     }
 
-    void bind(PreparedStatement statement, int index, Object value, JdbcWriteContext context)
+    void bind(
+        PreparedStatement statement,
+        int index,
+        @Nullable Object value,
+        JdbcWriteContext context)
         throws SQLException {
+      if (value == null && !descriptor.nullability().isNullable()) {
+        throw new SQLException(
+            "non-null query parameter is null at JDBC parameter index " + index);
+      }
       if (runtime != null) {
-        runtime.bind(statement, index, value, context);
+        bindProperty(runtime, statement, index, value, context);
         return;
       }
       switch (scalarBinding) {
@@ -563,34 +570,50 @@ final class QueryPlanCompiler {
       }
     }
 
-    private static <T> T requireType(Object value, Class<T> type) throws SQLException {
+    private static void bindProperty(
+        PropertyRuntime<?, ?> runtime,
+        PreparedStatement statement,
+        int index,
+        @Nullable Object value,
+        JdbcWriteContext context)
+        throws SQLException {
+      if (value != null) {
+        runtime.bind(statement, index, value, context);
+        return;
+      }
+      Objects.requireNonNull(statement, "statement");
+      Objects.requireNonNull(context, "context");
+      if (index < 1) {
+        throw new IllegalArgumentException("JDBC parameter index must be positive");
+      }
+      runtime.codec().bind(statement, index, null, context);
+    }
+
+    private static <T> T requireType(@Nullable Object value, Class<T> type) throws SQLException {
       if (!type.isInstance(value)) {
         throw new SQLException(
             "pagination parameter requires "
                 + type.getTypeName()
                 + " but received "
-                + value.getClass().getTypeName());
+                + (value == null ? "null" : value.getClass().getTypeName()));
       }
       return type.cast(value);
     }
-  }
-
-  @SuppressWarnings("unchecked")
-  private static <E> PropertyMeta<E, ?> property(QueryColumn<?, ?> column) {
-    return (PropertyMeta<E, ?>) column.property();
   }
 
   private static final class InputsBuilder<E> {
 
     private final TableRuntimeScope runtimeScope;
     private final List<LogicalParameter<E>> logicalParameters = new ArrayList<>();
-    private final List<Object> arguments = new ArrayList<>();
+    private final List<@Nullable Object> arguments = new ArrayList<>();
 
     private InputsBuilder(TableRuntimeScope runtimeScope, CompiledQueryStructure structure) {
       this.runtimeScope = Objects.requireNonNull(runtimeScope, "runtimeScope");
+      List<@Nullable Object> conditionArguments = structure.arguments();
       for (int index = 0; index < structure.parameterColumns().size(); index++) {
         QueryColumn<?, ?> column = structure.parameterColumns().get(index);
-        addConditionProperty(column, structure.arguments().get(index));
+        addConditionProperty(
+            column, structure.parameterSlots().get(index), conditionArguments.get(index));
       }
     }
 
@@ -706,10 +729,19 @@ final class QueryPlanCompiler {
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
-    private void addConditionProperty(QueryColumn<?, ?> column, Object value) {
+    private void addConditionProperty(
+        QueryColumn<?, ?> column, ParameterSlot<?> slot, @Nullable Object value) {
       TableRuntimeScope.Occurrence<?> occurrence = runtimeScope.require(column.table());
       PropertyRuntime<?, ?> runtime = runtimeScope.property((QueryColumn) column);
-      addProperty(column, value, occurrence.occurrenceOrdinal(), (PropertyRuntime) runtime);
+      if (!slot.javaType().equals(column.javaType()) || slot.sqlType() != column.sqlType()) {
+        throw new QueryValidationException(
+            "query parameter slot descriptor does not match property '"
+                + column.property().name()
+                + "'");
+      }
+      logicalParameters.add(
+          LogicalParameter.property(slot, occurrence.occurrenceOrdinal(), runtime));
+      arguments.add(value);
     }
 
     private List<LogicalParameter<E>> logicalParameters() {

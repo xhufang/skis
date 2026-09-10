@@ -5,10 +5,8 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
-import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlPredicate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -150,26 +148,44 @@ final class QueryConditions {
   }
 }
 
-/** One statement-scoped allocator shared by JOIN ON and WHERE condition trees. */
+/** One query-block compiler backed by the statement layout shared across SQL clauses. */
 final class QueryConditionCompiler {
 
-  private final List<QueryColumn<?, ?>> parameterColumns = new ArrayList<>();
-  private final List<Object> arguments = new ArrayList<>();
+  private final StatementParameterLayout layout;
+  private final QueryParameterBindings bindings;
+  private final StatementParameterLayout.QueryBlock queryBlock;
 
-  <E, V> ParameterSlot<V> parameter(QueryColumn<E, V> column, V value) {
-    Objects.requireNonNull(column, "column");
-    Objects.requireNonNull(value, "value");
-    int ordinal = arguments.size();
-    parameterColumns.add(column);
-    arguments.add(value);
-    return new ParameterSlot<>(ordinal, column.javaType(), column.sqlType(), Nullability.NON_NULL);
+  QueryConditionCompiler() {
+    this(new StatementParameterLayout(), new QueryParameterBindings());
+  }
+
+  QueryConditionCompiler(StatementParameterLayout layout, QueryParameterBindings bindings) {
+    this.layout = Objects.requireNonNull(layout, "layout");
+    this.bindings = Objects.requireNonNull(bindings, "bindings");
+    this.queryBlock = layout.newQueryBlock();
+  }
+
+  <E, V> ParameterSlot<V> parameter(QueryColumn<E, V> column, QueryParameter<V> parameter) {
+    return queryBlock.parameter(column, parameter);
+  }
+
+  void include(QueryParameters included) {
+    bindings.include(included);
   }
 
   List<QueryColumn<?, ?>> parameterColumns() {
-    return List.copyOf(parameterColumns);
+    return layout.parameterColumns();
   }
 
-  List<Object> arguments() {
-    return List.copyOf(arguments);
+  List<QueryParameter<?>> parameterReferences() {
+    return layout.parameterReferences();
+  }
+
+  List<ParameterSlot<?>> parameterSlots() {
+    return layout.parameterSlots();
+  }
+
+  QueryParameters parameters() {
+    return bindings.parameters();
   }
 }

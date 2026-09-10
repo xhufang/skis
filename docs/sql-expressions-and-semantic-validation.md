@@ -20,7 +20,7 @@ non-null when at least one operand is non-null. An implicit `CASE` ELSE is SQL `
 
 The initial cross-dialect set contains:
 
-- `ParameterSlot<T>` for all ordinary application values;
+- `ParameterSlot<T>` for final statement-level logical parameter positions;
 - allow-listed `LiteralExpression<T>` values: `NULL`, `TRUE`, `FALSE`, numeric `0`, and numeric `1`;
 - `ArithmeticExpression<T>` with add, subtract, multiply, and divide;
 - `ConcatExpression` using SQL-standard character concatenation;
@@ -34,10 +34,41 @@ mutation Fast Path. General arithmetic should use `ArithmeticExpression<T>`.
 ## Parameter value capture
 
 Ordinary values remain outside the AST and plan cache key, but an immutable query must also own a
-stable value snapshot. Predicate construction therefore copies every array value recursively and
-clones the built-in mutable JDBC representations `java.sql.Date`, `Time`, and `Timestamp`.
-Comparison and between bounds as well as every `IN`/`NOT IN` element use this same capture boundary.
-Copying happens once when the predicate is created, never per row or per JDBC bind.
+stable value snapshot. The query layer now separates parameter identity into three levels:
+
+1. `QueryParameter<V>` is an opaque, strongly typed reference with no value, query-block ordinal,
+   logical ordinal, or JDBC position. References use object identity; an optional name is diagnostic
+   only.
+2. Immutable `QueryParameters` associates references with captured values. Missing, extra,
+   duplicate, nullability-invalid, and runtime Java-type-invalid bindings fail before JDBC work.
+3. Final statement layout assigns dense zero-based `ParameterSlot<T>` ordinals. The renderer records
+   a slot once for every physical `?`, so one logical reference may occur at several JDBC positions.
+
+Reference reuse is scoped to one query-block occurrence. Repeating a reference inside one block
+reuses a logical slot; embedding the same parameterized block twice creates two dense statement
+slots that read the same captured binding. This keeps later nested-query occurrence identity
+separate from parameter names and object addresses in structural fingerprints.
+
+The complete reusable query description validates missing and extra bindings once. Each final
+statement then projects only the references it retained, so count construction or dialect lowering
+may discard parameterized expressions without turning their otherwise valid bindings into false
+"extra binding" failures.
+
+Each logical slot resolves its JDBC binder from the owning property's runtime `JdbcTypeCodec`.
+Parameter nullability—not physical column mutation nullability—controls whether a query value may be
+`null`; a nullable search parameter can therefore bind SQL `NULL` even when compared with a non-null
+column. Reusing one reference inside a query-block occurrence requires the same canonical property
+Codec source, preventing one column's custom Codec from silently binding another column's use.
+
+`Sql.parameter(Class<V>)` creates an explicit reusable reference. Existing `.eq(value)`,
+`.between(...)`, `.like(...)`, and `IN`/`NOT IN` conveniences lower to anonymous references plus an
+internal parameter environment, so their source API and SQL semantics do not change.
+
+Binding and predicate construction copy every array value recursively and clone the built-in
+mutable JDBC representations `java.sql.Date`, `Time`, and `Timestamp`. Comparison and between bounds
+as well as every `IN`/`NOT IN` element use this same `QueryParameters` capture boundary. Copying
+happens once, never while composing environments, laying out slots, binding JDBC parameters, or
+reading rows.
 
 Other supported Java values are immutable and remain allocation-free at capture. A custom
 `JdbcTypeCodec` whose values participate in predicates must use a deeply immutable value type, and
@@ -55,9 +86,9 @@ not exposed as portable CAST targets because the two baseline dialects do not sh
 name and conversion contract for them.
 
 Application data must never be encoded as a literal. `LiteralExpression` has no arbitrary string
-or value constructor; application values remain outside AST equality and enter SQL through
-`ParameterSlot` and JDBC binding. The following low-level AST contains five parameters even when
-the values change between executions:
+or value constructor; application values remain outside AST equality and enter SQL through a
+query-level reference, final `ParameterSlot`, and JDBC binding. The following low-level final AST
+contains five logical slots even when the values change between executions:
 
 ```java
 SelectStatement statement =

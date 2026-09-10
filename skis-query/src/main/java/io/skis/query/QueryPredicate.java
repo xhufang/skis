@@ -22,30 +22,51 @@ import org.jspecify.annotations.Nullable;
 public final class QueryPredicate<E> implements QueryCondition {
 
   private final Node<E> root;
+  private final QueryParameters parameters;
 
-  private QueryPredicate(Node<E> root) {
+  private QueryPredicate(Node<E> root, QueryParameters parameters) {
     this.root = Objects.requireNonNull(root, "root");
+    this.parameters = Objects.requireNonNull(parameters, "parameters");
   }
 
   static <E, V> QueryPredicate<E> comparison(
       QueryColumn<E, V> column, ComparisonOperator operator, V value) {
-    return new QueryPredicate<>(new ComparisonNode<>(column, operator, value));
+    QueryParameter<V> parameter = QueryParameter.anonymousNonNull(column.javaType());
+    return new QueryPredicate<>(
+        new ComparisonNode<>(column, operator, parameter),
+        QueryParameters.of(parameter, value));
   }
 
   static <E> QueryPredicate<E> nullCheck(QueryColumn<E, ?> column, NullOperator operator) {
-    return new QueryPredicate<>(new NullNode<>(column, operator));
+    return new QueryPredicate<>(new NullNode<>(column, operator), QueryParameters.empty());
   }
 
   static <E, V> QueryPredicate<E> between(QueryColumn<E, V> column, V lower, V upper) {
-    return new QueryPredicate<>(new BetweenNode<>(column, lower, upper));
+    QueryParameter<V> lowerParameter = QueryParameter.anonymousNonNull(column.javaType());
+    QueryParameter<V> upperParameter = QueryParameter.anonymousNonNull(column.javaType());
+    return new QueryPredicate<>(
+        new BetweenNode<>(column, lowerParameter, upperParameter),
+        QueryParameters.builder()
+            .bind(lowerParameter, lower)
+            .bind(upperParameter, upper)
+            .build());
   }
 
   static <E, V> QueryPredicate<E> like(QueryColumn<E, V> column, V pattern) {
-    return new QueryPredicate<>(new LikeNode<>(column, pattern));
+    QueryParameter<V> parameter = QueryParameter.anonymousNonNull(column.javaType());
+    return new QueryPredicate<>(
+        new LikeNode<>(column, parameter), QueryParameters.of(parameter, pattern));
   }
 
   static <E, V> QueryPredicate<E> in(QueryColumn<E, V> column, List<V> values, boolean negated) {
-    return new QueryPredicate<>(new InNode<>(column, values, negated));
+    QueryParameters.Builder parameters = QueryParameters.builder();
+    List<QueryParameter<V>> references = new ArrayList<>(values.size());
+    for (V value : values) {
+      QueryParameter<V> parameter = QueryParameter.anonymousNonNull(column.javaType());
+      references.add(parameter);
+      parameters.bind(parameter, value);
+    }
+    return new QueryPredicate<>(new InNode<>(column, references, negated), parameters.build());
   }
 
   /** Returns a new grouped predicate combining this predicate and {@code other} with AND. */
@@ -73,21 +94,24 @@ public final class QueryPredicate<E> implements QueryCondition {
   /** Returns a new grouped predicate representing SQL three-valued NOT. */
   @Override
   public QueryPredicate<E> not() {
-    return new QueryPredicate<>(new NotNode<>(root));
+    return new QueryPredicate<>(new NotNode<>(root), parameters);
   }
 
   CompiledQueryPredicate<E> compile() {
     QueryConditionCompiler compiler = new QueryConditionCompiler();
-    SqlPredicate ast = root.compile(compiler);
+    SqlPredicate ast = compile(compiler);
     List<PropertyMeta<E, ?>> properties = new ArrayList<>(compiler.parameterColumns().size());
     for (QueryColumn<?, ?> column : compiler.parameterColumns()) {
       properties.add(property(column));
     }
-    return new CompiledQueryPredicate<>(ast, properties, compiler.arguments());
+    return new CompiledQueryPredicate<>(
+        ast, properties, compiler.parameterReferences(), compiler.parameters());
   }
 
   SqlPredicate compile(QueryConditionCompiler compiler) {
-    return root.compile(Objects.requireNonNull(compiler, "compiler"));
+    QueryConditionCompiler target = Objects.requireNonNull(compiler, "compiler");
+    target.include(parameters);
+    return root.compile(target);
   }
 
   @Nullable PropertyMeta<E, ?> simpleEqualityProperty(QueryTable<E> table) {
@@ -97,7 +121,8 @@ public final class QueryPredicate<E> implements QueryCondition {
 
   private QueryPredicate<E> logical(LogicalOperator operator, QueryPredicate<E> other) {
     Objects.requireNonNull(other, "other");
-    return new QueryPredicate<>(new LogicalNode<>(operator, root, other.root));
+    return new QueryPredicate<>(
+        new LogicalNode<>(operator, root, other.root), parameters.merge(other.parameters));
   }
 
   private sealed interface Node<E>
@@ -111,18 +136,19 @@ public final class QueryPredicate<E> implements QueryCondition {
   }
 
   private record ComparisonNode<E, V>(
-      QueryColumn<E, V> column, ComparisonOperator operator, V value) implements Node<E> {
+      QueryColumn<E, V> column, ComparisonOperator operator, QueryParameter<V> parameter)
+      implements Node<E> {
 
     private ComparisonNode {
       Objects.requireNonNull(column, "column");
       Objects.requireNonNull(operator, "operator");
-      Objects.requireNonNull(value, "value");
+      Objects.requireNonNull(parameter, "parameter");
     }
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new ComparisonPredicate<>(
-          column.expression(), operator, compiler.parameter(column, value));
+          column.expression(), operator, compiler.parameter(column, parameter));
     }
 
     @Override
@@ -144,7 +170,10 @@ public final class QueryPredicate<E> implements QueryCondition {
     }
   }
 
-  private record BetweenNode<E, V>(QueryColumn<E, V> column, V lower, V upper) implements Node<E> {
+  private record BetweenNode<E, V>(
+      QueryColumn<E, V> column,
+      QueryParameter<V> lower,
+      QueryParameter<V> upper) implements Node<E> {
 
     private BetweenNode {
       Objects.requireNonNull(column, "column");
@@ -161,7 +190,8 @@ public final class QueryPredicate<E> implements QueryCondition {
     }
   }
 
-  private record LikeNode<E, V>(QueryColumn<E, V> column, V pattern) implements Node<E> {
+  private record LikeNode<E, V>(
+      QueryColumn<E, V> column, QueryParameter<V> pattern) implements Node<E> {
 
     private LikeNode {
       Objects.requireNonNull(column, "column");
@@ -174,7 +204,8 @@ public final class QueryPredicate<E> implements QueryCondition {
     }
   }
 
-  private record InNode<E, V>(QueryColumn<E, V> column, List<V> values, boolean negated)
+  private record InNode<E, V>(
+      QueryColumn<E, V> column, List<QueryParameter<V>> values, boolean negated)
       implements Node<E> {
 
     private InNode {
@@ -185,7 +216,7 @@ public final class QueryPredicate<E> implements QueryCondition {
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
       List<ParameterSlot<V>> candidates = new ArrayList<>(values.size());
-      for (V value : values) {
+      for (QueryParameter<V> value : values) {
         candidates.add(compiler.parameter(column, value));
       }
       return new InPredicate<>(column.expression(), candidates, negated);
@@ -227,21 +258,41 @@ public final class QueryPredicate<E> implements QueryCondition {
 }
 
 record CompiledQueryPredicate<E>(
-    SqlPredicate ast, List<PropertyMeta<E, ?>> properties, List<Object> arguments) {
+    SqlPredicate ast,
+    List<PropertyMeta<E, ?>> properties,
+    List<QueryParameter<?>> parameterReferences,
+    QueryParameters parameters) {
 
   CompiledQueryPredicate {
     Objects.requireNonNull(ast, "ast");
     properties = List.copyOf(properties);
-    arguments = List.copyOf(arguments);
-    if (properties.size() != arguments.size()) {
+    parameterReferences = List.copyOf(parameterReferences);
+    Objects.requireNonNull(parameters, "parameters");
+    if (properties.size() != parameterReferences.size()) {
       throw new IllegalArgumentException("predicate property and argument counts differ");
     }
   }
+
+  List<@Nullable Object> arguments() {
+    parameters.validateFor(parameterReferences);
+    return parameters.valuesFor(parameterReferences);
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return this == other
+        || other instanceof CompiledQueryPredicate<?> predicate && ast.equals(predicate.ast);
+  }
+
+  @Override
+  public int hashCode() {
+    return ast.hashCode();
+  }
 }
 
-record QueryArguments(List<Object> values) {
+record QueryArguments(List<@Nullable Object> values) {
 
   QueryArguments {
-    values = List.copyOf(values);
+    values = java.util.Collections.unmodifiableList(new ArrayList<>(values));
   }
 }

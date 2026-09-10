@@ -29,11 +29,14 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.ParameterSlot;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -54,7 +57,17 @@ class EntityPlanSetTest {
           List.of(ID, NAME),
           new PrimaryKeyMeta<>(List.of(ID)),
           false);
+  private static final PropertyMeta<OtherPet, Long> OTHER_ID =
+      new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
+  private static final EntityMeta<OtherPet> OTHER_PET =
+      EntityMeta.simple(
+          OtherPet.class,
+          new TableMeta("", "shelter", "other_pet"),
+          List.of(OTHER_ID),
+          new PrimaryKeyMeta<>(List.of(OTHER_ID)),
+          false);
   private static final PetTable TABLE = new PetTable();
+  private static final OtherPetTable OTHER_TABLE = new OtherPetTable();
 
   @Test
   void prewarmsFindByIdAndReusesOneBoundedPlanPerProperty() {
@@ -87,6 +100,8 @@ class EntityPlanSetTest {
     QueryPredicate<Pet> firstComplex = TABLE.name().like("Mi%").and(TABLE.id().between(1L, 9L));
     QueryPredicate<Pet> secondComplex = TABLE.name().like("Mo%").and(TABLE.id().between(2L, 10L));
     assertEquals(firstComplex.compile().ast(), secondComplex.compile().ast());
+    assertEquals(firstComplex.compile(), secondComplex.compile());
+    assertEquals(firstComplex.compile().hashCode(), secondComplex.compile().hashCode());
     assertEquals(List.of("Mi%", 1L, 9L), firstComplex.compile().arguments());
     assertEquals(List.of("Mo%", 2L, 10L), secondComplex.compile().arguments());
     assertSame(NoParameters.INSTANCE, plans.argument(null));
@@ -136,12 +151,123 @@ class EntityPlanSetTest {
   }
 
   @Test
+  void oneQueryParameterReferenceCanProduceMultipleJdbcPositions() throws Exception {
+    EntityPlanSet<Pet> plans = plans();
+    QueryPredicate<Pet> oneReference = TABLE.name().eq("Mimi");
+    QueryPredicate<Pet> repeated = oneReference.and(oneReference);
+    CompiledQueryPredicate<Pet> compiled = repeated.compile();
+    CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, repeated);
+    List<List<Object>> bindings = new ArrayList<>();
+    PreparedStatement statement =
+        (PreparedStatement)
+            Proxy.newProxyInstance(
+                EntityPlanSetTest.class.getClassLoader(),
+                new Class<?>[] {PreparedStatement.class},
+                (ignored, method, arguments) -> {
+                  if (method.getName().equals("setString")) {
+                    bindings.add(List.of(arguments[0], arguments[1]));
+                  }
+                  return null;
+                });
+
+    int nextIndex =
+        plan.parameterBinder()
+            .bind(statement, 4, plans.argument(repeated), JdbcWriteContext.EMPTY);
+
+    assertEquals(1, compiled.parameterReferences().size());
+    assertEquals(List.of("Mimi"), compiled.arguments());
+    assertEquals(
+        List.of(0, 0),
+        plan.renderedSql().parameters().stream().map(slot -> slot.ordinal()).toList());
+    assertEquals(6, nextIndex);
+    assertEquals(List.of(List.of(4, "Mimi"), List.of(5, "Mimi")), bindings);
+  }
+
+  @Test
+  void repeatedQueryBlockOccurrencesRelocateTheSameReferenceToDistinctLogicalSlots() {
+    StatementParameterLayout layout = new StatementParameterLayout();
+    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
+    StatementParameterLayout.QueryBlock firstBlock = layout.newQueryBlock();
+    StatementParameterLayout.QueryBlock secondBlock = layout.newQueryBlock();
+
+    ParameterSlot<Long> firstUse = firstBlock.parameter(TABLE.id(), parameter);
+    ParameterSlot<Long> repeatedInFirstBlock = firstBlock.parameter(TABLE.id(), parameter);
+    ParameterSlot<Long> secondOccurrence = secondBlock.parameter(TABLE.id(), parameter);
+
+    assertSame(firstUse, repeatedInFirstBlock);
+    assertEquals(0, firstUse.ordinal());
+    assertEquals(1, secondOccurrence.ordinal());
+    assertEquals(List.of(parameter, parameter), layout.parameterReferences());
+    assertEquals(
+        List.of(9L, 9L),
+        QueryParameters.of(parameter, 9L).valuesFor(layout.parameterReferences()));
+    assertThrows(
+        QueryValidationException.class,
+        () -> registerWithWrongJavaType(firstBlock, parameter));
+    assertThrows(
+        QueryValidationException.class,
+        () -> firstBlock.parameter(OTHER_TABLE.id(), parameter));
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static void registerWithWrongJavaType(
+      StatementParameterLayout.QueryBlock block, QueryParameter<?> parameter) {
+    block.parameter((QueryColumn) TABLE.name(), (QueryParameter) parameter);
+  }
+
+  @Test
+  void nullableQueryParametersBindNullThroughTheResolvedColumnCodec() throws Exception {
+    EntityRuntimeModel<Pet> runtimeModel = model();
+    QueryPlanCompiler compiler =
+        new QueryPlanCompiler(
+            EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
+    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
+    StatementParameterLayout layout = new StatementParameterLayout();
+    ParameterSlot<Long> slot = layout.newQueryBlock().parameter(TABLE.id(), parameter);
+    QueryParameters parameters = QueryParameters.of(parameter, null);
+    CompiledQueryStructure structure =
+        new CompiledQueryStructure(
+            FromClause.of(TABLE),
+            TABLE.id().expression().eq(slot),
+            layout.parameterColumns(),
+            layout.parameterReferences(),
+            layout.parameterSlots(),
+            parameters);
+    CompiledQueryPlan<Pet, Object> plan = compiler.compileQuery(runtimeModel, TABLE, structure);
+    AtomicReference<List<Object>> binding = new AtomicReference<>();
+    PreparedStatement statement =
+        (PreparedStatement)
+            Proxy.newProxyInstance(
+                EntityPlanSetTest.class.getClassLoader(),
+                new Class<?>[] {PreparedStatement.class},
+                (ignored, method, arguments) -> {
+                  if (method.getName().equals("setNull")) {
+                    binding.set(List.of(method.getName(), arguments[0], arguments[1]));
+                  }
+                  return null;
+                });
+
+    int nextIndex =
+        plan.parameterBinder()
+            .bind(
+                statement,
+                1,
+                new QueryArguments(structure.arguments()),
+                JdbcWriteContext.EMPTY);
+
+    assertEquals(2, nextIndex);
+    assertEquals(List.of("setNull", 1, Types.BIGINT), binding.get());
+  }
+
+  @Test
   void followsRendererParameterOrderWhenDialectReordersPlaceholders() throws Exception {
+    EntityRuntimeModel<Pet> runtimeModel = model();
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(
-            model(),
+            runtimeModel,
             new QueryPlanCompiler(
-                EntityRuntimeRegistry.empty(), ReorderedParameterDialect.INSTANCE));
+                EntityRuntimeRegistry.of(List.of(runtimeModel)),
+                ReorderedParameterDialect.INSTANCE));
     QueryPredicate<Pet> predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
@@ -317,9 +443,11 @@ class EntityPlanSetTest {
   }
 
   private static EntityPlanSet<Pet> plans() {
+    EntityRuntimeModel<Pet> runtimeModel = model();
     return new EntityPlanSet<>(
-        model(),
-        new QueryPlanCompiler(EntityRuntimeRegistry.empty(), TestDialect.INSTANCE));
+        runtimeModel,
+        new QueryPlanCompiler(
+            EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE));
   }
 
   private static EntityRuntimeModel<Pet> model() {
@@ -332,6 +460,8 @@ class EntityPlanSetTest {
   }
 
   private record Pet(Long id, String name) {}
+
+  private record OtherPet(Long id) {}
 
   private static final class PetTable extends QueryTable<Pet> {
 
@@ -362,6 +492,33 @@ class EntityPlanSetTest {
     @Override
     public PetTable as(Identifier alias) {
       return new PetTable(alias);
+    }
+  }
+
+  private static final class OtherPetTable extends QueryTable<OtherPet> {
+
+    private final NonNullQueryColumn<OtherPet, Long> id = nonNullQueryColumn(OTHER_ID);
+
+    private OtherPetTable() {
+      super(OTHER_PET);
+    }
+
+    private OtherPetTable(Identifier alias) {
+      super(OTHER_PET, alias);
+    }
+
+    private NonNullQueryColumn<OtherPet, Long> id() {
+      return id;
+    }
+
+    @Override
+    public OtherPetTable as(String alias) {
+      return new OtherPetTable(Identifier.of(alias));
+    }
+
+    @Override
+    public OtherPetTable as(Identifier alias) {
+      return new OtherPetTable(alias);
     }
   }
 

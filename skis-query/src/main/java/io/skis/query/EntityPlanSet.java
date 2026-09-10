@@ -4,6 +4,7 @@ import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
+import io.skis.sql.ast.Nullability;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,13 +65,9 @@ final class EntityPlanSet<E> {
     if (predicate == null) {
       return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
     }
-    PropertyMeta<E, ?> property = predicate.simpleEqualityProperty(table);
-    if (property == null) {
-      return compiler.compileQuery(model, table, predicate);
-    }
-    return table.alias().isEmpty()
-        ? equalityPlan(property.ordinal())
-        : compiler.compileQuery(model, table, predicate);
+    CompiledQueryStructure structure =
+        QueryStructureCompiler.compile(table, List.of(), predicate);
+    return selectPlan(table, predicate, structure);
   }
 
   CompiledQueryPlan<E, Object> selectPlan(
@@ -82,7 +79,7 @@ final class EntityPlanSet<E> {
       return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
     }
     PropertyMeta<E, ?> property = predicate.simpleEqualityProperty(table);
-    if (property == null) {
+    if (property == null || !supportsCachedEquality(structure, property)) {
       return compiler.compileQuery(model, table, structure);
     }
     return table.alias().isEmpty()
@@ -94,7 +91,7 @@ final class EntityPlanSet<E> {
     if (predicate == null) {
       return NoParameters.INSTANCE;
     }
-    List<Object> arguments = predicate.compile().arguments();
+    List<@Nullable Object> arguments = predicate.compile().arguments();
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
@@ -106,6 +103,20 @@ final class EntityPlanSet<E> {
     CompiledQueryPlan<E, Object> compiled = compiler.compile(model, canonicalTable, null);
     CompiledQueryPlan<E, Object> published = selectAll.compareAndExchange(null, compiled);
     return published == null ? compiled : published;
+  }
+
+  private boolean supportsCachedEquality(
+      CompiledQueryStructure structure, PropertyMeta<E, ?> property) {
+    if (structure.parameterSlots().size() != 1
+        || structure.parameterColumns().size() != 1) {
+      return false;
+    }
+    var slot = structure.parameterSlots().getFirst();
+    QueryColumn<?, ?> source = structure.parameterColumns().getFirst();
+    return slot.nullability() == Nullability.NON_NULL
+        && slot.javaType().equals(property.javaType())
+        && slot.sqlType() == source.sqlType()
+        && source.property() == property;
   }
 
   private CompiledQueryPlan<E, Object> equalityPlan(int ordinal) {

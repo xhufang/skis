@@ -307,7 +307,7 @@ class QueryPaginationCompilationTest {
     assertTrue(((SelectStatement) unfilteredCompilation.ast()).joins().isEmpty());
   }
 
-  private static List<Object> arguments(QueryCompilation<?> compilation) {
+  private static List<@Nullable Object> arguments(QueryCompilation<?> compilation) {
     return ((QueryArguments) compilation.argument()).values();
   }
 

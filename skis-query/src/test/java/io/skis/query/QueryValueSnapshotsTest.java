@@ -14,6 +14,7 @@ import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.List;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class QueryValueSnapshotsTest {
@@ -58,7 +59,7 @@ class QueryValueSnapshotsTest {
 
     first[0] = 9;
     second[0] = 8;
-    List<Object> captured = predicate.compile().arguments();
+    List<@Nullable Object> captured = predicate.compile().arguments();
 
     assertArrayEquals(new byte[] {1, 2}, (byte[]) captured.get(0));
     assertArrayEquals(new byte[] {3, 4}, (byte[]) captured.get(1));

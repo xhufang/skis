@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
+import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,7 +46,9 @@ final class QueryStructureCompiler {
           new FromClause(root, joinAst),
           whereAst,
           compiler.parameterColumns(),
-          compiler.arguments());
+          compiler.parameterReferences(),
+          compiler.parameterSlots(),
+          compiler.parameters());
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
     }
@@ -56,14 +59,43 @@ record CompiledQueryStructure(
     FromClause fromClause,
     @Nullable SqlPredicate where,
     List<QueryColumn<?, ?>> parameterColumns,
-    List<Object> arguments) {
+    List<QueryParameter<?>> parameterReferences,
+    List<ParameterSlot<?>> parameterSlots,
+    QueryParameters parameters) {
 
   CompiledQueryStructure {
     Objects.requireNonNull(fromClause, "fromClause");
     parameterColumns = List.copyOf(parameterColumns);
-    arguments = List.copyOf(arguments);
-    if (parameterColumns.size() != arguments.size()) {
-      throw new IllegalArgumentException("query parameter and argument counts differ");
+    parameterReferences = List.copyOf(parameterReferences);
+    parameterSlots = List.copyOf(parameterSlots);
+    Objects.requireNonNull(parameters, "parameters");
+    if (parameterColumns.size() != parameterReferences.size()
+        || parameterColumns.size() != parameterSlots.size()) {
+      throw new IllegalArgumentException(
+          "query parameter reference, slot, and binder-source counts differ");
     }
+    for (int ordinal = 0; ordinal < parameterSlots.size(); ordinal++) {
+      if (parameterSlots.get(ordinal).ordinal() != ordinal) {
+        throw new IllegalArgumentException("query parameter slots must be dense from zero");
+      }
+    }
+  }
+
+  List<@Nullable Object> arguments() {
+    parameters.validateFor(parameterReferences);
+    return parameters.valuesFor(parameterReferences);
+  }
+
+  @Override
+  public boolean equals(Object other) {
+    return this == other
+        || other instanceof CompiledQueryStructure structure
+            && fromClause.equals(structure.fromClause)
+            && Objects.equals(where, structure.where);
+  }
+
+  @Override
+  public int hashCode() {
+    return 31 * fromClause.hashCode() + Objects.hashCode(where);
   }
 }
