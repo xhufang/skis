@@ -57,6 +57,6 @@ public record QueryBlockLocation(QueryClause clause, int itemOrdinal, int nested
 
   @Override
   public String toString() {
-    return clause.name() + '[' + Integer.toString(itemOrdinal) + "]#" + nestedOrdinal;
+    return clause.displayName() + '[' + itemOrdinal + "]#" + nestedOrdinal;
   }
 }
