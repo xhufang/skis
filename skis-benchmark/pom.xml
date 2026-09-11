@@ -31,7 +31,7 @@
     <mybatis-flex.version>1.11.4</mybatis-flex.version>
     <mybatis-plus.version>3.5.17</mybatis-plus.version>
     <jooq.version>3.21.7</jooq.version>
-    <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>
+    <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
   </properties>
 
   <dependencyManagement>
