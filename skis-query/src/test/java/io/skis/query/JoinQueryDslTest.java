@@ -187,7 +187,7 @@ class JoinQueryDslTest {
             () ->
                 ((DefaultSelectQuery<Pet, Long>) requiredOwnerId)
                     .compilation(QueryPagination.None.INSTANCE));
-    assertTrue(scalarFailure.getMessage().contains("selectNullable(column)"));
+    assertTrue(scalarFailure.getMessage().contains("selectNullable(selectable)"));
 
     SelectQuery<Pet, Pet> requiredRoot =
         operations()
@@ -716,6 +716,8 @@ class JoinQueryDslTest {
   void frameworkExpressionSelectableUsesSharedPredicatesOrderingAndFailsClosedForMapping() {
     ExpressionSelectable<Long> nullable =
         new ExpressionSelectable<>(LiteralExpression.nullLiteral(Long.class));
+    ExpressionSelectable<Long> zero =
+        new ExpressionSelectable<>(LiteralExpression.zero(Long.class));
     NonNullExpressionSelectable<Long> one =
         new NonNullExpressionSelectable<>(LiteralExpression.one(Long.class));
 
@@ -725,10 +727,10 @@ class JoinQueryDslTest {
     assertEquals(List.of(one), valueCompiled.parameterSources());
     assertEquals(List.of(1L), valueCompiled.arguments());
 
-    ConditionCompilation expressionCompiled = compileCondition(nullable.eq(one));
+    ConditionCompilation expressionCompiled = compileCondition(zero.eq(one));
     ComparisonPredicate<?> expressionComparison =
         (ComparisonPredicate<?>) expressionCompiled.ast();
-    assertSame(nullable.expression(), expressionComparison.left());
+    assertSame(zero.expression(), expressionComparison.left());
     assertSame(one.expression(), expressionComparison.right());
     assertTrue(expressionCompiled.parameterSources().isEmpty());
     assertTrue(expressionCompiled.arguments().isEmpty());
@@ -736,9 +738,9 @@ class JoinQueryDslTest {
     NullPredicate nullCheck = (NullPredicate) compileCondition(nullable.isNull()).ast();
     assertSame(nullable.expression(), nullCheck.operand());
 
-    SortSpecification ordering = nullable.desc().nullsFirst();
-    assertSame(nullable, ordering.selectable());
-    assertSame(nullable.expression(), ordering.expression());
+    SortSpecification ordering = zero.desc().nullsFirst();
+    assertSame(zero, ordering.selectable());
+    assertSame(zero.expression(), ordering.expression());
     assertEquals(SortDirection.DESC, ordering.direction());
     assertEquals(NullPlacement.FIRST, ordering.nullPlacement());
     assertEquals(OrderDirection.DESC, ordering.ast().direction());

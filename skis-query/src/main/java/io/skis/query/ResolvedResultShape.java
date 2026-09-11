@@ -79,7 +79,7 @@ record ResolvedResultShape<R>(
       throw new QueryValidationException(
           "non-null scalar selection '"
               + SelectableSupport.summary(selectable)
-              + "' is effectively nullable; select it through the nullable result contract");
+              + "' is effectively nullable; use selectNullable(selectable)");
     }
     ProjectionMapping.ValueReader<R> reader = mapping.reader(1, !nullableResult);
     RowDecoder<R> decoder =

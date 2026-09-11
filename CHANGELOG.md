@@ -89,6 +89,7 @@
   选择表达式、方向和 null 顺序，不再携带根实体泛型或属性 ordinal。
 - 删除实体泛型化 `QueryPredicate<E>`、专用 `ProjectionSelectFromStep` 及选择目标实体泛型；所有条件统一为
   `QueryCondition`，实体、标量和生成投影统一经 `SelectFromStep<R>`/`NullableSelectFromStep<R>` 选择独立 FROM 根。
+- japicmp 精确允许清单与 0.2.5 API 差异记录同步登记上述步骤 3 的破坏性替换；未登记的公共 API 不兼容仍会阻断构建。
 - `FromClause.root()`、`JoinClause.right()` 与 `TableOccurrence` 的主结构从实体表改为
   `RelationSource`；直接 AST 调用方应通过来源种类区分实体与后续派生来源。SELECT 构造期不再报告需要完整
   查询块上下文的作用域/参数布局错误，这些错误统一延后到完整校验、查询编译或直接 Renderer，仍早于 JDBC。
