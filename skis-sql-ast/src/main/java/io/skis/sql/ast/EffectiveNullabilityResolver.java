@@ -51,7 +51,9 @@ final class EffectiveNullabilityResolver {
       case InPredicate<?> in -> inNullability(in, nullExtendedTables);
       case NotPredicate not -> resolve(not.operand(), nullExtendedTables);
       case IncrementExpression<?> increment -> resolve(increment.operand(), nullExtendedTables);
-      default -> expression.nullability();
+      default ->
+          throw new IllegalArgumentException(
+              "unsupported SQL expression node " + expression.getClass().getName());
     };
   }
 

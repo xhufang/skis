@@ -40,6 +40,13 @@ a table that will be joined later or a different table object that happens to ha
 metadata and alias. WHERE, SELECT, projection selections, and ORDER BY are validated against the
 completed Join scope.
 
+From `0.2.5-SNAPSHOT`, complete validation records this rule through immutable query-block scope
+snapshots. A future subquery embedded in ON inherits only that exact ON snapshot and the
+pre-null-extension state of the current right occurrence; the same reusable child embedded in a
+final clause is analyzed again against the completed Join state. Diagnostics identify the stable
+query-block path, clause item, nested operand, and source occurrence rather than relying on alias
+text as identity. CROSS JOIN does not create an ON snapshot because it has no ON expression.
+
 Use a generated table's `as(...)` method whenever the same entity occurs more than once:
 
 ```java
@@ -60,6 +67,13 @@ executor
 Aliases are validated identifiers and participate in the query structure. Two aliases of the same
 physical table remain distinct occurrences in SQL, result mapping, ordering, and continuation
 fingerprints.
+
+Across nested blocks, an alias collision is rejected only when it would shadow an actual correlated
+ancestor reference. Independent same-name aliases remain legal. Reusing the exact same table object
+in a child and visible ancestor is rejected as ambiguous; create a separate `as(...)` instance for
+the inner source. The current PostgreSQL/H2 portable subset also rejects effective qualifiers longer
+than 63 UTF-8 bytes before comparing them, so PostgreSQL cannot truncate two validated names into a
+runtime collision.
 
 ## Outer-join nullability
 

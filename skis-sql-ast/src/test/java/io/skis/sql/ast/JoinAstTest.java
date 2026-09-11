@@ -235,7 +235,7 @@ class JoinAstTest {
     SelectStatement incomplete = new SelectStatement(List.of(root.id()), forwardReference);
     IllegalArgumentException failure =
         assertThrows(IllegalArgumentException.class, () -> SemanticValidator.validate(incomplete));
-    assertTrue(failure.getMessage().contains("SELECT FROM join #1 ON"));
+    assertTrue(failure.getMessage().contains("$ JOIN ON item #1"));
     assertTrue(failure.getMessage().contains("alias 'second_pet'"));
   }
 
@@ -254,7 +254,7 @@ class JoinAstTest {
     IllegalArgumentException selectionFailure =
         assertThrows(
             IllegalArgumentException.class, () -> SemanticValidator.validate(invalidSelection));
-    assertTrue(selectionFailure.getMessage().contains("SELECT column 'name'"));
+    assertTrue(selectionFailure.getMessage().contains("$ SELECT item #0 column 'owner_pet.name'"));
     assertTrue(selectionFailure.getMessage().contains("object identity"));
 
     SelectStatement invalidEmptyIn =
@@ -265,7 +265,7 @@ class JoinAstTest {
     IllegalArgumentException emptyInFailure =
         assertThrows(
             IllegalArgumentException.class, () -> SemanticValidator.validate(invalidEmptyIn));
-    assertTrue(emptyInFailure.getMessage().contains("WHERE column 'id'"));
+    assertTrue(emptyInFailure.getMessage().contains("$ WHERE item #0 operand #0"));
   }
 
   @Test
@@ -304,8 +304,8 @@ class JoinAstTest {
             IllegalArgumentException.class,
             () -> SemanticValidator.validateComplete(invalidHaving));
 
-    assertTrue(groupFailure.getMessage().contains("GROUP BY column 'name'"));
-    assertTrue(havingFailure.getMessage().contains("HAVING column 'id'"));
+    assertTrue(groupFailure.getMessage().contains("$ GROUP BY item #0 column 'invisible_pet.name'"));
+    assertTrue(havingFailure.getMessage().contains("$ HAVING item #0 operand #0"));
   }
 
   @Test

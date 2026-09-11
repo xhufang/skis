@@ -6,6 +6,17 @@
 
 ### Added
 
+- 新增不可变查询块作用域分析：查询块使用由嵌入子句和确定遍历位置组成的稳定结构路径，列解析为“查询块路径 +
+  来源 occurrence + 属性”身份，参数解析为块局部逻辑槽身份；分析同时产出表达式依赖、有效 nullability 和不含
+  参数值/对象地址的解析后结构键。
+- `SemanticValidator.analyzeComplete(...)` 返回顶层 `QueryBlockAnalysis`；同一 SELECT 片段在 SELECT、Join ON、
+  WHERE、GROUP BY、HAVING、ORDER BY 或分页位置嵌入时使用各自的不可变父作用域快照，分析结果不写回 AST。
+  ON 快照只包含当时左侧来源与当前右来源，并保留外连接 null 扩展在 ON 校验后生效的顺序。
+- 作用域校验新增跨层重复表实例、未来 Join、兄弟块、未解析顶层外层引用、有害有效限定名遮蔽和普通关系来源
+  非相关边界诊断；超过 63 UTF-8 字节的有效限定名在完整 SELECT 分析时拒绝，避免 PostgreSQL 截断后产生遮蔽；
+  未知/不透明表达式节点失败关闭；错误包含查询块路径、子句、表达式位置与 occurrence，且不包含参数值。
+- 查询计划编译在方言能力校验和 Renderer 之前显式执行完整语义校验；Renderer 仍保留直接 AST 调用所需的
+  防御性完整校验，第三方 Dialect 不能绕过查询块作用域检查。
 - 新增不含值和 ordinal 的强类型 `QueryParameter<V>`、按引用身份保存捕获快照的不可变
   `QueryParameters`，以及 `Sql.parameter(Class<V>)` 参数构造入口；同一逻辑引用可稳定映射到多个 JDBC
   占位符，缺失、额外、重复及类型错误绑定在 JDBC 前失败。完整查询描述的绑定校验与最终语句的参数投影分离；

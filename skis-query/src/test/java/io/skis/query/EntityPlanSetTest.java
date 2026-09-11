@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionContext;
 import io.skis.core.ExecutionOptions;
@@ -32,6 +33,7 @@ import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.StatementAst;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -68,6 +70,66 @@ class EntityPlanSetTest {
           false);
   private static final PetTable TABLE = new PetTable();
   private static final OtherPetTable OTHER_TABLE = new OtherPetTable();
+
+  @Test
+  void queryCompilerValidatesCompleteSemanticsBeforeDialectOrRenderer() {
+    List<String> laterPhases = new ArrayList<>();
+    Dialect nonValidatingDialect =
+        new Dialect() {
+          private final DialectCapabilities capabilities =
+              DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+          private final SqlRenderer renderer =
+              statement -> {
+                laterPhases.add("renderer");
+                return new RenderedSql("SELECT 1", List.of());
+              };
+
+          @Override
+          public String id() {
+            return "non-validating-test";
+          }
+
+          @Override
+          public IdentifierRules identifierRules() {
+            return StandardIdentifierRules.INSTANCE;
+          }
+
+          @Override
+          public DialectCapabilities capabilities() {
+            return capabilities;
+          }
+
+          @Override
+          public SqlRenderer renderer() {
+            return renderer;
+          }
+
+          @Override
+          public void validate(StatementAst statement) {
+            laterPhases.add("dialect");
+          }
+        };
+    EntityRuntimeModel<Pet> runtimeModel = model();
+    QueryPlanCompiler compiler =
+        new QueryPlanCompiler(
+            EntityRuntimeRegistry.of(List.of(runtimeModel)), nonValidatingDialect);
+    CompiledQueryStructure structure =
+        new CompiledQueryStructure(
+            FromClause.of(TABLE),
+            TABLE.id().expression().eq(OTHER_TABLE.id().expression()),
+            List.of(),
+            List.of(),
+            List.of(),
+            QueryParameters.empty());
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> compiler.compileQuery(runtimeModel, TABLE, structure));
+
+    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertEquals(List.of(), laterPhases);
+  }
 
   @Test
   void prewarmsFindByIdAndReusesOneBoundedPlanPerProperty() {
