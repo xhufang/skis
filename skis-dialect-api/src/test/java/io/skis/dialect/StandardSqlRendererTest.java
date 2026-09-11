@@ -96,7 +96,8 @@ class StandardSqlRendererTest {
             IllegalArgumentException.class,
             () -> RENDERER.render(new SelectStatement(List.of(other.name()), pet)));
 
-    assertTrue(failure.getMessage().contains("invisible table"));
+    assertTrue(failure.getMessage().contains("$ SELECT item #0"));
+    assertTrue(failure.getMessage().contains("unresolved outer reference"));
   }
 
   @Test

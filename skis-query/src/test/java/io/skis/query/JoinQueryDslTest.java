@@ -1,6 +1,7 @@
 package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -38,6 +39,9 @@ import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OrderDirection;
+import io.skis.sql.ast.QueryBlockAnalysis;
+import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlPredicate;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -361,7 +365,9 @@ class JoinQueryDslTest {
             () ->
                 ((DefaultSelectQuery<Pet, Pet>) replaced)
                     .compilation(QueryPagination.None.INSTANCE));
-    assertTrue(failure.getMessage().contains("references invisible table entity 'Owner'"));
+    assertTrue(failure.getMessage().contains("$ ORDER BY item #0"));
+    assertTrue(failure.getMessage().contains("ordered_owner.id"));
+    assertTrue(failure.getMessage().contains("unresolved outer reference"));
     assertTrue(failure.getMessage().contains("table references are matched by object identity"));
   }
 
@@ -774,7 +780,47 @@ class JoinQueryDslTest {
   }
 
   @Test
-  void reusesOneJoinAnalysisForPlanAndCountCacheHits() {
+  void resolvedStructureAndScopeDiagnosticsNeverContainBoundValues() {
+    String sensitiveValue = "8675309";
+    QueryCondition validCondition = PET_TABLE.name().eq(sensitiveValue);
+    CompiledQueryStructure validStructure =
+        QueryStructureCompiler.compile(PET_TABLE, List.of(), validCondition);
+    SelectStatement validStatement =
+        new SelectStatement(
+            List.of(PET_TABLE.id().expression()),
+            validStructure.fromClause(),
+            validStructure.where());
+
+    assertEquals(List.of(sensitiveValue), validStructure.arguments());
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(validStatement);
+    assertFalse(analysis.structureKey().canonicalForm().contains(sensitiveValue));
+
+    OwnerTable invisible = OWNER_TABLE.as("invisible_owner");
+    QueryCondition invalidCondition =
+        PET_TABLE
+            .name()
+            .eq(sensitiveValue)
+            .and(PET_TABLE.ownerId().eq(invisible.id()));
+    CompiledQueryStructure invalidStructure =
+        QueryStructureCompiler.compile(PET_TABLE, List.of(), invalidCondition);
+    assertEquals(List.of(sensitiveValue), invalidStructure.arguments());
+    EntityPlanSet<Pet> plans = queryPlanCatalog().require(PET);
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                plans
+                    .compiler()
+                    .compileQuery(plans.model(), PET_TABLE, invalidStructure));
+
+    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertFalse(failure.getMessage().contains(sensitiveValue));
+    assertFalse(String.valueOf(failure.getCause()).contains(sensitiveValue));
+  }
+
+  @Test
+  void reusesJoinPlanAndCountAcrossCacheHits() {
     @SuppressWarnings("unchecked")
     DefaultSelectQuery<Pet, Pet> query =
         (DefaultSelectQuery<Pet, Pet>)

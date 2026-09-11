@@ -49,11 +49,20 @@ public final class SemanticValidator {
 
   /** Validates SELECT scopes in join order and then validates the final expression tree. */
   public static void validateComplete(SelectStatement statement) {
+    analyzeComplete(statement);
+  }
+
+  /**
+   * Resolves and validates a complete top-level SELECT without mutating its reusable AST.
+   *
+   * <p>The returned structural paths, occurrence identities, expression dependencies, and effective
+   * nullability belong to this analysis occurrence only.
+   */
+  public static QueryBlockAnalysis analyzeComplete(SelectStatement statement) {
     Objects.requireNonNull(statement, "statement");
     validatePaginationOrdering(statement);
-    ValidationContext context = new ValidationContext();
-    validateSelectExpressions(statement, context);
-    context.requireDenseParameterOrdinals();
+    validateSelectExpressions(statement, new ValidationContext(false));
+    return QueryScopeAnalyzer.analyzeTopLevel(statement);
   }
 
   /** Validates invariants that do not require a parent or completed query-block scope. */
@@ -496,8 +505,7 @@ public final class SemanticValidator {
       }
       switch (join.right()) {
         case EntityRelationSource entity ->
-            EffectiveNullabilityResolver.applyJoin(
-                join.type(), entity.table(), visibleTables);
+            EffectiveNullabilityResolver.applyJoin(join.type(), entity.table(), visibleTables);
       }
     }
 
@@ -556,9 +564,11 @@ public final class SemanticValidator {
           validateIncrement(increment.operand());
           validateExpression(increment.operand(), clause);
         }
-        default -> {
-          // Custom opaque leaf expressions expose no portable child traversal contract yet.
-        }
+        default ->
+            throw new IllegalArgumentException(
+                clause
+                    + " uses unsupported SQL expression node "
+                    + expression.getClass().getName());
       }
       Nullability resolvedNullability =
           validatesQueryContext

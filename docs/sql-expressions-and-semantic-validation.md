@@ -118,8 +118,9 @@ FROM "shelter"."pet"
 ## Central validation boundary
 
 `SemanticValidator` is the single rule owner for current portable expression semantics. Node
-constructors delegate their local compatibility checks to it, while statement construction adds
-scope, parameter-shape, and mutation checks.
+constructors delegate their local compatibility checks to it. Statement construction checks local
+shape, while complete query compilation and direct rendering add scope and parameter-shape checks;
+mutation statements continue to validate their complete target scope during construction.
 
 Before rendering, validation rejects:
 
@@ -134,11 +135,10 @@ Before rendering, validation rejects:
 - columns outside the mutation target, writes to read-only entities, non-insertable/non-updatable
   columns, and nullable assignments to non-null columns.
 
-Custom opaque expression implementations remain value-only leaves to preserve the current
-extension contract. Their Java/SQL/nullability descriptors are validated, but the AST does not yet
-define a public child-traversal SPI. Such a node cannot claim portable nested scope or parameter
-validation and is still rejected by `StandardSqlRenderer`; a future traversal SPI would require a
-separate architecture decision.
+Custom `SqlExpression` implementations are not a portable expression extension contract. Because
+the AST does not define a public child-traversal SPI, unknown nodes fail during semantic validation
+instead of being treated as value-only leaves. A future traversal SPI would require a separate
+architecture decision.
 
 INSERT values have no visible table-column scope. UPDATE expressions and predicates may reference
 only the target table expression. DELETE predicates may reference only the target. SELECT uses an
@@ -214,3 +214,56 @@ column-name matching, `getObject` guessing, registry lookup, or per-row codec lo
 The complete Join contract—including Join forms, aliases, staged ON visibility, nullable entity
 presence, duplicate rows, pagination stability, count semantics, and dialect support—is documented
 in [Explicit joins and generated result rows](joins.md).
+
+## Query-block identity and ancestor scope
+
+The `0.2.5-SNAPSHOT` scope-analysis foundation assigns every SELECT block a `QueryBlockPath`. The
+root is `$`; a nested block appends the parent clause, clause item ordinal, and deterministic nested
+ordinal. A resolved physical column is identified by that block path, its source occurrence ordinal,
+and canonical property metadata. A resolved parameter is identified by block path plus its current
+AST slot ordinal and type descriptor; final nested statement layout may later relocate that slot.
+Neither identity contains a JVM object address or ordinary parameter value.
+
+`SemanticValidator.analyzeComplete(statement)` returns an immutable `QueryBlockAnalysis` containing:
+
+- final ordered source occurrences and their outer-Join null-extension state;
+- each clause expression's exact position, resolved column/parameter dependencies, effective
+  nullability, and value-independent `ResolvedStructureKey`;
+- clause-specific scope snapshots used to analyze future nested SELECT nodes.
+
+Analysis is fail-closed for expression kinds. Although `SqlExpression` remains a low-level public
+interface for source compatibility, an implementation unknown to the framework is rejected rather
+than recorded as an opaque leaf. Each framework-owned node must explicitly expose its children to
+local semantic validation, effective-nullability resolution, scope/dependency analysis, and
+rendering before it can participate in a query.
+
+The reusable `SelectStatement` remains unchanged. Analyzing the same child at two embedding
+locations creates two results and two paths; no resolved ancestor target, nullability, or validation
+flag is written back to the child AST.
+
+Scope snapshots are clause-sensitive. A Join ON snapshot contains the accumulated left side and the
+current right occurrence, before the current Join applies null extension. Final SELECT, WHERE,
+GROUP BY, HAVING, ORDER BY, and pagination snapshots contain the completed Join state. A reference
+to a later Join occurrence therefore fails even if that source exists in the eventual FROM clause.
+
+An unresolved nested column may bind only to an object-identical table expression in the visible
+ancestor chain. A structurally equal table or same-name alias object cannot substitute for it;
+siblings never enter each other's chain. Registering the exact same table object in both a child and
+a visible ancestor is ambiguous and fails with guidance to create an independent alias. Equal
+qualifiers in separate blocks are otherwise legal, but correlation fails when a nearer source's
+effective qualifier would make rendered SQL bind to that nearer source instead of the intended
+ancestor. Because PostgreSQL truncates identifiers beyond its default 63-byte limit even when they
+are quoted, complete scope analysis rejects effective qualifiers longer than 63 UTF-8 bytes and asks
+the caller to provide a shorter alias. Within that portable boundary current PostgreSQL/H2
+identifiers are always quoted, so qualifier collision checks compare the final raw value exactly;
+another identifier rule must provide its corresponding normalized collision semantics when
+introduced.
+
+Ordinary FROM/Join relation children use a non-correlated boundary. Their child analysis retains a
+stable path but receives no parent scope, preventing an accidental LATERAL contract. EXISTS, IN,
+scalar-subquery, and derived-source AST nodes are added by their later 0.2.5 slices; this step only
+establishes the identity, scope, dependency, and failure machinery those nodes share.
+
+Executable query compilation runs complete semantic validation before dialect capability checks and
+SQL rendering. Renderers also perform the same validation defensively when called directly; the
+compiler does not rely on a third-party renderer to enforce query-block scope.

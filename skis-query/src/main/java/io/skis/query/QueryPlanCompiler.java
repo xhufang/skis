@@ -60,7 +60,7 @@ final class QueryPlanCompiler {
     requireCanonicalModel(model, table);
     PredicateShape<E> shape = equalityShape(table, equalityProperty);
     SelectStatement statement =
-        validatedStatement(() -> new SelectStatement(table.selections(), table, shape.ast()));
+        constructedStatement(() -> new SelectStatement(table.selections(), table, shape.ast()));
     return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
   }
 
@@ -71,7 +71,7 @@ final class QueryPlanCompiler {
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     SelectStatement statement =
-        validatedStatement(
+        constructedStatement(
             () ->
                 new SelectStatement(table.selections(), structure.fromClause(), structure.where()));
     InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
@@ -127,7 +127,7 @@ final class QueryPlanCompiler {
                 List.of(),
                 null));
     CountAst count =
-        validatedStatement(
+        constructedStatement(
             () -> new CountAst(structure.fromClause(), structure.where(), distinctExpression));
     InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
     CompiledQueryPlan<Long, Object> plan =
@@ -279,20 +279,10 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
     List<OrderByItem> orderAst = orderBy.stream().map(SortSpecification::ast).toList();
-    validatedStatement(
-        () ->
-            new SelectStatement(
-                distinct,
-                selection.expressions(),
-                hidden,
-                structure.fromClause(),
-                structure.where(),
-                orderAst,
-                null));
     InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
     SelectPagination paginationAst = inputs.pagination(orderBy, pagination);
     SelectStatement statement =
-        validatedStatement(
+        constructedStatement(
             () ->
                 new SelectStatement(
                     distinct,
@@ -331,8 +321,14 @@ final class QueryPlanCompiler {
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(rowDecoder, "rowDecoder");
     validateLogicalParameters(logicalParameters);
-    dialect.validate(statement);
-    RenderedSql rendered = dialect.renderer().render(statement);
+    RenderedSql rendered;
+    try {
+      SemanticValidator.validateComplete(statement);
+      dialect.validate(statement);
+      rendered = dialect.renderer().render(statement);
+    } catch (IllegalArgumentException failure) {
+      throw new QueryValidationException(failure.getMessage(), failure);
+    }
     List<RenderedBinding<E>> renderedBindings =
         renderedBindings(model, logicalParameters, rendered);
     int logicalParameterCount = logicalParameters.size();
@@ -401,11 +397,18 @@ final class QueryPlanCompiler {
     }
   }
 
-  private static <S extends StatementAst> S validatedStatement(Supplier<S> factory) {
+  private static <S extends StatementAst> void validatedStatement(Supplier<S> factory) {
     try {
       S statement = factory.get();
       SemanticValidator.validateComplete(statement);
-      return statement;
+    } catch (IllegalArgumentException failure) {
+      throw new QueryValidationException(failure.getMessage(), failure);
+    }
+  }
+
+  private static <S extends StatementAst> S constructedStatement(Supplier<S> factory) {
+    try {
+      return factory.get();
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
     }
