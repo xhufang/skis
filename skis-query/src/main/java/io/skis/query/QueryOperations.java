@@ -32,20 +32,20 @@ public interface QueryOperations {
   <E> SelectQuery<E, E> selectFrom(QueryTable<E> table);
 
   /** Selects one complete entity table before choosing an independent root. */
-  <R> SelectFromStep<R, R> select(QueryTable<R> table);
+  <R> SelectFromStep<R> select(QueryTable<R> table);
 
   /** Selects an entity that may be absent on a null-extended outer-join side. */
-  <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table);
+  <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table);
 
-  /** Starts a non-null scalar projection without constructing an intermediate tuple. */
-  <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column);
+  /** Starts a non-null scalar selection without constructing an intermediate tuple. */
+  <V> SelectFromStep<V> select(NonNullSelectable<V> selectable);
 
-  /** Starts a nullable scalar projection whose row-presence contract is {@link SingleRow}. */
-  <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column);
+  /** Starts a nullable scalar selection whose row-presence contract is {@link SingleRow}. */
+  <V> NullableSelectFromStep<V> select(Selectable<V> selectable);
 
-  /** Explicitly allows a physically non-null column to become nullable through an outer join. */
-  <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column);
+  /** Explicitly allows a declared non-null expression to become nullable in query context. */
+  <V> NullableSelectFromStep<V> selectNullable(NonNullSelectable<V> selectable);
 
-  /** Selects one APT-generated result-row shape before choosing an independent FROM root. */
-  <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection);
+  /** Selects one APT-generated result-row shape before choosing an independent of root. */
+  <R> SelectFromStep<R> select(ProjectionSelection<R> projection);
 }

@@ -5,10 +5,9 @@ import io.skis.dialect.RenderedSql;
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.mapping.JdbcTypeCodec;
 import io.skis.mapping.JdbcWriteContext;
-import io.skis.mapping.PropertyRuntime;
 import io.skis.mapping.RowDecoder;
-import io.skis.mapping.RowReadContext;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
@@ -21,6 +20,8 @@ import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.Limit;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.NullOperator;
+import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
@@ -64,12 +65,6 @@ final class QueryPlanCompiler {
   }
 
   <E> CompiledQueryPlan<E, Object> compileQuery(
-      EntityRuntimeModel<E> model, QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
-    return compileQuery(
-        model, table, QueryStructureCompiler.compile(table, List.of(), predicate));
-  }
-
-  <E> CompiledQueryPlan<E, Object> compileQuery(
       EntityRuntimeModel<E> model, QueryTable<E> table, CompiledQueryStructure structure) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
@@ -78,8 +73,7 @@ final class QueryPlanCompiler {
     SelectStatement statement =
         validatedStatement(
             () ->
-                new SelectStatement(
-                    table.selections(), structure.fromClause(), structure.where()));
+                new SelectStatement(table.selections(), structure.fromClause(), structure.where()));
     InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure);
     return compilePlan(model, statement, inputs.logicalParameters(), model.fullRowDecoder());
   }
@@ -87,22 +81,18 @@ final class QueryPlanCompiler {
   <E, R> QueryCompilation<Long> compileCount(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
       boolean distinct) {
     return compileCount(
-        model,
-        table,
-        selected,
-        QueryStructureCompiler.compile(table, joins, condition),
-        distinct);
+        model, table, selected, QueryStructureCompiler.compile(table, joins, condition), distinct);
   }
 
   <E, R> QueryCompilation<Long> compileCount(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       CompiledQueryStructure structure,
       boolean distinct) {
     requireCanonicalModel(model, table);
@@ -158,10 +148,10 @@ final class QueryPlanCompiler {
   <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     return compileOrdered(
@@ -177,9 +167,9 @@ final class QueryPlanCompiler {
   <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       CompiledQueryStructure structure,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     requireCanonicalModel(model, table);
@@ -196,13 +186,13 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     List<HiddenSelection> hidden = new ArrayList<>();
     int[] indexes = new int[orderBy.size()];
     for (int index = 0; index < orderBy.size(); index++) {
-      SqlExpression<?> expression = orderBy.get(index).column().expression();
+      SqlExpression<?> expression = orderBy.get(index).expression();
       int visibleIndex = selection.expressions().indexOf(expression);
       if (visibleIndex >= 0) {
         indexes[index] = visibleIndex + 1;
@@ -215,17 +205,17 @@ final class QueryPlanCompiler {
         hidden.add(new HiddenSelection(expression, Identifier.of("__skis_order_" + index)));
       }
     }
-    List<PropertyRuntime<?, ?>> resolvedOrderProperties = new ArrayList<>(orderBy.size());
-    for (SortSpecification<?> item : orderBy) {
-      resolvedOrderProperties.add(runtimeScope.property(item.column()));
+    List<ResolvedValueMapping<?>> resolvedOrderMappings = new ArrayList<>(orderBy.size());
+    for (SortSpecification item : orderBy) {
+      resolvedOrderMappings.add(ResolvedValueMapping.resolve(item.selectable(), runtimeScope));
     }
-    List<PropertyRuntime<?, ?>> orderProperties = List.copyOf(resolvedOrderProperties);
+    List<ResolvedValueMapping<?>> orderMappings = List.copyOf(resolvedOrderMappings);
     RowDecoder<OrderedRow<R>> decoder =
         (resultSet, context) -> {
           var value = selection.decoder().decode(resultSet, context);
           List<@Nullable Object> orderValues = new ArrayList<>(orderBy.size());
           for (int index = 0; index < orderBy.size(); index++) {
-            orderValues.add(read(orderProperties.get(index), resultSet, indexes[index], context));
+            orderValues.add(orderMappings.get(index).read(resultSet, indexes[index], context));
           }
           return new OrderedRow<>(value, orderValues);
         };
@@ -243,10 +233,10 @@ final class QueryPlanCompiler {
   <E, R> QueryCompilation<R> compileSelection(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
@@ -264,9 +254,9 @@ final class QueryPlanCompiler {
   <E, R> QueryCompilation<R> compileSelection(
       EntityRuntimeModel<E> model,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       CompiledQueryStructure structure,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
@@ -284,7 +274,7 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden) {
@@ -326,7 +316,8 @@ final class QueryPlanCompiler {
     for (int ordinal = 0; ordinal < properties.size(); ordinal++) {
       PropertyMeta<E, ?> property = properties.get(ordinal);
       parameters.add(
-          LogicalParameter.property(expectedSlot(ordinal, property), 0, model.property(property)));
+          LogicalParameter.codec(
+              expectedSlot(ordinal, property), model.property(property).codec()));
     }
     return compilePlan(model, statement, parameters, rowDecoder);
   }
@@ -481,15 +472,6 @@ final class QueryPlanCompiler {
     }
   }
 
-  private static <E, V> @Nullable V read(
-      PropertyRuntime<E, V> runtime,
-      java.sql.ResultSet resultSet,
-      int index,
-      RowReadContext context)
-      throws SQLException {
-    return runtime.codec().read(resultSet, index, context);
-  }
-
   private record PredicateShape<E>(
       @Nullable SqlPredicate ast, List<PropertyMeta<E, ?>> properties) {
 
@@ -507,39 +489,30 @@ final class QueryPlanCompiler {
   }
 
   private record LogicalParameter<E>(
-      ParameterSlot<?> descriptor,
-      int occurrenceOrdinal,
-      @Nullable PropertyRuntime<?, ?> runtime,
-      ScalarBinding scalarBinding) {
+      ParameterSlot<?> descriptor, @Nullable JdbcTypeCodec<?> codec, ScalarBinding scalarBinding) {
 
     private LogicalParameter {
       Objects.requireNonNull(descriptor, "descriptor");
       Objects.requireNonNull(scalarBinding, "scalarBinding");
-      if (runtime != null && occurrenceOrdinal < 0) {
-        throw new IllegalArgumentException(
-            "property parameter occurrence ordinal must not be negative");
+      if (codec != null && scalarBinding != ScalarBinding.NONE) {
+        throw new IllegalArgumentException("a logical parameter cannot use two binder kinds");
       }
-      if (runtime == null && occurrenceOrdinal != -1) {
-        throw new IllegalArgumentException(
-            "scalar parameter must not declare a table occurrence ordinal");
+      if (codec == null && scalarBinding == ScalarBinding.NONE) {
+        throw new IllegalArgumentException("a logical parameter requires one binder kind");
       }
     }
 
-    static <E> LogicalParameter<E> property(
-        ParameterSlot<?> descriptor, int occurrenceOrdinal, PropertyRuntime<?, ?> runtime) {
+    static <E> LogicalParameter<E> codec(ParameterSlot<?> descriptor, JdbcTypeCodec<?> codec) {
       return new LogicalParameter<>(
-          descriptor,
-          occurrenceOrdinal,
-          Objects.requireNonNull(runtime, "runtime"),
-          ScalarBinding.NONE);
+          descriptor, Objects.requireNonNull(codec, "codec"), ScalarBinding.NONE);
     }
 
     static <E> LogicalParameter<E> integer(ParameterSlot<Integer> descriptor) {
-      return new LogicalParameter<>(descriptor, -1, null, ScalarBinding.INTEGER);
+      return new LogicalParameter<>(descriptor, null, ScalarBinding.INTEGER);
     }
 
     static <E> LogicalParameter<E> longValue(ParameterSlot<Long> descriptor) {
-      return new LogicalParameter<>(descriptor, -1, null, ScalarBinding.LONG);
+      return new LogicalParameter<>(descriptor, null, ScalarBinding.LONG);
     }
 
     boolean matches(ParameterSlot<?> slot) {
@@ -550,17 +523,13 @@ final class QueryPlanCompiler {
     }
 
     void bind(
-        PreparedStatement statement,
-        int index,
-        @Nullable Object value,
-        JdbcWriteContext context)
+        PreparedStatement statement, int index, @Nullable Object value, JdbcWriteContext context)
         throws SQLException {
       if (value == null && !descriptor.nullability().isNullable()) {
-        throw new SQLException(
-            "non-null query parameter is null at JDBC parameter index " + index);
+        throw new SQLException("non-null query parameter is null at JDBC parameter index " + index);
       }
-      if (runtime != null) {
-        bindProperty(runtime, statement, index, value, context);
+      if (codec != null) {
+        bindCodec(codec, descriptor.javaType(), statement, index, value, context);
         return;
       }
       switch (scalarBinding) {
@@ -570,23 +539,28 @@ final class QueryPlanCompiler {
       }
     }
 
-    private static void bindProperty(
-        PropertyRuntime<?, ?> runtime,
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private static void bindCodec(
+        JdbcTypeCodec codec,
+        Class<?> javaType,
         PreparedStatement statement,
         int index,
         @Nullable Object value,
         JdbcWriteContext context)
         throws SQLException {
-      if (value != null) {
-        runtime.bind(statement, index, value, context);
-        return;
-      }
       Objects.requireNonNull(statement, "statement");
       Objects.requireNonNull(context, "context");
       if (index < 1) {
         throw new IllegalArgumentException("JDBC parameter index must be positive");
       }
-      runtime.codec().bind(statement, index, null, context);
+      if (value != null && !javaType.isInstance(value)) {
+        throw new SQLException(
+            "query parameter requires "
+                + javaType.getTypeName()
+                + " but received "
+                + value.getClass().getTypeName());
+      }
+      codec.bind(statement, index, value, context);
     }
 
     private static <T> T requireType(@Nullable Object value, Class<T> type) throws SQLException {
@@ -610,15 +584,15 @@ final class QueryPlanCompiler {
     private InputsBuilder(TableRuntimeScope runtimeScope, CompiledQueryStructure structure) {
       this.runtimeScope = Objects.requireNonNull(runtimeScope, "runtimeScope");
       List<@Nullable Object> conditionArguments = structure.arguments();
-      for (int index = 0; index < structure.parameterColumns().size(); index++) {
-        QueryColumn<?, ?> column = structure.parameterColumns().get(index);
-        addConditionProperty(
-            column, structure.parameterSlots().get(index), conditionArguments.get(index));
+      for (int index = 0; index < structure.parameterSources().size(); index++) {
+        Selectable<?> source = structure.parameterSources().get(index);
+        addConditionMapping(
+            source, structure.parameterSlots().get(index), conditionArguments.get(index));
       }
     }
 
     private @Nullable SelectPagination pagination(
-        List<? extends SortSpecification<?>> orderBy, QueryPagination pagination) {
+        List<SortSpecification> orderBy, QueryPagination pagination) {
       return switch (pagination) {
         case QueryPagination.None ignored -> null;
         case QueryPagination.LimitOnly limit -> new Limit(addInteger(limit.limit()));
@@ -630,7 +604,7 @@ final class QueryPlanCompiler {
     }
 
     private SqlPredicate keysetPredicate(
-        List<? extends SortSpecification<?>> orderBy, List<@Nullable Object> values) {
+        List<SortSpecification> orderBy, List<@Nullable Object> values) {
       if (orderBy.size() != values.size() || orderBy.isEmpty()) {
         throw new QueryValidationException(
             "keyset continuation value count must match a non-empty ORDER BY");
@@ -639,31 +613,33 @@ final class QueryPlanCompiler {
       ParameterSlot<Object>[] slots = new ParameterSlot[values.size()];
       boolean[] nullable = new boolean[values.size()];
       for (int index = 0; index < values.size(); index++) {
-        SortSpecification<?> sort = orderBy.get(index);
+        SortSpecification sort = orderBy.get(index);
         Object value = values.get(index);
-        nullable[index] = runtimeScope.effectiveNullability(sort.column()).isNullable();
+        ResolvedValueMapping<?> mapping =
+            ResolvedValueMapping.resolve(sort.selectable(), runtimeScope);
+        nullable[index] = mapping.effectiveNullability().isNullable();
         if (nullable[index] && sort.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw new QueryValidationException(
-              "effectively nullable keyset ordering property '"
-                  + sort.column().property().name()
+              "effectively nullable keyset ordering expression '"
+                  + SelectableSupport.summary(sort.selectable())
                   + "' must declare nullsFirst() or nullsLast()");
         }
         if (value == null) {
           if (!nullable[index]) {
             throw new QueryValidationException(
-                "keyset continuation contains null for non-null property '"
-                    + sort.column().property().name()
+                "keyset continuation contains null for non-null expression '"
+                    + SelectableSupport.summary(sort.selectable())
                     + "'");
           }
           continue;
         }
-        if (!sort.column().javaType().isInstance(value)) {
+        if (!mapping.javaType().isInstance(value)) {
           throw new QueryValidationException(
-              "keyset continuation Java type does not match property '"
-                  + sort.column().property().name()
+              "keyset continuation Java type does not match expression '"
+                  + SelectableSupport.summary(sort.selectable())
                   + "'");
         }
-        slots[index] = addPropertyUntyped(sort.column(), value);
+        slots[index] = addValueMappingUntyped(mapping, value);
       }
 
       List<SqlPredicate> disjunctions = new ArrayList<>();
@@ -681,7 +657,7 @@ final class QueryPlanCompiler {
         disjunctions.add(combine(LogicalOperator.AND, conjunctions));
       }
       if (disjunctions.isEmpty()) {
-        return falsePredicate(orderBy.getFirst().column());
+        return falsePredicate(orderBy.getFirst().expression());
       }
       return combine(LogicalOperator.OR, disjunctions);
     }
@@ -704,43 +680,31 @@ final class QueryPlanCompiler {
       return slot;
     }
 
-    private <V> ParameterSlot<V> addProperty(
-        QueryColumn<?, V> column,
-        Object value,
-        int occurrenceOrdinal,
-        PropertyRuntime<?, V> runtime) {
+    private <V> ParameterSlot<V> addValueMapping(ResolvedValueMapping<V> mapping, Object value) {
       int ordinal = arguments.size();
       ParameterSlot<V> slot =
-          new ParameterSlot<>(ordinal, column.javaType(), column.sqlType(), Nullability.NON_NULL);
-      logicalParameters.add(LogicalParameter.property(slot, occurrenceOrdinal, runtime));
+          new ParameterSlot<>(ordinal, mapping.javaType(), mapping.sqlType(), Nullability.NON_NULL);
+      logicalParameters.add(LogicalParameter.codec(slot, mapping.codec()));
       arguments.add(value);
       return slot;
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private ParameterSlot<Object> addPropertyUntyped(QueryColumn<?, ?> column, Object value) {
-      TableRuntimeScope.Occurrence<?> occurrence = runtimeScope.require(column.table());
-      return (ParameterSlot)
-          addProperty(
-              column,
-              value,
-              occurrence.occurrenceOrdinal(),
-              (PropertyRuntime) runtimeScope.property((QueryColumn) column));
+    @SuppressWarnings("unchecked")
+    private ParameterSlot<Object> addValueMappingUntyped(
+        ResolvedValueMapping<?> mapping, Object value) {
+      return (ParameterSlot<Object>) (ParameterSlot<?>) addValueMapping(mapping, value);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private void addConditionProperty(
-        QueryColumn<?, ?> column, ParameterSlot<?> slot, @Nullable Object value) {
-      TableRuntimeScope.Occurrence<?> occurrence = runtimeScope.require(column.table());
-      PropertyRuntime<?, ?> runtime = runtimeScope.property((QueryColumn) column);
-      if (!slot.javaType().equals(column.javaType()) || slot.sqlType() != column.sqlType()) {
+    private void addConditionMapping(
+        Selectable<?> source, ParameterSlot<?> slot, @Nullable Object value) {
+      ResolvedValueMapping<?> mapping = ResolvedValueMapping.resolve(source, runtimeScope);
+      if (!slot.javaType().equals(mapping.javaType()) || slot.sqlType() != mapping.sqlType()) {
         throw new QueryValidationException(
-            "query parameter slot descriptor does not match property '"
-                + column.property().name()
+            "query parameter slot descriptor does not match expression '"
+                + SelectableSupport.summary(source)
                 + "'");
       }
-      logicalParameters.add(
-          LogicalParameter.property(slot, occurrence.occurrenceOrdinal(), runtime));
+      logicalParameters.add(LogicalParameter.codec(slot, mapping.codec()));
       arguments.add(value);
     }
 
@@ -752,34 +716,35 @@ final class QueryPlanCompiler {
       return QueryPlanCompiler.argument(arguments);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     private static SqlPredicate equal(
-        SortSpecification<?> sort, @Nullable Object value, @Nullable ParameterSlot<Object> slot) {
-      ColumnExpression column = sort.column().expression();
+        SortSpecification sort, @Nullable Object value, @Nullable ParameterSlot<Object> slot) {
+      SqlExpression<?> expression = sort.expression();
       return value == null
-          ? column.isNull()
-          : new ComparisonPredicate(
-              column, ComparisonOperator.EQUAL, Objects.requireNonNull(slot, "slot"));
+          ? new NullPredicate(expression, NullOperator.IS_NULL)
+          : comparison(expression, ComparisonOperator.EQUAL, Objects.requireNonNull(slot, "slot"));
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     private static @Nullable SqlPredicate after(
-        SortSpecification<?> sort,
+        SortSpecification sort,
         @Nullable Object value,
         @Nullable ParameterSlot<Object> slot,
         boolean nullable) {
-      ColumnExpression column = sort.column().expression();
+      SqlExpression<?> expression = sort.expression();
       if (value == null) {
-        return sort.nullPlacement() == NullPlacement.FIRST ? column.isNotNull() : null;
+        return sort.nullPlacement() == NullPlacement.FIRST
+            ? new NullPredicate(expression, NullOperator.IS_NOT_NULL)
+            : null;
       }
       ComparisonOperator operator =
           sort.direction() == SortDirection.ASC
               ? ComparisonOperator.GREATER_THAN
               : ComparisonOperator.LESS_THAN;
       SqlPredicate comparison =
-          new ComparisonPredicate(column, operator, Objects.requireNonNull(slot, "slot"));
+          comparison(expression, operator, Objects.requireNonNull(slot, "slot"));
       if (nullable && sort.nullPlacement() == NullPlacement.LAST) {
-        return new LogicalPredicate(LogicalOperator.OR, List.of(comparison, column.isNull()));
+        return new LogicalPredicate(
+            LogicalOperator.OR,
+            List.of(comparison, new NullPredicate(expression, NullOperator.IS_NULL)));
       }
       return comparison;
     }
@@ -790,9 +755,24 @@ final class QueryPlanCompiler {
           : new LogicalPredicate(operator, predicates);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private static SqlPredicate falsePredicate(QueryColumn<?, ?> column) {
-      return new InPredicate(column.expression(), List.of(), false);
+    private static SqlPredicate falsePredicate(SqlExpression<?> expression) {
+      return emptyMembership(expression);
+    }
+
+    private static <V> SqlPredicate comparison(
+        SqlExpression<V> expression, ComparisonOperator operator, ParameterSlot<?> slot) {
+      if (!expression.javaType().equals(slot.javaType())
+          || expression.sqlType() != slot.sqlType()) {
+        throw new QueryValidationException(
+            "keyset parameter slot does not match its ordering expression");
+      }
+      @SuppressWarnings("unchecked")
+      ParameterSlot<V> typedSlot = (ParameterSlot<V>) slot;
+      return new ComparisonPredicate<>(expression, operator, typedSlot);
+    }
+
+    private static <V> SqlPredicate emptyMembership(SqlExpression<V> expression) {
+      return new InPredicate<>(expression, List.of(), false);
     }
   }
 }

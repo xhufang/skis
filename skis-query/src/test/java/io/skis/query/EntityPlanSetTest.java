@@ -91,19 +91,23 @@ class EntityPlanSetTest {
   @Test
   void keepsValuesOutsidePlansAndAst() {
     EntityPlanSet<Pet> plans = plans();
-    QueryPredicate<Pet> mimi = TABLE.name().eq("Mimi");
-    QueryPredicate<Pet> fifi = TABLE.name().eq("Fifi");
+    QueryCondition mimi = TABLE.name().eq("Mimi");
+    QueryCondition fifi = TABLE.name().eq("Fifi");
 
     assertSame(plans.selectPlan(TABLE, mimi), plans.selectPlan(TABLE, fifi));
     assertEquals(List.of("Mimi"), ((QueryArguments) plans.argument(mimi)).values());
     assertEquals(List.of("Fifi"), ((QueryArguments) plans.argument(fifi)).values());
-    QueryPredicate<Pet> firstComplex = TABLE.name().like("Mi%").and(TABLE.id().between(1L, 9L));
-    QueryPredicate<Pet> secondComplex = TABLE.name().like("Mo%").and(TABLE.id().between(2L, 10L));
-    assertEquals(firstComplex.compile().ast(), secondComplex.compile().ast());
-    assertEquals(firstComplex.compile(), secondComplex.compile());
-    assertEquals(firstComplex.compile().hashCode(), secondComplex.compile().hashCode());
-    assertEquals(List.of("Mi%", 1L, 9L), firstComplex.compile().arguments());
-    assertEquals(List.of("Mo%", 2L, 10L), secondComplex.compile().arguments());
+    QueryCondition firstComplex = TABLE.name().like("Mi%").and(TABLE.id().between(1L, 9L));
+    QueryCondition secondComplex = TABLE.name().like("Mo%").and(TABLE.id().between(2L, 10L));
+    CompiledQueryStructure firstCompiled =
+        QueryStructureCompiler.compile(TABLE, List.of(), firstComplex);
+    CompiledQueryStructure secondCompiled =
+        QueryStructureCompiler.compile(TABLE, List.of(), secondComplex);
+    assertEquals(firstCompiled.where(), secondCompiled.where());
+    assertEquals(firstCompiled, secondCompiled);
+    assertEquals(firstCompiled.hashCode(), secondCompiled.hashCode());
+    assertEquals(List.of("Mi%", 1L, 9L), firstCompiled.arguments());
+    assertEquals(List.of("Mo%", 2L, 10L), secondCompiled.arguments());
     assertSame(NoParameters.INSTANCE, plans.argument(null));
     assertEquals(0, plans.selectPlan(TABLE, null).parameterCount());
   }
@@ -111,7 +115,7 @@ class EntityPlanSetTest {
   @Test
   void compilesGroupedPredicatesWithStableParameterEncounterOrder() {
     EntityPlanSet<Pet> plans = plans();
-    QueryPredicate<Pet> predicate =
+    QueryCondition predicate =
         TABLE.name().isNull().or(TABLE.name().like("Mi%")).and(TABLE.id().ge(1L));
 
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
@@ -127,7 +131,7 @@ class EntityPlanSetTest {
   @Test
   void bindsComplexPredicateArgumentsInPlaceholderEncounterOrder() throws Exception {
     EntityPlanSet<Pet> plans = plans();
-    QueryPredicate<Pet> predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
+    QueryCondition predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
@@ -153,9 +157,10 @@ class EntityPlanSetTest {
   @Test
   void oneQueryParameterReferenceCanProduceMultipleJdbcPositions() throws Exception {
     EntityPlanSet<Pet> plans = plans();
-    QueryPredicate<Pet> oneReference = TABLE.name().eq("Mimi");
-    QueryPredicate<Pet> repeated = oneReference.and(oneReference);
-    CompiledQueryPredicate<Pet> compiled = repeated.compile();
+    QueryCondition oneReference = TABLE.name().eq("Mimi");
+    QueryCondition repeated = oneReference.and(oneReference);
+    CompiledQueryStructure compiled =
+        QueryStructureCompiler.compile(TABLE, List.of(), repeated);
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, repeated);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
@@ -229,7 +234,7 @@ class EntityPlanSetTest {
         new CompiledQueryStructure(
             FromClause.of(TABLE),
             TABLE.id().expression().eq(slot),
-            layout.parameterColumns(),
+            layout.parameterSources(),
             layout.parameterReferences(),
             layout.parameterSlots(),
             parameters);
@@ -268,7 +273,7 @@ class EntityPlanSetTest {
             new QueryPlanCompiler(
                 EntityRuntimeRegistry.of(List.of(runtimeModel)),
                 ReorderedParameterDialect.INSTANCE));
-    QueryPredicate<Pet> predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
+    QueryCondition predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
     CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
@@ -328,8 +333,8 @@ class EntityPlanSetTest {
   @Test
   void compilesEmptyMembershipWithoutParameters() {
     EntityPlanSet<Pet> plans = plans();
-    QueryPredicate<Pet> emptyIn = TABLE.id().in(List.of());
-    QueryPredicate<Pet> emptyNotIn = TABLE.id().notIn(List.of());
+    QueryCondition emptyIn = TABLE.id().in(List.of());
+    QueryCondition emptyNotIn = TABLE.id().notIn(List.of());
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE 1 = 0",

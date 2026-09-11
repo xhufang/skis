@@ -33,7 +33,11 @@ import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.NullOrder;
+import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.Nullability;
+import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.SqlPredicate;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -232,10 +236,7 @@ class JoinQueryDslTest {
         compileSelection(
             catalog,
             PET_TABLE,
-            SelectedResult.nullableScalar(
-                OWNER_TABLE,
-                catalog.require(OWNER),
-                OWNER_TABLE.id()),
+            SelectedResult.nullableScalar(OWNER_TABLE.id()),
             List.of(new QueryJoin(io.skis.sql.ast.JoinType.LEFT, OWNER_TABLE, on)));
     assertNull(
         idCompilation.plan().rowDecoder().decode(resultSet(Map.of()), RowReadContext.EMPTY));
@@ -702,13 +703,57 @@ class JoinQueryDslTest {
       assertEquals(operators.get(index), comparison.operator());
       assertEquals(Nullability.NON_NULL, comparison.nullability());
       assertTrue(compiled.arguments().isEmpty());
-      assertTrue(compiled.parameterColumns().isEmpty());
+      assertTrue(compiled.parameterSources().isEmpty());
     }
 
     ComparisonPredicate<?> nullable =
         (ComparisonPredicate<?>)
             compileCondition(PET_TABLE.name().eq(OWNER_TABLE.name())).ast();
     assertEquals(Nullability.NULLABLE, nullable.nullability());
+  }
+
+  @Test
+  void frameworkExpressionSelectableUsesSharedPredicatesOrderingAndFailsClosedForMapping() {
+    ExpressionSelectable<Long> nullable =
+        new ExpressionSelectable<>(LiteralExpression.nullLiteral(Long.class));
+    NonNullExpressionSelectable<Long> one =
+        new NonNullExpressionSelectable<>(LiteralExpression.one(Long.class));
+
+    ConditionCompilation valueCompiled = compileCondition(one.ge(1L));
+    ComparisonPredicate<?> valueComparison = (ComparisonPredicate<?>) valueCompiled.ast();
+    assertSame(one.expression(), valueComparison.left());
+    assertEquals(List.of(one), valueCompiled.parameterSources());
+    assertEquals(List.of(1L), valueCompiled.arguments());
+
+    ConditionCompilation expressionCompiled = compileCondition(nullable.eq(one));
+    ComparisonPredicate<?> expressionComparison =
+        (ComparisonPredicate<?>) expressionCompiled.ast();
+    assertSame(nullable.expression(), expressionComparison.left());
+    assertSame(one.expression(), expressionComparison.right());
+    assertTrue(expressionCompiled.parameterSources().isEmpty());
+    assertTrue(expressionCompiled.arguments().isEmpty());
+
+    NullPredicate nullCheck = (NullPredicate) compileCondition(nullable.isNull()).ast();
+    assertSame(nullable.expression(), nullCheck.operand());
+
+    SortSpecification ordering = nullable.desc().nullsFirst();
+    assertSame(nullable, ordering.selectable());
+    assertSame(nullable.expression(), ordering.expression());
+    assertEquals(SortDirection.DESC, ordering.direction());
+    assertEquals(NullPlacement.FIRST, ordering.nullPlacement());
+    assertEquals(OrderDirection.DESC, ordering.ast().direction());
+    assertEquals(NullOrder.FIRST, ordering.ast().nullOrder());
+
+    TableRuntimeScope scope =
+        TableRuntimeScope.resolve(
+            EntityRuntimeRegistry.of(List.of(petModel())),
+            io.skis.sql.ast.FromClause.of(PET_TABLE));
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class, () -> ResolvedValueMapping.resolve(one, scope));
+    assertEquals(
+        "no query-local value mapping is registered for framework expression 'LiteralExpression'",
+        failure.getMessage());
   }
 
   @Test
@@ -788,7 +833,7 @@ class JoinQueryDslTest {
     SqlPredicate ast = QueryConditions.compile(condition, compiler);
     return new ConditionCompilation(
         ast,
-        compiler.parameterColumns(),
+        compiler.parameterSources(),
         compiler.parameters().valuesFor(compiler.parameterReferences()));
   }
 
@@ -816,7 +861,7 @@ class JoinQueryDslTest {
   private static <E, R> QueryCompilation<R> compileSelection(
       QueryPlanCatalog catalog,
       QueryTable<E> root,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       List<QueryJoin> joins) {
     EntityPlanSet<E> plans = catalog.require(root.entity());
     return plans
@@ -918,7 +963,7 @@ class JoinQueryDslTest {
 
   private record ConditionCompilation(
       SqlPredicate ast,
-      List<QueryColumn<?, ?>> parameterColumns,
+      List<Selectable<?>> parameterSources,
       List<@Nullable Object> arguments) {}
 
   private static final class PetTable extends QueryTable<Pet> {

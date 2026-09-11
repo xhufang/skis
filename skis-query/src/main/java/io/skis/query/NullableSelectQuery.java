@@ -7,15 +7,9 @@ import org.jspecify.annotations.Nullable;
 /** Immutable query whose selected scalar or entity result may be {@code null}. */
 public interface NullableSelectQuery<F, R> {
 
-  NullableSelectQuery<F, R> where(QueryPredicate<F> predicate);
-
   NullableSelectQuery<F, R> where(QueryCondition condition);
 
-  NullableSelectQuery<F, R> and(QueryPredicate<F> predicate);
-
   NullableSelectQuery<F, R> and(QueryCondition condition);
-
-  NullableSelectQuery<F, R> or(QueryPredicate<F> predicate);
 
   NullableSelectQuery<F, R> or(QueryCondition condition);
 
@@ -40,12 +34,12 @@ public interface NullableSelectQuery<F, R> {
   NullableSelectQuery<F, R> withOptions(ExecutionOptions executionOptions);
 
   /**
-   * Replaces the ordering with columns from the final query scope.
+   * Replaces the ordering with selectable expressions from the final query scope.
    *
-   * <p>The ordering column need not belong to the FROM root. Its table occurrence is validated
+   * <p>An ordering expression need not belong to the FROM root. Its dependencies are validated
    * against the completed FROM/JOIN structure before SQL execution.
    */
-  NullableSelectQuery<F, R> orderBy(SortSpecification<?>... specifications);
+  NullableSelectQuery<F, R> orderBy(SortSpecification... specifications);
 
   /**
    * Appends the FROM root's complete primary key to the ordering.

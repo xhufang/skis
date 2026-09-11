@@ -40,11 +40,11 @@ class QueryValueSnapshotsTest {
   @Test
   void capturesBinaryComparisonValueWhenThePredicateIsCreated() {
     byte[] source = {1, 2};
-    QueryPredicate<SnapshotRow> predicate = TABLE.bytes().eq(source);
+    QueryCondition predicate = TABLE.bytes().eq(source);
 
     source[0] = 9;
-    byte[] firstCompilation = (byte[]) predicate.compile().arguments().getFirst();
-    byte[] secondCompilation = (byte[]) predicate.compile().arguments().getFirst();
+    byte[] firstCompilation = (byte[]) arguments(predicate).getFirst();
+    byte[] secondCompilation = (byte[]) arguments(predicate).getFirst();
 
     assertArrayEquals(new byte[] {1, 2}, firstCompilation);
     assertNotSame(source, firstCompilation);
@@ -55,11 +55,11 @@ class QueryValueSnapshotsTest {
   void capturesEveryBinaryMembershipElementWhenThePredicateIsCreated() {
     byte[] first = {1, 2};
     byte[] second = {3, 4};
-    QueryPredicate<SnapshotRow> predicate = TABLE.bytes().in(List.of(first, second));
+    QueryCondition predicate = TABLE.bytes().in(List.of(first, second));
 
     first[0] = 9;
     second[0] = 8;
-    List<@Nullable Object> captured = predicate.compile().arguments();
+    List<@Nullable Object> captured = arguments(predicate);
 
     assertArrayEquals(new byte[] {1, 2}, (byte[]) captured.get(0));
     assertArrayEquals(new byte[] {3, 4}, (byte[]) captured.get(1));
@@ -71,11 +71,11 @@ class QueryValueSnapshotsTest {
   void capturesSqlTimestampWithNanosecondPrecisionWhenThePredicateIsCreated() {
     Timestamp source = Timestamp.valueOf("2026-09-06 12:34:56.123456789");
     Timestamp expected = (Timestamp) source.clone();
-    QueryPredicate<SnapshotRow> predicate = TABLE.timestamp().eq(source);
+    QueryCondition predicate = TABLE.timestamp().eq(source);
 
     source.setTime(0);
     source.setNanos(7);
-    Timestamp captured = (Timestamp) predicate.compile().arguments().getFirst();
+    Timestamp captured = (Timestamp) arguments(predicate).getFirst();
 
     assertEquals(expected, captured);
     assertEquals(expected.getNanos(), captured.getNanos());
@@ -88,14 +88,18 @@ class QueryValueSnapshotsTest {
     Time time = Time.valueOf("12:34:56");
     Date expectedDate = (Date) date.clone();
     Time expectedTime = (Time) time.clone();
-    QueryPredicate<SnapshotRow> datePredicate = TABLE.date().eq(date);
-    QueryPredicate<SnapshotRow> timePredicate = TABLE.time().eq(time);
+    QueryCondition datePredicate = TABLE.date().eq(date);
+    QueryCondition timePredicate = TABLE.time().eq(time);
 
     date.setTime(0);
     time.setTime(0);
 
-    assertEquals(expectedDate, datePredicate.compile().arguments().getFirst());
-    assertEquals(expectedTime, timePredicate.compile().arguments().getFirst());
+    assertEquals(expectedDate, arguments(datePredicate).getFirst());
+    assertEquals(expectedTime, arguments(timePredicate).getFirst());
+  }
+
+  private static List<@Nullable Object> arguments(QueryCondition condition) {
+    return QueryStructureCompiler.compile(TABLE, List.of(), condition).arguments();
   }
 
   private record SnapshotRow(byte[] bytes, Timestamp timestamp, Date date, Time time) {}

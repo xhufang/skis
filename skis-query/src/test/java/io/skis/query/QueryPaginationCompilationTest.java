@@ -57,8 +57,8 @@ class QueryPaginationCompilationTest {
   @Test
   void compilesOffsetContentAndIndependentCountPlans() {
     CompilerFixture fixture = compilerFixture();
-    QueryPredicate<Pet> predicate = TABLE.id().ge(10L);
-    List<SortSpecification<Pet>> order =
+    QueryCondition predicate = TABLE.id().ge(10L);
+    List<SortSpecification> order =
         List.of(TABLE.nickname().desc().nullsLast(), TABLE.id().desc());
 
     QueryCompilation<Pet> content =
@@ -148,8 +148,7 @@ class QueryPaginationCompilationTest {
         compiler.compileCount(
             fixture.model(),
             TABLE,
-            SelectedResult.requiredScalar(
-                TABLE, fixture.plans(), TABLE.name()),
+            SelectedResult.requiredScalar(TABLE.name()),
             List.of(),
             null,
             true);
@@ -160,8 +159,7 @@ class QueryPaginationCompilationTest {
         compiler.compileCount(
             fixture.model(),
             TABLE,
-            SelectedResult.nullableScalar(
-                TABLE, fixture.plans(), TABLE.nickname()),
+            SelectedResult.nullableScalar(TABLE.nickname()),
             List.of(),
             null,
             true);
@@ -284,7 +282,7 @@ class QueryPaginationCompilationTest {
     QueryPlanCatalog catalog =
         QueryRuntime.compile(EntityRuntimeRegistry.of(List.of(model())), TestDialect.INSTANCE);
     QueryOperations operations = bind(catalog);
-    QueryPredicate<Pet> predicate = TABLE.id().eq(7L);
+    QueryCondition predicate = TABLE.id().eq(7L);
     @SuppressWarnings("unchecked")
     DefaultSelectQuery<Pet, Pet> query =
         (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE).where(predicate);
@@ -313,8 +311,8 @@ class QueryPaginationCompilationTest {
 
   private static QueryCompilation<Pet> compileEntity(
       CompilerFixture fixture,
-      @Nullable QueryPredicate<Pet> predicate,
-      List<SortSpecification<Pet>> orderBy,
+      @Nullable QueryCondition predicate,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     return fixture.compiler().compileSelection(
@@ -331,14 +329,14 @@ class QueryPaginationCompilationTest {
 
   private static <R> QueryCompilation<OrderedRow<R>> compileOrderedProjection(
       CompilerFixture fixture,
-      QueryColumn<Pet, R> projection,
-      List<SortSpecification<Pet>> orderBy,
+      NonNullSelectable<R> projection,
+      List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
     return fixture.compiler().compileOrdered(
         fixture.model(),
         TABLE,
-        SelectedResult.requiredScalar(TABLE, fixture.plans(), projection),
+        SelectedResult.requiredScalar(projection),
         List.of(),
         null,
         orderBy,

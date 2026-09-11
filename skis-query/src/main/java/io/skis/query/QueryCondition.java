@@ -1,23 +1,23 @@
 package io.skis.query;
 
+import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
+import io.skis.sql.ast.NullOperator;
+import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlPredicate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Framework-owned immutable SQL condition that can retain references to more than one query table.
- *
- * <p>The sealed contract deliberately exposes neither raw SQL nor the underlying AST. Conditions
- * are created by typed query columns and can be composed without moving runtime values into the SQL
- * structure.
- */
-public sealed interface QueryCondition permits QueryPredicate, FrameworkQueryCondition {
+/** Framework-owned immutable SQL condition over one or more selectable expressions. */
+public sealed interface QueryCondition permits FrameworkQueryCondition {
 
   /** Returns a new grouped condition combining both operands with SQL {@code AND}. */
   QueryCondition and(QueryCondition other);
@@ -29,36 +29,69 @@ public sealed interface QueryCondition permits QueryPredicate, FrameworkQueryCon
   QueryCondition not();
 }
 
-/** Internal condition used for column comparisons and combinations spanning entity types. */
+/** The single condition implementation used by both physical columns and standard expressions. */
 final class FrameworkQueryCondition implements QueryCondition {
 
   private final Node root;
+  private final QueryParameters parameters;
 
-  private FrameworkQueryCondition(Node root) {
+  private FrameworkQueryCondition(Node root, QueryParameters parameters) {
     this.root = Objects.requireNonNull(root, "root");
+    this.parameters = Objects.requireNonNull(parameters, "parameters");
   }
 
-  static <L, R, V> FrameworkQueryCondition comparison(
-      QueryColumn<L, V> left, ComparisonOperator operator, QueryColumn<R, V> right) {
-    Objects.requireNonNull(left, "left");
-    Objects.requireNonNull(operator, "operator");
-    Objects.requireNonNull(right, "right");
-    try {
-      return new FrameworkQueryCondition(
-          new PredicateNode(
-              new ComparisonPredicate<V>(left.expression(), operator, right.expression())));
-    } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+  static <V> FrameworkQueryCondition valueComparison(
+      Selectable<V> left, ComparisonOperator operator, V value) {
+    QueryParameter<V> parameter = QueryParameter.anonymousNonNull(left.javaType());
+    return new FrameworkQueryCondition(
+        new ValueComparisonNode<>(left, operator, parameter), QueryParameters.of(parameter, value));
+  }
+
+  static <V> FrameworkQueryCondition expressionComparison(
+      Selectable<V> left, ComparisonOperator operator, Selectable<V> right) {
+    return new FrameworkQueryCondition(
+        new ExpressionComparisonNode<>(left, operator, right), QueryParameters.empty());
+  }
+
+  static FrameworkQueryCondition nullCheck(Selectable<?> selectable, NullOperator operator) {
+    return new FrameworkQueryCondition(new NullNode(selectable, operator), QueryParameters.empty());
+  }
+
+  static <V> FrameworkQueryCondition between(Selectable<V> value, V lower, V upper) {
+    QueryParameter<V> lowerParameter = QueryParameter.anonymousNonNull(value.javaType());
+    QueryParameter<V> upperParameter = QueryParameter.anonymousNonNull(value.javaType());
+    return new FrameworkQueryCondition(
+        new BetweenNode<>(value, lowerParameter, upperParameter),
+        QueryParameters.builder().bind(lowerParameter, lower).bind(upperParameter, upper).build());
+  }
+
+  static <V> FrameworkQueryCondition like(Selectable<V> value, V pattern) {
+    QueryParameter<V> parameter = QueryParameter.anonymousNonNull(value.javaType());
+    return new FrameworkQueryCondition(
+        new LikeNode<>(value, parameter), QueryParameters.of(parameter, pattern));
+  }
+
+  static <V> FrameworkQueryCondition membership(
+      Selectable<V> value, List<V> candidates, boolean negated) {
+    QueryParameters.Builder parameters = QueryParameters.builder();
+    List<QueryParameter<V>> references = new ArrayList<>(candidates.size());
+    for (V candidate : candidates) {
+      QueryParameter<V> parameter = QueryParameter.anonymousNonNull(value.javaType());
+      references.add(parameter);
+      parameters.bind(parameter, candidate);
     }
+    return new FrameworkQueryCondition(
+        new InNode<>(value, references, negated), parameters.build());
   }
 
   static QueryCondition logical(
       LogicalOperator operator, QueryCondition left, QueryCondition right) {
-    return new FrameworkQueryCondition(new LogicalNode(operator, left, right));
+    return new FrameworkQueryCondition(
+        new LogicalNode(operator, left, right), QueryParameters.empty());
   }
 
   static QueryCondition negate(QueryCondition operand) {
-    return new FrameworkQueryCondition(new NotNode(operand));
+    return new FrameworkQueryCondition(new NotNode(operand), QueryParameters.empty());
   }
 
   @Override
@@ -77,23 +110,113 @@ final class FrameworkQueryCondition implements QueryCondition {
   }
 
   SqlPredicate compile(QueryConditionCompiler compiler) {
-    return root.compile(Objects.requireNonNull(compiler, "compiler"));
+    QueryConditionCompiler target = Objects.requireNonNull(compiler, "compiler");
+    target.include(parameters);
+    return root.compile(target);
   }
 
-  private sealed interface Node permits PredicateNode, LogicalNode, NotNode {
+  private sealed interface Node
+      permits ValueComparisonNode,
+          ExpressionComparisonNode,
+          NullNode,
+          BetweenNode,
+          LikeNode,
+          InNode,
+          LogicalNode,
+          NotNode {
 
     SqlPredicate compile(QueryConditionCompiler compiler);
   }
 
-  private record PredicateNode(SqlPredicate predicate) implements Node {
+  private record ValueComparisonNode<V>(
+      Selectable<V> left, ComparisonOperator operator, QueryParameter<V> parameter)
+      implements Node {
 
-    private PredicateNode {
-      Objects.requireNonNull(predicate, "predicate");
+    private ValueComparisonNode {
+      Objects.requireNonNull(left, "left");
+      Objects.requireNonNull(operator, "operator");
+      Objects.requireNonNull(parameter, "parameter");
     }
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return predicate;
+      return new ComparisonPredicate<>(
+          left.expression(), operator, compiler.parameter(left, parameter));
+    }
+  }
+
+  private record ExpressionComparisonNode<V>(
+      Selectable<V> left, ComparisonOperator operator, Selectable<V> right) implements Node {
+
+    private ExpressionComparisonNode {
+      Objects.requireNonNull(left, "left");
+      Objects.requireNonNull(operator, "operator");
+      Objects.requireNonNull(right, "right");
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      return new ComparisonPredicate<>(left.expression(), operator, right.expression());
+    }
+  }
+
+  private record NullNode(Selectable<?> selectable, NullOperator operator) implements Node {
+
+    private NullNode {
+      Objects.requireNonNull(selectable, "selectable");
+      Objects.requireNonNull(operator, "operator");
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      return new NullPredicate(selectable.expression(), operator);
+    }
+  }
+
+  private record BetweenNode<V>(
+      Selectable<V> value, QueryParameter<V> lower, QueryParameter<V> upper) implements Node {
+
+    private BetweenNode {
+      Objects.requireNonNull(value, "value");
+      Objects.requireNonNull(lower, "lower");
+      Objects.requireNonNull(upper, "upper");
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      return new BetweenPredicate<>(
+          value.expression(), compiler.parameter(value, lower), compiler.parameter(value, upper));
+    }
+  }
+
+  private record LikeNode<V>(Selectable<V> value, QueryParameter<V> pattern) implements Node {
+
+    private LikeNode {
+      Objects.requireNonNull(value, "value");
+      Objects.requireNonNull(pattern, "pattern");
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      return new LikePredicate(value.expression(), compiler.parameter(value, pattern));
+    }
+  }
+
+  private record InNode<V>(Selectable<V> value, List<QueryParameter<V>> candidates, boolean negated)
+      implements Node {
+
+    private InNode {
+      Objects.requireNonNull(value, "value");
+      candidates = List.copyOf(candidates);
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      List<ParameterSlot<V>> slots = new ArrayList<>(candidates.size());
+      for (QueryParameter<V> candidate : candidates) {
+        slots.add(compiler.parameter(value, candidate));
+      }
+      return new InPredicate<>(value.expression(), slots, negated);
     }
   }
 
@@ -133,18 +256,10 @@ final class QueryConditions {
 
   private QueryConditions() {}
 
-  static QueryCondition logical(
-      LogicalOperator operator, QueryCondition left, QueryCondition right) {
-    return FrameworkQueryCondition.logical(operator, left, right);
-  }
-
   static SqlPredicate compile(QueryCondition condition, QueryConditionCompiler compiler) {
     Objects.requireNonNull(condition, "condition");
-    Objects.requireNonNull(compiler, "compiler");
-    return switch (condition) {
-      case QueryPredicate<?> predicate -> predicate.compile(compiler);
-      case FrameworkQueryCondition framework -> framework.compile(compiler);
-    };
+    return ((FrameworkQueryCondition) condition)
+        .compile(Objects.requireNonNull(compiler, "compiler"));
   }
 }
 
@@ -165,16 +280,16 @@ final class QueryConditionCompiler {
     this.queryBlock = layout.newQueryBlock();
   }
 
-  <E, V> ParameterSlot<V> parameter(QueryColumn<E, V> column, QueryParameter<V> parameter) {
-    return queryBlock.parameter(column, parameter);
+  <V> ParameterSlot<V> parameter(Selectable<V> source, QueryParameter<V> parameter) {
+    return queryBlock.parameter(source, parameter);
   }
 
   void include(QueryParameters included) {
     bindings.include(included);
   }
 
-  List<QueryColumn<?, ?>> parameterColumns() {
-    return layout.parameterColumns();
+  List<Selectable<?>> parameterSources() {
+    return layout.parameterSources();
   }
 
   List<QueryParameter<?>> parameterReferences() {

@@ -10,6 +10,9 @@
   `QueryParameters`，以及 `Sql.parameter(Class<V>)` 参数构造入口；同一逻辑引用可稳定映射到多个 JDBC
   占位符，缺失、额外、重复及类型错误绑定在 JDBC 前失败。完整查询描述的绑定校验与最终语句的参数投影分离；
   查询参数按自身 nullability 和规范属性 Codec 绑定，不继承 mutation 列写入的非空限制。
+- 新增查询局部 `ResolvedValueMapping<V>`，集中保存选择表达式的最终 Java/SQL 类型、有效 nullability 和
+  `JdbcTypeCodec`；`ResolvedResultShape` 继续集中保存一基结果布局，物理列的选择、生成投影、排序锚点读取和
+  普通条件参数绑定统一经该主干解析。
 - 新增框架控制的 sealed `RelationSource` 与 `EntityRelationSource` 适配节点；`FromClause`、
   `JoinClause` 和 query-block occurrence 统一保存关系来源，同时保留接受 `TableExpression<?>` 的便捷构造入口
   及其原始对象身份。
@@ -82,6 +85,10 @@
 
 ### Changed
 
+- 比较、空值判断、集合条件和排序入口统一提升到 sealed `Selectable<V>`；`SortSpecification` 改为保存通用
+  选择表达式、方向和 null 顺序，不再携带根实体泛型或属性 ordinal。
+- 删除实体泛型化 `QueryPredicate<E>`、专用 `ProjectionSelectFromStep` 及选择目标实体泛型；所有条件统一为
+  `QueryCondition`，实体、标量和生成投影统一经 `SelectFromStep<R>`/`NullableSelectFromStep<R>` 选择独立 FROM 根。
 - `FromClause.root()`、`JoinClause.right()` 与 `TableOccurrence` 的主结构从实体表改为
   `RelationSource`；直接 AST 调用方应通过来源种类区分实体与后续派生来源。SELECT 构造期不再报告需要完整
   查询块上下文的作用域/参数布局错误，这些错误统一延后到完整校验、查询编译或直接 Renderer，仍早于 JDBC。

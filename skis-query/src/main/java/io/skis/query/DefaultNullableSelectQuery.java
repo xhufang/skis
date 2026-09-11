@@ -19,28 +19,13 @@ final class DefaultNullableSelectQuery<F, R> implements NullableSelectQuery<F, R
   }
 
   @Override
-  public NullableSelectQuery<F, R> where(QueryPredicate<F> predicate) {
-    return wrap(delegate.where(predicate));
-  }
-
-  @Override
   public NullableSelectQuery<F, R> where(QueryCondition condition) {
     return wrap(delegate.where(condition));
   }
 
   @Override
-  public NullableSelectQuery<F, R> and(QueryPredicate<F> predicate) {
-    return wrap(delegate.and(predicate));
-  }
-
-  @Override
   public NullableSelectQuery<F, R> and(QueryCondition condition) {
     return wrap(delegate.and(condition));
-  }
-
-  @Override
-  public NullableSelectQuery<F, R> or(QueryPredicate<F> predicate) {
-    return wrap(delegate.or(predicate));
   }
 
   @Override
@@ -84,7 +69,7 @@ final class DefaultNullableSelectQuery<F, R> implements NullableSelectQuery<F, R
   }
 
   @Override
-  public NullableSelectQuery<F, R> orderBy(SortSpecification<?>... specifications) {
+  public NullableSelectQuery<F, R> orderBy(SortSpecification... specifications) {
     return wrap(delegate.orderBy(specifications));
   }
 

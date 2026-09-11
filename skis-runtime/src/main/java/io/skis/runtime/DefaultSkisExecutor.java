@@ -7,10 +7,8 @@ import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
-import io.skis.query.NonNullQueryColumn;
-import io.skis.query.NullableQueryColumn;
+import io.skis.query.NonNullSelectable;
 import io.skis.query.NullableSelectFromStep;
-import io.skis.query.ProjectionSelectFromStep;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
@@ -18,6 +16,7 @@ import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryTable;
 import io.skis.query.SelectFromStep;
 import io.skis.query.SelectQuery;
+import io.skis.query.Selectable;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -60,32 +59,32 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+  public <R> SelectFromStep<R> select(QueryTable<R> table) {
     return queries.select(table);
   }
 
   @Override
-  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+  public <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table) {
     return queries.selectNullable(table);
   }
 
   @Override
-  public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
-    return queries.select(column);
+  public <V> SelectFromStep<V> select(NonNullSelectable<V> selectable) {
+    return queries.select(selectable);
   }
 
   @Override
-  public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
-    return queries.select(column);
+  public <V> NullableSelectFromStep<V> select(Selectable<V> selectable) {
+    return queries.select(selectable);
   }
 
   @Override
-  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
-    return queries.selectNullable(column);
+  public <V> NullableSelectFromStep<V> selectNullable(NonNullSelectable<V> selectable) {
+    return queries.selectNullable(selectable);
   }
 
   @Override
-  public <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection) {
+  public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
     return queries.select(projection);
   }
 

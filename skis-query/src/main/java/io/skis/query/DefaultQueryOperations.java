@@ -54,54 +54,45 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
-  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+  public <R> SelectFromStep<R> select(QueryTable<R> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<R> plans = requirePlanSet(table.entity());
     return new DefaultSelectFromStep<>(this, SelectedResult.entity(table, plans));
   }
 
   @Override
-  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+  public <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<R> plans = requirePlanSet(table.entity());
     return new DefaultNullableSelectFromStep<>(this, SelectedResult.nullableEntity(table, plans));
   }
 
   @Override
-  public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
-    Objects.requireNonNull(column, "column");
-    QueryTable<E> selectedTable = column.table();
-    EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
+  public <V> SelectFromStep<V> select(NonNullSelectable<V> selectable) {
     return new DefaultSelectFromStep<>(
-        this, SelectedResult.requiredScalar(selectedTable, plans, column));
+        this, SelectedResult.requiredScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
-    Objects.requireNonNull(column, "column");
-    QueryTable<E> selectedTable = column.table();
-    EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
+  public <V> NullableSelectFromStep<V> select(Selectable<V> selectable) {
     return new DefaultNullableSelectFromStep<>(
-        this, SelectedResult.nullableScalar(selectedTable, plans, column));
+        this, SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
-    Objects.requireNonNull(column, "column");
-    QueryTable<E> selectedTable = column.table();
-    EntityPlanSet<E> plans = requirePlanSet(selectedTable.entity());
+  public <V> NullableSelectFromStep<V> selectNullable(NonNullSelectable<V> selectable) {
     return new DefaultNullableSelectFromStep<>(
-        this, SelectedResult.nullableScalar(selectedTable, plans, column));
+        this, SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection) {
-    return new DefaultProjectionSelectFromStep<>(
-        this, Objects.requireNonNull(projection, "projection"));
+  public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
+    return new DefaultSelectFromStep<>(
+        this, SelectedResult.projection(Objects.requireNonNull(projection, "projection")));
   }
 
-  <F, S, R> DefaultSelectQuery<F, R> selectFrom(
-      SelectedResult<S, R> selected, QueryTable<F> table) {
+  <F, R> DefaultSelectQuery<F, R> selectFrom(
+      SelectedResult<R> selected, QueryTable<F> table) {
     Objects.requireNonNull(selected, "selected");
     EntityPlanSet<F> plans = requirePlanSet(table.entity());
     return DefaultSelectQuery.create(this, plans, table, selected);
