@@ -184,7 +184,7 @@ final class QueryScopeAnalyzer {
         case ColumnExpression<?, ?> column -> resolveColumn(column, position, scope);
         case ParameterSlot<?> parameter -> resolveParameter(parameter, position);
         case LiteralExpression<?> literal ->
-            leaf("LITERAL", List.of(literal.kind().name()), expression, literal.nullability());
+            leafLiteral(List.of(literal.kind().name()), expression, literal.nullability());
         case ArithmeticExpression<?> arithmetic ->
             binaryUnion(
                 "ARITHMETIC",
@@ -431,13 +431,10 @@ final class QueryScopeAnalyzer {
           "IN", List.of(Boolean.toString(expression.negated())), expression, children, nullability);
     }
 
-    private Resolution leaf(
-        String kind,
-        List<String> attributes,
-        SqlExpression<?> expression,
-        Nullability nullability) {
+    private Resolution leafLiteral(
+        List<String> attributes, SqlExpression<?> expression, Nullability nullability) {
       return new Resolution(
-          new ResolvedStructureKey.Atom(kind, concat(descriptor(expression), attributes)),
+          new ResolvedStructureKey.Atom("LITERAL", concat(descriptor(expression), attributes)),
           new LinkedHashSet<>(),
           new LinkedHashSet<>(),
           nullability);
