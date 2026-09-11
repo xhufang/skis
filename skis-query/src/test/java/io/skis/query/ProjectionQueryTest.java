@@ -2,6 +2,7 @@ package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -59,6 +60,32 @@ class ProjectionQueryTest {
           false);
   private static final PetTable PET_TABLE = new PetTable();
   private static final OwnerTable OWNER_TABLE = new OwnerTable();
+
+  @Test
+  void resolvesPhysicalColumnsIntoOneCompleteQueryLocalValueMapping() {
+    EntityRuntimeRegistry registry =
+        EntityRuntimeRegistry.of(List.of(petModel(), ownerModel()));
+    CompiledQueryStructure structure =
+        QueryStructureCompiler.compile(
+            PET_TABLE,
+            List.of(
+                new QueryJoin(
+                    JoinType.LEFT,
+                    OWNER_TABLE,
+                    PET_TABLE.ownerId().eq(OWNER_TABLE.id()))),
+            null);
+    TableRuntimeScope scope = TableRuntimeScope.resolve(registry, structure.fromClause());
+
+    ResolvedValueMapping<?> mapping =
+        ResolvedValueMapping.resolve(OWNER_TABLE.name(), scope);
+
+    assertSame(OWNER_TABLE.name(), mapping.selectable());
+    assertEquals(String.class, mapping.javaType());
+    assertEquals(OWNER_TABLE.name().sqlType(), mapping.sqlType());
+    assertEquals(Nullability.NULLABLE, mapping.effectiveNullability());
+    assertSame(JdbcCodecs.STRING, mapping.codec());
+    assertEquals(1, mapping.sourceOccurrenceOrdinal());
+  }
 
   @Test
   void bindsDefensivelyAndKeepsTheMappingQueryIndependent() {

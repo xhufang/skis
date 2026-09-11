@@ -11,13 +11,13 @@ import java.util.Objects;
  * occurrence.
  *
  * <p>Nested-query traversal can create a fresh {@link QueryBlock} for every occurrence while
- * sharing this statement layout. Reusing one parameter inside a block then reuses its logical
- * slot, while embedding the same block twice can allocate distinct statement slots backed by the
- * same query-level reference.
+ * sharing this statement layout. Reusing one parameter inside a block then reuses its logical slot,
+ * while embedding the same block twice can allocate distinct statement slots backed by the same
+ * query-level reference.
  */
 final class StatementParameterLayout {
 
-  private final List<QueryColumn<?, ?>> parameterColumns = new ArrayList<>();
+  private final List<Selectable<?>> parameterSources = new ArrayList<>();
   private final List<QueryParameter<?>> parameterReferences = new ArrayList<>();
   private final List<ParameterSlot<?>> parameterSlots = new ArrayList<>();
 
@@ -25,8 +25,8 @@ final class StatementParameterLayout {
     return new QueryBlock();
   }
 
-  List<QueryColumn<?, ?>> parameterColumns() {
-    return List.copyOf(parameterColumns);
+  List<Selectable<?>> parameterSources() {
+    return List.copyOf(parameterSources);
   }
 
   List<QueryParameter<?>> parameterReferences() {
@@ -42,34 +42,33 @@ final class StatementParameterLayout {
     private final IdentityHashMap<QueryParameter<?>, RegisteredParameter> parameters =
         new IdentityHashMap<>();
 
-    <E, V> ParameterSlot<V> parameter(
-        QueryColumn<E, V> column, QueryParameter<V> parameter) {
-      Objects.requireNonNull(column, "column");
+    <V> ParameterSlot<V> parameter(Selectable<V> source, QueryParameter<V> parameter) {
+      Objects.requireNonNull(source, "source");
       Objects.requireNonNull(parameter, "parameter");
-      if (!column.javaType().equals(parameter.javaType())) {
+      if (!source.javaType().equals(parameter.javaType())) {
         throw new QueryValidationException(
             "query parameter Java type "
                 + parameter.javaType().getTypeName()
-                + " does not match property '"
-                + column.property().name()
+                + " does not match expression '"
+                + SelectableSupport.summary(source)
                 + "' type "
-                + column.javaType().getTypeName());
+                + source.javaType().getTypeName());
       }
       RegisteredParameter registered = parameters.get(parameter);
       if (registered != null) {
         ParameterSlot<?> existing = registered.slot();
-        if (!existing.javaType().equals(column.javaType())
-            || existing.sqlType() != column.sqlType()
+        if (!existing.javaType().equals(source.javaType())
+            || existing.sqlType() != source.sqlType()
             || existing.nullability() != parameter.nullability()) {
           throw new QueryValidationException(
               "query parameter is used with conflicting Java type, SQL type or nullability");
         }
-        if (registered.binderSource().property() != column.property()) {
+        if (!SelectableSupport.sameOccurrence(registered.binderSource(), source)) {
           throw new QueryValidationException(
-              "query parameter is reused with conflicting property Codec sources '"
-                  + registered.binderSource().property().name()
+              "query parameter is reused with conflicting expression Codec sources '"
+                  + SelectableSupport.summary(registered.binderSource())
                   + "' and '"
-                  + column.property().name()
+                  + SelectableSupport.summary(source)
                   + "'");
         }
         @SuppressWarnings("unchecked")
@@ -79,17 +78,16 @@ final class StatementParameterLayout {
       int ordinal = parameterReferences.size();
       ParameterSlot<V> slot =
           new ParameterSlot<>(
-              ordinal, column.javaType(), column.sqlType(), parameter.nullability());
-      parameters.put(parameter, new RegisteredParameter(slot, column));
-      parameterColumns.add(column);
+              ordinal, source.javaType(), source.sqlType(), parameter.nullability());
+      parameters.put(parameter, new RegisteredParameter(slot, source));
+      parameterSources.add(source);
       parameterReferences.add(parameter);
       parameterSlots.add(slot);
       return slot;
     }
   }
 
-  private record RegisteredParameter(
-      ParameterSlot<?> slot, QueryColumn<?, ?> binderSource) {
+  private record RegisteredParameter(ParameterSlot<?> slot, Selectable<?> binderSource) {
 
     private RegisteredParameter {
       Objects.requireNonNull(slot, "slot");

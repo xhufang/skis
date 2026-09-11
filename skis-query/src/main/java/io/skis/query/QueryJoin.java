@@ -45,7 +45,7 @@ final class QueryStructureCompiler {
       return new CompiledQueryStructure(
           new FromClause(root, joinAst),
           whereAst,
-          compiler.parameterColumns(),
+          compiler.parameterSources(),
           compiler.parameterReferences(),
           compiler.parameterSlots(),
           compiler.parameters());
@@ -58,19 +58,19 @@ final class QueryStructureCompiler {
 record CompiledQueryStructure(
     FromClause fromClause,
     @Nullable SqlPredicate where,
-    List<QueryColumn<?, ?>> parameterColumns,
+    List<Selectable<?>> parameterSources,
     List<QueryParameter<?>> parameterReferences,
     List<ParameterSlot<?>> parameterSlots,
     QueryParameters parameters) {
 
   CompiledQueryStructure {
     Objects.requireNonNull(fromClause, "fromClause");
-    parameterColumns = List.copyOf(parameterColumns);
+    parameterSources = List.copyOf(parameterSources);
     parameterReferences = List.copyOf(parameterReferences);
     parameterSlots = List.copyOf(parameterSlots);
     Objects.requireNonNull(parameters, "parameters");
-    if (parameterColumns.size() != parameterReferences.size()
-        || parameterColumns.size() != parameterSlots.size()) {
+    if (parameterSources.size() != parameterReferences.size()
+        || parameterSources.size() != parameterSlots.size()) {
       throw new IllegalArgumentException(
           "query parameter reference, slot, and binder-source counts differ");
     }

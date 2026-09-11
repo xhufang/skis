@@ -4,7 +4,11 @@ import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.Nullability;
+import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SqlExpression;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
@@ -60,25 +64,21 @@ final class EntityPlanSet<E> {
     return property;
   }
 
-  CompiledQueryPlan<E, Object> selectPlan(
-      QueryTable<E> table, @Nullable QueryPredicate<E> predicate) {
-    if (predicate == null) {
+  CompiledQueryPlan<E, Object> selectPlan(QueryTable<E> table, @Nullable QueryCondition condition) {
+    if (condition == null) {
       return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
     }
-    CompiledQueryStructure structure =
-        QueryStructureCompiler.compile(table, List.of(), predicate);
-    return selectPlan(table, predicate, structure);
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, List.of(), condition);
+    return selectPlanForStructure(table, structure);
   }
 
-  CompiledQueryPlan<E, Object> selectPlan(
-      QueryTable<E> table,
-      @Nullable QueryPredicate<E> predicate,
-      CompiledQueryStructure structure) {
+  CompiledQueryPlan<E, Object> selectPlanForStructure(
+      QueryTable<E> table, CompiledQueryStructure structure) {
     Objects.requireNonNull(structure, "structure");
-    if (predicate == null) {
+    if (structure.where() == null) {
       return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
     }
-    PropertyMeta<E, ?> property = predicate.simpleEqualityProperty(table);
+    PropertyMeta<E, ?> property = simpleEqualityProperty(table, structure);
     if (property == null || !supportsCachedEquality(structure, property)) {
       return compiler.compileQuery(model, table, structure);
     }
@@ -87,11 +87,12 @@ final class EntityPlanSet<E> {
         : compiler.compileQuery(model, table, structure);
   }
 
-  Object argument(@Nullable QueryPredicate<E> predicate) {
-    if (predicate == null) {
+  Object argument(@Nullable QueryCondition condition) {
+    if (condition == null) {
       return NoParameters.INSTANCE;
     }
-    List<@Nullable Object> arguments = predicate.compile().arguments();
+    List<@Nullable Object> arguments =
+        QueryStructureCompiler.compile(canonicalTable, List.of(), condition).arguments();
     return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
@@ -107,16 +108,44 @@ final class EntityPlanSet<E> {
 
   private boolean supportsCachedEquality(
       CompiledQueryStructure structure, PropertyMeta<E, ?> property) {
-    if (structure.parameterSlots().size() != 1
-        || structure.parameterColumns().size() != 1) {
+    if (structure.parameterSlots().size() != 1 || structure.parameterSources().size() != 1) {
       return false;
     }
     var slot = structure.parameterSlots().getFirst();
-    QueryColumn<?, ?> source = structure.parameterColumns().getFirst();
+    Selectable<?> selectable = structure.parameterSources().getFirst();
+    if (!(selectable instanceof QueryColumn<?, ?> source)) {
+      return false;
+    }
     return slot.nullability() == Nullability.NON_NULL
         && slot.javaType().equals(property.javaType())
         && slot.sqlType() == source.sqlType()
         && source.property() == property;
+  }
+
+  private @Nullable PropertyMeta<E, ?> simpleEqualityProperty(
+      QueryTable<E> table, CompiledQueryStructure structure) {
+    if (!(structure.where()
+            instanceof
+            ComparisonPredicate<?>(
+                SqlExpression<?> left,
+                ComparisonOperator operator,
+                SqlExpression<?> right))
+        || operator != ComparisonOperator.EQUAL
+        || !(right instanceof ParameterSlot<?>)) {
+      return null;
+    }
+    if (structure.parameterSources().size() != 1) {
+      return null;
+    }
+    Selectable<?> source = structure.parameterSources().getFirst();
+    if (!(source instanceof QueryColumn<?, ?> column)
+        || column.table() != table
+        || left != column.expression()) {
+      return null;
+    }
+    @SuppressWarnings("unchecked")
+    PropertyMeta<E, ?> property = (PropertyMeta<E, ?>) column.property();
+    return property;
   }
 
   private CompiledQueryPlan<E, Object> equalityPlan(int ordinal) {

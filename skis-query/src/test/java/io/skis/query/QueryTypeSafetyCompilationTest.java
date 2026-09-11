@@ -24,15 +24,55 @@ class QueryTypeSafetyCompilationTest {
   @TempDir Path temporaryDirectory;
 
   @Test
-  void decouplesNullableAndNonNullSelectionsFromTheirFromRoot() throws Exception {
+  void selectableContractsCompileAcrossConcreteInterfaceGenericAndMethodReferenceForms()
+      throws Exception {
     String valid =
         """
         package samples;
         import io.skis.query.*;
+        import java.util.function.Function;
         final class ValidQuery {
+          static <V> QueryCondition equal(Selectable<V> left, Selectable<V> right) {
+            return left.eq(right);
+          }
+          static <V> SortSpecification order(Selectable<V> selectable) {
+            return selectable.asc();
+          }
+          static <V> NullableSelectFromStep<V> select(
+              QueryOperations operations, Selectable<V> selectable) {
+            return operations.select(selectable);
+          }
+          static <V> SelectFromStep<V> selectNonNull(
+              QueryOperations operations, NonNullSelectable<V> selectable) {
+            return operations.select(selectable);
+          }
           static <E> void query(
-              QueryOperations operations, NonNullQueryColumn<E, String> column, QueryTable<E> table) {
-            operations.select(column).from(table);
+              QueryOperations operations,
+              NonNullQueryColumn<E, String> concrete,
+              NullableQueryColumn<E, String> nullableConcrete,
+              QueryTable<E> table) {
+            NonNullSelectable<String> nonNull = concrete;
+            Selectable<String> selectable = concrete;
+            Selectable<String> nullable = nullableConcrete;
+            SelectFromStep<String> concreteStep = operations.select(concrete);
+            SelectFromStep<String> interfaceStep = operations.select(nonNull);
+            NullableSelectFromStep<String> generalStep = operations.select(selectable);
+            NullableSelectFromStep<String> nullableStep = select(operations, nullable);
+            SelectFromStep<String> helperStep = selectNonNull(operations, nonNull);
+            Function<NonNullSelectable<String>, SelectFromStep<String>> selector =
+                operations::select;
+            Function<String, QueryCondition> equality = concrete::eq;
+            Function<Selectable<String>, QueryCondition> expressionEquality = concrete::eq;
+            concreteStep.from(table);
+            interfaceStep.from(table);
+            generalStep.from(table);
+            nullableStep.from(table);
+            helperStep.from(table);
+            order(selectable);
+            equal(selectable, nullable);
+            selector.apply(nonNull);
+            equality.apply("Ada");
+            expressionEquality.apply(nullable);
           }
         }
         """;
@@ -79,6 +119,16 @@ class QueryTypeSafetyCompilationTest {
           }
         }
         """;
+    String invalidInterfaceNullness =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidInterfaceNullness {
+          static void query(QueryOperations operations, Selectable<String> selectable) {
+            SelectFromStep<String> step = operations.select(selectable);
+          }
+        }
+        """;
 
     assertTrue(compile("samples.ValidQuery", valid, temporaryDirectory.resolve("valid")));
     assertTrue(
@@ -91,6 +141,11 @@ class QueryTypeSafetyCompilationTest {
             "samples.NullableFromDecoupling",
             nullableFromDecoupling,
             temporaryDirectory.resolve("nullable-from-decoupling")));
+    assertFalse(
+        compile(
+            "samples.InvalidInterfaceNullness",
+            invalidInterfaceNullness,
+            temporaryDirectory.resolve("invalid-interface-nullness")));
   }
 
   @Test
@@ -107,7 +162,7 @@ class QueryTypeSafetyCompilationTest {
               QueryOperations operations,
               QueryTable<Pet> table,
               ProjectionSelection<Summary> selection,
-              QueryPredicate<Pet> predicate) {
+              QueryCondition predicate) {
             operations.select(selection).from(table).where(predicate);
           }
         }
@@ -124,7 +179,7 @@ class QueryTypeSafetyCompilationTest {
               QueryOperations operations,
               QueryTable<Pet> table,
               ProjectionSelection<Summary> selection,
-              QueryPredicate<Owner> predicate) {
+              QueryCondition predicate) {
             operations.select(selection).from(table).where(predicate);
           }
         }
@@ -225,7 +280,7 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
-  void keepsNarrowPredicatesAndAllowsWideConditionChains() throws Exception {
+  void usesOneRootNeutralConditionTypeForEveryConditionChain() throws Exception {
     String valid =
         """
         package samples;
@@ -233,8 +288,8 @@ class QueryTypeSafetyCompilationTest {
         final class ValidChain {
           static <E> void query(
               SelectQuery<E, E> query,
-              QueryPredicate<E> first,
-              QueryPredicate<E> second) {
+              QueryCondition first,
+              QueryCondition second) {
             query.where(first).and(second).or(first);
           }
         }
@@ -248,8 +303,8 @@ class QueryTypeSafetyCompilationTest {
           static final class Owner {}
           static void query(
               SelectQuery<Pet, Pet> query,
-              QueryPredicate<Pet> pet,
-              QueryPredicate<Owner> owner) {
+              QueryCondition pet,
+              QueryCondition owner) {
             query.where(pet).and(owner);
           }
         }

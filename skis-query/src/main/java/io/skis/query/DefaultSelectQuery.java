@@ -38,11 +38,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final DefaultQueryOperations operations;
   private final EntityPlanSet<E> plans;
   private final QueryTable<E> table;
-  private final SelectedResult<?, R> selected;
+  private final SelectedResult<R> selected;
   private final List<QueryJoin> joins;
   private final @Nullable QueryCondition predicate;
   private final ExecutionContext executionContext;
-  private final List<SortSpecification<?>> orderBy;
+  private final List<SortSpecification> orderBy;
   private final boolean distinct;
   private volatile @Nullable QueryAnalysis analysis;
   private final AtomicReference<@Nullable CachedPlan<R>> fastPlan = new AtomicReference<>();
@@ -54,7 +54,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      SelectedResult<?, R> selected) {
+      SelectedResult<R> selected) {
     return new DefaultSelectQuery<>(
         operations,
         plans,
@@ -71,11 +71,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
       QueryTable<E> table,
-      SelectedResult<?, R> selected,
+      SelectedResult<R> selected,
       List<QueryJoin> joins,
       @Nullable QueryCondition predicate,
       ExecutionContext executionContext,
-      List<? extends SortSpecification<?>> orderBy,
+      List<SortSpecification> orderBy,
       boolean distinct) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
@@ -89,11 +89,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   @Override
-  public DefaultSelectQuery<E, R> where(QueryPredicate<E> newPredicate) {
-    return where((QueryCondition) newPredicate);
-  }
-
-  @Override
   public DefaultSelectQuery<E, R> where(QueryCondition newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
     if (predicate != null) {
@@ -103,18 +98,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   @Override
-  public DefaultSelectQuery<E, R> and(QueryPredicate<E> newPredicate) {
-    return chainNarrow(newPredicate, true);
-  }
-
-  @Override
   public DefaultSelectQuery<E, R> and(QueryCondition newPredicate) {
     return chain(newPredicate, true);
-  }
-
-  @Override
-  public DefaultSelectQuery<E, R> or(QueryPredicate<E> newPredicate) {
-    return chainNarrow(newPredicate, false);
   }
 
   @Override
@@ -162,12 +147,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   @Override
-  public DefaultSelectQuery<E, R> orderBy(SortSpecification<?>... specifications) {
+  public DefaultSelectQuery<E, R> orderBy(SortSpecification... specifications) {
     Objects.requireNonNull(specifications, "specifications");
     if (specifications.length == 0) {
       throw new QueryValidationException("orderBy requires at least one ordering item");
     }
-    List<SortSpecification<?>> items = List.copyOf(Arrays.asList(specifications.clone()));
+    List<SortSpecification> items = List.copyOf(Arrays.asList(specifications.clone()));
     validateOrderItems(items);
     return hasSameOrderOccurrences(orderBy, items)
         ? this
@@ -187,15 +172,18 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                         "thenByPrimaryKey requires primary-key metadata for entity '"
                             + plans.entity().entityName()
                             + "'"));
-    List<SortSpecification<?>> items = new ArrayList<>(orderBy);
+    List<SortSpecification> items = new ArrayList<>(orderBy);
     for (PropertyMeta<E, ?> property : primaryKey.properties()) {
       boolean present =
           items.stream()
               .anyMatch(
-                  item -> item.column().table() == table && item.column().property() == property);
+                  item ->
+                      item.selectable() instanceof QueryColumn<?, ?> column
+                          && column.table() == table
+                          && column.property() == property);
       if (!present) {
         items.add(
-            new SortSpecification<>(
+            new SortSpecification(
                 table.queryColumn(property), direction, NullPlacement.DIALECT_DEFAULT));
       }
     }
@@ -376,7 +364,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         && joins.isEmpty()
         && selected.belongsTo(table)
         && selected.supportsFastPath()
-        && (predicate == null || predicate instanceof QueryPredicate<?>)
         && orderBy.isEmpty()
         && !distinct;
   }
@@ -393,8 +380,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       return existing;
     }
     QueryAnalysis queryAnalysis = analysis();
-    CompiledQueryPlan<R, Object> plan =
-        selected.fastPlan(fastPredicate(), queryAnalysis.structure());
+    CompiledQueryPlan<R, Object> plan = selected.fastPlan(queryAnalysis.structure());
     SelectStatement ast =
         new SelectStatement(
             selected.expressions(),
@@ -512,7 +498,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
           SliceContinuation.keyset(
               queryFingerprint(),
               orderSignature(),
-              orderBy.stream().map(item -> item.column().sqlType()).toList(),
+              orderBy.stream().map(item -> item.selectable().sqlType()).toList(),
               nullMarkers,
               anchor.orderValues(),
               parameterDigest());
@@ -532,8 +518,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
             selected.expressions().stream()
                 .filter(
                     expression ->
-                        orderBy.stream()
-                            .noneMatch(item -> item.column().expression().equals(expression)))
+                        orderBy.stream().noneMatch(item -> item.expression().equals(expression)))
                 .findFirst()
                 .orElseThrow();
         throw new QueryValidationException(
@@ -545,12 +530,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       validateOccurrencePrimaryKeys(structure.fromClause());
     }
     if (keyset) {
-      for (SortSpecification<?> item : orderBy) {
-        if (structure.fromClause().effectiveNullability(item.column().expression()).isNullable()
+      for (SortSpecification item : orderBy) {
+        QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
+        if (structure.fromClause().effectiveNullability(column.expression()).isNullable()
             && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw new QueryValidationException(
               "effectively nullable keyset ordering property '"
-                  + item.column().property().name()
+                  + column.property().name()
                   + "' must declare nullsFirst() or nullsLast()");
         }
       }
@@ -564,34 +550,29 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     List<SqlExpression<?>> expressions = selected.expressions();
     return expressions.stream()
         .allMatch(
-            expression ->
-                orderBy.stream().anyMatch(item -> item.column().expression().equals(expression)));
+            expression -> orderBy.stream().anyMatch(item -> item.expression().equals(expression)));
   }
 
-  private void validateOrderItems(List<SortSpecification<?>> items) {
+  private void validateOrderItems(List<SortSpecification> items) {
     Set<SqlExpression<?>> expressions = new HashSet<>();
-    for (SortSpecification<?> item : items) {
+    for (SortSpecification item : items) {
       Objects.requireNonNull(item, "ordering item");
-      if (!expressions.add(item.column().expression())) {
+      if (!expressions.add(item.expression())) {
         throw new QueryValidationException(
-            "ORDER BY repeats expression '" + expressionSummary(item.column().expression()) + "'");
+            "ORDER BY repeats expression '" + expressionSummary(item.expression()) + "'");
       }
     }
   }
 
   private static boolean hasSameOrderOccurrences(
-      List<? extends SortSpecification<?>> current,
-      List<? extends SortSpecification<?>> replacement) {
+      List<SortSpecification> current, List<SortSpecification> replacement) {
     if (current.size() != replacement.size()) {
       return false;
     }
     for (int index = 0; index < current.size(); index++) {
-      SortSpecification<?> existing = current.get(index);
-      SortSpecification<?> candidate = replacement.get(index);
-      if (existing.column().table() != candidate.column().table()
-          || existing.column().property() != candidate.column().property()
-          || existing.direction() != candidate.direction()
-          || existing.nullPlacement() != candidate.nullPlacement()) {
+      SortSpecification existing = current.get(index);
+      SortSpecification candidate = replacement.get(index);
+      if (!existing.sameOccurrence(candidate)) {
         return false;
       }
     }
@@ -599,11 +580,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private void validateOrderScope(FromClause fromClause) {
-    for (SortSpecification<?> item : orderBy) {
-      if (fromClause.occurrenceOf(item.column().table()).isEmpty()) {
+    for (SortSpecification item : orderBy) {
+      SqlExpression<?> expression = item.expression();
+      if (expression instanceof ColumnExpression<?, ?> column
+          && fromClause.occurrenceOf(column.table()).isEmpty()) {
         throw new QueryValidationException(
             "ORDER BY expression '"
-                + expressionSummary(item.column().expression())
+                + expressionSummary(expression)
                 + "' is not visible in the final FROM/JOIN scope");
       }
     }
@@ -625,9 +608,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         boolean present =
             orderBy.stream()
                 .anyMatch(
-                    item ->
-                        item.column().table() == occurrenceTable
-                            && item.column().property() == property);
+                    item -> {
+                      Selectable<?> selectable = item.selectable();
+                      return selectable instanceof QueryColumn<?, ?> column
+                          && column.table() == occurrenceTable
+                          && column.property() == property;
+                    });
         if (!present) {
           throw new QueryValidationException(
               "pagination ORDER BY is not stable for "
@@ -645,11 +631,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       return;
     }
     List<SqlExpression<?>> expressions = selected.expressions();
-    for (SortSpecification<?> item : orderBy) {
-      if (!expressions.contains(item.column().expression())) {
+    for (SortSpecification item : orderBy) {
+      if (!expressions.contains(item.expression())) {
         throw new QueryValidationException(
-            "distinct ORDER BY property '"
-                + item.column().property().name()
+            "distinct ORDER BY expression '"
+                + SelectableSupport.summary(item.selectable())
                 + "' is not part of the selected result");
       }
     }
@@ -674,14 +660,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         throw new QueryValidationException("continuation ordering value count does not match");
       }
       for (int index = 0; index < orderBy.size(); index++) {
-        SortSpecification<?> sort = orderBy.get(index);
+        SortSpecification sort = orderBy.get(index);
         Object value = values.get(index);
-        if (continuation.sqlTypes().get(index) != sort.column().sqlType()
+        if (continuation.sqlTypes().get(index) != sort.selectable().sqlType()
             || continuation.nullMarkers().get(index) != (value == null)
-            || (value != null && !sort.column().javaType().isInstance(value))) {
+            || (value != null && !sort.selectable().javaType().isInstance(value))) {
           throw new QueryValidationException(
-              "continuation value type does not match ordering property '"
-                  + sort.column().property().name()
+              "continuation value type does not match ordering expression '"
+                  + SelectableSupport.summary(sort.selectable())
                   + "'");
         }
       }
@@ -707,8 +693,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       updateDigest(digest, physicalTable.catalog());
       updateDigest(digest, physicalTable.schema());
       updateDigest(digest, physicalTable.name());
-      updateDigest(
-          digest, occurrenceTable.alias().map(Identifier::value).orElse("<unaliased>"));
+      updateDigest(digest, occurrenceTable.alias().map(Identifier::value).orElse("<unaliased>"));
     }
     fromClause.joins().forEach(join -> updateDigest(digest, join.type().name()));
     structure
@@ -728,15 +713,16 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   String orderSignature() {
     FromClause fromClause = analysis().structure().fromClause();
     StringBuilder signature = new StringBuilder();
-    for (SortSpecification<?> item : orderBy) {
+    for (SortSpecification item : orderBy) {
+      QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
       TableOccurrence occurrence =
           fromClause
-              .occurrenceOf(item.column().table())
+              .occurrenceOf(column.table())
               .orElseThrow(
                   () ->
                       new QueryValidationException(
                           "ORDER BY expression '"
-                              + expressionSummary(item.column().expression())
+                              + expressionSummary(item.expression())
                               + "' is not visible in the final FROM/JOIN scope"));
       signature
           .append(occurrence.occurrenceOrdinal())
@@ -745,13 +731,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
           .append(':')
           .append(entityTable(occurrence).entity().javaType().getName())
           .append(':')
-          .append(item.column().property().ordinal())
+          .append(column.property().ordinal())
           .append(':')
-          .append(item.column().property().name())
+          .append(column.property().name())
           .append(':')
-          .append(item.column().javaType().getName())
+          .append(item.selectable().javaType().getName())
           .append(':')
-          .append(item.column().sqlType())
+          .append(item.selectable().sqlType())
           .append(':')
           .append(item.direction())
           .append(':')
@@ -845,31 +831,10 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         distinct);
   }
 
-  private DefaultSelectQuery<E, R> chainNarrow(
-      QueryPredicate<E> newPredicate, boolean conjunction) {
-    Objects.requireNonNull(newPredicate, "predicate");
-    if (predicate == null) {
-      throw new QueryValidationException(
-          (conjunction ? "and" : "or") + "(...) requires an existing where predicate");
-    }
-    QueryCondition combined =
-        predicate instanceof QueryPredicate<?> existing
-            ? combineNarrow(existing, newPredicate, conjunction)
-            : (conjunction ? predicate.and(newPredicate) : predicate.or(newPredicate));
-    return copy(combined, executionContext, orderBy, distinct);
-  }
-
-  @SuppressWarnings("unchecked")
-  private static <E> QueryPredicate<E> combineNarrow(
-      QueryPredicate<?> existing, QueryPredicate<E> added, boolean conjunction) {
-    QueryPredicate<E> typed = (QueryPredicate<E>) existing;
-    return conjunction ? typed.and(added) : typed.or(added);
-  }
-
   private DefaultSelectQuery<E, R> copy(
       @Nullable QueryCondition newPredicate,
       ExecutionContext context,
-      List<? extends SortSpecification<?>> newOrderBy,
+      List<SortSpecification> newOrderBy,
       boolean newDistinct) {
     return new DefaultSelectQuery<>(
         operations, plans, table, selected, joins, newPredicate, context, newOrderBy, newDistinct);
@@ -923,9 +888,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
   }
 
-  @SuppressWarnings("unchecked")
-  private @Nullable QueryPredicate<E> fastPredicate() {
-    return predicate == null ? null : (QueryPredicate<E>) predicate;
+  private static QueryColumn<?, ?> requirePhysicalPaginationColumn(SortSpecification item) {
+    if (item.selectable() instanceof QueryColumn<?, ?> column) {
+      return column;
+    }
+    throw new QueryValidationException(
+        "pagination identity analysis does not yet support ORDER BY expression '"
+            + SelectableSupport.summary(item.selectable())
+            + "'");
   }
 
   private static int sizePlusOne(int pageSize) {
@@ -982,9 +952,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
 
     private List<@Nullable Object> arguments() {
-      return argument instanceof QueryArguments(List<@Nullable Object> values)
-          ? values
-          : List.of();
+      return argument instanceof QueryArguments(List<@Nullable Object> values) ? values : List.of();
     }
   }
 

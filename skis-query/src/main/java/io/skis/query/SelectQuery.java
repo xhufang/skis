@@ -7,15 +7,9 @@ import java.util.Optional;
 /** Unified immutable query for entities, non-null scalars, and generated projections. */
 public interface SelectQuery<E, R> {
 
-  SelectQuery<E, R> where(QueryPredicate<E> predicate);
-
   SelectQuery<E, R> where(QueryCondition condition);
 
-  SelectQuery<E, R> and(QueryPredicate<E> predicate);
-
   SelectQuery<E, R> and(QueryCondition condition);
-
-  SelectQuery<E, R> or(QueryPredicate<E> predicate);
 
   SelectQuery<E, R> or(QueryCondition condition);
 
@@ -40,12 +34,12 @@ public interface SelectQuery<E, R> {
   SelectQuery<E, R> withOptions(ExecutionOptions executionOptions);
 
   /**
-   * Replaces the ordering with columns from the final query scope.
+   * Replaces the ordering with selectable expressions from the final query scope.
    *
-   * <p>The ordering column need not belong to the FROM root. Its table occurrence is validated
+   * <p>An ordering expression need not belong to the FROM root. Its dependencies are validated
    * against the completed FROM/JOIN structure before SQL execution.
    */
-  SelectQuery<E, R> orderBy(SortSpecification<?>... specifications);
+  SelectQuery<E, R> orderBy(SortSpecification... specifications);
 
   /**
    * Appends the FROM root's complete primary key to the ordering.

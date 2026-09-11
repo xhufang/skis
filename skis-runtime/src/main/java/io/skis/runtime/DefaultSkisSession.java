@@ -5,15 +5,14 @@ import io.skis.core.TransactionException;
 import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
-import io.skis.query.NonNullQueryColumn;
-import io.skis.query.NullableQueryColumn;
+import io.skis.query.NonNullSelectable;
 import io.skis.query.NullableSelectFromStep;
-import io.skis.query.ProjectionSelectFromStep;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
 import io.skis.query.SelectFromStep;
 import io.skis.query.SelectQuery;
+import io.skis.query.Selectable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -54,37 +53,37 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <R> SelectFromStep<R, R> select(QueryTable<R> table) {
+  public <R> SelectFromStep<R> select(QueryTable<R> table) {
     requireActive();
     return queries.select(table);
   }
 
   @Override
-  public <R> NullableSelectFromStep<R, R> selectNullable(QueryTable<R> table) {
+  public <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table) {
     requireActive();
     return queries.selectNullable(table);
   }
 
   @Override
-  public <E, V> SelectFromStep<E, V> select(NonNullQueryColumn<E, V> column) {
+  public <V> SelectFromStep<V> select(NonNullSelectable<V> column) {
     requireActive();
     return queries.select(column);
   }
 
   @Override
-  public <E, V> NullableSelectFromStep<E, V> select(NullableQueryColumn<E, V> column) {
+  public <V> NullableSelectFromStep<V> select(Selectable<V> column) {
     requireActive();
     return queries.select(column);
   }
 
   @Override
-  public <E, V> NullableSelectFromStep<E, V> selectNullable(NonNullQueryColumn<E, V> column) {
+  public <V> NullableSelectFromStep<V> selectNullable(NonNullSelectable<V> column) {
     requireActive();
     return queries.selectNullable(column);
   }
 
   @Override
-  public <R> ProjectionSelectFromStep<R> select(ProjectionSelection<R> projection) {
+  public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
     requireActive();
     return queries.select(projection);
   }

@@ -3,12 +3,12 @@ package io.skis.query;
 import java.util.Objects;
 
 /** Immutable FROM stage returned after selecting a nullable scalar or complete entity. */
-final class DefaultNullableSelectFromStep<S, R> implements NullableSelectFromStep<S, R> {
+final class DefaultNullableSelectFromStep<R> implements NullableSelectFromStep<R> {
 
   private final DefaultQueryOperations operations;
-  private final SelectedResult<S, R> selected;
+  private final SelectedResult<R> selected;
 
-  DefaultNullableSelectFromStep(DefaultQueryOperations operations, SelectedResult<S, R> selected) {
+  DefaultNullableSelectFromStep(DefaultQueryOperations operations, SelectedResult<R> selected) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.selected = Objects.requireNonNull(selected, "selected");
   }
