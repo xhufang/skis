@@ -1,6 +1,6 @@
 # 0.2.5 API compatibility ledger
 
-This ledger records the public API differences approved for steps 1, 3, 4, and 5 of the internal
+This ledger records the public API differences approved for steps 1, 3, 4, 5, and 6 of the internal
 `0.2.5-SNAPSHOT` milestone. It is not the consolidated compatibility report for the unfinished
 `0.2.x` development line. The root `pom.xml` japicmp allow-list names each approved class or
 method so unrelated public API breaks continue to fail compatibility checks.
@@ -160,3 +160,36 @@ Terminal pagination remains an execution adapter concern and is combined with th
 state only for the final top-level SQL AST. It is not persisted into a reusable description. A
 direct description-level SQL limit/offset API and all embedding adapters remain deferred to their
 explicit later capability slices.
+
+## Step 6: EXISTS and correlated subqueries
+
+### Added API
+
+- `ExistsPredicate` represents native EXISTS/NOT EXISTS over a complete `SelectStatement` subtree.
+  Its result is a non-null Boolean and its equality/hash structure includes the complete child and
+  negation flag.
+- `Sql.exists(SelectDescription<?>)` and `Sql.notExists(SelectDescription<?>)` embed any reusable
+  result shape as a `QueryCondition`; descriptions still expose no execution operations.
+- `DialectFeature.EXISTS_SUBQUERY` and `DialectFeature.CORRELATED_SUBQUERY` separately declare
+  existence syntax and ancestor-reference support. PostgreSQL and H2 enable both.
+- `QueryBlockAnalysis#nestedBlocks()` exposes deterministic child occurrences and
+  `QueryBlockAnalysis#correlated()` reports ancestor dependency. Independent count analysis now has
+  the matching `SemanticValidator#analyzeComplete(CountAst)` entry.
+
+### Validation and execution behavior
+
+EXISTS children are analyzed at their exact SELECT, WHERE, Join ON, GROUP BY, HAVING, ORDER BY, or
+pagination location. Join ON therefore cannot see a future source. A standalone correlated
+description still fails before JDBC, while embedding the same immutable description supplies the
+validated ancestor scope without writing bindings back to its AST.
+
+The final outer statement assigns dense logical slots across all child occurrences. Reusing one
+parameterized child twice allocates two slots backed by the same query-level parameter binding, and
+the renderer records both JDBC positions in SQL encounter order. Nested blocks share only the outer
+statement's SQL buffer and binding plan: they create no child PreparedStatement and run no child
+decoder.
+
+Direct renderer calls perform the same recursive semantic and dialect capability checks. A dialect
+may support independent EXISTS while rejecting correlation. PostgreSQL/H2 SQL preserves the child
+selection list and query clauses and performs no selection pruning, limit injection, or Join
+rewrite.

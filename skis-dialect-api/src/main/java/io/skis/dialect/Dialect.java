@@ -20,11 +20,11 @@ public interface Dialect {
   /**
    * Performs pre-render dialect validation for the supplied portable statement.
    *
-   * <p>The current preflight covers Join capabilities. Renderers must retain their own defensive
-   * validation for direct callers.
+   * <p>The preflight recursively validates query-block capabilities. Renderers must retain their
+   * own defensive validation for direct callers.
    */
   default void validate(StatementAst statement) {
-    DialectJoinFeatures.validate(id(), capabilities(), statement);
+    DialectQueryFeatures.validate(id(), capabilities(), statement);
   }
 
   /** JDBC error classifier; returned instances must be thread-safe. */

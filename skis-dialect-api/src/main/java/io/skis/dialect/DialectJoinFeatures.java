@@ -33,8 +33,7 @@ final class DialectJoinFeatures {
     };
   }
 
-  static void validate(
-      String dialectId, DialectCapabilities capabilities, StatementAst statement) {
+  static void validate(String dialectId, DialectCapabilities capabilities, StatementAst statement) {
     Objects.requireNonNull(dialectId, "dialectId");
     Objects.requireNonNull(capabilities, "capabilities");
     Objects.requireNonNull(statement, "statement");
@@ -48,14 +47,36 @@ final class DialectJoinFeatures {
     }
   }
 
+  static void validate(
+      String dialectId,
+      DialectCapabilities capabilities,
+      SelectStatement statement,
+      String blockPath) {
+    Objects.requireNonNull(dialectId, "dialectId");
+    Objects.requireNonNull(capabilities, "capabilities");
+    Objects.requireNonNull(statement, "statement");
+    Objects.requireNonNull(blockPath, "blockPath");
+    validate(dialectId, capabilities, statement.fromClause(), "SELECT", blockPath);
+  }
+
   private static void validate(
       String dialectId,
       DialectCapabilities capabilities,
       FromClause fromClause,
       String statementKind) {
+    validate(dialectId, capabilities, fromClause, statementKind, "");
+  }
+
+  private static void validate(
+      String dialectId,
+      DialectCapabilities capabilities,
+      FromClause fromClause,
+      String statementKind,
+      String blockPath) {
     for (int index = 0; index < fromClause.joins().size(); index++) {
       JoinClause join = fromClause.joins().get(index);
-      if (!capabilities.supports(feature(join.type()))) {
+      DialectFeature feature = feature(join.type());
+      if (!capabilities.supports(feature)) {
         throw new SqlRenderException(
             "dialect '"
                 + dialectId
@@ -64,7 +85,10 @@ final class DialectJoinFeatures {
                 + " JOIN at "
                 + statementKind
                 + " FROM join #"
-                + (index + 1));
+                + (index + 1)
+                + (blockPath.isEmpty()
+                    ? ""
+                    : " in query block " + blockPath + " (missing " + feature + ")"));
       }
     }
   }

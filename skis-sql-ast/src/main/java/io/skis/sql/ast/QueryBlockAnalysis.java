@@ -17,6 +17,7 @@ public final class QueryBlockAnalysis {
   private final QueryBlockPath path;
   private final List<SourceOccurrence> sourceOccurrences;
   private final List<ResolvedExpression> expressions;
+  private final List<NestedBlock> nestedBlocks;
   private final ResolvedStructureKey structureKey;
   private final Map<ScopeSite, ScopeSnapshot> clauseScopes;
 
@@ -24,11 +25,13 @@ public final class QueryBlockAnalysis {
       QueryBlockPath path,
       List<SourceOccurrence> sourceOccurrences,
       List<ResolvedExpression> expressions,
+      List<NestedBlock> nestedBlocks,
       ResolvedStructureKey structureKey,
       Map<ScopeSite, ScopeSnapshot> clauseScopes) {
     this.path = Objects.requireNonNull(path, "path");
     this.sourceOccurrences = List.copyOf(sourceOccurrences);
     this.expressions = List.copyOf(expressions);
+    this.nestedBlocks = List.copyOf(nestedBlocks);
     this.structureKey = Objects.requireNonNull(structureKey, "structureKey");
     this.clauseScopes = Map.copyOf(clauseScopes);
   }
@@ -46,6 +49,18 @@ public final class QueryBlockAnalysis {
   /** Resolved top-level expressions in deterministic clause order. */
   public List<ResolvedExpression> expressions() {
     return expressions;
+  }
+
+  /** Nested SELECT occurrences in deterministic expression traversal order. */
+  public List<NestedBlock> nestedBlocks() {
+    return nestedBlocks;
+  }
+
+  /** Whether this block, including its nested expressions, depends on an ancestor source. */
+  public boolean correlated() {
+    return expressions.stream()
+        .flatMap(expression -> expression.columnDependencies().stream())
+        .anyMatch(dependency -> !dependency.source().blockPath().equals(path));
   }
 
   /** Value- and object-identity-independent key for the resolved block. */
@@ -88,6 +103,22 @@ public final class QueryBlockAnalysis {
     public SourceOccurrence {
       Objects.requireNonNull(identity, "identity");
       Objects.requireNonNull(source, "source");
+    }
+  }
+
+  /** One immutable nested SELECT occurrence and its context-specific analysis. */
+  public record NestedBlock(
+      SelectStatement statement, QueryBlockLocation location, QueryBlockAnalysis analysis) {
+
+    public NestedBlock {
+      Objects.requireNonNull(statement, "statement");
+      Objects.requireNonNull(location, "location");
+      Objects.requireNonNull(analysis, "analysis");
+      List<QueryBlockLocation> locations = analysis.path().locations();
+      if (locations.isEmpty() || !locations.getLast().equals(location)) {
+        throw new IllegalArgumentException(
+            "nested block analysis path does not match its embedding location");
+      }
     }
   }
 

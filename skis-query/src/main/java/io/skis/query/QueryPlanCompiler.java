@@ -634,7 +634,7 @@ final class QueryPlanCompiler {
     }
   }
 
-  private static final class InputsBuilder<E> {
+  private final class InputsBuilder<E> {
 
     private final TableRuntimeScope runtimeScope;
     private final List<LogicalParameter<E>> logicalParameters = new ArrayList<>();
@@ -763,15 +763,27 @@ final class QueryPlanCompiler {
 
     private void addConditionMapping(
         Selectable<?> source, ParameterSlot<?> slot, @Nullable Object value) {
-      ResolvedValueMapping<?> mapping = ResolvedValueMapping.resolve(source, runtimeScope);
-      if (!slot.javaType().equals(mapping.javaType()) || slot.sqlType() != mapping.sqlType()) {
+      if (!slot.javaType().equals(source.javaType()) || slot.sqlType() != source.sqlType()) {
         throw new QueryValidationException(
             "query parameter slot descriptor does not match expression '"
                 + SelectableSupport.summary(source)
                 + "'");
       }
-      logicalParameters.add(LogicalParameter.codec(slot, mapping.codec()));
+      logicalParameters.add(LogicalParameter.codec(slot, parameterCodec(source)));
       arguments.add(value);
+    }
+
+    private JdbcTypeCodec<?> parameterCodec(Selectable<?> source) {
+      if (source instanceof QueryColumn<?, ?> column) {
+        return parameterColumnCodec(column);
+      }
+      return ResolvedValueMapping.resolve(source, runtimeScope).codec();
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private JdbcTypeCodec<?> parameterColumnCodec(QueryColumn<?, ?> column) {
+      EntityRuntimeModel model = runtimeRegistry.require(column.table().entity());
+      return model.property(column.property()).codec();
     }
 
     private List<LogicalParameter<E>> logicalParameters() {

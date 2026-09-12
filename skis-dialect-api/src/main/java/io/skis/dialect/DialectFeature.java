@@ -33,5 +33,11 @@ public enum DialectFeature {
   FULL_JOIN,
 
   /** SELECT supports CROSS JOIN without an ON predicate. */
-  CROSS_JOIN
+  CROSS_JOIN,
+
+  /** Predicates may embed a SELECT through EXISTS or NOT EXISTS. */
+  EXISTS_SUBQUERY,
+
+  /** A nested SELECT may reference a source visible in an ancestor query block. */
+  CORRELATED_SUBQUERY
 }

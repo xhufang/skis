@@ -18,6 +18,7 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InPredicate;
@@ -54,6 +55,8 @@ class H2DialectTest {
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_OFFSET));
     assertTrue(dialect.capabilities().supports(DialectFeature.COUNT_DISTINCT));
     assertTrue(dialect.capabilities().supports(DialectFeature.NULLS_FIRST_LAST));
+    assertTrue(dialect.capabilities().supports(DialectFeature.EXISTS_SUBQUERY));
+    assertTrue(dialect.capabilities().supports(DialectFeature.CORRELATED_SUBQUERY));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
   }
@@ -180,6 +183,40 @@ class H2DialectTest {
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
         rendered.sql());
     assertEquals(List.of(id), rendered.parameters());
+  }
+
+  @Test
+  void rendersCorrelatedExistsAndNotExistsGoldenSql() {
+    PetAstTable outer = PetAstTable.PET.as("outer_pet");
+    PetAstTable inner = PetAstTable.PET.as("inner_pet");
+    ParameterSlot<String> name = new ParameterSlot<>(0, String.class, true);
+    SelectStatement child =
+        new SelectStatement(
+            List.of(inner.name(), inner.id()),
+            inner,
+            LogicalPredicate.and(
+                List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            LogicalPredicate.or(
+                List.of(new ExistsPredicate(child, false), new ExistsPredicate(child, true))));
+
+    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+
+    assertEquals(
+        "SELECT \"outer_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"outer_pet\" WHERE "
+            + "EXISTS (SELECT \"inner_pet\".\"pet_name\", \"inner_pet\".\"id\" "
+            + "FROM \"shelter\".\"pet\" AS \"inner_pet\" WHERE "
+            + "\"inner_pet\".\"id\" = \"outer_pet\".\"id\" AND "
+            + "\"inner_pet\".\"pet_name\" = ?) OR NOT EXISTS ("
+            + "SELECT \"inner_pet\".\"pet_name\", \"inner_pet\".\"id\" "
+            + "FROM \"shelter\".\"pet\" AS \"inner_pet\" WHERE "
+            + "\"inner_pet\".\"id\" = \"outer_pet\".\"id\" AND "
+            + "\"inner_pet\".\"pet_name\" = ?)",
+        rendered.sql());
+    assertEquals(List.of(name, name), rendered.parameters());
   }
 
   @Test

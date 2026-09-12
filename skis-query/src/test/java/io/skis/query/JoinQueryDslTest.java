@@ -1011,6 +1011,154 @@ class JoinQueryDslTest {
     assertThrows(QueryValidationException.class, () -> ownerId.eq(ownerName));
   }
 
+  @Test
+  void embedsCorrelatedExistsWithOneStatementWideParameterLayout() {
+    PetTable innerPet = PET_TABLE.as("exists_pet");
+    QueryParameter<Long> outerId = Sql.parameter(Long.class, "outerId");
+    QueryParameter<String> innerName = Sql.parameter(String.class, "innerName");
+    NonNullSingleColumnSelect<Long> matchingPets =
+        Sql.select(innerPet.id())
+            .from(innerPet)
+            .where(
+                innerPet
+                    .ownerId()
+                    .eq(PET_TABLE.id())
+                    .and(innerPet.name().eq(innerName)));
+    NonNullSelectDescription<Pet> description =
+        Sql.selectFrom(PET_TABLE)
+            .where(PET_TABLE.id().eq(outerId).and(Sql.exists(matchingPets)));
+    DefaultSelectQuery<?, Pet> query =
+        (DefaultSelectQuery<?, Pet>)
+            operations()
+                .query(
+                    description,
+                    QueryParameters.builder()
+                        .bind(outerId, 7L)
+                        .bind(innerName, "Mimi")
+                        .build());
+
+    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = query.countCompilation();
+
+    assertEquals(
+        "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
+            + "FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ? AND EXISTS ("
+            + "SELECT \"exists_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"exists_pet\" "
+            + "WHERE \"exists_pet\".\"owner_id\" = \"pet\".\"id\" "
+            + "AND \"exists_pet\".\"pet_name\" = ?)",
+        compilation.plan().sql());
+    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertTrue(count.plan().sql().startsWith("SELECT COUNT(*)"));
+    assertTrue(count.plan().sql().contains("EXISTS ("));
+    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) count.argument()).values());
+  }
+
+  @Test
+  void relocatesOneDescriptionIntoIndependentExistsOccurrences() {
+    PetTable innerPet = PET_TABLE.as("reused_pet");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    NonNullSingleColumnSelect<Long> matchingPets =
+        Sql.select(innerPet.id()).from(innerPet).where(innerPet.name().eq(name));
+    NonNullSelectDescription<Owner> description =
+        Sql.selectFrom(OWNER_TABLE)
+            .where(Sql.exists(matchingPets).or(Sql.notExists(matchingPets)));
+    DefaultSelectQuery<?, Owner> query =
+        (DefaultSelectQuery<?, Owner>)
+            operations().query(description, QueryParameters.of(name, "Mimi"));
+
+    QueryCompilation<Owner> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryBlockAnalysis analysis =
+        SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
+
+    assertEquals(2, analysis.nestedBlocks().size());
+    assertEquals("$/WHERE[0]#0", analysis.nestedBlocks().get(0).analysis().path().toString());
+    assertEquals("$/WHERE[0]#1", analysis.nestedBlocks().get(1).analysis().path().toString());
+    assertEquals(List.of("Mimi", "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertTrue(compilation.plan().sql().contains("EXISTS ("));
+    assertTrue(compilation.plan().sql().contains("NOT EXISTS ("));
+    assertFalse(compilation.plan().sql().contains(" LIMIT "));
+  }
+
+  @Test
+  void resolvesExistsAgainstItsExactJoinOnScopeAndRejectsFutureSources() {
+    PetTable joinedPet = PET_TABLE.as("joined_pet");
+    PetTable witness = PET_TABLE.as("witness_pet");
+    NonNullSingleColumnSelect<Long> onWitness =
+        Sql.select(witness.id())
+            .from(witness)
+            .where(
+                witness
+                    .ownerId()
+                    .eq(OWNER_TABLE.id())
+                    .and(witness.id().eq(joinedPet.id())));
+    NonNullSelectDescription<Owner> valid =
+        Sql.selectFrom(OWNER_TABLE).join(joinedPet).on(Sql.exists(onWitness));
+
+    String sql =
+        ((DefaultSelectQuery<?, Owner>) operations().query(valid))
+            .compilation(QueryPagination.None.INSTANCE)
+            .plan()
+            .sql();
+    assertTrue(sql.contains("ON EXISTS ("));
+    assertTrue(sql.contains("\"witness_pet\".\"owner_id\" = \"owner\".\"id\""));
+    assertTrue(sql.contains("\"witness_pet\".\"id\" = \"joined_pet\".\"id\""));
+
+    OwnerTable futureOwner = OWNER_TABLE.as("future_owner");
+    PetTable firstPet = PET_TABLE.as("first_pet");
+    PetTable invalidWitness = PET_TABLE.as("invalid_witness");
+    NonNullSingleColumnSelect<Long> futureReference =
+        Sql.select(invalidWitness.id())
+            .from(invalidWitness)
+            .where(invalidWitness.ownerId().eq(futureOwner.id()));
+    NonNullSelectDescription<Owner> invalid =
+        Sql.selectFrom(OWNER_TABLE)
+            .join(firstPet)
+            .on(Sql.exists(futureReference))
+            .join(futureOwner)
+            .on(firstPet.ownerId().eq(futureOwner.id()));
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<?, Owner>) operations().query(invalid))
+                    .compilation(QueryPagination.None.INSTANCE));
+    assertTrue(failure.getMessage().contains("JOIN ON"));
+    assertTrue(failure.getMessage().contains("before it is visible"));
+  }
+
+  @Test
+  void rejectsAStandaloneCorrelatedDescriptionButAllowsItWhenEmbedded() {
+    PetTable innerPet = PET_TABLE.as("correlated_pet");
+    NonNullSingleColumnSelect<Long> correlated =
+        Sql.select(innerPet.id())
+            .from(innerPet)
+            .where(innerPet.ownerId().eq(OWNER_TABLE.id()));
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<?, Long>) operations().query(correlated))
+                    .compilation(QueryPagination.None.INSTANCE));
+    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+
+    NonNullSelectDescription<Owner> outer =
+        Sql.selectFrom(OWNER_TABLE).where(Sql.exists(correlated));
+    ((DefaultSelectQuery<?, Owner>) operations().query(outer))
+        .compilation(QueryPagination.None.INSTANCE);
+  }
+
   private static void assertJoinSql(SelectQuery<Pet, Pet> query, String keyword) {
     String sql =
         ((DefaultSelectQuery<Pet, Pet>) query)
@@ -1366,7 +1514,9 @@ class JoinQueryDslTest {
             DialectFeature.PARAMETERIZED_LIMIT,
             DialectFeature.PARAMETERIZED_OFFSET,
             DialectFeature.NULLS_FIRST_LAST,
-            DialectFeature.COUNT_DISTINCT);
+            DialectFeature.COUNT_DISTINCT,
+            DialectFeature.EXISTS_SUBQUERY,
+            DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =
         new StandardSqlRenderer(id(), identifierRules(), capabilities);
 

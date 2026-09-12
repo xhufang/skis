@@ -23,7 +23,9 @@ public final class H2Dialect implements Dialect {
           DialectFeature.INNER_JOIN,
           DialectFeature.LEFT_JOIN,
           DialectFeature.RIGHT_JOIN,
-          DialectFeature.CROSS_JOIN);
+          DialectFeature.CROSS_JOIN,
+          DialectFeature.EXISTS_SUBQUERY,
+          DialectFeature.CORRELATED_SUBQUERY);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();

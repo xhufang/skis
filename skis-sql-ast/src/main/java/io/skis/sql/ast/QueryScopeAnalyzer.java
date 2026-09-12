@@ -18,18 +18,35 @@ final class QueryScopeAnalyzer {
   private QueryScopeAnalyzer() {}
 
   static QueryBlockAnalysis analyzeTopLevel(SelectStatement statement) {
-    return new Analyzer(
-            Objects.requireNonNull(statement, "statement"),
-            QueryBlockPath.root(),
-            QueryBlockAnalysis.ScopeSnapshot.empty())
-        .analyze();
+    StatementParameters statementParameters = new StatementParameters();
+    QueryBlockAnalysis analysis =
+        new Analyzer(
+                Objects.requireNonNull(statement, "statement"),
+                QueryBlockPath.root(),
+                QueryBlockAnalysis.ScopeSnapshot.empty(),
+                statementParameters)
+            .analyze();
+    statementParameters.requireDense();
+    return analysis;
   }
 
   static QueryBlockAnalysis analyzeNested(
       SelectStatement statement,
       QueryBlockPath path,
       QueryBlockAnalysis.ScopeSnapshot parentScope) {
-    return new Analyzer(statement, path, parentScope).analyze();
+    StatementParameters statementParameters = new StatementParameters();
+    QueryBlockAnalysis analysis =
+        new Analyzer(statement, path, parentScope, statementParameters).analyze();
+    statementParameters.requireDense();
+    return analysis;
+  }
+
+  private static QueryBlockAnalysis analyzeNested(
+      SelectStatement statement,
+      QueryBlockPath path,
+      QueryBlockAnalysis.ScopeSnapshot parentScope,
+      StatementParameters statementParameters) {
+    return new Analyzer(statement, path, parentScope, statementParameters).analyze();
   }
 
   private static final class Analyzer {
@@ -37,22 +54,26 @@ final class QueryScopeAnalyzer {
     private final SelectStatement statement;
     private final QueryBlockPath path;
     private final QueryBlockAnalysis.ScopeSnapshot parentScope;
+    private final StatementParameters statementParameters;
     private final List<MutableSource> currentSources = new ArrayList<>();
     private final List<QueryBlockAnalysis.ScopeSource> allBlockSources;
-    private final Map<Integer, ResolvedParameterIdentity> parametersByOrdinal = new HashMap<>();
     private final List<ResolvedExpression> expressions = new ArrayList<>();
+    private final List<QueryBlockAnalysis.NestedBlock> nestedBlocks = new ArrayList<>();
     private final Map<QueryBlockAnalysis.ScopeSite, QueryBlockAnalysis.ScopeSnapshot> clauseScopes =
         new HashMap<>();
     private final Map<QueryBlockAnalysis.ScopeSite, ResolvedStructureKey> expressionKeys =
         new HashMap<>();
+    private final Map<QueryBlockAnalysis.ScopeSite, Integer> nestedOrdinals = new HashMap<>();
 
     private Analyzer(
         SelectStatement statement,
         QueryBlockPath path,
-        QueryBlockAnalysis.ScopeSnapshot parentScope) {
+        QueryBlockAnalysis.ScopeSnapshot parentScope,
+        StatementParameters statementParameters) {
       this.statement = Objects.requireNonNull(statement, "statement");
       this.path = Objects.requireNonNull(path, "path");
       this.parentScope = Objects.requireNonNull(parentScope, "parentScope");
+      this.statementParameters = Objects.requireNonNull(statementParameters, "statementParameters");
       List<QueryBlockAnalysis.ScopeSource> allSources = new ArrayList<>();
       for (TableOccurrence occurrence : statement.fromClause().occurrences()) {
         allSources.add(
@@ -123,15 +144,14 @@ final class QueryScopeAnalyzer {
             statement.orderBy().get(index).expression(), QueryClause.ORDER_BY, index, finalScope);
       }
       statement.pagination().ifPresent(pagination -> resolvePagination(pagination, finalScope));
-      requireDenseParameterOrdinals();
-
       List<QueryBlockAnalysis.SourceOccurrence> occurrences = new ArrayList<>();
       for (MutableSource source : currentSources) {
         occurrences.add(
             new QueryBlockAnalysis.SourceOccurrence(
                 source.identity, source.source, source.nullExtended));
       }
-      return new QueryBlockAnalysis(path, occurrences, expressions, buildBlockKey(), clauseScopes);
+      return new QueryBlockAnalysis(
+          path, occurrences, expressions, nestedBlocks, buildBlockKey(), clauseScopes);
     }
 
     private void resolvePagination(
@@ -264,6 +284,7 @@ final class QueryScopeAnalyzer {
                 resolveExpression(like.value(), position.operand(0), scope),
                 resolveExpression(like.pattern(), position.operand(1), scope));
         case InPredicate<?> in -> resolveIn(in, position, scope);
+        case ExistsPredicate exists -> resolveExists(exists, position, scope);
         case NotPredicate not -> {
           Resolution operand = resolveExpression(not.operand(), position.operand(0), scope);
           yield unary("NOT", List.of(), expression, operand, operand.effectiveNullability);
@@ -359,18 +380,7 @@ final class QueryScopeAnalyzer {
               parameter.javaType().getName(),
               parameter.sqlType(),
               parameter.nullability());
-      ResolvedParameterIdentity existing =
-          parametersByOrdinal.putIfAbsent(parameter.ordinal(), identity);
-      if (existing != null
-          && (!existing.javaTypeName().equals(identity.javaTypeName())
-              || existing.sqlType() != identity.sqlType()
-              || existing.nullability() != identity.nullability())) {
-        throw new IllegalArgumentException(
-            position
-                + " parameter ordinal "
-                + parameter.ordinal()
-                + " conflicts with an earlier Java type, SQL type, or nullability descriptor");
-      }
+      statementParameters.register(identity, position);
       return new Resolution(
           new ResolvedStructureKey.Atom(
               "PARAMETER",
@@ -429,6 +439,43 @@ final class QueryScopeAnalyzer {
               : combineNullability(children, NullabilityMode.ANY_NULLABLE);
       return combine(
           "IN", List.of(Boolean.toString(expression.negated())), expression, children, nullability);
+    }
+
+    private Resolution resolveExists(
+        ExistsPredicate expression,
+        ExpressionPosition position,
+        QueryBlockAnalysis.ScopeSnapshot scope) {
+      QueryBlockAnalysis.ScopeSite site =
+          new QueryBlockAnalysis.ScopeSite(position.clause(), position.itemOrdinal());
+      int nestedOrdinal = nestedOrdinals.getOrDefault(site, 0);
+      nestedOrdinals.put(site, nestedOrdinal + 1);
+      QueryBlockLocation location =
+          new QueryBlockLocation(position.clause(), position.itemOrdinal(), nestedOrdinal);
+      QueryBlockAnalysis child =
+          QueryScopeAnalyzer.analyzeNested(
+              expression.subquery(), path.child(location), scope, statementParameters);
+      nestedBlocks.add(new QueryBlockAnalysis.NestedBlock(expression.subquery(), location, child));
+
+      LinkedHashSet<ResolvedColumnIdentity> correlatedColumns = new LinkedHashSet<>();
+      LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>();
+      for (ResolvedExpression resolved : child.expressions()) {
+        for (ResolvedColumnIdentity dependency : resolved.columnDependencies()) {
+          if (!dependency.source().blockPath().equals(child.path())) {
+            correlatedColumns.add(dependency);
+          }
+        }
+        parameters.addAll(resolved.parameterDependencies());
+      }
+      return new Resolution(
+          new ResolvedStructureKey.Node(
+              "EXISTS",
+              concat(
+                  descriptor(expression),
+                  List.of(Boolean.toString(expression.negated()), location.toString())),
+              List.of(child.structureKey())),
+          correlatedColumns,
+          parameters,
+          Nullability.NON_NULL);
     }
 
     private Resolution leafLiteral(
@@ -664,18 +711,6 @@ final class QueryScopeAnalyzer {
               + "; table references are matched by object identity");
     }
 
-    private void requireDenseParameterOrdinals() {
-      for (int expected = 0; expected < parametersByOrdinal.size(); expected++) {
-        if (!parametersByOrdinal.containsKey(expected)) {
-          throw new IllegalArgumentException(
-              "query block "
-                  + path
-                  + " parameter ordinals must be contiguous from zero; missing ordinal "
-                  + expected);
-        }
-      }
-    }
-
     private ResolvedStructureKey buildBlockKey() {
       List<ResolvedStructureKey> sourceKeys = new ArrayList<>(currentSources.size());
       for (MutableSource source : currentSources) {
@@ -863,6 +898,36 @@ final class QueryScopeAnalyzer {
     private MutableSource(ResolvedSourceIdentity identity, RelationSource source) {
       this.identity = Objects.requireNonNull(identity, "identity");
       this.source = Objects.requireNonNull(source, "source");
+    }
+  }
+
+  private static final class StatementParameters {
+
+    private final Map<Integer, ResolvedParameterIdentity> parametersByOrdinal = new HashMap<>();
+
+    private void register(ResolvedParameterIdentity identity, ExpressionPosition position) {
+      ResolvedParameterIdentity existing =
+          parametersByOrdinal.putIfAbsent(identity.parameterOrdinal(), identity);
+      if (existing != null
+          && (!existing.javaTypeName().equals(identity.javaTypeName())
+              || existing.sqlType() != identity.sqlType()
+              || existing.nullability() != identity.nullability())) {
+        throw new IllegalArgumentException(
+            position
+                + " parameter ordinal "
+                + identity.parameterOrdinal()
+                + " conflicts with an earlier Java type, SQL type, or nullability descriptor");
+      }
+    }
+
+    private void requireDense() {
+      for (int expected = 0; expected < parametersByOrdinal.size(); expected++) {
+        if (!parametersByOrdinal.containsKey(expected)) {
+          throw new IllegalArgumentException(
+              "statement parameter ordinals must be contiguous from zero; missing ordinal "
+                  + expected);
+        }
+      }
     }
   }
 

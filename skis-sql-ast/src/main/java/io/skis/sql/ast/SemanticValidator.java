@@ -117,24 +117,26 @@ public final class SemanticValidator {
 
   /** Validates an independent COUNT plan. */
   public static void validate(CountAst statement) {
+    analyzeComplete(statement);
+  }
+
+  /** Resolves an independent COUNT plan through the same nested-query scope boundary as SELECT. */
+  public static QueryBlockAnalysis analyzeComplete(CountAst statement) {
     Objects.requireNonNull(statement, "statement");
-    ValidationContext context = new ValidationContext();
-    context.addVisible(statement.fromClause().root());
-    for (int index = 0; index < statement.joins().size(); index++) {
-      JoinClause join = statement.joins().get(index);
-      context.addVisible(join.right());
-      int position = index + 1;
-      join.on()
-          .ifPresent(
-              predicate ->
-                  context.validateExpression(predicate, "COUNT FROM join #" + position + " ON"));
-      context.applyJoin(join);
-    }
-    statement.predicate().ifPresent(item -> context.validateExpression(item, "COUNT WHERE"));
-    statement
-        .distinctExpression()
-        .ifPresent(item -> context.validateExpression(item, "COUNT DISTINCT"));
-    context.requireDenseParameterOrdinals();
+    SqlExpression<?> analysisSelection =
+        statement.distinctExpression().orElse(LiteralExpression.trueLiteral());
+    SelectStatement analysisStatement =
+        new SelectStatement(
+            false,
+            List.of(analysisSelection),
+            List.of(),
+            statement.fromClause(),
+            statement.predicate().orElse(null),
+            List.of(),
+            null,
+            List.of(),
+            null);
+    return analyzeComplete(analysisStatement);
   }
 
   static void validateInsert(
@@ -558,6 +560,13 @@ public final class SemanticValidator {
           validateIn(in.value(), in.candidates());
           validateExpression(in.value(), clause);
           in.candidates().forEach(item -> validateExpression(item, clause));
+        }
+        case ExistsPredicate exists -> {
+          if (validatesQueryContext) {
+            throw new IllegalArgumentException(
+                clause + " uses an EXISTS subquery outside a SELECT query block");
+          }
+          validateLocal(exists.subquery());
         }
         case NotPredicate not -> validateExpression(not.operand(), clause);
         case IncrementExpression<?> increment -> {

@@ -75,6 +75,26 @@ public final class Sql {
   }
 
   /**
+   * Tests whether a reusable SELECT description produces at least one row.
+   *
+   * <p>The description is embedded in the final statement. It is not executed or decoded
+   * independently, and its visible selections are preserved exactly.
+   */
+  public static QueryCondition exists(SelectDescription<?> description) {
+    return FrameworkQueryCondition.exists(
+        Objects.requireNonNull(description, "description"), false);
+  }
+
+  /**
+   * Tests whether a reusable SELECT description produces no rows.
+   *
+   * <p>This is a native {@code NOT EXISTS} node, not a nullable comparison or an IN rewrite.
+   */
+  public static QueryCondition notExists(SelectDescription<?> description) {
+    return FrameworkQueryCondition.exists(Objects.requireNonNull(description, "description"), true);
+  }
+
+  /**
    * Creates a nullable query-level parameter reference with no diagnostic name.
    *
    * <p>The reference contains no value or ordinal. Bind its value separately through {@link
