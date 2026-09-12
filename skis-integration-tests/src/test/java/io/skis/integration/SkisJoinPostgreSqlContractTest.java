@@ -54,6 +54,18 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
   }
 
   @Test
+  void correlatedExistsUsesOneStatementAndClosesItsOuterResources() {
+    trackingDataSource.reset();
+
+    assertEquals(2, correlatedExistsQuery().fetchList().size());
+
+    assertEquals(1, trackingDataSource.preparedStatements);
+    assertEquals(1, trackingDataSource.closedResultSets);
+    assertEquals(1, trackingDataSource.closedStatements);
+    assertEquals(1, trackingDataSource.closedConnections);
+  }
+
+  @Test
   void executesFullJoinNullExtensionAgainstPostgreSql() {
     List<Long> ownerIds =
         executor
@@ -84,6 +96,7 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
     private int closedConnections;
     private int closedStatements;
     private int closedResultSets;
+    private int preparedStatements;
 
     private TrackingDataSource(DataSource delegate) {
       this.delegate = delegate;
@@ -93,6 +106,7 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
       closedConnections = 0;
       closedStatements = 0;
       closedResultSets = 0;
+      preparedStatements = 0;
     }
 
     @Override
@@ -114,9 +128,11 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
               closedConnections++;
             }
             Object result = invoke(method, connection, arguments);
-            return result instanceof PreparedStatement statement
-                ? wrapStatement(statement)
-                : result;
+            if (result instanceof PreparedStatement statement) {
+              preparedStatements++;
+              return wrapStatement(statement);
+            }
+            return result;
           });
     }
 

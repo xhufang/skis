@@ -8,9 +8,12 @@ import io.skis.dialect.Dialect;
 import io.skis.query.NullableSelectQuery;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
+import io.skis.query.QueryParameter;
+import io.skis.query.QueryParameters;
 import io.skis.query.SelectQuery;
 import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
+import io.skis.query.Sql;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.join.JoinPet;
@@ -268,6 +271,88 @@ abstract class AbstractSkisJoinContractTest {
   }
 
   @Test
+  void preservesExistsRowNullAndDuplicateSemantics() {
+    JoinPetTable witness = pet.as("exists_witness");
+    QueryParameter<Long> orphanId = Sql.parameter(Long.class, "orphanId");
+    var singleNullRow =
+        Sql.select(witness.ownerId()).from(witness).where(witness.id().eq(orphanId));
+    var duplicateRows =
+        Sql.select(witness.ownerId()).from(witness).where(witness.ownerId().isNotNull());
+    var emptyRows =
+        Sql.select(witness.id()).from(witness).where(witness.id().ne(witness.id()));
+
+    var ownersWhenNullRowExists =
+        Sql.select(owner.id())
+            .from(owner)
+            .where(Sql.exists(singleNullRow))
+            .orderBy(owner.id().asc());
+    List<Long> nullRowExists =
+        executor
+            .query(ownersWhenNullRowExists, QueryParameters.of(orphanId, petOrphanId))
+            .fetchList();
+    List<Long> duplicateRowsExist =
+        executor
+            .select(owner.id())
+            .from(owner)
+            .where(owner.id().eq(ownerAdaId).and(Sql.exists(duplicateRows)))
+            .fetchList();
+    List<Long> notExists =
+        executor
+            .select(owner.id())
+            .from(owner)
+            .where(owner.id().eq(ownerAdaId).and(Sql.notExists(emptyRows)))
+            .fetchList();
+
+    assertEquals(ownerIds(), nullRowExists);
+    assertEquals(List.of(ownerAdaId), duplicateRowsExist);
+    assertEquals(List.of(ownerAdaId), notExists);
+  }
+
+  @Test
+  void executesCorrelatedExistsAndNotExistsWithoutMaterializingTheSubquery() {
+    List<Owner> ownersWithPets = correlatedExistsQuery().fetchList();
+    JoinPetTable witness = pet.as("not_exists_pet");
+    var petsOfOwner =
+        Sql.select(witness.ownerId())
+            .from(witness)
+            .where(witness.ownerId().eq(owner.id()));
+    List<Owner> ownersWithoutPets =
+        executor
+            .selectFrom(owner)
+            .where(Sql.notExists(petsOfOwner))
+            .orderBy(owner.id().asc())
+            .fetchList();
+
+    assertEquals(
+        List.of(new Owner(ownerAdaId, "Ada"), new Owner(ownerGraceId, "Grace")),
+        ownersWithPets);
+    assertEquals(List.of(new Owner(ownerWithoutPetId, "Lin")), ownersWithoutPets);
+  }
+
+  @Test
+  void bindsParametersInsideACorrelatedExistsDescription() {
+    JoinPetTable witness = pet.as("parameter_pet");
+    QueryParameter<String> petName = Sql.parameter(String.class, "petName");
+    var namedPetsOfOwner =
+        Sql.select(witness.id())
+            .from(witness)
+            .where(
+                witness
+                    .ownerId()
+                    .eq(owner.id())
+                    .and(witness.name().eq(petName)));
+    var owners =
+        Sql.selectFrom(owner)
+            .where(Sql.exists(namedPetsOfOwner))
+            .orderBy(owner.id().asc());
+
+    List<Owner> result =
+        executor.query(owners, QueryParameters.of(petName, "Alpha")).fetchList();
+
+    assertEquals(List.of(new Owner(ownerAdaId, "Ada")), result);
+  }
+
+  @Test
   void keepsJoinPaginationCountDistinctAndNullableKeysetEquivalent() {
     SelectQuery<Owner, Owner> duplicateOwners =
         executor
@@ -332,6 +417,18 @@ abstract class AbstractSkisJoinContractTest {
         .on(pet.ownerId().eq(owner.id()))
         .where(pet.id().in(petIds()))
         .orderBy(pet.id().asc());
+  }
+
+  protected SelectQuery<Owner, Owner> correlatedExistsQuery() {
+    JoinPetTable witness = pet.as("correlated_pet");
+    var petsOfOwner =
+        Sql.select(witness.ownerId())
+            .from(witness)
+            .where(witness.ownerId().eq(owner.id()));
+    return executor
+        .selectFrom(owner)
+        .where(Sql.exists(petsOfOwner))
+        .orderBy(owner.id().asc());
   }
 
   protected List<Long> petIds() {

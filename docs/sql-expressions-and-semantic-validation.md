@@ -120,9 +120,10 @@ application data. The existing executable `executor.select(...)` DSL continues t
 `.eq(value)`, `.between(values)`, `.like(value)`, and `.in(values)` and stores their immutable value
 snapshots only in its execution parameter environment.
 
-At this step a description can be adapted only as the top-level query. EXISTS, IN-subquery,
-scalar-subquery, and derived-source adapters are intentionally deferred; those later slices will
-reuse this same description state instead of introducing a second query DSL.
+A description can be adapted as a top-level query or embedded through `Sql.exists(...)` and
+`Sql.notExists(...)`. EXISTS accepts every result shape and preserves the complete child SELECT;
+IN-subquery, scalar-subquery, and derived-source adapters remain deferred to their later slices and
+will reuse this same description state instead of introducing a second query DSL.
 
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
@@ -310,8 +311,15 @@ introduced.
 
 Ordinary FROM/Join relation children use a non-correlated boundary. Their child analysis retains a
 stable path but receives no parent scope, preventing an accidental LATERAL contract. EXISTS, IN,
-scalar-subquery, and derived-source AST nodes are added by their later 0.2.5 slices; this step only
-establishes the identity, scope, dependency, and failure machinery those nodes share.
+scalar-subquery, and derived-source AST nodes use this shared machinery. The EXISTS slice now
+records each child occurrence and resolves WHERE/ON correlation; IN, scalar, and derived-source
+nodes remain assigned to later 0.2.5 slices.
+
+The public `ExistsPredicate` owns a complete `SelectStatement` subtree and a native negation flag.
+Its Boolean result is always non-null. Recursive validation preserves child selections, NULLs,
+duplicates, ordering, and conditions; it neither injects a limit nor rewrites the child as a Join.
+The outer renderer shares its SQL buffer and parameter list with nested render contexts while each
+context resolves local columns before walking its validated ancestor chain.
 
 Executable query compilation runs complete semantic validation before dialect capability checks and
 SQL rendering. Renderers also perform the same validation defensively when called directly; the

@@ -6,6 +6,15 @@
 
 ### Added
 
+- 新增 `ExistsPredicate` 与 `Sql.exists/notExists`，可将任意无执行 SELECT 描述作为非相关或相关
+  EXISTS 条件嵌入 WHERE/Join ON，并与 `QueryCondition.and/or/not` 组合；子查询选择、NULL、重复行和
+  原有结构保持不变，不做选择裁剪、limit 注入或 Join 改写。
+- 查询块分析递归记录稳定的嵌套 occurrence 路径与祖先依赖；最外层编译器按最终语句为每次嵌入独立重定位
+  逻辑参数槽，同一参数化描述复用时从同一 `QueryParameters` 快照读取，但只创建外层一个
+  `PreparedStatement`，不执行内层 Decoder。
+- 方言新增 `EXISTS_SUBQUERY` 与 `CORRELATED_SUBQUERY` 粗粒度能力；PostgreSQL/H2 完成递归能力校验、
+  相关列渲染和 SQL golden，并补真实驱动的空行、NULL/重复选择、参数、单条 SQL 与资源关闭合同测试；
+  全局聚合及 HAVING 存在性联调分别随对应后续切片完成。
 - 新增无执行能力的不可变 `SelectDescription<R>`、`NonNullSelectDescription<R>` 与
   `SingleColumnSelect<V>`，通过 `Sql.select(...)`/`Sql.selectFrom(...)` 静态构造并在完整
   WHERE/Join/ORDER BY 链后保留结果形状；描述不保存执行器、事务、执行选项或普通参数值。

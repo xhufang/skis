@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalOperator;
@@ -11,6 +12,7 @@ import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
 import java.util.List;
@@ -106,6 +108,12 @@ final class FrameworkQueryCondition implements QueryCondition {
         new InNode<>(value, candidates, negated), QueryParameters.empty());
   }
 
+  static FrameworkQueryCondition exists(SelectDescription<?> description, boolean negated) {
+    return new FrameworkQueryCondition(
+        new ExistsNode(Objects.requireNonNull(description, "description").state(), negated),
+        QueryParameters.empty());
+  }
+
   static QueryCondition logical(
       LogicalOperator operator, QueryCondition left, QueryCondition right) {
     FrameworkQueryCondition leftCondition = requireFramework(left);
@@ -160,6 +168,7 @@ final class FrameworkQueryCondition implements QueryCondition {
           BetweenNode,
           LikeNode,
           InNode,
+          ExistsNode,
           LogicalNode,
           NotNode {
 
@@ -255,6 +264,18 @@ final class FrameworkQueryCondition implements QueryCondition {
         slots.add(compiler.parameter(value, candidate));
       }
       return new InPredicate<>(value.expression(), slots, negated);
+    }
+  }
+
+  private record ExistsNode(SelectQueryState<?> subquery, boolean negated) implements Node {
+
+    private ExistsNode {
+      Objects.requireNonNull(subquery, "subquery");
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      return new ExistsPredicate(compiler.subquery(subquery), negated);
     }
   }
 
@@ -360,5 +381,10 @@ final class QueryConditionCompiler {
 
   QueryParameters parameters() {
     return bindings.parameters();
+  }
+
+  SelectStatement subquery(SelectQueryState<?> state) {
+    return QueryStructureCompiler.compileSubquery(
+        Objects.requireNonNull(state, "state"), layout, bindings);
   }
 }

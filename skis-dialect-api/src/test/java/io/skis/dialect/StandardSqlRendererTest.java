@@ -21,10 +21,14 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.ExistsPredicate;
+import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.JoinClause;
+import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
@@ -98,6 +102,71 @@ class StandardSqlRendererTest {
 
     assertTrue(failure.getMessage().contains("$ SELECT item #0"));
     assertTrue(failure.getMessage().contains("unresolved outer reference"));
+  }
+
+  @Test
+  void rejectsMissingExistsAndCorrelationCapabilitiesBeforeRendering() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    SelectStatement uncorrelated =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new ExistsPredicate(new SelectStatement(List.of(inner.id()), inner), false));
+
+    SqlRenderException missingExists =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(uncorrelated));
+    assertTrue(missingExists.getMessage().contains("EXISTS_SUBQUERY"));
+    assertTrue(missingExists.getMessage().contains("$/WHERE[0]#0"));
+
+    SqlRenderer existsOnly =
+        new StandardSqlRenderer(
+            "exists-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.EXISTS_SUBQUERY));
+    assertTrue(existsOnly.render(uncorrelated).sql().contains("EXISTS ("));
+    SelectStatement correlatedChild =
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(outer.id()));
+    SelectStatement correlated =
+        new SelectStatement(
+            List.of(outer.id()), outer, new ExistsPredicate(correlatedChild, false));
+
+    SqlRenderException missingCorrelation =
+        assertThrows(SqlRenderException.class, () -> existsOnly.render(correlated));
+    assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
+    assertTrue(missingCorrelation.getMessage().contains("$/WHERE[0]#0"));
+  }
+
+  @Test
+  void reportsTheNestedBlockPathAndMissingJoinCapability() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(PET).as(Identifier.of("inner_pet"));
+    PetTable joined = new PetTable(OTHER_PET).as(Identifier.of("joined_pet"));
+    SelectStatement child =
+        new SelectStatement(
+            List.of(inner.id()),
+            new FromClause(
+                inner,
+                List.of(
+                    new JoinClause(JoinType.FULL, joined, inner.id().eq(joined.id())))));
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()), outer, new ExistsPredicate(child, false));
+    SqlRenderer existsOnly =
+        new StandardSqlRenderer(
+            "exists-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.EXISTS_SUBQUERY));
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> existsOnly.render(statement));
+
+    assertTrue(failure.getMessage().contains("$/WHERE[0]#0"));
+    assertTrue(failure.getMessage().contains("missing FULL_JOIN"));
   }
 
   @Test

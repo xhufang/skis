@@ -402,6 +402,83 @@ class QueryScopeAnalysisTest {
     assertTrue(nullabilityFailure.getMessage().contains(UnknownExpression.class.getName()));
   }
 
+  @Test
+  void analyzesExistsAsAnImmutableCorrelatedQueryBlock() {
+    PetTable outer = new PetTable().as("outer_pet");
+    PetTable inner = new PetTable().as("inner_pet");
+    ParameterSlot<Long> outerId =
+        new ParameterSlot<>(0, Long.class, SqlType.BIGINT, Nullability.NON_NULL);
+    ParameterSlot<String> innerName =
+        new ParameterSlot<>(1, String.class, SqlType.VARCHAR, Nullability.NULLABLE);
+    SelectStatement child =
+        new SelectStatement(
+            List.of(inner.name(), inner.id()),
+            inner,
+            new LogicalPredicate(
+                LogicalOperator.AND,
+                List.of(inner.id().eq(outer.id()), inner.name().eq(innerName))));
+    ExistsPredicate exists = new ExistsPredicate(child, false);
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new LogicalPredicate(
+                LogicalOperator.AND, List.of(outer.id().eq(outerId), exists)));
+
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    QueryBlockAnalysis.NestedBlock nested = analysis.nestedBlocks().getFirst();
+
+    assertEquals("$/WHERE[0]#0", nested.analysis().path().toString());
+    assertTrue(nested.analysis().correlated());
+    assertEquals(List.of(inner.name(), inner.id()), nested.statement().selections());
+    assertEquals(Nullability.NON_NULL, exists.nullability());
+    assertFalse(exists.nullable());
+    assertEquals(exists, new ExistsPredicate(child, false));
+    assertNotEquals(exists, new ExistsPredicate(child, true));
+    assertTrue(analysis.structureKey().canonicalForm().contains("EXISTS"));
+    assertThrows(
+        IllegalArgumentException.class, () -> SemanticValidator.analyzeComplete(child));
+  }
+
+  @Test
+  void validatesNestedParametersAsOneDenseStatementLayout() {
+    PetTable outer = new PetTable().as("outer_pet");
+    PetTable inner = new PetTable().as("inner_pet");
+    ParameterSlot<Long> outerId =
+        new ParameterSlot<>(0, Long.class, SqlType.BIGINT, Nullability.NON_NULL);
+    ParameterSlot<String> innerName =
+        new ParameterSlot<>(1, String.class, SqlType.VARCHAR, Nullability.NULLABLE);
+    SelectStatement child =
+        new SelectStatement(List.of(inner.id()), inner, inner.name().eq(innerName));
+    SelectStatement valid =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new LogicalPredicate(
+                LogicalOperator.AND,
+                List.of(outer.id().eq(outerId), new ExistsPredicate(child, false))));
+
+    SemanticValidator.validateComplete(valid);
+
+    ParameterSlot<String> gappedName =
+        new ParameterSlot<>(2, String.class, SqlType.VARCHAR, Nullability.NULLABLE);
+    SelectStatement gappedChild =
+        new SelectStatement(List.of(inner.id()), inner, inner.name().eq(gappedName));
+    SelectStatement gapped =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new LogicalPredicate(
+                LogicalOperator.AND,
+                List.of(outer.id().eq(outerId), new ExistsPredicate(gappedChild, false))));
+
+    IllegalArgumentException failure =
+        assertThrows(
+            IllegalArgumentException.class, () -> SemanticValidator.validateComplete(gapped));
+    assertTrue(failure.getMessage().contains("statement parameter ordinals"));
+    assertTrue(failure.getMessage().contains("missing ordinal 1"));
+  }
+
   private static SelectStatement statementWithParameter(
       PetTable root, PetTable joined, ParameterSlot<Long> parameter) {
     FromClause from =

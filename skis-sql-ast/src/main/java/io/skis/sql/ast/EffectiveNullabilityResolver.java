@@ -49,6 +49,7 @@ final class EffectiveNullabilityResolver {
           resolve(like.value(), nullExtendedTables)
               .union(resolve(like.pattern(), nullExtendedTables));
       case InPredicate<?> in -> inNullability(in, nullExtendedTables);
+      case ExistsPredicate ignored -> Nullability.NON_NULL;
       case NotPredicate not -> resolve(not.operand(), nullExtendedTables);
       case IncrementExpression<?> increment -> resolve(increment.operand(), nullExtendedTables);
       default ->
