@@ -50,21 +50,21 @@ final class DefaultQueryOperations implements QueryOperations {
   public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return DefaultSelectQuery.create(this, plans, table, SelectedResult.entity(table, plans));
+    return DefaultSelectQuery.create(this, plans, table, SelectedResult.entity(table));
   }
 
   @Override
   public <R> SelectFromStep<R> select(QueryTable<R> table) {
     Objects.requireNonNull(table, "table");
-    EntityPlanSet<R> plans = requirePlanSet(table.entity());
-    return new DefaultSelectFromStep<>(this, SelectedResult.entity(table, plans));
+    requirePlanSet(table.entity());
+    return new DefaultSelectFromStep<>(this, SelectedResult.entity(table));
   }
 
   @Override
   public <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table) {
     Objects.requireNonNull(table, "table");
-    EntityPlanSet<R> plans = requirePlanSet(table.entity());
-    return new DefaultNullableSelectFromStep<>(this, SelectedResult.nullableEntity(table, plans));
+    requirePlanSet(table.entity());
+    return new DefaultNullableSelectFromStep<>(this, SelectedResult.nullableEntity(table));
   }
 
   @Override
@@ -91,11 +91,70 @@ final class DefaultQueryOperations implements QueryOperations {
         this, SelectedResult.projection(Objects.requireNonNull(projection, "projection")));
   }
 
-  <F, R> DefaultSelectQuery<F, R> selectFrom(
-      SelectedResult<R> selected, QueryTable<F> table) {
+  @Override
+  public <R> NullableSelectQuery<?, R> query(SelectDescription<R> description) {
+    return query(description, QueryParameters.empty());
+  }
+
+  @Override
+  public <R> SelectQuery<?, R> query(NonNullSelectDescription<R> description) {
+    return query(description, QueryParameters.empty());
+  }
+
+  @Override
+  public <V> SelectQuery<?, V> query(NonNullSingleColumnSelect<V> description) {
+    return query(description, QueryParameters.empty());
+  }
+
+  @Override
+  public <R> NullableSelectQuery<?, R> query(
+      SelectDescription<R> description, QueryParameters parameters) {
+    return nullableExecutable(
+        Objects.requireNonNull(description, "description").state(),
+        Objects.requireNonNull(parameters, "parameters"));
+  }
+
+  @Override
+  public <R> SelectQuery<?, R> query(
+      NonNullSelectDescription<R> description, QueryParameters parameters) {
+    return executable(
+        Objects.requireNonNull(description, "description").state(),
+        Objects.requireNonNull(parameters, "parameters"));
+  }
+
+  @Override
+  public <V> SelectQuery<?, V> query(
+      NonNullSingleColumnSelect<V> description, QueryParameters parameters) {
+    return executable(
+        Objects.requireNonNull(description, "description").state(),
+        Objects.requireNonNull(parameters, "parameters"));
+  }
+
+  <F, R> DefaultSelectQuery<F, R> selectFrom(SelectedResult<R> selected, QueryTable<F> table) {
     Objects.requireNonNull(selected, "selected");
     EntityPlanSet<F> plans = requirePlanSet(table.entity());
     return DefaultSelectQuery.create(this, plans, table, selected);
+  }
+
+  private <R> DefaultSelectQuery<?, R> executable(
+      SelectQueryState<R> state, QueryParameters parameters) {
+    return executableCaptured(state, parameters);
+  }
+
+  private <F, R> DefaultSelectQuery<F, R> executableCaptured(
+      SelectQueryState<R> state, QueryParameters parameters) {
+    QueryTable<F> root = state.typedRoot();
+    EntityPlanSet<F> plans = requirePlanSet(root.entity());
+    return DefaultSelectQuery.create(this, plans, state, parameters);
+  }
+
+  private <R> NullableSelectQuery<?, R> nullableExecutable(
+      SelectQueryState<R> state, QueryParameters parameters) {
+    return nullable(executableCaptured(state, parameters));
+  }
+
+  private <F, R> NullableSelectQuery<F, R> nullable(DefaultSelectQuery<F, R> query) {
+    return new DefaultNullableSelectQuery<>(this, query);
   }
 
   <R> Optional<R> fetchOne(

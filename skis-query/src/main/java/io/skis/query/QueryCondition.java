@@ -47,6 +47,12 @@ final class FrameworkQueryCondition implements QueryCondition {
         new ValueComparisonNode<>(left, operator, parameter), QueryParameters.of(parameter, value));
   }
 
+  static <V> FrameworkQueryCondition parameterComparison(
+      Selectable<V> left, ComparisonOperator operator, QueryParameter<V> parameter) {
+    return new FrameworkQueryCondition(
+        new ValueComparisonNode<>(left, operator, parameter), QueryParameters.empty());
+  }
+
   static <V> FrameworkQueryCondition expressionComparison(
       Selectable<V> left, ComparisonOperator operator, Selectable<V> right) {
     return new FrameworkQueryCondition(
@@ -65,10 +71,20 @@ final class FrameworkQueryCondition implements QueryCondition {
         QueryParameters.builder().bind(lowerParameter, lower).bind(upperParameter, upper).build());
   }
 
+  static <V> FrameworkQueryCondition betweenParameters(
+      Selectable<V> value, QueryParameter<V> lower, QueryParameter<V> upper) {
+    return new FrameworkQueryCondition(
+        new BetweenNode<>(value, lower, upper), QueryParameters.empty());
+  }
+
   static <V> FrameworkQueryCondition like(Selectable<V> value, V pattern) {
     QueryParameter<V> parameter = QueryParameter.anonymousNonNull(value.javaType());
     return new FrameworkQueryCondition(
         new LikeNode<>(value, parameter), QueryParameters.of(parameter, pattern));
+  }
+
+  static <V> FrameworkQueryCondition likeParameter(Selectable<V> value, QueryParameter<V> pattern) {
+    return new FrameworkQueryCondition(new LikeNode<>(value, pattern), QueryParameters.empty());
   }
 
   static <V> FrameworkQueryCondition membership(
@@ -84,14 +100,24 @@ final class FrameworkQueryCondition implements QueryCondition {
         new InNode<>(value, references, negated), parameters.build());
   }
 
+  static <V> FrameworkQueryCondition membershipParameters(
+      Selectable<V> value, List<QueryParameter<V>> candidates, boolean negated) {
+    return new FrameworkQueryCondition(
+        new InNode<>(value, candidates, negated), QueryParameters.empty());
+  }
+
   static QueryCondition logical(
       LogicalOperator operator, QueryCondition left, QueryCondition right) {
+    FrameworkQueryCondition leftCondition = requireFramework(left);
+    FrameworkQueryCondition rightCondition = requireFramework(right);
     return new FrameworkQueryCondition(
-        new LogicalNode(operator, left, right), QueryParameters.empty());
+        new LogicalNode(operator, leftCondition.root, rightCondition.root),
+        leftCondition.parameters.merge(rightCondition.parameters));
   }
 
   static QueryCondition negate(QueryCondition operand) {
-    return new FrameworkQueryCondition(new NotNode(operand), QueryParameters.empty());
+    FrameworkQueryCondition condition = requireFramework(operand);
+    return new FrameworkQueryCondition(new NotNode(condition.root), condition.parameters);
   }
 
   @Override
@@ -113,6 +139,18 @@ final class FrameworkQueryCondition implements QueryCondition {
     QueryConditionCompiler target = Objects.requireNonNull(compiler, "compiler");
     target.include(parameters);
     return root.compile(target);
+  }
+
+  FrameworkQueryCondition structureOnly() {
+    return parameters.isEmpty() ? this : new FrameworkQueryCondition(root, QueryParameters.empty());
+  }
+
+  QueryParameters parameters() {
+    return parameters;
+  }
+
+  private static FrameworkQueryCondition requireFramework(QueryCondition condition) {
+    return (FrameworkQueryCondition) Objects.requireNonNull(condition, "condition");
   }
 
   private sealed interface Node
@@ -220,8 +258,7 @@ final class FrameworkQueryCondition implements QueryCondition {
     }
   }
 
-  private record LogicalNode(LogicalOperator operator, QueryCondition left, QueryCondition right)
-      implements Node {
+  private record LogicalNode(LogicalOperator operator, Node left, Node right) implements Node {
 
     private LogicalNode {
       Objects.requireNonNull(operator, "operator");
@@ -232,13 +269,11 @@ final class FrameworkQueryCondition implements QueryCondition {
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new LogicalPredicate(
-          operator,
-          List.of(
-              QueryConditions.compile(left, compiler), QueryConditions.compile(right, compiler)));
+          operator, List.of(left.compile(compiler), right.compile(compiler)));
     }
   }
 
-  private record NotNode(QueryCondition operand) implements Node {
+  private record NotNode(Node operand) implements Node {
 
     private NotNode {
       Objects.requireNonNull(operand, "operand");
@@ -246,7 +281,7 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return new NotPredicate(QueryConditions.compile(operand, compiler));
+      return new NotPredicate(operand.compile(compiler));
     }
   }
 }
@@ -260,6 +295,29 @@ final class QueryConditions {
     Objects.requireNonNull(condition, "condition");
     return ((FrameworkQueryCondition) condition)
         .compile(Objects.requireNonNull(compiler, "compiler"));
+  }
+
+  static QueryCondition structure(QueryCondition condition) {
+    return framework(condition).structureOnly();
+  }
+
+  static QueryParameters parameters(QueryCondition condition) {
+    return framework(condition).parameters();
+  }
+
+  static QueryCondition reusableStructure(QueryCondition condition) {
+    FrameworkQueryCondition framework = framework(condition);
+    if (!framework.parameters().isEmpty()) {
+      throw new QueryValidationException(
+          "a reusable SELECT description cannot capture ordinary values; use Sql.parameter(...) "
+              + "in the condition and bind it through "
+              + "executor.query(description, QueryParameters)");
+    }
+    return framework.structureOnly();
+  }
+
+  private static FrameworkQueryCondition framework(QueryCondition condition) {
+    return (FrameworkQueryCondition) Objects.requireNonNull(condition, "condition");
   }
 }
 

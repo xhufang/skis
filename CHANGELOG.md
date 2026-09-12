@@ -6,6 +6,13 @@
 
 ### Added
 
+- 新增无执行能力的不可变 `SelectDescription<R>`、`NonNullSelectDescription<R>` 与
+  `SingleColumnSelect<V>`，通过 `Sql.select(...)`/`Sql.selectFrom(...)` 静态构造并在完整
+  WHERE/Join/ORDER BY 链后保留结果形状；描述不保存执行器、事务、执行选项或普通参数值。
+- `QueryOperations`/`SkisExecutor`/`SkisSession` 新增 `query(description)` 与
+  `query(description, QueryParameters)` 适配入口；静态描述使用显式 `QueryParameter<V>` 条件，
+  缺失或额外绑定在 JDBC 前失败，旧 `select(...).from(...)` 与 `selectFrom(...)` 复用同一内部
+  SELECT 状态和计划编译路径。
 - 新增不可变查询块作用域分析：查询块使用由嵌入子句和确定遍历位置组成的稳定结构路径，列解析为“查询块路径 +
   来源 occurrence + 属性”身份，参数解析为块局部逻辑槽身份；分析同时产出表达式依赖、有效 nullability 和不含
   参数值/对象地址的解析后结构键。

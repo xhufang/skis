@@ -39,16 +39,10 @@ record ResolvedResultShape<R>(
   }
 
   static <E> ResolvedResultShape<E> entity(
-      QueryTable<E> table,
-      EntityPlanSet<E> plans,
-      TableRuntimeScope scope,
-      boolean nullableResult) {
+      QueryTable<E> table, TableRuntimeScope scope, boolean nullableResult) {
     TableRuntimeScope.Occurrence<E> occurrence = scope.require(table);
-    if (occurrence.model() != plans.model()) {
-      throw new QueryValidationException(
-          occurrence.description() + " does not use the selected target's canonical runtime model");
-    }
-    if (nullableResult && plans.entity().primaryKey().isEmpty()) {
+    var model = occurrence.model();
+    if (nullableResult && model.entity().primaryKey().isEmpty()) {
       throw new QueryValidationException(
           "selectNullable(table) requires complete non-null primary-key metadata for "
               + occurrence.description());
@@ -59,16 +53,16 @@ record ResolvedResultShape<R>(
               + occurrence.description()
               + "; use selectNullable(table)");
     }
-    List<ResolvedSelection> resolved = new ArrayList<>(plans.entity().properties().size());
-    for (PropertyMeta<E, ?> property : plans.entity().properties()) {
+    List<ResolvedSelection> resolved = new ArrayList<>(model.entity().properties().size());
+    for (PropertyMeta<E, ?> property : model.entity().properties()) {
       QueryColumn<E, ?> column = table.queryColumn(property);
       resolved.add(
           new ResolvedSelection(
               ResolvedValueMapping.resolve(column, scope), property.ordinal() + 1));
     }
-    RowLayout layout = RowLayout.contiguous(plans.model().properties().size(), 1);
+    RowLayout layout = RowLayout.contiguous(model.properties().size(), 1);
     RowDecoder<E> decoder =
-        nullableResult ? plans.model().nullableRowDecoder(layout) : plans.model().fullRowDecoder();
+        nullableResult ? model.nullableRowDecoder(layout) : model.fullRowDecoder();
     return new ResolvedResultShape<>(List.copyOf(table.selections()), decoder, resolved);
   }
 

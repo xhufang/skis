@@ -48,6 +48,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import org.jspecify.annotations.Nullable;
@@ -117,6 +118,159 @@ class JoinQueryDslTest {
             + "FROM \"shelter\".\"pet\" INNER JOIN \"shelter\".\"owner\" "
             + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
         compilation.plan().sql());
+  }
+
+  @Test
+  void buildsReusableDescriptionsWithoutAnExecutorAndPreservesTheirResultContracts() {
+    NonNullSelectDescription<Pet> entity = Sql.selectFrom(PET_TABLE);
+    NonNullSingleColumnSelect<Long> requiredValue =
+        Sql.select(PET_TABLE.id())
+            .from(PET_TABLE)
+            .join(OWNER_TABLE)
+            .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()))
+            .orderBy(PET_TABLE.id().asc())
+            .distinct();
+    SingleColumnSelect<String> nullableValue =
+        Sql.select(OWNER_TABLE.name()).from(OWNER_TABLE).where(OWNER_TABLE.name().isNotNull());
+
+    SelectQuery<?, Pet> entityQuery = operations().query(entity);
+    SelectQuery<?, Long> requiredValueQuery = operations().query(requiredValue);
+    NullableSelectQuery<?, String> nullableValueQuery = operations().query(nullableValue);
+
+    assertTrue(entityQuery instanceof DefaultSelectQuery<?, ?>);
+    assertTrue(requiredValueQuery instanceof DefaultSelectQuery<?, ?>);
+    assertTrue(nullableValueQuery instanceof DefaultNullableSelectQuery<?, ?>);
+    String chainedSql =
+        ((DefaultSelectQuery<?, Long>) requiredValueQuery)
+            .compilation(QueryPagination.None.INSTANCE)
+            .plan()
+            .sql();
+    assertTrue(chainedSql.contains("SELECT DISTINCT"));
+    assertTrue(chainedSql.contains("INNER JOIN"));
+    assertTrue(chainedSql.contains("ORDER BY"));
+    for (String terminal : List.of("fetchList", "fetchPage", "cursor", "stream", "withOptions")) {
+      assertFalse(
+          Arrays.stream(SelectDescription.class.getMethods())
+              .anyMatch(method -> method.getName().equals(terminal)));
+    }
+  }
+
+  @Test
+  void adaptsExplicitlyBoundDescriptionsThroughTheSameSelectPipelineAndSql() {
+    QueryParameter<String> name = Sql.parameter(String.class, "petName");
+    NonNullSingleColumnSelect<Long> description =
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq(name));
+    QueryOperations operations = operations();
+    DefaultSelectQuery<?, Long> described =
+        (DefaultSelectQuery<?, Long>)
+            operations.query(description, QueryParameters.of(name, "Mimi"));
+    DefaultSelectQuery<Pet, Long> legacy =
+        (DefaultSelectQuery<Pet, Long>)
+            operations.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq("Mimi"));
+
+    QueryCompilation<Long> describedCompilation =
+        described.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> legacyCompilation = legacy.compilation(QueryPagination.None.INSTANCE);
+
+    assertEquals(legacyCompilation.plan().sql(), describedCompilation.plan().sql());
+    assertEquals(List.of("Mimi"), ((QueryArguments) describedCompilation.argument()).values());
+
+    QueryParameter<Long> firstId = Sql.parameter(Long.class, "firstId");
+    QueryParameter<Long> secondId = Sql.parameter(Long.class, "secondId");
+    NonNullSingleColumnSelect<Long> membership =
+        Sql.select(PET_TABLE.id())
+            .from(PET_TABLE)
+            .where(PET_TABLE.id().inParameters(List.of(firstId, secondId)));
+    DefaultSelectQuery<?, Long> membershipQuery =
+        (DefaultSelectQuery<?, Long>)
+            operations.query(
+                membership,
+                QueryParameters.builder().bind(firstId, 1L).bind(secondId, 2L).build());
+    QueryCompilation<Long> membershipCompilation =
+        membershipQuery.compilation(QueryPagination.None.INSTANCE);
+    assertEquals(
+        List.of(1L, 2L), ((QueryArguments) membershipCompilation.argument()).values());
+  }
+
+  @Test
+  void executesReusableDescriptionsWithFreshBindingsAndTheirDeclaredNullability() {
+    QueryParameter<String> petName = Sql.parameter(String.class, "petName");
+    NonNullSingleColumnSelect<Long> petIdDescription =
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq(petName));
+    QueryParameter<Long> ownerId = Sql.parameter(Long.class, "ownerId");
+    SingleColumnSelect<String> ownerNameDescription =
+        Sql.select(OWNER_TABLE.name()).from(OWNER_TABLE).where(OWNER_TABLE.id().eq(ownerId));
+    ScriptedQueryConnectionProvider connections =
+        new ScriptedQueryConnectionProvider(
+            List.of(
+                List.of(Map.of(1, 101L)),
+                List.of(Map.of(1, 202L)),
+                List.of(Map.<Integer, Object>of()),
+                List.of()));
+    QueryOperations operations =
+        queryPlanCatalog().bind(new JdbcExecutor(connections));
+
+    DefaultSelectQuery<?, Long> mimi =
+        (DefaultSelectQuery<?, Long>)
+            operations.query(petIdDescription, QueryParameters.of(petName, "Mimi"));
+    DefaultSelectQuery<?, Long> momo =
+        (DefaultSelectQuery<?, Long>)
+            operations.query(petIdDescription, QueryParameters.of(petName, "Momo"));
+
+    assertSame(
+        mimi.compilation(QueryPagination.None.INSTANCE).plan(),
+        momo.compilation(QueryPagination.None.INSTANCE).plan());
+    assertEquals(List.of(101L), mimi.fetchList());
+    assertEquals(List.of(202L), momo.fetchList());
+
+    SingleRow<String> presentNull =
+        operations
+            .query(ownerNameDescription, QueryParameters.of(ownerId, 7L))
+            .fetchOne();
+    SingleRow<String> noRow =
+        operations
+            .query(ownerNameDescription, QueryParameters.of(ownerId, 8L))
+            .fetchOne();
+
+    assertTrue(
+        presentNull instanceof SingleRow.Present<?> present && present.value() == null);
+    assertTrue(noRow instanceof SingleRow.NoRow<?>);
+    assertEquals(
+        List.of(List.of("Mimi"), List.of("Momo"), List.of(7L), List.of(8L)),
+        connections.bindings());
+    assertEquals(connections.sql().get(0), connections.sql().get(1));
+  }
+
+  @Test
+  void rejectsCapturedDescriptionValuesAndInvalidParameterEnvironmentsBeforeJdbc() {
+    QueryValidationException captured =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                Sql.select(PET_TABLE.id())
+                    .from(PET_TABLE)
+                    .where(PET_TABLE.name().eq("Mimi")));
+    assertTrue(captured.getMessage().contains("cannot capture ordinary values"));
+
+    QueryParameter<String> used = Sql.parameter(String.class, "used");
+    QueryParameter<String> extra = Sql.parameter(String.class, "extra");
+    NonNullSingleColumnSelect<Long> description =
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq(used));
+    QueryOperations operations = operations();
+    DefaultSelectQuery<?, Long> missing =
+        (DefaultSelectQuery<?, Long>) operations.query(description);
+    DefaultSelectQuery<?, Long> surplus =
+        (DefaultSelectQuery<?, Long>)
+            operations.query(
+                description,
+                QueryParameters.builder().bind(used, "Mimi").bind(extra, "unused").build());
+
+    assertThrows(
+        QueryValidationException.class,
+        () -> missing.compilation(QueryPagination.None.INSTANCE));
+    assertThrows(
+        QueryValidationException.class,
+        () -> surplus.compilation(QueryPagination.None.INSTANCE));
   }
 
   @Test
@@ -216,7 +370,7 @@ class JoinQueryDslTest {
         compileSelection(
             catalog,
             PET_TABLE,
-            SelectedResult.nullableEntity(OWNER_TABLE, catalog.require(OWNER)),
+            SelectedResult.nullableEntity(OWNER_TABLE),
             List.of(new QueryJoin(io.skis.sql.ast.JoinType.LEFT, OWNER_TABLE, on)));
 
     assertEquals(
@@ -950,6 +1104,100 @@ class JoinQueryDslTest {
         READ_ONLY_VIEW,
         layout -> (resultSet, context) -> new ReadOnlyView(1L),
         List.of(new PropertyRuntime<>(VIEW_VALUE, JdbcCodecs.LONG)));
+  }
+
+  private static final class ScriptedQueryConnectionProvider implements ConnectionProvider {
+
+    private final List<List<Map<Integer, Object>>> resultRows;
+    private final List<String> sql = new ArrayList<>();
+    private final List<List<Object>> bindings = new ArrayList<>();
+    private int nextResult;
+
+    private ScriptedQueryConnectionProvider(List<List<Map<Integer, Object>>> resultRows) {
+      this.resultRows = List.copyOf(resultRows);
+    }
+
+    @Override
+    public Connection acquire(ExecutionContext context) {
+      return (Connection)
+          Proxy.newProxyInstance(
+              Connection.class.getClassLoader(),
+              new Class<?>[] {Connection.class},
+              (ignored, method, arguments) -> {
+                if (method.getName().equals("prepareStatement")) {
+                  sql.add((String) arguments[0]);
+                  return preparedStatement();
+                }
+                return defaultValue(method.getReturnType());
+              });
+    }
+
+    @Override
+    public void release(Connection connection, ExecutionContext context) {}
+
+    private PreparedStatement preparedStatement() {
+      List<Object> values = new ArrayList<>();
+      return (PreparedStatement)
+          Proxy.newProxyInstance(
+              PreparedStatement.class.getClassLoader(),
+              new Class<?>[] {PreparedStatement.class},
+              (ignored, method, arguments) -> {
+                if ((method.getName().equals("setString") || method.getName().equals("setLong"))
+                    && arguments[0] instanceof Integer index) {
+                  while (values.size() < index) {
+                    values.add(null);
+                  }
+                  values.set(index - 1, arguments[1]);
+                  return null;
+                }
+                if (method.getName().equals("executeQuery")) {
+                  if (nextResult >= resultRows.size()) {
+                    throw new AssertionError("no scripted query result remains");
+                  }
+                  bindings.add(List.copyOf(values));
+                  return rowsResultSet(resultRows.get(nextResult++));
+                }
+                return defaultValue(method.getReturnType());
+              });
+    }
+
+    private List<String> sql() {
+      return List.copyOf(sql);
+    }
+
+    private List<List<Object>> bindings() {
+      return List.copyOf(bindings);
+    }
+  }
+
+  private static ResultSet rowsResultSet(List<Map<Integer, Object>> rows) {
+    int[] rowIndex = {-1};
+    int[] lastColumnIndex = new int[1];
+    return (ResultSet)
+        Proxy.newProxyInstance(
+            ResultSet.class.getClassLoader(),
+            new Class<?>[] {ResultSet.class},
+            (ignored, method, arguments) -> {
+              if (method.getName().equals("next")) {
+                rowIndex[0]++;
+                return rowIndex[0] < rows.size();
+              }
+              if (method.getName().equals("wasNull")) {
+                return rows.get(rowIndex[0]).get(lastColumnIndex[0]) == null;
+              }
+              if (method.getName().equals("getLong")) {
+                int index = (Integer) arguments[0];
+                lastColumnIndex[0] = index;
+                Object value = rows.get(rowIndex[0]).get(index);
+                return value == null ? 0L : ((Number) value).longValue();
+              }
+              if (method.getName().equals("getString")) {
+                int index = (Integer) arguments[0];
+                lastColumnIndex[0] = index;
+                return (String) rows.get(rowIndex[0]).get(index);
+              }
+              return defaultValue(method.getReturnType());
+            });
   }
 
   private static ResultSet resultSet(Map<Integer, Object> values) {

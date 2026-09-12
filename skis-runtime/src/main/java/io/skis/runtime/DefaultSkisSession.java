@@ -5,11 +5,16 @@ import io.skis.core.TransactionException;
 import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
+import io.skis.query.NonNullSelectDescription;
 import io.skis.query.NonNullSelectable;
+import io.skis.query.NonNullSingleColumnSelect;
 import io.skis.query.NullableSelectFromStep;
+import io.skis.query.NullableSelectQuery;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryOperations;
+import io.skis.query.QueryParameters;
 import io.skis.query.QueryTable;
+import io.skis.query.SelectDescription;
 import io.skis.query.SelectFromStep;
 import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
@@ -86,6 +91,45 @@ final class DefaultSkisSession implements SkisSession {
   public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
     requireActive();
     return queries.select(projection);
+  }
+
+  @Override
+  public <R> NullableSelectQuery<?, R> query(SelectDescription<R> description) {
+    requireActive();
+    return queries.query(description);
+  }
+
+  @Override
+  public <R> SelectQuery<?, R> query(NonNullSelectDescription<R> description) {
+    requireActive();
+    return queries.query(description);
+  }
+
+  @Override
+  public <V> SelectQuery<?, V> query(NonNullSingleColumnSelect<V> description) {
+    requireActive();
+    return queries.query(description);
+  }
+
+  @Override
+  public <R> NullableSelectQuery<?, R> query(
+      SelectDescription<R> description, QueryParameters parameters) {
+    requireActive();
+    return queries.query(description, parameters);
+  }
+
+  @Override
+  public <R> SelectQuery<?, R> query(
+      NonNullSelectDescription<R> description, QueryParameters parameters) {
+    requireActive();
+    return queries.query(description, parameters);
+  }
+
+  @Override
+  public <V> SelectQuery<?, V> query(
+      NonNullSingleColumnSelect<V> description, QueryParameters parameters) {
+    requireActive();
+    return queries.query(description, parameters);
   }
 
   @Override

@@ -6,72 +6,64 @@ import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
-/** Query result target kept independent from the FROM root until final scope validation. */
+/** Query result target kept independent of the FROM root until final scope validation. */
 final class SelectedResult<R> {
 
   private final @Nullable QueryTable<?> table;
-  private final @Nullable EntityPlanSet<?> plans;
   private final @Nullable Selectable<R> scalar;
   private final @Nullable ProjectionSelection<R> projection;
   private final Kind kind;
 
   private SelectedResult(
       @Nullable QueryTable<?> table,
-      @Nullable EntityPlanSet<?> plans,
       @Nullable Selectable<R> scalar,
       @Nullable ProjectionSelection<R> projection,
       Kind kind) {
     this.table = table;
-    this.plans = plans;
     this.scalar = scalar;
     this.projection = projection;
     this.kind = Objects.requireNonNull(kind, "kind");
     if (kind == Kind.REQUIRED_ENTITY || kind == Kind.NULLABLE_ENTITY) {
       Objects.requireNonNull(table, "table");
-      Objects.requireNonNull(plans, "plans");
       if (scalar != null || projection != null) {
         throw new IllegalArgumentException("an entity result must not carry scalar selections");
       }
     } else if (kind == Kind.GENERATED_PROJECTION) {
       Objects.requireNonNull(projection, "projection");
-      if (table != null || plans != null || scalar != null) {
+      if (table != null || scalar != null) {
         throw new IllegalArgumentException(
             "a generated projection result must not be bound to one selected table");
       }
     } else {
       Objects.requireNonNull(scalar, "scalar");
-      if (table != null || plans != null || projection != null) {
+      if (table != null || projection != null) {
         throw new IllegalArgumentException(
             "a scalar result must not be bound to one physical table mapping");
       }
     }
   }
 
-  static <E> SelectedResult<E> entity(QueryTable<E> table, EntityPlanSet<E> plans) {
-    return new SelectedResult<>(table, plans, null, null, Kind.REQUIRED_ENTITY);
+  static <E> SelectedResult<E> entity(QueryTable<E> table) {
+    return new SelectedResult<>(table, null, null, Kind.REQUIRED_ENTITY);
   }
 
-  static <E> SelectedResult<E> nullableEntity(QueryTable<E> table, EntityPlanSet<E> plans) {
-    return new SelectedResult<>(table, plans, null, null, Kind.NULLABLE_ENTITY);
+  static <E> SelectedResult<E> nullableEntity(QueryTable<E> table) {
+    return new SelectedResult<>(table, null, null, Kind.NULLABLE_ENTITY);
   }
 
   static <R> SelectedResult<R> requiredScalar(NonNullSelectable<R> selectable) {
     return new SelectedResult<>(
-        null, null, Objects.requireNonNull(selectable, "selectable"), null, Kind.REQUIRED_SCALAR);
+        null, Objects.requireNonNull(selectable, "selectable"), null, Kind.REQUIRED_SCALAR);
   }
 
   static <R> SelectedResult<R> nullableScalar(Selectable<R> selectable) {
     return new SelectedResult<>(
-        null, null, Objects.requireNonNull(selectable, "selectable"), null, Kind.NULLABLE_SCALAR);
+        null, Objects.requireNonNull(selectable, "selectable"), null, Kind.NULLABLE_SCALAR);
   }
 
   static <R> SelectedResult<R> projection(ProjectionSelection<R> selection) {
     return new SelectedResult<>(
-        null,
-        null,
-        null,
-        Objects.requireNonNull(selection, "selection"),
-        Kind.GENERATED_PROJECTION);
+        null, null, Objects.requireNonNull(selection, "selection"), Kind.GENERATED_PROJECTION);
   }
 
   ResolvedResultShape<R> resolve(TableRuntimeScope scope) {
@@ -100,17 +92,18 @@ final class SelectedResult<R> {
     return table == candidate;
   }
 
-  CompiledQueryPlan<R, Object> fastPlan(CompiledQueryStructure structure) {
+  CompiledQueryPlan<R, Object> fastPlan(
+      EntityPlanSet<?> rootPlans, CompiledQueryStructure structure) {
     if (!supportsFastPath()) {
       throw new IllegalStateException("only complete non-null entity selections use a Fast Path");
     }
-    return entityFastPlan(requirePlans(), requireTable(), structure);
+    return entityFastPlan(rootPlans, requireTable(), structure);
   }
 
   String structuralIdentity() {
     return switch (kind) {
-      case REQUIRED_ENTITY -> "entity:" + requirePlans().entity().javaType().getName();
-      case NULLABLE_ENTITY -> "nullable-entity:" + requirePlans().entity().javaType().getName();
+      case REQUIRED_ENTITY -> "entity:" + requireTable().entity().javaType().getName();
+      case NULLABLE_ENTITY -> "nullable-entity:" + requireTable().entity().javaType().getName();
       case REQUIRED_SCALAR -> scalarIdentity("scalar:");
       case NULLABLE_SCALAR -> scalarIdentity("nullable-scalar:");
       case GENERATED_PROJECTION -> "projection:" + requireProjection().mappingId();
@@ -121,7 +114,7 @@ final class SelectedResult<R> {
   @Nullable SqlExpression<?> automaticDistinctCountExpression(boolean hasJoins) {
     return switch (kind) {
       case REQUIRED_ENTITY, NULLABLE_ENTITY -> {
-        var primaryKey = requirePlans().entity().primaryKey().orElse(null);
+        var primaryKey = requireTable().entity().primaryKey().orElse(null);
         if (primaryKey == null) {
           if (requireTable().selections().size() == 1) {
             yield requireTable().selections().getFirst();
@@ -160,8 +153,7 @@ final class SelectedResult<R> {
   @SuppressWarnings({"rawtypes", "unchecked"})
   private ResolvedResultShape<R> entityShape(TableRuntimeScope scope, boolean nullable) {
     return (ResolvedResultShape)
-        ResolvedResultShape.entity(
-            (QueryTable) requireTable(), (EntityPlanSet) requirePlans(), scope, nullable);
+        ResolvedResultShape.entity((QueryTable) requireTable(), scope, nullable);
   }
 
   private String scalarIdentity(String prefix) {
@@ -184,10 +176,6 @@ final class SelectedResult<R> {
 
   private QueryTable<?> requireTable() {
     return Objects.requireNonNull(table, "selected table");
-  }
-
-  private EntityPlanSet<?> requirePlans() {
-    return Objects.requireNonNull(plans, "selected table plans");
   }
 
   private Selectable<R> requireScalar() {

@@ -48,4 +48,46 @@ public interface QueryOperations {
 
   /** Selects one APT-generated result-row shape before choosing an independent of root. */
   <R> SelectFromStep<R> select(ProjectionSelection<R> projection);
+
+  /** Adapts a reusable, conservatively nullable description for execution. */
+  default <R> NullableSelectQuery<?, R> query(SelectDescription<R> description) {
+    return query(description, QueryParameters.empty());
+  }
+
+  /** Adapts a reusable non-null entity or projection description for execution. */
+  default <R> SelectQuery<?, R> query(NonNullSelectDescription<R> description) {
+    return query(description, QueryParameters.empty());
+  }
+
+  /** Adapts a reusable non-null one-column description for execution. */
+  default <V> SelectQuery<?, V> query(NonNullSingleColumnSelect<V> description) {
+    return query(description, QueryParameters.empty());
+  }
+
+  /** Adapts and binds a reusable, conservatively nullable description for execution. */
+  default <R> NullableSelectQuery<?, R> query(
+      SelectDescription<R> description, QueryParameters parameters) {
+    Objects.requireNonNull(description, "description");
+    Objects.requireNonNull(parameters, "parameters");
+    throw new UnsupportedOperationException(
+        "this QueryOperations implementation does not support reusable SELECT descriptions");
+  }
+
+  /** Adapts and binds a reusable non-null entity or projection description for execution. */
+  default <R> SelectQuery<?, R> query(
+      NonNullSelectDescription<R> description, QueryParameters parameters) {
+    Objects.requireNonNull(description, "description");
+    Objects.requireNonNull(parameters, "parameters");
+    throw new UnsupportedOperationException(
+        "this QueryOperations implementation does not support reusable SELECT descriptions");
+  }
+
+  /** Adapts and binds a reusable non-null one-column description for execution. */
+  default <V> SelectQuery<?, V> query(
+      NonNullSingleColumnSelect<V> description, QueryParameters parameters) {
+    Objects.requireNonNull(description, "description");
+    Objects.requireNonNull(parameters, "parameters");
+    throw new UnsupportedOperationException(
+        "this QueryOperations implementation does not support reusable SELECT descriptions");
+  }
 }

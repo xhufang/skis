@@ -23,6 +23,14 @@ final class SelectableSupport {
         source, operator, requireValue(source, operator.name(), value));
   }
 
+  static <V> QueryCondition parameterComparison(
+      Selectable<V> selectable, ComparisonOperator operator, QueryParameter<V> parameter) {
+    Selectable<V> source = Objects.requireNonNull(selectable, "selectable");
+    requireComparison(source, operator);
+    requireParameterType(source, parameter);
+    return FrameworkQueryCondition.parameterComparison(source, operator, parameter);
+  }
+
   static <V> QueryCondition expressionComparison(
       Selectable<V> left, ComparisonOperator operator, Selectable<V> right) {
     Selectable<V> checkedLeft = Objects.requireNonNull(left, "left");
@@ -47,10 +55,26 @@ final class SelectableSupport {
         requireValue(source, "between upper bound", upper));
   }
 
+  static <V> QueryCondition betweenParameters(
+      Selectable<V> selectable, QueryParameter<V> lower, QueryParameter<V> upper) {
+    Selectable<V> source = Objects.requireNonNull(selectable, "selectable");
+    requireOrdering(source, "between");
+    requireParameterType(source, lower);
+    requireParameterType(source, upper);
+    return FrameworkQueryCondition.betweenParameters(source, lower, upper);
+  }
+
   static QueryCondition like(Selectable<?> selectable, String pattern) {
     Selectable<?> source = Objects.requireNonNull(selectable, "selectable");
     requireLike(source);
     return likeString(source, Objects.requireNonNull(pattern, "pattern"));
+  }
+
+  static <V> QueryCondition likeParameter(Selectable<V> selectable, QueryParameter<V> pattern) {
+    Selectable<V> source = Objects.requireNonNull(selectable, "selectable");
+    requireLike(source);
+    requireParameterType(source, pattern);
+    return FrameworkQueryCondition.likeParameter(source, pattern);
   }
 
   @SuppressWarnings("unchecked")
@@ -63,6 +87,23 @@ final class SelectableSupport {
     Selectable<V> source = Objects.requireNonNull(selectable, "selectable");
     List<V> copy = copyValues(source, values, negated);
     return FrameworkQueryCondition.membership(source, copy, negated);
+  }
+
+  static <V> QueryCondition parameterMembership(
+      Selectable<V> selectable,
+      Collection<? extends QueryParameter<V>> parameters,
+      boolean negated) {
+    Selectable<V> source = Objects.requireNonNull(selectable, "selectable");
+    Objects.requireNonNull(parameters, "parameters");
+    if (source.sqlType() == SqlType.OTHER) {
+      throw unsupported(source, negated ? "notInParameters" : "inParameters");
+    }
+    List<QueryParameter<V>> references = new ArrayList<>(parameters.size());
+    for (QueryParameter<V> parameter : parameters) {
+      requireParameterType(source, parameter);
+      references.add(parameter);
+    }
+    return FrameworkQueryCondition.membershipParameters(source, references, negated);
   }
 
   static SortSpecification order(Selectable<?> selectable, SortDirection direction) {
@@ -173,6 +214,20 @@ final class SelectableSupport {
               + value.getClass().getTypeName());
     }
     return selectable.javaType().cast(value);
+  }
+
+  private static <V> void requireParameterType(
+      Selectable<V> selectable, QueryParameter<V> parameter) {
+    Objects.requireNonNull(parameter, "parameter");
+    if (!selectable.javaType().equals(parameter.javaType())) {
+      throw new QueryValidationException(
+          "expression '"
+              + summary(selectable)
+              + "' requires query parameter type "
+              + selectable.javaType().getTypeName()
+              + " but received "
+              + parameter.javaType().getTypeName());
+    }
   }
 
   private static QueryValidationException unsupported(Selectable<?> selectable, String operation) {

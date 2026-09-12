@@ -75,6 +75,55 @@ Other supported Java values are immutable and remain allocation-free at capture.
 its `bind` implementation must not mutate the supplied value; SKIS cannot infer a safe copy for an
 arbitrary custom object.
 
+## Execution-free SELECT descriptions
+
+`Sql.select(...)` and `Sql.selectFrom(...)` build immutable SELECT descriptions without an
+executor, connection, Session, transaction, execution options, or terminal operation. The shared
+state records the result shape, FROM/Join tree, WHERE tree, reserved GROUP BY/HAVING containers,
+DISTINCT, ORDER BY, and the value-free SQL pagination shape used when a final statement is formed.
+Content pagination values produced by `fetchFirst`, `fetchPage`, or `fetchSlice` continue to be an
+execution-only SQL AST overlay; they are not written into a description that may later be reused in
+another position. A direct SQL limit/offset description API remains closed until its
+parameterization and embedding contract is implemented.
+
+The public result-shape types are deliberately different:
+
+- `SelectDescription<R>` is a general, conservatively nullable result description;
+- `NonNullSelectDescription<R>` preserves a complete entity or generated projection's declared
+  non-null result contract;
+- `SingleColumnSelect<V>` proves exactly one visible SQL value per returned row, but proves neither
+  one-row cardinality nor non-nullness;
+- `NonNullSingleColumnSelect<V>` additionally preserves a declared non-null value contract.
+
+All variants keep their shape across WHERE, Join, DISTINCT, and ORDER BY chaining. They do not
+expose `fetchList`, `fetchPage`, `cursor`, `stream`, or execution options. Top-level execution is an
+explicit adaptation through `executor.query(description)` or
+`executor.query(description, parameters)`; the latter validates the entire environment before any
+JDBC resource can be acquired.
+
+```java
+QueryParameter<String> name = Sql.parameter(String.class, "name");
+NonNullSingleColumnSelect<Long> petIds =
+    Sql.select(pet.id())
+        .from(pet)
+        .where(pet.name().eq(name))
+        .orderBy(pet.id().asc());
+
+QueryParameters parameters = QueryParameters.of(name, "Mimi");
+List<Long> ids = executor.query(petIds, parameters).fetchList();
+```
+
+Reusable descriptions must use parameter-reference predicate overloads such as `eq(parameter)`,
+`between(lower, upper)`, `like(parameter)`, and `inParameters(...)`. Supplying an ordinary value to
+the static description builder is rejected, because accepting it would make the description retain
+application data. The existing executable `executor.select(...)` DSL continues to accept
+`.eq(value)`, `.between(values)`, `.like(value)`, and `.in(values)` and stores their immutable value
+snapshots only in its execution parameter environment.
+
+At this step a description can be adapted only as the top-level query. EXISTS, IN-subquery,
+scalar-subquery, and derived-source adapters are intentionally deferred; those later slices will
+reuse this same description state instead of introducing a second query DSL.
+
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
 `BigInteger`. Cast both operands to `BigDecimal` before division when fractional results are
