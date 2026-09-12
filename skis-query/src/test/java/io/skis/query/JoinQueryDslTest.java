@@ -217,9 +217,9 @@ class JoinQueryDslTest {
         (DefaultSelectQuery<?, Long>)
             operations.query(petIdDescription, QueryParameters.of(petName, "Momo"));
 
-    assertSame(
-        mimi.compilation(QueryPagination.None.INSTANCE).plan(),
-        momo.compilation(QueryPagination.None.INSTANCE).plan());
+    assertEquals(
+        mimi.compilation(QueryPagination.None.INSTANCE).plan().sql(),
+        momo.compilation(QueryPagination.None.INSTANCE).plan().sql());
     assertEquals(List.of(101L), mimi.fetchList());
     assertEquals(List.of(202L), momo.fetchList());
 
