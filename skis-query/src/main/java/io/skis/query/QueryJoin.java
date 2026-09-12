@@ -4,6 +4,7 @@ import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
 import java.util.List;
@@ -32,8 +33,23 @@ final class QueryStructureCompiler {
 
   static CompiledQueryStructure compile(
       QueryTable<?> root, List<QueryJoin> joins, @Nullable QueryCondition where) {
+    return compile(root, joins, where, List.of(), null);
+  }
+
+  static CompiledQueryStructure compile(SelectQueryState<?> state) {
+    Objects.requireNonNull(state, "state");
+    return compile(state.root(), state.joins(), state.where(), state.groupBy(), state.having());
+  }
+
+  private static CompiledQueryStructure compile(
+      QueryTable<?> root,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition where,
+      List<Selectable<?>> groupBy,
+      @Nullable QueryCondition having) {
     Objects.requireNonNull(root, "root");
     Objects.requireNonNull(joins, "joins");
+    Objects.requireNonNull(groupBy, "groupBy");
     QueryConditionCompiler compiler = new QueryConditionCompiler();
     List<JoinClause> joinAst = new ArrayList<>(joins.size());
     try {
@@ -42,9 +58,14 @@ final class QueryStructureCompiler {
         joinAst.add(new JoinClause(join.type(), join.right(), on));
       }
       SqlPredicate whereAst = where == null ? null : QueryConditions.compile(where, compiler);
+      List<SqlExpression<?>> groupByAst =
+          groupBy.stream().<SqlExpression<?>>map(Selectable::expression).toList();
+      SqlPredicate havingAst = having == null ? null : QueryConditions.compile(having, compiler);
       return new CompiledQueryStructure(
           new FromClause(root, joinAst),
           whereAst,
+          groupByAst,
+          havingAst,
           compiler.parameterSources(),
           compiler.parameterReferences(),
           compiler.parameterSlots(),
@@ -58,6 +79,8 @@ final class QueryStructureCompiler {
 record CompiledQueryStructure(
     FromClause fromClause,
     @Nullable SqlPredicate where,
+    List<SqlExpression<?>> groupBy,
+    @Nullable SqlPredicate having,
     List<Selectable<?>> parameterSources,
     List<QueryParameter<?>> parameterReferences,
     List<ParameterSlot<?>> parameterSlots,
@@ -65,6 +88,7 @@ record CompiledQueryStructure(
 
   CompiledQueryStructure {
     Objects.requireNonNull(fromClause, "fromClause");
+    groupBy = List.copyOf(groupBy);
     parameterSources = List.copyOf(parameterSources);
     parameterReferences = List.copyOf(parameterReferences);
     parameterSlots = List.copyOf(parameterSlots);
@@ -81,9 +105,33 @@ record CompiledQueryStructure(
     }
   }
 
+  CompiledQueryStructure(
+      FromClause fromClause,
+      @Nullable SqlPredicate where,
+      List<Selectable<?>> parameterSources,
+      List<QueryParameter<?>> parameterReferences,
+      List<ParameterSlot<?>> parameterSlots,
+      QueryParameters parameters) {
+    this(
+        fromClause,
+        where,
+        List.of(),
+        null,
+        parameterSources,
+        parameterReferences,
+        parameterSlots,
+        parameters);
+  }
+
   List<@Nullable Object> arguments() {
     parameters.validateFor(parameterReferences);
     return parameters.valuesFor(parameterReferences);
+  }
+
+  List<@Nullable Object> arguments(QueryParameters suppliedParameters) {
+    Objects.requireNonNull(suppliedParameters, "suppliedParameters");
+    suppliedParameters.validateFor(parameterReferences);
+    return suppliedParameters.valuesFor(parameterReferences);
   }
 
   @Override
@@ -91,11 +139,15 @@ record CompiledQueryStructure(
     return this == other
         || other instanceof CompiledQueryStructure structure
             && fromClause.equals(structure.fromClause)
-            && Objects.equals(where, structure.where);
+            && Objects.equals(where, structure.where)
+            && groupBy.equals(structure.groupBy)
+            && Objects.equals(having, structure.having);
   }
 
   @Override
   public int hashCode() {
-    return 31 * fromClause.hashCode() + Objects.hashCode(where);
+    int result = 31 * fromClause.hashCode() + Objects.hashCode(where);
+    result = 31 * result + groupBy.hashCode();
+    return 31 * result + Objects.hashCode(having);
   }
 }

@@ -21,13 +21,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
@@ -37,13 +35,9 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private final DefaultQueryOperations operations;
   private final EntityPlanSet<E> plans;
-  private final QueryTable<E> table;
-  private final SelectedResult<R> selected;
-  private final List<QueryJoin> joins;
-  private final @Nullable QueryCondition predicate;
+  private final SelectQueryState<R> state;
+  private final QueryParameters parameters;
   private final ExecutionContext executionContext;
-  private final List<SortSpecification> orderBy;
-  private final boolean distinct;
   private volatile @Nullable QueryAnalysis analysis;
   private final AtomicReference<@Nullable CachedPlan<R>> fastPlan = new AtomicReference<>();
   private final LocalPlanCache<R> plansByPagination = new LocalPlanCache<>();
@@ -58,43 +52,39 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return new DefaultSelectQuery<>(
         operations,
         plans,
-        table,
-        selected,
-        List.of(),
-        null,
-        ExecutionContext.EMPTY,
-        List.of(),
-        false);
+        SelectQueryState.create(selected, table),
+        QueryParameters.empty(),
+        ExecutionContext.EMPTY);
+  }
+
+  static <E, R> DefaultSelectQuery<E, R> create(
+      DefaultQueryOperations operations,
+      EntityPlanSet<E> plans,
+      SelectQueryState<R> state,
+      QueryParameters parameters) {
+    return new DefaultSelectQuery<>(operations, plans, state, parameters, ExecutionContext.EMPTY);
   }
 
   private DefaultSelectQuery(
       DefaultQueryOperations operations,
       EntityPlanSet<E> plans,
-      QueryTable<E> table,
-      SelectedResult<R> selected,
-      List<QueryJoin> joins,
-      @Nullable QueryCondition predicate,
-      ExecutionContext executionContext,
-      List<SortSpecification> orderBy,
-      boolean distinct) {
+      SelectQueryState<R> state,
+      QueryParameters parameters,
+      ExecutionContext executionContext) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.plans = Objects.requireNonNull(plans, "plans");
-    this.table = Objects.requireNonNull(table, "table");
-    this.selected = Objects.requireNonNull(selected, "selected");
-    this.joins = List.copyOf(joins);
-    this.predicate = predicate;
+    this.state = Objects.requireNonNull(state, "state");
+    this.parameters = Objects.requireNonNull(parameters, "parameters");
     this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
-    this.orderBy = List.copyOf(orderBy);
-    this.distinct = distinct;
   }
 
   @Override
   public DefaultSelectQuery<E, R> where(QueryCondition newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
-    if (predicate != null) {
-      throw new QueryValidationException("where(...) may only be called once per query");
-    }
-    return copy(newPredicate, executionContext, orderBy, distinct);
+    return copy(
+        state.where(QueryConditions.structure(newPredicate)),
+        parameters.merge(QueryConditions.parameters(newPredicate)),
+        executionContext);
   }
 
   @Override
@@ -143,56 +133,27 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions"));
     return executionContext.executionOptions().equals(context.executionOptions())
         ? this
-        : copy(predicate, context, orderBy, distinct);
+        : copy(state, parameters, context);
   }
 
   @Override
   public DefaultSelectQuery<E, R> orderBy(SortSpecification... specifications) {
     Objects.requireNonNull(specifications, "specifications");
-    if (specifications.length == 0) {
-      throw new QueryValidationException("orderBy requires at least one ordering item");
-    }
-    List<SortSpecification> items = List.copyOf(Arrays.asList(specifications.clone()));
-    validateOrderItems(items);
-    return hasSameOrderOccurrences(orderBy, items)
-        ? this
-        : copy(predicate, executionContext, items, distinct);
+    SelectQueryState<R> replacement =
+        state.orderBy(List.copyOf(Arrays.asList(specifications.clone())));
+    return replacement == state ? this : copy(replacement, parameters, executionContext);
   }
 
   @Override
   public DefaultSelectQuery<E, R> thenByPrimaryKey(SortDirection direction) {
-    Objects.requireNonNull(direction, "direction");
-    PrimaryKeyMeta<E> primaryKey =
-        plans
-            .entity()
-            .primaryKey()
-            .orElseThrow(
-                () ->
-                    new QueryValidationException(
-                        "thenByPrimaryKey requires primary-key metadata for entity '"
-                            + plans.entity().entityName()
-                            + "'"));
-    List<SortSpecification> items = new ArrayList<>(orderBy);
-    for (PropertyMeta<E, ?> property : primaryKey.properties()) {
-      boolean present =
-          items.stream()
-              .anyMatch(
-                  item ->
-                      item.selectable() instanceof QueryColumn<?, ?> column
-                          && column.table() == table
-                          && column.property() == property);
-      if (!present) {
-        items.add(
-            new SortSpecification(
-                table.queryColumn(property), direction, NullPlacement.DIALECT_DEFAULT));
-      }
-    }
-    return items.equals(orderBy) ? this : copy(predicate, executionContext, items, distinct);
+    SelectQueryState<R> replacement = state.thenByPrimaryKey(direction);
+    return replacement == state ? this : copy(replacement, parameters, executionContext);
   }
 
   @Override
   public DefaultSelectQuery<E, R> distinct() {
-    return distinct ? this : copy(predicate, executionContext, orderBy, true);
+    SelectQueryState<R> replacement = state.distinctResult();
+    return replacement == state ? this : copy(replacement, parameters, executionContext);
   }
 
   @Override
@@ -318,21 +279,23 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (isFastPathShape(pagination)) {
       return unpaginatedCompilation();
     }
+    SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
     return plansByPagination.getOrCompile(
-        pagination,
+        finalState.sqlPagination(),
         () ->
             plans
                 .compiler()
                 .compileSelection(
                     plans.model(),
-                    table,
-                    selected,
+                    table(),
+                    finalState.selected(),
                     queryAnalysis.structure(),
-                    orderBy,
-                    distinct,
+                    finalState.orderBy(),
+                    finalState.distinct(),
                     pagination,
-                    List.of()),
+                    List.of(),
+                    queryAnalysis.arguments()),
         paginationArgument(queryAnalysis, pagination));
   }
 
@@ -342,30 +305,34 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private QueryCompilation<OrderedRow<R>> orderedCompilation(QueryPagination pagination) {
     validateDistinctOrdering();
+    SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
     return orderedPlansByPagination.getOrCompile(
-        pagination,
+        finalState.sqlPagination(),
         () ->
             plans
                 .compiler()
                 .compileOrdered(
                     plans.model(),
-                    table,
-                    selected,
+                    table(),
+                    finalState.selected(),
                     queryAnalysis.structure(),
-                    orderBy,
-                    distinct,
-                    pagination),
+                    finalState.orderBy(),
+                    finalState.distinct(),
+                    pagination,
+                    queryAnalysis.arguments()),
         paginationArgument(queryAnalysis, pagination));
   }
 
   private boolean isFastPathShape(QueryPagination pagination) {
     return pagination == QueryPagination.None.INSTANCE
-        && joins.isEmpty()
-        && selected.belongsTo(table)
-        && selected.supportsFastPath()
-        && orderBy.isEmpty()
-        && !distinct;
+        && state.joins().isEmpty()
+        && state.selected().belongsTo(table())
+        && state.selected().supportsFastPath()
+        && state.groupBy().isEmpty()
+        && state.having() == null
+        && state.orderBy().isEmpty()
+        && !state.distinct();
   }
 
   private QueryCompilation<R> unpaginatedCompilation() {
@@ -380,10 +347,10 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       return existing;
     }
     QueryAnalysis queryAnalysis = analysis();
-    CompiledQueryPlan<R, Object> plan = selected.fastPlan(queryAnalysis.structure());
+    CompiledQueryPlan<R, Object> plan = state.selected().fastPlan(plans, queryAnalysis.structure());
     SelectStatement ast =
         new SelectStatement(
-            selected.expressions(),
+            state.selected().expressions(),
             queryAnalysis.structure().fromClause(),
             queryAnalysis.structure().where());
     CachedPlan<R> compiled = new CachedPlan<>(plan, ast);
@@ -400,7 +367,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     QueryCompilation<Long> compiled =
         plans
             .compiler()
-            .compileCount(plans.model(), table, selected, queryAnalysis.structure(), distinct);
+            .compileCount(
+                plans.model(),
+                table(),
+                state.selected(),
+                queryAnalysis.structure(),
+                state.distinct(),
+                queryAnalysis.arguments());
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     CachedPlan<Long> effective = published == null ? cached : published;
@@ -498,7 +471,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
           SliceContinuation.keyset(
               queryFingerprint(),
               orderSignature(),
-              orderBy.stream().map(item -> item.selectable().sqlType()).toList(),
+              state.orderBy().stream().map(item -> item.selectable().sqlType()).toList(),
               nullMarkers,
               anchor.orderValues(),
               parameterDigest());
@@ -507,18 +480,19 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private void validatePaginationOrder(boolean keyset) {
-    if (orderBy.isEmpty()) {
+    if (state.orderBy().isEmpty()) {
       throw new QueryValidationException("pagination requires explicit stable ORDER BY");
     }
     CompiledQueryStructure structure = analysis().structure();
     validateOrderScope(structure.fromClause());
-    if (distinct) {
+    if (state.distinct()) {
       if (!hasStableDistinctOrdering()) {
         SqlExpression<?> missing =
-            selected.expressions().stream()
+            state.selected().expressions().stream()
                 .filter(
                     expression ->
-                        orderBy.stream().noneMatch(item -> item.expression().equals(expression)))
+                        state.orderBy().stream()
+                            .noneMatch(item -> item.expression().equals(expression)))
                 .findFirst()
                 .orElseThrow();
         throw new QueryValidationException(
@@ -530,7 +504,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       validateOccurrencePrimaryKeys(structure.fromClause());
     }
     if (keyset) {
-      for (SortSpecification item : orderBy) {
+      for (SortSpecification item : state.orderBy()) {
         QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
         if (structure.fromClause().effectiveNullability(column.expression()).isNullable()
             && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
@@ -544,43 +518,18 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private boolean hasStableDistinctOrdering() {
-    if (!distinct) {
+    if (!state.distinct()) {
       return false;
     }
-    List<SqlExpression<?>> expressions = selected.expressions();
+    List<SqlExpression<?>> expressions = state.selected().expressions();
     return expressions.stream()
         .allMatch(
-            expression -> orderBy.stream().anyMatch(item -> item.expression().equals(expression)));
-  }
-
-  private void validateOrderItems(List<SortSpecification> items) {
-    Set<SqlExpression<?>> expressions = new HashSet<>();
-    for (SortSpecification item : items) {
-      Objects.requireNonNull(item, "ordering item");
-      if (!expressions.add(item.expression())) {
-        throw new QueryValidationException(
-            "ORDER BY repeats expression '" + expressionSummary(item.expression()) + "'");
-      }
-    }
-  }
-
-  private static boolean hasSameOrderOccurrences(
-      List<SortSpecification> current, List<SortSpecification> replacement) {
-    if (current.size() != replacement.size()) {
-      return false;
-    }
-    for (int index = 0; index < current.size(); index++) {
-      SortSpecification existing = current.get(index);
-      SortSpecification candidate = replacement.get(index);
-      if (!existing.sameOccurrence(candidate)) {
-        return false;
-      }
-    }
-    return true;
+            expression ->
+                state.orderBy().stream().anyMatch(item -> item.expression().equals(expression)));
   }
 
   private void validateOrderScope(FromClause fromClause) {
-    for (SortSpecification item : orderBy) {
+    for (SortSpecification item : state.orderBy()) {
       SqlExpression<?> expression = item.expression();
       if (expression instanceof ColumnExpression<?, ?> column
           && fromClause.occurrenceOf(column.table()).isEmpty()) {
@@ -606,7 +555,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                               + occurrenceDescription(occurrence)));
       for (PropertyMeta<?, ?> property : primaryKey.properties()) {
         boolean present =
-            orderBy.stream()
+            state.orderBy().stream()
                 .anyMatch(
                     item -> {
                       Selectable<?> selectable = item.selectable();
@@ -627,11 +576,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private void validateDistinctOrdering() {
-    if (!distinct || orderBy.isEmpty()) {
+    if (!state.distinct() || state.orderBy().isEmpty()) {
       return;
     }
-    List<SqlExpression<?>> expressions = selected.expressions();
-    for (SortSpecification item : orderBy) {
+    List<SqlExpression<?>> expressions = state.selected().expressions();
+    for (SortSpecification item : state.orderBy()) {
       if (!expressions.contains(item.expression())) {
         throw new QueryValidationException(
             "distinct ORDER BY expression '"
@@ -656,11 +605,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
     if (continuation.mode() == SliceContinuation.Mode.KEYSET) {
       List<@Nullable Object> values = continuation.keysetValues();
-      if (values.size() != orderBy.size() || continuation.sqlTypes().size() != orderBy.size()) {
+      if (values.size() != state.orderBy().size()
+          || continuation.sqlTypes().size() != state.orderBy().size()) {
         throw new QueryValidationException("continuation ordering value count does not match");
       }
-      for (int index = 0; index < orderBy.size(); index++) {
-        SortSpecification sort = orderBy.get(index);
+      for (int index = 0; index < state.orderBy().size(); index++) {
+        SortSpecification sort = state.orderBy().get(index);
         Object value = values.get(index);
         if (continuation.sqlTypes().get(index) != sort.selectable().sqlType()
             || continuation.nullMarkers().get(index) != (value == null)
@@ -681,7 +631,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     updateDigest(digest, "join-query-fingerprint-v1");
     updateDigest(digest, structure.plan().dialectId());
     updateDigest(digest, structure.plan().sql());
-    updateDigest(digest, selected.structuralIdentity());
+    updateDigest(digest, state.selected().structuralIdentity());
     for (TableOccurrence occurrence : fromClause.occurrences()) {
       TableExpression<?> occurrenceTable = entityTable(occurrence);
       var entity = occurrenceTable.entity();
@@ -713,7 +663,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   String orderSignature() {
     FromClause fromClause = analysis().structure().fromClause();
     StringBuilder signature = new StringBuilder();
-    for (SortSpecification item : orderBy) {
+    for (SortSpecification item : state.orderBy()) {
       QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
       TableOccurrence occurrence =
           fromClause
@@ -820,24 +770,22 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private DefaultSelectQuery<E, R> chain(QueryCondition newPredicate, boolean conjunction) {
     Objects.requireNonNull(newPredicate, "predicate");
-    if (predicate == null) {
-      throw new QueryValidationException(
-          (conjunction ? "and" : "or") + "(...) requires an existing where predicate");
-    }
+    QueryCondition structure = QueryConditions.structure(newPredicate);
     return copy(
-        conjunction ? predicate.and(newPredicate) : predicate.or(newPredicate),
-        executionContext,
-        orderBy,
-        distinct);
+        state.chainWhere(structure, conjunction),
+        parameters.merge(QueryConditions.parameters(newPredicate)),
+        executionContext);
   }
 
   private DefaultSelectQuery<E, R> copy(
-      @Nullable QueryCondition newPredicate,
-      ExecutionContext context,
-      List<SortSpecification> newOrderBy,
-      boolean newDistinct) {
-    return new DefaultSelectQuery<>(
-        operations, plans, table, selected, joins, newPredicate, context, newOrderBy, newDistinct);
+      SelectQueryState<R> replacement,
+      QueryParameters replacementParameters,
+      ExecutionContext context) {
+    return replacement == state
+            && replacementParameters == parameters
+            && context == executionContext
+        ? this
+        : new DefaultSelectQuery<>(operations, plans, replacement, replacementParameters, context);
   }
 
   private <J> JoinOnStep<E, R, J> joinOn(JoinType type, QueryTable<J> joinedTable) {
@@ -846,19 +794,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   DefaultSelectQuery<E, R> appendJoin(
       JoinType type, QueryTable<?> joinedTable, @Nullable QueryCondition on) {
-    List<QueryJoin> appended = new ArrayList<>(joins.size() + 1);
-    appended.addAll(joins);
-    appended.add(new QueryJoin(type, joinedTable, on));
-    return new DefaultSelectQuery<>(
-        operations,
-        plans,
-        table,
-        selected,
-        appended,
-        predicate,
-        executionContext,
-        orderBy,
-        distinct);
+    QueryCondition structure = on == null ? null : QueryConditions.structure(on);
+    QueryParameters appendedParameters =
+        on == null ? parameters : parameters.merge(QueryConditions.parameters(on));
+    return copy(
+        state.appendJoin(type, joinedTable, structure), appendedParameters, executionContext);
   }
 
   private List<@Nullable Object> conditionArguments() {
@@ -877,8 +817,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     synchronized (this) {
       existing = analysis;
       if (existing == null) {
-        CompiledQueryStructure structure = QueryStructureCompiler.compile(table, joins, predicate);
-        List<@Nullable Object> arguments = structure.arguments();
+        CompiledQueryStructure structure = state.structure();
+        List<@Nullable Object> arguments = structure.arguments(parameters);
         Object argument =
             arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
         existing = new QueryAnalysis(structure, argument);
@@ -886,6 +826,10 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       }
       return existing;
     }
+  }
+
+  private QueryTable<E> table() {
+    return state.typedRoot();
   }
 
   private static QueryColumn<?, ?> requirePhysicalPaginationColumn(SortSpecification item) {
@@ -956,19 +900,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
   }
 
-  private record PaginationShape(String mode, List<Boolean> nullMarkers) {
-
-    private static PaginationShape of(QueryPagination pagination) {
-      return switch (pagination) {
-        case QueryPagination.None ignored -> new PaginationShape("none", List.of());
-        case QueryPagination.LimitOnly ignored -> new PaginationShape("limit", List.of());
-        case QueryPagination.Offset ignored -> new PaginationShape("offset", List.of());
-        case QueryPagination.Keyset keyset ->
-            new PaginationShape("keyset", keyset.values().stream().map(Objects::isNull).toList());
-      };
-    }
-  }
-
   private record CachedPlan<T>(CompiledQueryPlan<T, Object> plan, StatementAst ast) {
 
     private CachedPlan {
@@ -980,18 +911,19 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private static final class LocalPlanCache<T> {
 
     private static final int MAXIMUM_SHAPES = 32;
-    private final LinkedHashMap<PaginationShape, CachedPlan<T>> plans =
+    private final LinkedHashMap<SqlPaginationStructure, CachedPlan<T>> plans =
         new LinkedHashMap<>(8, 0.75F, true);
 
     private synchronized QueryCompilation<T> getOrCompile(
-        QueryPagination pagination, Supplier<QueryCompilation<T>> compiler, Object argument) {
-      PaginationShape shape = PaginationShape.of(pagination);
-      CachedPlan<T> existing = plans.get(shape);
+        SqlPaginationStructure pagination,
+        Supplier<QueryCompilation<T>> compiler,
+        Object argument) {
+      CachedPlan<T> existing = plans.get(pagination);
       if (existing != null) {
         return new QueryCompilation<>(existing.plan(), argument, existing.ast());
       }
       QueryCompilation<T> compiled = Objects.requireNonNull(compiler.get(), "compiled query");
-      plans.put(shape, new CachedPlan<>(compiled.plan(), compiled.ast()));
+      plans.put(pagination, new CachedPlan<>(compiled.plan(), compiled.ast()));
       if (plans.size() > MAXIMUM_SHAPES) {
         var entries = plans.entrySet().iterator();
         entries.next();

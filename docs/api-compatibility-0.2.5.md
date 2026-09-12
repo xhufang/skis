@@ -1,6 +1,6 @@
 # 0.2.5 API compatibility ledger
 
-This ledger records the public API differences approved for steps 1, 3, and 4 of the internal
+This ledger records the public API differences approved for steps 1, 3, 4, and 5 of the internal
 `0.2.5-SNAPSHOT` milestone. It is not the consolidated compatibility report for the unfinished
 `0.2.x` development line. The root `pom.xml` japicmp allow-list names each approved class or
 method so unrelated public API breaks continue to fail compatibility checks.
@@ -130,3 +130,33 @@ recomputed by every executable query solely for continuation fingerprints; the l
 compiler integration will carry the already-resolved key forward without duplicating scope
 analysis. This does not modify the shared query-plan cache key or cache-consistency semantics
 governed by the ADR requirement.
+
+## Step 5: reusable SELECT descriptions and execution adaptation
+
+### Added API
+
+- `Sql.select(...)` and `Sql.selectFrom(...)` create framework-owned, immutable descriptions
+  independently from `QueryOperations`.
+- `SelectDescription<R>` and `NonNullSelectDescription<R>` represent general result shapes;
+  `SingleColumnSelect<V>` and `NonNullSingleColumnSelect<V>` preserve exactly-one-visible-column
+  shape across the complete current fluent chain. Single-column shape does not state result
+  cardinality.
+- `QueryOperations#query(description)` and `query(description, QueryParameters)` adapt descriptions
+  into the existing `SelectQuery` or `NullableSelectQuery` execution contracts. The methods are
+  defaults that fail explicitly for third-party implementations, preserving binary compatibility;
+  built-in executors and Sessions override them.
+- `Selectable` adds strongly typed `QueryParameter<V>` overloads for comparisons, BETWEEN, LIKE,
+  and explicitly named `inParameters`/`notInParameters` membership.
+
+### Separation and compatibility behavior
+
+A description stores only immutable SQL construction state, opaque parameter references, and the
+result-shape contract. It has no terminal operations and no reference to an executor, connection,
+Session, transaction, execution options, or ordinary value. Missing and surplus bindings fail
+before JDBC. Existing `select(...).from(...)` and `selectFrom(...)` entry points remain available and
+use the same internal state, query-block analysis, result mapping, and value-independent plan cache.
+
+Terminal pagination remains an execution adapter concern and is combined with the shared SELECT
+state only for the final top-level SQL AST. It is not persisted into a reusable description. A
+direct description-level SQL limit/offset API and all embedding adapters remain deferred to their
+explicit later capability slices.

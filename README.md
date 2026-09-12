@@ -11,6 +11,7 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - compile-time entity metadata, typed table expressions, row decoders, binders, and projection companions;
 - application-assigned single-column IDs and optional optimistic locking with `@Version`;
 - `findById`, entity/scalar and generated result-row queries with immutable predicates and explicit joins;
+- reusable execution-free SELECT descriptions with separately bound typed parameters;
 - typed ordering, distinct results, offset/keyset `Page`/`Slice`, and explicit cursor/stream reading;
 - generated `insert`, `updateById`, and `deleteById` operations;
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
@@ -27,7 +28,8 @@ cursor/stream terminal operations.
 The completed `0.2.4` milestone adds explicit joins and replaces entity-bound projection discovery with
 generated result-row companions. A projection now binds an ordered list of visible table columns,
 so the same API covers single-table and joined results without reflection or startup registration.
-The `0.2.5` milestone is the next development phase for subqueries, derived tables, and aggregation.
+The `0.2.5` milestone has established reusable execution-free SELECT descriptions and the scope
+foundation for the next subquery, derived-table, and aggregation slices.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [explicit joins and generated result rows](docs/joins.md),
@@ -138,6 +140,22 @@ Join rows are not deduplicated by entity ID. Outer-join selections must explicit
 SQL NULL, and paginated joins must order by enough occurrence keys to identify each final row. See
 the [Join guide](docs/joins.md) for aliases, ON scope, nullable entities, distinct, count, and
 continuation rules.
+
+A SELECT can also be constructed independently from an executor and bound only when it is adapted
+for top-level execution:
+
+```java
+QueryParameter<String> petName = Sql.parameter(String.class, "petName");
+NonNullSingleColumnSelect<Long> petIds =
+    Sql.select(pet.id()).from(pet).where(pet.name().eq(petName));
+
+List<Long> ids =
+    executor.query(petIds, QueryParameters.of(petName, "Mimi")).fetchList();
+```
+
+The description has no terminal operations and captures no ordinary values. One-column shape says
+that each result row has one SQL value; it does not promise that the query returns one row. EXISTS,
+IN-subquery, scalar-subquery, and derived-source embedding remain assigned to later `0.2.5` slices.
 
 See the complete [plain Java + H2 example](skis-examples/skis-example-h2) for schema creation,
 annotation processing, typed queries, mutations, and transactions.

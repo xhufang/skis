@@ -7,13 +7,18 @@ import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
+import io.skis.query.NonNullSelectDescription;
 import io.skis.query.NonNullSelectable;
+import io.skis.query.NonNullSingleColumnSelect;
 import io.skis.query.NullableSelectFromStep;
+import io.skis.query.NullableSelectQuery;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryOperations;
+import io.skis.query.QueryParameters;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryTable;
+import io.skis.query.SelectDescription;
 import io.skis.query.SelectFromStep;
 import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
@@ -86,6 +91,39 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
     return queries.select(projection);
+  }
+
+  @Override
+  public <R> NullableSelectQuery<?, R> query(SelectDescription<R> description) {
+    return queries.query(description);
+  }
+
+  @Override
+  public <R> SelectQuery<?, R> query(NonNullSelectDescription<R> description) {
+    return queries.query(description);
+  }
+
+  @Override
+  public <V> SelectQuery<?, V> query(NonNullSingleColumnSelect<V> description) {
+    return queries.query(description);
+  }
+
+  @Override
+  public <R> NullableSelectQuery<?, R> query(
+      SelectDescription<R> description, QueryParameters parameters) {
+    return queries.query(description, parameters);
+  }
+
+  @Override
+  public <R> SelectQuery<?, R> query(
+      NonNullSelectDescription<R> description, QueryParameters parameters) {
+    return queries.query(description, parameters);
+  }
+
+  @Override
+  public <V> SelectQuery<?, V> query(
+      NonNullSingleColumnSelect<V> description, QueryParameters parameters) {
+    return queries.query(description, parameters);
   }
 
   @Override
