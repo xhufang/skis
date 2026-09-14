@@ -151,8 +151,8 @@ class SqlAstStructureTest {
 
   @Test
   void subqueryMembershipRequiresOnePhysicalCompatibleOutputAndPreservesNullability() {
-    PetTable outer = new PetTable().as("outer_pet");
-    PetTable inner = new PetTable().as("inner_pet");
+    PetTable outer = new PetTable().as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable().as(Identifier.of("inner_pet"));
     SelectStatement ids = new SelectStatement(List.of(inner.id()), inner);
     SelectStatement names = new SelectStatement(List.of(inner.name()), inner);
 
