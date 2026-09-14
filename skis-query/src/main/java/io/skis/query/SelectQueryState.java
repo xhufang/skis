@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.JoinType;
+import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -97,6 +98,21 @@ final class SelectQueryState<R> {
 
   SqlPaginationStructure sqlPagination() {
     return sqlPagination;
+  }
+
+  void validateDistinctOrdering() {
+    if (!distinct || orderBy.isEmpty()) {
+      return;
+    }
+    List<SqlExpression<?>> expressions = selected.expressions();
+    for (SortSpecification item : orderBy) {
+      if (!expressions.contains(item.expression())) {
+        throw new QueryValidationException(
+            "distinct ORDER BY expression '"
+                + SelectableSupport.summary(item.selectable())
+                + "' is not part of the selected result");
+      }
+    }
   }
 
   SelectQueryState<R> where(QueryCondition predicate) {

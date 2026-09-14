@@ -275,7 +275,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   QueryCompilation<R> compilation(QueryPagination pagination) {
-    validateDistinctOrdering();
+    state.validateDistinctOrdering();
     if (isFastPathShape(pagination)) {
       return unpaginatedCompilation();
     }
@@ -304,7 +304,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private QueryCompilation<OrderedRow<R>> orderedCompilation(QueryPagination pagination) {
-    validateDistinctOrdering();
+    state.validateDistinctOrdering();
     SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
     return orderedPlansByPagination.getOrCompile(
@@ -571,21 +571,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                   + property.name()
                   + "'");
         }
-      }
-    }
-  }
-
-  private void validateDistinctOrdering() {
-    if (!state.distinct() || state.orderBy().isEmpty()) {
-      return;
-    }
-    List<SqlExpression<?>> expressions = state.selected().expressions();
-    for (SortSpecification item : state.orderBy()) {
-      if (!expressions.contains(item.expression())) {
-        throw new QueryValidationException(
-            "distinct ORDER BY expression '"
-                + SelectableSupport.summary(item.selectable())
-                + "' is not part of the selected result");
       }
     }
   }

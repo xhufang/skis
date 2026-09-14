@@ -20,6 +20,7 @@ import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.JoinClause;
@@ -305,6 +306,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
         renderIn(in, context);
         return;
       }
+      case InSubqueryPredicate<?> in -> {
+        renderInSubquery(in, context);
+        return;
+      }
       case ExistsPredicate exists -> {
         renderExists(exists, context);
         return;
@@ -360,6 +365,11 @@ public final class StandardSqlRenderer implements SqlRenderer {
       case InPredicate<?> in -> {
         context.sql.append('(');
         renderIn(in, context);
+        context.sql.append(')');
+      }
+      case InSubqueryPredicate<?> in -> {
+        context.sql.append('(');
+        renderInSubquery(in, context);
         context.sql.append(')');
       }
       case ExistsPredicate exists -> {
@@ -508,6 +518,14 @@ public final class StandardSqlRenderer implements SqlRenderer {
       }
       renderExpression(predicate.candidates().get(index), context);
     }
+    context.sql.append(')');
+  }
+
+  private void renderInSubquery(InSubqueryPredicate<?> predicate, RenderContext context) {
+    require(DialectFeature.IN_SUBQUERY, "IN subquery");
+    renderExpression(predicate.value(), context);
+    context.sql.append(predicate.negated() ? " NOT IN (" : " IN (");
+    renderSelect(predicate.subquery(), context.child(predicate.subquery().fromClause()));
     context.sql.append(')');
   }
 

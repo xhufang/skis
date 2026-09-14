@@ -279,6 +279,40 @@ public final class SemanticValidator {
     }
   }
 
+  /** Validates one SQL subquery-membership value contract without requiring a parent scope. */
+  static void validateInSubquery(SqlExpression<?> value, SelectStatement subquery) {
+    Objects.requireNonNull(value, "value");
+    Objects.requireNonNull(subquery, "subquery");
+    int physicalOutputs = subquery.selections().size() + subquery.hiddenSelections().size();
+    if (physicalOutputs != 1) {
+      throw new IllegalArgumentException(
+          "IN subquery requires exactly one physical output column but received "
+              + physicalOutputs
+              + " ("
+              + subquery.selections().size()
+              + " visible, "
+              + subquery.hiddenSelections().size()
+              + " hidden)");
+    }
+    SqlExpression<?> output = subquery.selections().getFirst();
+    Class<?> leftJavaType = boxedJavaType(value.javaType());
+    Class<?> outputJavaType = boxedJavaType(output.javaType());
+    if (!leftJavaType.equals(outputJavaType)) {
+      throw new IllegalArgumentException(
+          "IN subquery Java types differ: "
+              + leftJavaType.getTypeName()
+              + " and "
+              + outputJavaType.getTypeName());
+    }
+    if (!value.sqlType().equalityCompatibleWith(output.sqlType())) {
+      throw new IllegalArgumentException(
+          "IN subquery requires equality-compatible SQL types but received "
+              + value.sqlType()
+              + " and "
+              + output.sqlType());
+    }
+  }
+
   static void validateArithmetic(
       SqlExpression<?> left, ArithmeticOperator operator, SqlExpression<?> right) {
     Objects.requireNonNull(operator, "operator");
@@ -560,6 +594,15 @@ public final class SemanticValidator {
           validateIn(in.value(), in.candidates());
           validateExpression(in.value(), clause);
           in.candidates().forEach(item -> validateExpression(item, clause));
+        }
+        case InSubqueryPredicate<?> in -> {
+          validateInSubquery(in.value(), in.subquery());
+          validateExpression(in.value(), clause);
+          if (validatesQueryContext) {
+            throw new IllegalArgumentException(
+                clause + " uses an IN subquery outside a SELECT query block");
+          }
+          validateLocal(in.subquery());
         }
         case ExistsPredicate exists -> {
           if (validatesQueryContext) {

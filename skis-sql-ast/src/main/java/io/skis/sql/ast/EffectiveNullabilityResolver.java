@@ -49,6 +49,7 @@ final class EffectiveNullabilityResolver {
           resolve(like.value(), nullExtendedTables)
               .union(resolve(like.pattern(), nullExtendedTables));
       case InPredicate<?> in -> inNullability(in, nullExtendedTables);
+      case InSubqueryPredicate<?> in -> inSubqueryNullability(in, nullExtendedTables);
       case ExistsPredicate ignored -> Nullability.NON_NULL;
       case NotPredicate not -> resolve(not.operand(), nullExtendedTables);
       case IncrementExpression<?> increment -> resolve(increment.operand(), nullExtendedTables);
@@ -145,5 +146,14 @@ final class EffectiveNullabilityResolver {
             .anyMatch(candidate -> resolve(candidate, state).isNullable())
         ? Nullability.NULLABLE
         : Nullability.NON_NULL;
+  }
+
+  private static Nullability inSubqueryNullability(
+      InSubqueryPredicate<?> expression, Map<TableExpression<?>, Boolean> state) {
+    IdentityHashMap<TableExpression<?>, Boolean> nestedState = new IdentityHashMap<>();
+    nestedState.putAll(state);
+    nestedState.putAll(finalTableState(expression.subquery().fromClause()));
+    return resolve(expression.value(), state)
+        .union(resolve(expression.subquery().selections().getFirst(), nestedState));
   }
 }

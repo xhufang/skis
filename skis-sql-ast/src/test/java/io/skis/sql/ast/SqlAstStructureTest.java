@@ -150,6 +150,51 @@ class SqlAstStructureTest {
   }
 
   @Test
+  void subqueryMembershipRequiresOnePhysicalCompatibleOutputAndPreservesNullability() {
+    PetTable outer = new PetTable().as("outer_pet");
+    PetTable inner = new PetTable().as("inner_pet");
+    SelectStatement ids = new SelectStatement(List.of(inner.id()), inner);
+    SelectStatement names = new SelectStatement(List.of(inner.name()), inner);
+
+    InSubqueryPredicate<Long> in = new InSubqueryPredicate<>(outer.id(), ids, false);
+    InSubqueryPredicate<String> notIn =
+        new InSubqueryPredicate<>(outer.name(), names, true);
+
+    assertEquals(Nullability.NON_NULL, in.nullability());
+    assertFalse(in.nullable());
+    assertEquals(Nullability.NULLABLE, notIn.nullability());
+    assertTrue(notIn.nullable());
+    assertEquals(in, new InSubqueryPredicate<>(outer.id(), ids, false));
+    assertNotEquals(in, new InSubqueryPredicate<>(outer.id(), ids, true));
+    assertNotEquals(in, new InSubqueryPredicate<>(inner.id(), ids, false));
+
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> new InSubqueryPredicate<>(outer.id(), names, false));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new InSubqueryPredicate<>(
+                outer.id(), new SelectStatement(List.of(inner.id(), inner.id()), inner), false));
+
+    SelectStatement hiddenOutput =
+        new SelectStatement(
+            false,
+            List.of(inner.id()),
+            List.of(new HiddenSelection(inner.name(), Identifier.of("hidden_name"))),
+            inner,
+            null,
+            List.of(),
+            null);
+    IllegalArgumentException hiddenFailure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new InSubqueryPredicate<>(outer.id(), hiddenOutput, false));
+    assertTrue(hiddenFailure.getMessage().contains("one physical output column"));
+    assertTrue(hiddenFailure.getMessage().contains("1 hidden"));
+  }
+
+  @Test
   void standardExpressionsAreTypedImmutableAndPropagateNullability() {
     PetTable table = new PetTable();
     ParameterSlot<Long> addend = new ParameterSlot<>(0, Long.class, false);

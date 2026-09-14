@@ -169,6 +169,16 @@ public sealed interface Selectable<V> permits ExpressionSelectable, NonNullSelec
     return SelectableSupport.membership(this, values, false);
   }
 
+  /**
+   * Applies SQL membership against a reusable SELECT that produces exactly one value per row.
+   *
+   * <p>The type parameter is deliberately invariant. The child is evaluated as part of the final
+   * SQL statement and is never materialized as a Java collection.
+   */
+  default QueryCondition in(SingleColumnSelect<V> subquery) {
+    return SelectableSupport.subqueryMembership(this, subquery, false);
+  }
+
   /** Applies SQL set membership to separately bound reusable query parameters. */
   default QueryCondition inParameters(Collection<? extends QueryParameter<V>> parameters) {
     return SelectableSupport.parameterMembership(this, parameters, false);
@@ -177,6 +187,16 @@ public sealed interface Selectable<V> permits ExpressionSelectable, NonNullSelec
   /** Applies negated SQL set membership to captured non-null values. */
   default QueryCondition notIn(Collection<? extends V> values) {
     return SelectableSupport.membership(this, values, true);
+  }
+
+  /**
+   * Applies native SQL {@code NOT IN} against a reusable one-column SELECT.
+   *
+   * <p>SQL three-valued logic is preserved: a nullable left value or a {@code NULL} produced by the
+   * child can make the predicate unknown. This operation is not rewritten to {@code NOT EXISTS}.
+   */
+  default QueryCondition notIn(SingleColumnSelect<V> subquery) {
+    return SelectableSupport.subqueryMembership(this, subquery, true);
   }
 
   /** Applies negated SQL set membership to separately bound reusable query parameters. */

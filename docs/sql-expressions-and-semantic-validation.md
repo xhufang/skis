@@ -121,9 +121,12 @@ application data. The existing executable `executor.select(...)` DSL continues t
 snapshots only in its execution parameter environment.
 
 A description can be adapted as a top-level query or embedded through `Sql.exists(...)` and
-`Sql.notExists(...)`. EXISTS accepts every result shape and preserves the complete child SELECT;
-IN-subquery, scalar-subquery, and derived-source adapters remain deferred to their later slices and
-will reuse this same description state instead of introducing a second query DSL.
+`Sql.notExists(...)`. EXISTS accepts every result shape and preserves the complete child SELECT.
+A `SingleColumnSelect<V>` can also be passed to `Selectable<V>.in(...)` or `notIn(...)`; this
+invariant overload requires an exact boxed Java type match and equality-compatible SQL types.
+Collection membership remains a different overload and AST node. Scalar-subquery and
+derived-source adapters remain deferred to their later slices and will reuse this same description
+state instead of introducing a second query DSL.
 
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a

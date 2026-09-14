@@ -1,6 +1,6 @@
 # 0.2.5 API compatibility ledger
 
-This ledger records the public API differences approved for steps 1, 3, 4, 5, and 6 of the internal
+This ledger records the public API differences approved for steps 1, 3, 4, 5, 6, and 7 of the internal
 `0.2.5-SNAPSHOT` milestone. It is not the consolidated compatibility report for the unfinished
 `0.2.x` development line. The root `pom.xml` japicmp allow-list names each approved class or
 method so unrelated public API breaks continue to fail compatibility checks.
@@ -193,3 +193,29 @@ Direct renderer calls perform the same recursive semantic and dialect capability
 may support independent EXISTS while rejecting correlation. PostgreSQL/H2 SQL preserves the child
 selection list and query clauses and performs no selection pruning, limit injection, or Join
 rewrite.
+
+## Step 7: IN/NOT IN subqueries
+
+### Added API
+
+- `InSubqueryPredicate<T>` represents native IN/NOT IN membership over a complete one-column
+  `SelectStatement`. It is distinct from collection-backed `InPredicate<T>`.
+- `Selectable<V>#in(SingleColumnSelect<V>)` and `notIn(...)` add invariant, strongly typed child
+  description overloads. Existing collection and parameter-collection overloads are unchanged.
+- `DialectFeature.IN_SUBQUERY` independently declares subquery membership syntax. PostgreSQL and H2
+  enable it; correlated membership additionally requires `CORRELATED_SUBQUERY`.
+- Nested block analysis now exposes `NestedQueryKind`, allowing recursive capability validation and
+  structure fingerprints to distinguish EXISTS from IN occurrences.
+
+### Validation and semantic behavior
+
+Both the query DSL and low-level AST validate exact boxed Java types plus the shared SQL equality
+compatibility rule. The AST counts visible and hidden outputs and rejects every child whose final
+physical shape is not exactly one column. Result Java classes and projection constructor arity are
+never used as substitutes for SQL shape.
+
+Complete analysis resolves effective nullability on both sides in their own query-block scopes.
+Either nullable side makes the Boolean result conservatively nullable. SQL evaluates the child in
+the outer statement: SKIS does not materialize values, remove NULLs, deduplicate, add CASTs, or
+rewrite IN/NOT IN to Join/EXISTS. This preserves the empty-child, NULL, duplicate, and NOT IN versus
+NOT EXISTS contracts.

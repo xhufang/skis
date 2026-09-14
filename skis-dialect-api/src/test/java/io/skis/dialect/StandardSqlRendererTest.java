@@ -26,6 +26,7 @@ import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
@@ -137,6 +138,40 @@ class StandardSqlRendererTest {
         assertThrows(SqlRenderException.class, () -> existsOnly.render(correlated));
     assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
     assertTrue(missingCorrelation.getMessage().contains("$/WHERE[0]#0"));
+  }
+
+  @Test
+  void distinguishesInSubqueryAndCorrelationCapabilities() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    SelectStatement child = new SelectStatement(List.of(inner.id()), inner);
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()), outer, new InSubqueryPredicate<>(outer.id(), child, false));
+
+    SqlRenderException missingIn =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(statement));
+    assertTrue(missingIn.getMessage().contains("IN_SUBQUERY"));
+    assertTrue(missingIn.getMessage().contains("$/WHERE[0]#0"));
+
+    SqlRenderer inOnly =
+        new StandardSqlRenderer(
+            "in-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.IN_SUBQUERY));
+    assertTrue(inOnly.render(statement).sql().contains(" IN (SELECT "));
+
+    SelectStatement correlatedChild =
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(outer.id()));
+    SelectStatement correlated =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new InSubqueryPredicate<>(outer.id(), correlatedChild, true));
+    SqlRenderException missingCorrelation =
+        assertThrows(SqlRenderException.class, () -> inOnly.render(correlated));
+    assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
   }
 
   @Test

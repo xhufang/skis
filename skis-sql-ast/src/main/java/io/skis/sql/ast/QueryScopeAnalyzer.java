@@ -284,6 +284,7 @@ final class QueryScopeAnalyzer {
                 resolveExpression(like.value(), position.operand(0), scope),
                 resolveExpression(like.pattern(), position.operand(1), scope));
         case InPredicate<?> in -> resolveIn(in, position, scope);
+        case InSubqueryPredicate<?> in -> resolveInSubquery(in, position, scope);
         case ExistsPredicate exists -> resolveExists(exists, position, scope);
         case NotPredicate not -> {
           Resolution operand = resolveExpression(not.operand(), position.operand(0), scope);
@@ -445,6 +446,55 @@ final class QueryScopeAnalyzer {
         ExistsPredicate expression,
         ExpressionPosition position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
+      NestedResolution nested =
+          resolveNested(
+              expression.subquery(), position, scope, QueryBlockAnalysis.NestedQueryKind.EXISTS);
+      return new Resolution(
+          new ResolvedStructureKey.Node(
+              "EXISTS",
+              concat(
+                  descriptor(expression),
+                  List.of(Boolean.toString(expression.negated()), nested.location.toString())),
+              List.of(nested.analysis.structureKey())),
+          nested.correlatedColumns,
+          nested.parameters,
+          Nullability.NON_NULL);
+    }
+
+    private Resolution resolveInSubquery(
+        InSubqueryPredicate<?> expression,
+        ExpressionPosition position,
+        QueryBlockAnalysis.ScopeSnapshot scope) {
+      SemanticValidator.validateInSubquery(expression.value(), expression.subquery());
+      Resolution value = resolveExpression(expression.value(), position.operand(0), scope);
+      NestedResolution nested =
+          resolveNested(
+              expression.subquery(),
+              position,
+              scope,
+              QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY);
+      Nullability outputNullability = selectionNullability(nested.analysis, 0);
+      LinkedHashSet<ResolvedColumnIdentity> columns = new LinkedHashSet<>(value.columns);
+      columns.addAll(nested.correlatedColumns);
+      LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>(value.parameters);
+      parameters.addAll(nested.parameters);
+      return new Resolution(
+          new ResolvedStructureKey.Node(
+              "IN_SUBQUERY",
+              concat(
+                  descriptor(expression),
+                  List.of(Boolean.toString(expression.negated()), nested.location.toString())),
+              List.of(value.key, nested.analysis.structureKey())),
+          columns,
+          parameters,
+          value.effectiveNullability.union(outputNullability));
+    }
+
+    private NestedResolution resolveNested(
+        SelectStatement subquery,
+        ExpressionPosition position,
+        QueryBlockAnalysis.ScopeSnapshot scope,
+        QueryBlockAnalysis.NestedQueryKind kind) {
       QueryBlockAnalysis.ScopeSite site =
           new QueryBlockAnalysis.ScopeSite(position.clause(), position.itemOrdinal());
       int nestedOrdinal = nestedOrdinals.getOrDefault(site, 0);
@@ -453,8 +503,8 @@ final class QueryScopeAnalyzer {
           new QueryBlockLocation(position.clause(), position.itemOrdinal(), nestedOrdinal);
       QueryBlockAnalysis child =
           QueryScopeAnalyzer.analyzeNested(
-              expression.subquery(), path.child(location), scope, statementParameters);
-      nestedBlocks.add(new QueryBlockAnalysis.NestedBlock(expression.subquery(), location, child));
+              subquery, path.child(location), scope, statementParameters);
+      nestedBlocks.add(new QueryBlockAnalysis.NestedBlock(subquery, location, kind, child));
 
       LinkedHashSet<ResolvedColumnIdentity> correlatedColumns = new LinkedHashSet<>();
       LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>();
@@ -466,16 +516,20 @@ final class QueryScopeAnalyzer {
         }
         parameters.addAll(resolved.parameterDependencies());
       }
-      return new Resolution(
-          new ResolvedStructureKey.Node(
-              "EXISTS",
-              concat(
-                  descriptor(expression),
-                  List.of(Boolean.toString(expression.negated()), location.toString())),
-              List.of(child.structureKey())),
-          correlatedColumns,
-          parameters,
-          Nullability.NON_NULL);
+      return new NestedResolution(location, child, correlatedColumns, parameters);
+    }
+
+    private Nullability selectionNullability(QueryBlockAnalysis child, int ordinal) {
+      for (ResolvedExpression resolved : child.expressions()) {
+        ExpressionPosition childPosition = resolved.position();
+        if (childPosition.clause() == QueryClause.SELECT
+            && childPosition.itemOrdinal() == ordinal
+            && childPosition.operandPath().isEmpty()) {
+          return resolved.effectiveNullability();
+        }
+      }
+      throw new IllegalStateException(
+          "nested query block " + child.path() + " has no resolved SELECT item #" + ordinal);
     }
 
     private Resolution leafLiteral(
@@ -942,6 +996,20 @@ final class QueryScopeAnalyzer {
       columns = new LinkedHashSet<>(columns);
       parameters = new LinkedHashSet<>(parameters);
       Objects.requireNonNull(effectiveNullability, "effectiveNullability");
+    }
+  }
+
+  private record NestedResolution(
+      QueryBlockLocation location,
+      QueryBlockAnalysis analysis,
+      LinkedHashSet<ResolvedColumnIdentity> correlatedColumns,
+      LinkedHashSet<ResolvedParameterIdentity> parameters) {
+
+    private NestedResolution {
+      Objects.requireNonNull(location, "location");
+      Objects.requireNonNull(analysis, "analysis");
+      correlatedColumns = new LinkedHashSet<>(correlatedColumns);
+      parameters = new LinkedHashSet<>(parameters);
     }
   }
 }

@@ -6,6 +6,13 @@
 
 ### Added
 
+- 新增独立 `InSubqueryPredicate`，以及不变泛型的
+  `Selectable<V>.in/notIn(SingleColumnSelect<V>)`；DSL 与 AST 双层校验 boxed Java 类型精确一致、
+  SQL equality compatibility 和恰好一个物理输出列，集合 IN 入口与节点保持不变。
+- IN/NOT IN 子查询接入查询块作用域、有效 nullability、稳定结构键和最终语句参数重定位；保留空结果、
+  左/右 NULL 与重复值的 SQL 三值逻辑，不预读集合、不追加 CAST，也不改写为 Join 或 EXISTS。
+- 方言新增独立 `IN_SUBQUERY` 能力，嵌套分析显式区分 EXISTS 与 IN；PostgreSQL/H2 增加相关/非相关
+  SQL golden、真实驱动三值逻辑与 `NOT IN`/`NOT EXISTS` 反例，并验证最终执行只创建一个外层语句及其资源。
 - 新增 `ExistsPredicate` 与 `Sql.exists/notExists`，可将任意无执行 SELECT 描述作为非相关或相关
   EXISTS 条件嵌入 WHERE/Join ON，并与 `QueryCondition.and/or/not` 组合；子查询选择、NULL、重复行和
   原有结构保持不变，不做选择裁剪、limit 注入或 Join 改写。
