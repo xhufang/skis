@@ -22,6 +22,7 @@ import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalPredicate;
@@ -56,6 +57,7 @@ class H2DialectTest {
     assertTrue(dialect.capabilities().supports(DialectFeature.COUNT_DISTINCT));
     assertTrue(dialect.capabilities().supports(DialectFeature.NULLS_FIRST_LAST));
     assertTrue(dialect.capabilities().supports(DialectFeature.EXISTS_SUBQUERY));
+    assertTrue(dialect.capabilities().supports(DialectFeature.IN_SUBQUERY));
     assertTrue(dialect.capabilities().supports(DialectFeature.CORRELATED_SUBQUERY));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
@@ -217,6 +219,41 @@ class H2DialectTest {
             + "\"inner_pet\".\"pet_name\" = ?)",
         rendered.sql());
     assertEquals(List.of(name, name), rendered.parameters());
+  }
+
+  @Test
+  void rendersCorrelatedInAndNotInSubqueryGoldenSql() {
+    PetAstTable outer = PetAstTable.PET.as("outer_pet");
+    PetAstTable inner = PetAstTable.PET.as("inner_pet");
+    ParameterSlot<Long> minimum = new ParameterSlot<>(0, Long.class, false);
+    SelectStatement child =
+        new SelectStatement(
+            List.of(inner.id()),
+            inner,
+            LogicalPredicate.and(
+                List.of(inner.name().eq(outer.name()), inner.id().gt(minimum))));
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            LogicalPredicate.or(
+                List.of(
+                    new InSubqueryPredicate<>(outer.id(), child, false),
+                    new InSubqueryPredicate<>(outer.id(), child, true))));
+
+    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+
+    assertEquals(
+        "SELECT \"outer_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"outer_pet\" WHERE "
+            + "\"outer_pet\".\"id\" IN (SELECT \"inner_pet\".\"id\" "
+            + "FROM \"shelter\".\"pet\" AS \"inner_pet\" WHERE "
+            + "\"inner_pet\".\"pet_name\" = \"outer_pet\".\"pet_name\" AND "
+            + "\"inner_pet\".\"id\" > ?) OR \"outer_pet\".\"id\" NOT IN ("
+            + "SELECT \"inner_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"inner_pet\" WHERE "
+            + "\"inner_pet\".\"pet_name\" = \"outer_pet\".\"pet_name\" AND "
+            + "\"inner_pet\".\"id\" > ?)",
+        rendered.sql());
+    assertEquals(List.of(minimum, minimum), rendered.parameters());
   }
 
   @Test

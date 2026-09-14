@@ -5,6 +5,7 @@ import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
@@ -108,6 +109,12 @@ final class FrameworkQueryCondition implements QueryCondition {
         new InNode<>(value, candidates, negated), QueryParameters.empty());
   }
 
+  static <V> FrameworkQueryCondition subqueryMembership(
+      Selectable<V> value, SelectQueryState<V> subquery, boolean negated) {
+    return new FrameworkQueryCondition(
+        new InSubqueryNode<>(value, subquery, negated), QueryParameters.empty());
+  }
+
   static FrameworkQueryCondition exists(SelectDescription<?> description, boolean negated) {
     return new FrameworkQueryCondition(
         new ExistsNode(Objects.requireNonNull(description, "description").state(), negated),
@@ -168,6 +175,7 @@ final class FrameworkQueryCondition implements QueryCondition {
           BetweenNode,
           LikeNode,
           InNode,
+          InSubqueryNode,
           ExistsNode,
           LogicalNode,
           NotNode {
@@ -264,6 +272,20 @@ final class FrameworkQueryCondition implements QueryCondition {
         slots.add(compiler.parameter(value, candidate));
       }
       return new InPredicate<>(value.expression(), slots, negated);
+    }
+  }
+
+  private record InSubqueryNode<V>(
+      Selectable<V> value, SelectQueryState<V> subquery, boolean negated) implements Node {
+
+    private InSubqueryNode {
+      Objects.requireNonNull(value, "value");
+      Objects.requireNonNull(subquery, "subquery");
+    }
+
+    @Override
+    public SqlPredicate compile(QueryConditionCompiler compiler) {
+      return new InSubqueryPredicate<>(value.expression(), compiler.subquery(subquery), negated);
     }
   }
 

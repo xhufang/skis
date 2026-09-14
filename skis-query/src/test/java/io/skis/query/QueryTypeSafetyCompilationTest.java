@@ -316,6 +316,79 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
+  void enforcesInvariantSingleColumnInSubqueryTypesAndRejectsProjectionShapes() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        import java.util.List;
+        final class ValidInSubquery {
+          static <V> QueryCondition membership(
+              Selectable<V> left, SingleColumnSelect<V> right) {
+            return left.in(right).and(left.notIn(right));
+          }
+          static <E> void query(
+              NonNullQueryColumn<E, Long> id,
+              NullableQueryColumn<E, Long> parentId,
+              QueryTable<E> table) {
+            NonNullSingleColumnSelect<Long> ids =
+                Sql.select(id).from(table).where(id.isNotNull()).orderBy(id.asc()).distinct();
+            SingleColumnSelect<Long> parentIds =
+                Sql.select(parentId).from(table).orderBy(parentId.asc());
+            QueryCondition first = membership(id, ids);
+            QueryCondition second = parentId.notIn(parentIds);
+            QueryCondition existingCollection = id.in(List.of(1L, 2L));
+          }
+        }
+        """;
+    String wrongType =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class WrongInSubqueryType {
+          static <E> void query(
+              NonNullQueryColumn<E, Long> id,
+              NonNullQueryColumn<E, Integer> number,
+              QueryTable<E> table) {
+            SingleColumnSelect<Integer> numbers = Sql.select(number).from(table);
+            id.in(numbers);
+          }
+        }
+        """;
+    String projectionIsNotSingleColumn =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ProjectionIsNotSingleColumn {
+          static final class Summary {}
+          static <E> void query(
+              NonNullQueryColumn<E, Long> id,
+              QueryTable<E> table,
+              ProjectionSelection<Long> projection) {
+            NonNullSelectDescription<Long> description = Sql.select(projection).from(table);
+            id.in(description);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidInSubquery",
+            valid,
+            temporaryDirectory.resolve("valid-in-subquery")));
+    assertFalse(
+        compile(
+            "samples.WrongInSubqueryType",
+            wrongType,
+            temporaryDirectory.resolve("wrong-in-subquery-type")));
+    assertFalse(
+        compile(
+            "samples.ProjectionIsNotSingleColumn",
+            projectionIsNotSingleColumn,
+            temporaryDirectory.resolve("projection-is-not-single-column")));
+  }
+
+  @Test
   void requiresOnBeforeAJoinCanReachTerminalOperations() throws Exception {
     String valid =
         """

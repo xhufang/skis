@@ -2,6 +2,7 @@ package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -1059,6 +1060,147 @@ class JoinQueryDslTest {
   }
 
   @Test
+  void embedsCorrelatedInSubqueryWithOneStatementWideParameterLayout() {
+    PetTable innerPet = PET_TABLE.as("membership_pet");
+    QueryParameter<Long> outerId = Sql.parameter(Long.class, "outerId");
+    QueryParameter<String> innerName = Sql.parameter(String.class, "innerName");
+    SingleColumnSelect<Long> ownerIds =
+        Sql.select(innerPet.ownerId())
+            .from(innerPet)
+            .where(
+                innerPet
+                    .id()
+                    .eq(PET_TABLE.id())
+                    .and(innerPet.name().eq(innerName)))
+            .orderBy(innerPet.id().asc());
+    NonNullSelectDescription<Pet> description =
+        Sql.selectFrom(PET_TABLE)
+            .where(PET_TABLE.id().eq(outerId).and(PET_TABLE.ownerId().in(ownerIds)));
+    DefaultSelectQuery<?, Pet> query =
+        (DefaultSelectQuery<?, Pet>)
+            operations()
+                .query(
+                    description,
+                    QueryParameters.builder()
+                        .bind(outerId, 7L)
+                        .bind(innerName, "Mimi")
+                        .build());
+
+    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = query.countCompilation();
+    QueryBlockAnalysis analysis =
+        SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
+
+    assertEquals(
+        "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
+            + "FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ? AND "
+            + "\"pet\".\"owner_id\" IN (SELECT \"membership_pet\".\"owner_id\" "
+            + "FROM \"shelter\".\"pet\" AS \"membership_pet\" WHERE "
+            + "\"membership_pet\".\"id\" = \"pet\".\"id\" AND "
+            + "\"membership_pet\".\"pet_name\" = ? "
+            + "ORDER BY \"membership_pet\".\"id\" ASC)",
+        compilation.plan().sql());
+    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertEquals(1, analysis.nestedBlocks().size());
+    assertEquals(
+        QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY,
+        analysis.nestedBlocks().getFirst().kind());
+    assertTrue(analysis.nestedBlocks().getFirst().analysis().correlated());
+    assertTrue(count.plan().sql().contains(" IN (SELECT "));
+    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) count.argument()).values());
+  }
+
+  @Test
+  void rejectsInvalidDistinctOrderingInsideMembershipAndExistsSubqueries() {
+    NonNullSingleColumnSelect<Long> invalidOwnerIds =
+        Sql.select(OWNER_TABLE.id())
+            .from(OWNER_TABLE)
+            .distinct()
+            .orderBy(OWNER_TABLE.name().asc());
+    NonNullSelectDescription<Pet> membershipDescription =
+        Sql.selectFrom(PET_TABLE).where(PET_TABLE.ownerId().in(invalidOwnerIds));
+    NonNullSelectDescription<Pet> existsDescription =
+        Sql.selectFrom(PET_TABLE).where(Sql.exists(invalidOwnerIds));
+
+    QueryValidationException membershipFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<?, Pet>) operations().query(membershipDescription))
+                    .compilation(QueryPagination.None.INSTANCE));
+    QueryValidationException existsFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                ((DefaultSelectQuery<?, Pet>) operations().query(existsDescription))
+                    .compilation(QueryPagination.None.INSTANCE));
+
+    assertTrue(membershipFailure.getMessage().contains("is not part of the selected result"));
+    assertEquals(membershipFailure.getMessage(), existsFailure.getMessage());
+  }
+
+  @Test
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  void keepsCollectionAndSubqueryMembershipNodesSeparateAndRejectsRawTypeMismatches() {
+    NonNullSingleColumnSelect<Long> ownerIds =
+        Sql.select(OWNER_TABLE.id()).from(OWNER_TABLE);
+    ConditionCompilation collection = compileCondition(PET_TABLE.id().in(List.of(1L, 2L)));
+    ConditionCompilation subquery = compileCondition(PET_TABLE.ownerId().in(ownerIds));
+
+    assertInstanceOf(io.skis.sql.ast.InPredicate.class, collection.ast());
+    assertInstanceOf(io.skis.sql.ast.InSubqueryPredicate.class, subquery.ast());
+
+    SingleColumnSelect wrongType =
+        Sql.select(OWNER_TABLE.name()).from(OWNER_TABLE);
+    assertThrows(
+        QueryValidationException.class,
+        () -> ((Selectable) PET_TABLE.id()).in(wrongType));
+  }
+
+  @Test
+  void relocatesOneDescriptionIntoIndependentInSubqueryOccurrences() {
+    OwnerTable innerOwner = OWNER_TABLE.as("membership_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    NonNullSingleColumnSelect<Long> ownerIds =
+        Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(name));
+    NonNullSingleColumnSelect<Long> description =
+        Sql.select(PET_TABLE.id())
+            .from(PET_TABLE)
+            .where(
+                PET_TABLE
+                    .ownerId()
+                    .in(ownerIds)
+                    .or(PET_TABLE.ownerId().notIn(ownerIds)));
+    DefaultSelectQuery<?, Long> query =
+        (DefaultSelectQuery<?, Long>)
+            operations().query(description, QueryParameters.of(name, "Ada"));
+
+    QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryBlockAnalysis analysis =
+        SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
+
+    assertEquals(2, analysis.nestedBlocks().size());
+    assertTrue(
+        analysis.nestedBlocks().stream()
+            .allMatch(
+                nested ->
+                    nested.kind() == QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY));
+    assertEquals(List.of("Ada", "Ada"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertTrue(compilation.plan().sql().contains(" IN (SELECT "));
+    assertTrue(compilation.plan().sql().contains(" NOT IN (SELECT "));
+  }
+
+  @Test
   void relocatesOneDescriptionIntoIndependentExistsOccurrences() {
     PetTable innerPet = PET_TABLE.as("reused_pet");
     QueryParameter<String> name = Sql.parameter(String.class, "name");
@@ -1516,6 +1658,7 @@ class JoinQueryDslTest {
             DialectFeature.NULLS_FIRST_LAST,
             DialectFeature.COUNT_DISTINCT,
             DialectFeature.EXISTS_SUBQUERY,
+            DialectFeature.IN_SUBQUERY,
             DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =
         new StandardSqlRenderer(id(), identifierRules(), capabilities);

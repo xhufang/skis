@@ -66,6 +66,18 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
   }
 
   @Test
+  void correlatedInSubqueryUsesOneStatementAndClosesItsOuterResources() {
+    trackingDataSource.reset();
+
+    assertEquals(2, correlatedInSubqueryQuery().fetchList().size());
+
+    assertEquals(1, trackingDataSource.preparedStatements);
+    assertEquals(1, trackingDataSource.closedResultSets);
+    assertEquals(1, trackingDataSource.closedStatements);
+    assertEquals(1, trackingDataSource.closedConnections);
+  }
+
+  @Test
   void executesFullJoinNullExtensionAgainstPostgreSql() {
     List<Long> ownerIds =
         executor

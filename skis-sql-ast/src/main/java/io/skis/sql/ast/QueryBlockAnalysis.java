@@ -108,11 +108,15 @@ public final class QueryBlockAnalysis {
 
   /** One immutable nested SELECT occurrence and its context-specific analysis. */
   public record NestedBlock(
-      SelectStatement statement, QueryBlockLocation location, QueryBlockAnalysis analysis) {
+      SelectStatement statement,
+      QueryBlockLocation location,
+      NestedQueryKind kind,
+      QueryBlockAnalysis analysis) {
 
     public NestedBlock {
       Objects.requireNonNull(statement, "statement");
       Objects.requireNonNull(location, "location");
+      Objects.requireNonNull(kind, "kind");
       Objects.requireNonNull(analysis, "analysis");
       List<QueryBlockLocation> locations = analysis.path().locations();
       if (locations.isEmpty() || !locations.getLast().equals(location)) {
@@ -120,6 +124,21 @@ public final class QueryBlockAnalysis {
             "nested block analysis path does not match its embedding location");
       }
     }
+
+    /** Preserves the step-6 construction shape for existence subqueries. */
+    public NestedBlock(
+        SelectStatement statement, QueryBlockLocation location, QueryBlockAnalysis analysis) {
+      this(statement, location, NestedQueryKind.EXISTS, analysis);
+    }
+  }
+
+  /** SQL construct that owns one nested SELECT occurrence. */
+  public enum NestedQueryKind {
+    /** {@code EXISTS} or {@code NOT EXISTS}. */
+    EXISTS,
+
+    /** {@code IN (SELECT ...)} or {@code NOT IN (SELECT ...)}. */
+    IN_SUBQUERY
   }
 
   record ScopeSite(QueryClause clause, int itemOrdinal) {

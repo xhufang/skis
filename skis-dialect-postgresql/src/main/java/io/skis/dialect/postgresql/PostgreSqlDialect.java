@@ -26,6 +26,7 @@ public final class PostgreSqlDialect implements Dialect {
           DialectFeature.FULL_JOIN,
           DialectFeature.CROSS_JOIN,
           DialectFeature.EXISTS_SUBQUERY,
+          DialectFeature.IN_SUBQUERY,
           DialectFeature.CORRELATED_SUBQUERY);
 
   /** Stateless shared dialect instance. */

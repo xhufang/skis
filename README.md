@@ -30,11 +30,12 @@ The completed `0.2.4` milestone adds explicit joins and replaces entity-bound pr
 generated result-row companions. A projection now binds an ordered list of visible table columns,
 so the same API covers single-table and joined results without reflection or startup registration.
 The `0.2.5` milestone has established reusable execution-free SELECT descriptions and implemented
-the base non-correlated/correlated `EXISTS`/`NOT EXISTS` vertical slice. Aggregate/HAVING
-interoperability remains a later acceptance item alongside IN/scalar subqueries and derived tables.
+the non-correlated/correlated `EXISTS`/`NOT EXISTS` and one-column `IN`/`NOT IN` vertical slices.
+Aggregate/HAVING interoperability remains a later acceptance item alongside scalar subqueries and
+derived tables.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
-[EXISTS and correlated SELECT descriptions](docs/subqueries.md),
+[EXISTS, IN, and correlated SELECT descriptions](docs/subqueries.md),
 [explicit joins and generated result rows](docs/joins.md),
 [page and slice pagination](docs/pagination.md),
 [cursor and stream ownership](docs/cursor-and-stream.md), and
@@ -158,8 +159,10 @@ List<Long> ids =
 
 The description has no terminal operations and captures no ordinary values. One-column shape says
 that each result row has one SQL value; it does not promise that the query returns one row. The same
-description can now be embedded with `Sql.exists(...)` or `Sql.notExists(...)`; IN-subquery,
-scalar-subquery, and derived-source embedding remain assigned to later `0.2.5` slices.
+description can be embedded with `Sql.exists(...)`/`Sql.notExists(...)` or passed to an exactly
+typed `selectable.in(...)`/`notIn(...)`. IN subqueries preserve SQL NULL and duplicate semantics and
+execute only as part of the final outer statement. Scalar-subquery and derived-source embedding
+remain assigned to later `0.2.5` slices.
 
 See the complete [plain Java + H2 example](skis-examples/skis-example-h2) for schema creation,
 annotation processing, typed queries, mutations, and transactions.
@@ -174,8 +177,8 @@ semantics.
 
 | Database | 0.2 status |
 | --- | --- |
-| PostgreSQL 16 / pgJDBC 42.7.11 | Query, all five explicit Join forms, correlated EXISTS, sorting/pagination, mutation, transaction, projection, and JDBC type contract |
-| H2 2.4.240 | Query, INNER/LEFT/RIGHT/CROSS Join, correlated EXISTS, pagination, consumer smoke, example, and integration tests; FULL JOIN fails before JDBC |
+| PostgreSQL 16 / pgJDBC 42.7.11 | Query, all five explicit Join forms, correlated EXISTS/IN subqueries, sorting/pagination, mutation, transaction, projection, and JDBC type contract |
+| H2 2.4.240 | Query, INNER/LEFT/RIGHT/CROSS Join, correlated EXISTS/IN subqueries, pagination, consumer smoke, example, and integration tests; FULL JOIN fails before JDBC |
 | MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.2 |
 
 JDBC drivers are deliberately supplied and versioned by the application.
@@ -185,7 +188,7 @@ JDBC drivers are deliberately supplied and versioned by the application.
 Version 0.2 intentionally does not provide implicit joins or association navigation, generated-key
 retrieval, composite ID lookup, reverse keyset traversal, native SQL entry points, schema migration,
 batch writes, upsert, graph writes, second-level caching, multitenancy, or Spring Boot
-auto-configuration. IN/scalar subqueries, derived tables, aggregates, and large-`IN` strategies are
+auto-configuration. Scalar subqueries, derived tables, aggregates, and large-`IN` strategies are
 deferred. Enum, LOB,
 custom converter, database array, and structured JSON object mappings are also deferred.
 Applications own DDL and assign identifiers before insert.
@@ -196,7 +199,7 @@ Applications own DDL and assign identifiers before insert.
 - [Local JDBC and Spring transaction management](docs/transaction-management.md)
 - [JDBC execution options and Spring exception translation](docs/execution-options-and-exception-translation.md)
 - [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md)
-- [EXISTS and correlated SELECT descriptions](docs/subqueries.md)
+- [EXISTS, IN, and correlated SELECT descriptions](docs/subqueries.md)
 - [Explicit joins and generated result rows](docs/joins.md)
 - [Page and slice pagination](docs/pagination.md)
 - [Cursor and stream resource ownership](docs/cursor-and-stream.md)

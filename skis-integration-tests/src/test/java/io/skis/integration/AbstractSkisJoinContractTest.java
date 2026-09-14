@@ -353,6 +353,103 @@ abstract class AbstractSkisJoinContractTest {
   }
 
   @Test
+  void preservesInSubqueryThreeValuedLogicForEmptyNullAndDuplicateResults() {
+    JoinPetTable values = pet.as("membership_values");
+    QueryParameter<Long> selectedOwner = Sql.parameter(Long.class, "selectedOwner");
+    var selectedOwnerIds =
+        Sql.select(values.ownerId())
+            .from(values)
+            .where(values.ownerId().eq(selectedOwner));
+    var matching =
+        Sql.select(pet.id())
+            .from(pet)
+            .where(pet.ownerId().in(selectedOwnerIds))
+            .orderBy(pet.id().asc());
+    var notMatching =
+        Sql.select(pet.id())
+            .from(pet)
+            .where(pet.ownerId().notIn(selectedOwnerIds))
+            .orderBy(pet.id().asc());
+
+    assertEquals(
+        List.of(petAdaOneId, petAdaTwoId),
+        executor.query(matching, QueryParameters.of(selectedOwner, ownerAdaId)).fetchList());
+    assertEquals(
+        List.of(petGraceId),
+        executor.query(notMatching, QueryParameters.of(selectedOwner, ownerAdaId)).fetchList());
+    assertEquals(
+        List.of(),
+        executor
+            .query(matching, QueryParameters.of(selectedOwner, ownerWithoutPetId))
+            .fetchList());
+    assertEquals(
+        petIds(),
+        executor
+            .query(notMatching, QueryParameters.of(selectedOwner, ownerWithoutPetId))
+            .fetchList());
+
+    var allOwnerIds = Sql.select(values.ownerId()).from(values);
+    assertEquals(
+        List.of(petAdaOneId, petAdaTwoId, petGraceId),
+        executor
+            .query(
+                Sql.select(pet.id())
+                    .from(pet)
+                    .where(pet.ownerId().in(allOwnerIds))
+                    .orderBy(pet.id().asc()))
+            .fetchList());
+    assertEquals(
+        List.of(),
+        executor
+            .query(
+                Sql.select(pet.id())
+                    .from(pet)
+                    .where(pet.ownerId().notIn(allOwnerIds)))
+            .fetchList());
+
+    var nullOnly =
+        Sql.select(values.ownerId()).from(values).where(values.ownerId().isNull());
+    assertEquals(
+        List.of(),
+        executor
+            .query(
+                Sql.select(pet.id()).from(pet).where(pet.ownerId().in(nullOnly)))
+            .fetchList());
+    assertEquals(
+        List.of(),
+        executor
+            .query(
+                Sql.select(pet.id()).from(pet).where(pet.ownerId().notIn(nullOnly)))
+            .fetchList());
+  }
+
+  @Test
+  void keepsNotInDifferentFromNotExistsWhenTheChildContainsNull() {
+    JoinPetTable values = pet.as("nullable_membership_values");
+    var allOwnerIds = Sql.select(values.ownerId()).from(values);
+    List<Owner> notIn =
+        executor
+            .query(Sql.selectFrom(owner).where(owner.id().notIn(allOwnerIds)))
+            .fetchList();
+
+    JoinPetTable witness = pet.as("absence_witness");
+    var petsOfOwner =
+        Sql.select(witness.id())
+            .from(witness)
+            .where(witness.ownerId().eq(owner.id()));
+    List<Owner> notExists =
+        executor
+            .query(
+                Sql.selectFrom(owner)
+                    .where(Sql.notExists(petsOfOwner))
+                    .orderBy(owner.id().asc()))
+            .fetchList();
+
+    assertEquals(List.of(), notIn);
+    assertEquals(List.of(new Owner(ownerWithoutPetId, "Lin")), notExists);
+  }
+
+  @Test
   void keepsJoinPaginationCountDistinctAndNullableKeysetEquivalent() {
     SelectQuery<Owner, Owner> duplicateOwners =
         executor
@@ -429,6 +526,16 @@ abstract class AbstractSkisJoinContractTest {
         .selectFrom(owner)
         .where(Sql.exists(petsOfOwner))
         .orderBy(owner.id().asc());
+  }
+
+  protected SelectQuery<?, Owner> correlatedInSubqueryQuery() {
+    JoinPetTable witness = pet.as("correlated_membership_pet");
+    var ownerIds =
+        Sql.select(witness.ownerId())
+            .from(witness)
+            .where(witness.ownerId().eq(owner.id()));
+    return executor
+        .query(Sql.selectFrom(owner).where(owner.id().in(ownerIds)).orderBy(owner.id().asc()));
   }
 
   protected List<Long> petIds() {

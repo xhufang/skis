@@ -106,6 +106,32 @@ final class SelectableSupport {
     return FrameworkQueryCondition.membershipParameters(source, references, negated);
   }
 
+  static <V> QueryCondition subqueryMembership(
+      Selectable<V> selectable, SingleColumnSelect<V> subquery, boolean negated) {
+    Selectable<V> source = Objects.requireNonNull(selectable, "selectable");
+    SingleColumnSelect<V> child = Objects.requireNonNull(subquery, "subquery");
+    Class<?> leftJavaType = boxedJavaType(source.javaType());
+    Class<?> outputJavaType = boxedJavaType(child.valueExpression().javaType());
+    if (!leftJavaType.equals(outputJavaType)) {
+      throw new QueryValidationException(
+          "expression '"
+              + summary(source)
+              + "' has Java type "
+              + leftJavaType.getTypeName()
+              + " but IN subquery produces "
+              + outputJavaType.getTypeName());
+    }
+    if (!source.sqlType().equalityCompatibleWith(child.valueExpression().sqlType())) {
+      throw new QueryValidationException(
+          (negated ? "notIn" : "in")
+              + " subquery does not support SQL types "
+              + source.sqlType()
+              + " and "
+              + child.valueExpression().sqlType());
+    }
+    return FrameworkQueryCondition.subqueryMembership(source, child.state(), negated);
+  }
+
   static SortSpecification order(Selectable<?> selectable, SortDirection direction) {
     Selectable<?> source = Objects.requireNonNull(selectable, "selectable");
     requireOrdering(source, direction == SortDirection.ASC ? "asc" : "desc");
@@ -237,5 +263,23 @@ final class SelectableSupport {
             + summary(selectable)
             + "' with SQL type "
             + selectable.sqlType());
+  }
+
+  private static Class<?> boxedJavaType(Class<?> javaType) {
+    Objects.requireNonNull(javaType, "javaType");
+    if (!javaType.isPrimitive()) {
+      return javaType;
+    }
+    return switch (javaType.getName()) {
+      case "boolean" -> Boolean.class;
+      case "byte" -> Byte.class;
+      case "short" -> Short.class;
+      case "int" -> Integer.class;
+      case "long" -> Long.class;
+      case "float" -> Float.class;
+      case "double" -> Double.class;
+      case "char" -> Character.class;
+      default -> throw new QueryValidationException("IN subquery Java type must not be void");
+    };
   }
 }

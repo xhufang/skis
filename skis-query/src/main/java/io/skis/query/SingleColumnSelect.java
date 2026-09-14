@@ -1,13 +1,16 @@
 package io.skis.query;
 
 import io.skis.sql.ast.JoinType;
+import io.skis.sql.ast.SqlExpression;
 import java.util.Objects;
 
 /**
  * Reusable SELECT description whose final visible SQL shape contains exactly one value column.
  *
  * <p>This contract says nothing about result row count. The selected value is conservatively
- * nullable unless the factory returns {@link NonNullSingleColumnSelect}.
+ * nullable unless the factory returns {@link NonNullSingleColumnSelect}. Every fluent operation
+ * preserves this subtype; an embedding adapter also rechecks the compiled physical output so a
+ * hidden selection cannot turn the child into a multi-column SQL result.
  */
 public class SingleColumnSelect<V> extends SelectDescription<V> {
 
@@ -16,6 +19,12 @@ public class SingleColumnSelect<V> extends SelectDescription<V> {
     if (state.selected().expressions().size() != 1) {
       throw new IllegalArgumentException("SingleColumnSelect requires exactly one selected value");
     }
+  }
+
+  @SuppressWarnings("unchecked")
+  final SqlExpression<V> valueExpression() {
+    SqlExpression<?> expression = state().selected().expressions().getFirst();
+    return (SqlExpression<V>) expression;
   }
 
   @Override

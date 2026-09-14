@@ -38,6 +38,9 @@ public enum DialectFeature {
   /** Predicates may embed a SELECT through EXISTS or NOT EXISTS. */
   EXISTS_SUBQUERY,
 
+  /** Predicates may compare one value with a one-column SELECT through IN or NOT IN. */
+  IN_SUBQUERY,
+
   /** A nested SELECT may reference a source visible in an ancestor query block. */
   CORRELATED_SUBQUERY
 }

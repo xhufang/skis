@@ -441,6 +441,39 @@ class QueryScopeAnalysisTest {
   }
 
   @Test
+  void analyzesInSubqueryKindCorrelationAndEffectiveThreeValuedNullability() {
+    PetTable outer = new PetTable().as("outer_pet");
+    PetTable inner = new PetTable().as("inner_pet");
+    PetTable optional = new PetTable().as("optional_pet");
+    FromClause childFrom =
+        new FromClause(
+            inner,
+            List.of(new JoinClause(JoinType.LEFT, optional, inner.id().eq(optional.id()))));
+    SelectStatement child =
+        new SelectStatement(
+            List.of(optional.id()), childFrom, inner.id().eq(outer.id()));
+    InSubqueryPredicate<Long> membership =
+        new InSubqueryPredicate<>(outer.id(), child, false);
+    SelectStatement statement =
+        new SelectStatement(List.of(outer.id()), outer, membership);
+
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    QueryBlockAnalysis.NestedBlock nested = analysis.nestedBlocks().getFirst();
+    ResolvedExpression where =
+        analysis.expressions().stream()
+            .filter(item -> item.position().clause() == QueryClause.WHERE)
+            .findFirst()
+            .orElseThrow();
+
+    assertEquals(QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY, nested.kind());
+    assertEquals("$/WHERE[0]#0", nested.analysis().path().toString());
+    assertTrue(nested.analysis().correlated());
+    assertEquals(Nullability.NON_NULL, membership.nullability());
+    assertEquals(Nullability.NULLABLE, where.effectiveNullability());
+    assertTrue(analysis.structureKey().canonicalForm().contains("IN_SUBQUERY"));
+  }
+
+  @Test
   void validatesNestedParametersAsOneDenseStatementLayout() {
     PetTable outer = new PetTable().as("outer_pet");
     PetTable inner = new PetTable().as("inner_pet");

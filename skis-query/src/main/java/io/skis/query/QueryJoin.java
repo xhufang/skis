@@ -61,6 +61,7 @@ final class QueryStructureCompiler {
     Objects.requireNonNull(state, "state");
     Objects.requireNonNull(layout, "layout");
     Objects.requireNonNull(bindings, "bindings");
+    state.validateDistinctOrdering();
     if (state.sqlPagination().mode() != SqlPaginationStructure.Mode.NONE) {
       throw new QueryValidationException(
           "embedded SELECT descriptions do not yet support SQL pagination");

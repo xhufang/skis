@@ -43,12 +43,22 @@ final class DialectQueryFeatures {
   private static void validateNested(
       String dialectId, DialectCapabilities capabilities, QueryBlockAnalysis analysis) {
     for (QueryBlockAnalysis.NestedBlock nested : analysis.nestedBlocks()) {
-      require(
-          dialectId,
-          capabilities,
-          DialectFeature.EXISTS_SUBQUERY,
-          "EXISTS subquery",
-          nested.analysis().path().toString());
+      switch (nested.kind()) {
+        case EXISTS ->
+            require(
+                dialectId,
+                capabilities,
+                DialectFeature.EXISTS_SUBQUERY,
+                "EXISTS subquery",
+                nested.analysis().path().toString());
+        case IN_SUBQUERY ->
+            require(
+                dialectId,
+                capabilities,
+                DialectFeature.IN_SUBQUERY,
+                "IN subquery",
+                nested.analysis().path().toString());
+      }
       if (nested.analysis().correlated()) {
         require(
             dialectId,

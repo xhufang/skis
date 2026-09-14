@@ -1,6 +1,7 @@
-# EXISTS and correlated SELECT descriptions
+# EXISTS, IN, and correlated SELECT descriptions
 
-This document describes the EXISTS slice implemented by the internal `0.2.5-SNAPSHOT` milestone.
+This document describes the EXISTS and IN-subquery slices implemented by the internal
+`0.2.5-SNAPSHOT` milestone.
 It accumulates toward the public `0.3.0` SQL DSL and is not part of the published `0.2.0` API.
 
 ## Execution-free embedding
@@ -36,14 +37,52 @@ List<Owner> ownersWithoutPets =
 The predicate is a non-null Boolean condition and composes with `QueryCondition.and`, `or`, and
 `not`. `NOT EXISTS` is represented directly; it is not simulated with a nullable comparison.
 
+## One-column IN subqueries
+
+Every `Selectable<V>` also accepts a `SingleColumnSelect<V>` through `in(...)` and `notIn(...)`.
+The overload is separate from collection membership: the child remains a SELECT subtree in the
+one final SQL statement and is never read into a Java collection.
+
+```java
+PetTable candidate = PetTable.PET.as("candidate_pet");
+var ownerIds =
+    Sql.select(candidate.ownerId())
+        .from(candidate);
+
+List<Owner> owners =
+    executor
+        .query(Sql.selectFrom(owner).where(owner.id().in(ownerIds)))
+        .fetchList();
+```
+
+`SingleColumnSelect<V>` proves one SQL value per row, not one result row. Its invariant `V` must
+exactly match the boxed Java type on the left, and both SQL types must pass the shared equality
+compatibility rule. SKIS does not widen numbers or insert a CAST. A generated projection remains a
+general result shape even when its constructor has one argument. A low-level child with a hidden
+ordering selection has more than one physical output and is rejected before rendering.
+
+Native SQL three-valued logic is preserved:
+
+| Child result and left value | `IN` | `NOT IN` |
+| --- | --- | --- |
+| An equal non-null value exists | true | false |
+| No equal value and the child has no NULL | false | true |
+| No equal value and the child contains NULL | unknown | unknown |
+| Left is NULL and the child is non-empty | unknown | unknown |
+| Child is empty, including when left is NULL | false | true |
+
+Duplicate child values do not duplicate outer rows. SKIS does not filter child NULL values or
+rewrite IN to a Join. In particular, nullable `NOT IN` is intentionally not rewritten to `NOT
+EXISTS`; those forms are not equivalent when the child can produce NULL.
+
 ## Correlation and scope
 
 A child description refers to an outer source by using the exact outer `QueryTable` object. No
 `correlate` registration or string alias lookup is used. Complete semantic analysis resolves the
 reference at its embedding location:
 
-- an EXISTS in WHERE sees the completed outer FROM/Join scope;
-- an EXISTS in Join ON sees only the accumulated left side and that Join's current right source;
+- a subquery in WHERE sees the completed outer FROM/Join scope;
+- a subquery in Join ON sees only the accumulated left side and that Join's current right source;
 - a future Join, sibling block, unrelated alias object, or source outside the ancestor chain is
   rejected before JDBC;
 - reusing the same table-expression object as both child source and visible ancestor is rejected as
@@ -87,10 +126,10 @@ produces one row even when its input is empty, and step 12 must verify that HAVI
 row. The base EXISTS implementation deliberately performs no transformation that could change
 either behavior; complete T06 closure waits for those contracts.
 
-PostgreSQL and H2 declare both `EXISTS_SUBQUERY` and `CORRELATED_SUBQUERY`. A dialect missing the
-existence capability rejects every EXISTS occurrence; a dialect missing correlation support accepts
-an independent child but rejects a child that depends on an ancestor. Validation is recursive and
-reports the stable nested query-block path.
+PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, and `CORRELATED_SUBQUERY`. A dialect
+missing one syntax capability rejects only that nested construct; a dialect missing correlation
+support accepts an independent child but rejects a child that depends on an ancestor. Validation
+is recursive and reports the stable nested query-block path.
 
-IN/NOT IN subqueries, scalar subqueries, derived sources, and aggregate expressions remain assigned
-to their subsequent `0.2.5` slices.
+Scalar subqueries, derived sources, and aggregate expressions remain assigned to their subsequent
+`0.2.5` slices.
