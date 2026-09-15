@@ -90,6 +90,48 @@ class SqlAstStructureTest {
   }
 
   @Test
+  void scalarSubqueryPreservesItsValueTypeButIsAlwaysNullable() {
+    PetTable inner = new PetTable().as("inner_pet");
+    SelectStatement child = new SelectStatement(List.of(inner.id()), inner);
+
+    ScalarSubqueryExpression<Long> scalar = new ScalarSubqueryExpression<>(child);
+
+    assertEquals(Long.class, scalar.javaType());
+    assertEquals(SqlType.BIGINT, scalar.sqlType());
+    assertEquals(Nullability.NULLABLE, scalar.nullability());
+    assertTrue(scalar.nullable());
+    assertEquals(scalar, new ScalarSubqueryExpression<>(child));
+  }
+
+  @Test
+  void scalarSubqueryRejectsVisibleOrHiddenMultiColumnOutputs() {
+    PetTable inner = new PetTable().as("inner_pet");
+    SelectStatement visibleMultiColumn =
+        new SelectStatement(List.of(inner.id(), inner.name()), inner);
+    SelectStatement hiddenMultiColumn =
+        new SelectStatement(
+            false,
+            List.of(inner.id()),
+            List.of(new HiddenSelection(inner.name(), Identifier.of("hidden_name"))),
+            inner,
+            null,
+            List.of(),
+            null);
+
+    IllegalArgumentException visibleFailure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new ScalarSubqueryExpression<>(visibleMultiColumn));
+    IllegalArgumentException hiddenFailure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> new ScalarSubqueryExpression<>(hiddenMultiColumn));
+
+    assertTrue(visibleFailure.getMessage().contains("2 visible, 0 hidden"));
+    assertTrue(hiddenFailure.getMessage().contains("1 visible, 1 hidden"));
+  }
+
+  @Test
   void mapsJavaRepresentationsAndDefinesPortableTypeFamilies() {
     assertEquals(SqlType.BOOLEAN, SqlType.fromJavaType(boolean.class));
     assertEquals(SqlType.INTEGER, SqlType.fromJavaType(Integer.class));
@@ -706,6 +748,11 @@ class SqlAstStructureTest {
 
     private ColumnExpression<Pet, String> name() {
       return name;
+    }
+
+    @Override
+    public PetTable as(String alias) {
+      return new PetTable(Identifier.of(alias));
     }
 
     @Override

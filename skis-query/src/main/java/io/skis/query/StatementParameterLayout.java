@@ -14,12 +14,46 @@ import java.util.Objects;
  * sharing this statement layout. Reusing one parameter inside a block then reuses its logical slot,
  * while embedding the same block twice can allocate distinct statement slots backed by the same
  * query-level reference.
+ *
+ * <p>The first pass retains original expressions for validation. When it finds an empty-IN
+ * operand or DISTINCT scalar ordering that can reuse a selected output, a second pass lays out
+ * only the parameters needed by the final statement.
  */
 final class StatementParameterLayout {
 
   private final List<Selectable<?>> parameterSources = new ArrayList<>();
   private final List<QueryParameter<?>> parameterReferences = new ArrayList<>();
   private final List<ParameterSlot<?>> parameterSlots = new ArrayList<>();
+  private final boolean retainOriginalExpressions;
+  private boolean rewriteRequired;
+
+  StatementParameterLayout() {
+    this(true);
+  }
+
+  StatementParameterLayout(boolean retainOriginalExpressions) {
+    this.retainOriginalExpressions = retainOriginalExpressions;
+  }
+
+  boolean retainOriginalExpressions() {
+    return retainOriginalExpressions;
+  }
+
+  int parameterCount() {
+    return parameterSlots.size();
+  }
+
+  void recordEmptyMembership(int previousParameterCount) {
+    rewriteRequired |= parameterSlots.size() != previousParameterCount;
+  }
+
+  void recordSelectedOrdering() {
+    rewriteRequired = true;
+  }
+
+  boolean requiresRewrite() {
+    return rewriteRequired;
+  }
 
   QueryBlock newQueryBlock() {
     return new QueryBlock();

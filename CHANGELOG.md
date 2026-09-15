@@ -6,6 +6,20 @@
 
 ### Added
 
+- 新增 `ScalarSubqueryExpression<T>` 与 `Sql.scalar(SingleColumnSelect<V>)`，将单列 SELECT 作为
+  固定保守可空的 `Selectable<V>` 接入选择、比较、空值判断、HAVING 预留结构、排序和生成投影；不提供非空断言、
+  隐式 `LIMIT 1`、预查询或首行截断。
+- 标量子查询从已验证的内层单列输出传播 boxed Java 类型、SQL 类型和 Codec，外层结果映射直接读取物理结果列，
+  不执行内层 Decoder；自动 count 会裁剪仅存在于外层选择或排序中的嵌套参数。
+- 方言新增独立 `SCALAR_SUBQUERY` 能力，查询块分析增加对应嵌套种类；PostgreSQL/H2 接入非相关/相关渲染、
+  递归参数布局、SQL golden 与真实驱动合同。
+- 标量结果测试覆盖内层零行、一行 NULL、一行非空、多行数据库基数错误，以及外层
+  `SingleRow.NoRow`/`Present(null)`、SQLState/vendor code/cause 和资源关闭 suppressed 顺序。
+- 标量切片评审修复：count 在裁剪前校验原查询选择和作用域，并复用查询局部参数对象；空集合 IN/NOT IN
+  保留原操作数校验，但从最终语句移除其无用参数并重新布局；排序表达式比较保留独立参数引用身份。
+  Slice 的标量排序在获取 JDBC 资源前明确拒绝，等待后续 continuation 身份支持；普通排序和稳定 offset Page 继续可用。
+- 修复带参数 scalar 同时用于 DISTINCT 选择和排序时 PostgreSQL 无法匹配排序表达式的问题：排序引用选择项序号，
+  复用其最终参数槽并保留原作用域校验；补充员工/部门模型的 PostgreSQL/H2 回归测试，覆盖 NULL、去重、分页与嵌套。
 - 新增独立 `InSubqueryPredicate`，以及不变泛型的
   `Selectable<V>.in/notIn(SingleColumnSelect<V>)`；DSL 与 AST 双层校验 boxed Java 类型精确一致、
   SQL equality compatibility 和恰好一个物理输出列，集合 IN 入口与节点保持不变。

@@ -1,6 +1,6 @@
-# EXISTS, IN, and correlated SELECT descriptions
+# EXISTS, IN, scalar subqueries, and correlated SELECT descriptions
 
-This document describes the EXISTS and IN-subquery slices implemented by the internal
+This document describes the EXISTS, IN, and scalar-subquery slices implemented by the internal
 `0.2.5-SNAPSHOT` milestone.
 It accumulates toward the public `0.3.0` SQL DSL and is not part of the published `0.2.0` API.
 
@@ -75,6 +75,81 @@ Duplicate child values do not duplicate outer rows. SKIS does not filter child N
 rewrite IN to a Join. In particular, nullable `NOT IN` is intentionally not rewritten to `NOT
 EXISTS`; those forms are not equivalent when the child can produce NULL.
 
+## One-column scalar subqueries
+
+`Sql.scalar(SingleColumnSelect<V>)` turns a reusable one-column description into a nullable
+`Selectable<V>` that can be selected, compared, checked for NULL, sorted, or bound to a nullable
+generated-projection parameter. It remains part of the outer SQL statement and is not executed by
+itself.
+
+```java
+OwnerTable lookup = OwnerTable.OWNER.as("owner_lookup");
+var ownerName =
+    Sql.scalar(
+        Sql.select(lookup.name())
+            .from(lookup)
+            .where(lookup.id().eq(pet.ownerId())));
+
+List<String> names =
+    executor
+        .select(ownerName)
+        .from(pet)
+        .where(ownerName.isNotNull())
+        .orderBy(ownerName.asc())
+        .fetchList();
+```
+
+The result type and JDBC Codec come from the child selection. The scalar boundary is nevertheless
+always nullable: zero child rows and one child row containing SQL NULL both evaluate to NULL, while
+one non-null row evaluates to that value. More than one child row is a database cardinality error.
+SKIS does not add `LIMIT 1`, issue a preliminary query, truncate duplicate rows, or translate that
+database error into the top-level `NonUniqueResultException`.
+
+When the outer query has a row but the scalar evaluates to NULL, nullable `fetchOne()` returns
+`SingleRow.Present(null)`. `SingleRow.NoRow` means that the outer query itself returned no row; SQL
+does not expose whether a scalar NULL came from zero child rows or one child NULL. A scalar cannot
+be assigned to `NonNullSelectable<V>` or passed to a generated projection parameter whose contract
+is non-null. There is no unchecked non-null scalar factory.
+
+Independent query parameters remain distinct when comparing scalar ordering expressions, even if
+their child SQL structures otherwise match. Empty collection `in(...)`/`notIn(...)` still evaluates
+to false/true: SKIS validates the complete operand and its declared bindings, then excludes its
+unused parameters from the final SQL and binder. Automatic count likewise validates the original
+selection before removing selection-only parameters.
+
+When a DISTINCT query orders by a selected scalar, SKIS renders its one-based output position
+(for example, `ORDER BY 1 ASC NULLS LAST`). The ordering reuses the selected expression's final
+parameter slots instead of emitting another copy of the subquery. This matters for PostgreSQL:
+two JDBC `?` positions become different server parameters even when they bind the same value,
+so repeating the parameterized subquery in ORDER BY would fail DISTINCT expression matching.
+The complete original ordering occurrence is still validated before this reuse, and independent
+query parameters cannot be treated as the same selected expression.
+
+For the employee/department model in `skis-test-model`:
+
+```java
+var employee = EmployeeTable.EMPLOYEE.as("e");
+var department = DepartmentTable.DEPARTMENT.as("d");
+var pattern = Sql.parameter(String.class, "departmentPattern");
+var departmentId = Sql.scalar(
+    Sql.select(department.id()).from(department)
+        .where(department.id().eq(employee.departmentId())
+            .and(department.name().like(pattern))));
+var description = Sql.select(departmentId).from(employee)
+    .distinct().orderBy(departmentId.asc().nullsLast());
+var departmentIds = executor.query(description, QueryParameters.of(pattern, "%部")).fetchList();
+```
+
+The SQL contains the department lookup once and ends with `ORDER BY 1 ASC NULLS LAST`. Employees
+whose departments do not match the pattern contribute a NULL value; DISTINCT retains one such
+NULL. Dialects without native NULLS FIRST/LAST reject explicit null placement for this ordering
+before JDBC rather than emitting an invalid CASE over an output ordinal.
+
+Scalar ordering is available for ordinary queries and offset `Page` queries with a provably stable
+order. `Slice` currently requires physical-column ordering because its continuation signature does
+not yet support scalar expressions. Both offset and keyset slices reject scalar ordering before
+acquiring JDBC resources, regardless of page size or whether the data would fill another page.
+
 ## Correlation and scope
 
 A child description refers to an outer source by using the exact outer `QueryTable` object. No
@@ -126,10 +201,10 @@ produces one row even when its input is empty, and step 12 must verify that HAVI
 row. The base EXISTS implementation deliberately performs no transformation that could change
 either behavior; complete T06 closure waits for those contracts.
 
-PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, and `CORRELATED_SUBQUERY`. A dialect
+PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, `SCALAR_SUBQUERY`, and
+`CORRELATED_SUBQUERY`. A dialect
 missing one syntax capability rejects only that nested construct; a dialect missing correlation
 support accepts an independent child but rejects a child that depends on an ancestor. Validation
 is recursive and reports the stable nested query-block path.
 
-Scalar subqueries, derived sources, and aggregate expressions remain assigned to their subsequent
-`0.2.5` slices.
+Derived sources and aggregate expressions remain assigned to their subsequent `0.2.5` slices.

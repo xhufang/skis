@@ -6,6 +6,7 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InSubqueryPredicate;
+import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
@@ -14,6 +15,7 @@ import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
 import java.util.List;
@@ -195,8 +197,8 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return new ComparisonPredicate<>(
-          left.expression(), operator, compiler.parameter(left, parameter));
+      SqlExpression<V> expression = compiler.expression(left);
+      return new ComparisonPredicate<>(expression, operator, compiler.parameter(left, parameter));
     }
   }
 
@@ -211,7 +213,8 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return new ComparisonPredicate<>(left.expression(), operator, right.expression());
+      return new ComparisonPredicate<>(
+          compiler.expression(left), operator, compiler.expression(right));
     }
   }
 
@@ -224,7 +227,7 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return new NullPredicate(selectable.expression(), operator);
+      return new NullPredicate(compiler.expression(selectable), operator);
     }
   }
 
@@ -240,7 +243,9 @@ final class FrameworkQueryCondition implements QueryCondition {
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
       return new BetweenPredicate<>(
-          value.expression(), compiler.parameter(value, lower), compiler.parameter(value, upper));
+          compiler.expression(value),
+          compiler.parameter(value, lower),
+          compiler.parameter(value, upper));
     }
   }
 
@@ -253,7 +258,7 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return new LikePredicate(value.expression(), compiler.parameter(value, pattern));
+      return new LikePredicate(compiler.expression(value), compiler.parameter(value, pattern));
     }
   }
 
@@ -267,11 +272,19 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
+      if (candidates.isEmpty() && compiler.releaseOriginalExpressions()) {
+        return new InPredicate<>(LiteralExpression.trueLiteral(), List.of(), negated);
+      }
+      int previousParameterCount = compiler.parameterCount();
+      SqlExpression<V> expression = compiler.expression(value);
+      if (candidates.isEmpty()) {
+        compiler.recordEmptyMembership(previousParameterCount);
+      }
       List<ParameterSlot<V>> slots = new ArrayList<>(candidates.size());
       for (QueryParameter<V> candidate : candidates) {
         slots.add(compiler.parameter(value, candidate));
       }
-      return new InPredicate<>(value.expression(), slots, negated);
+      return new InPredicate<>(expression, slots, negated);
     }
   }
 
@@ -285,7 +298,8 @@ final class FrameworkQueryCondition implements QueryCondition {
 
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
-      return new InSubqueryPredicate<>(value.expression(), compiler.subquery(subquery), negated);
+      return new InSubqueryPredicate<>(
+          compiler.expression(value), compiler.subquery(subquery), negated);
     }
   }
 
@@ -383,6 +397,35 @@ final class QueryConditionCompiler {
 
   <V> ParameterSlot<V> parameter(Selectable<V> source, QueryParameter<V> parameter) {
     return queryBlock.parameter(source, parameter);
+  }
+
+  boolean releaseOriginalExpressions() {
+    return !layout.retainOriginalExpressions();
+  }
+
+  void recordSelectedOrdering() {
+    layout.recordSelectedOrdering();
+  }
+
+  int parameterCount() {
+    return layout.parameterCount();
+  }
+
+  void recordEmptyMembership(int previousParameterCount) {
+    layout.recordEmptyMembership(previousParameterCount);
+  }
+
+  <V> SqlExpression<V> expression(Selectable<V> selectable) {
+    Objects.requireNonNull(selectable, "selectable");
+    if (selectable instanceof ScalarSubquerySelectable<?> scalar) {
+      return compileScalar(scalar);
+    }
+    return selectable.expression();
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private <V> SqlExpression<V> compileScalar(ScalarSubquerySelectable<?> scalar) {
+    return ((ScalarSubquerySelectable) scalar).compile(this);
   }
 
   void include(QueryParameters included) {

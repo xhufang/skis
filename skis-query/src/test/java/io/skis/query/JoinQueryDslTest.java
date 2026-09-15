@@ -20,6 +20,7 @@ import io.skis.dialect.StandardIdentifierRules;
 import io.skis.dialect.StandardSqlRenderer;
 import io.skis.jdbc.ConnectionProvider;
 import io.skis.jdbc.JdbcExecutor;
+import io.skis.jdbc.QueryExecutionException;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcCodecs;
@@ -48,10 +49,12 @@ import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -1116,6 +1119,444 @@ class JoinQueryDslTest {
   }
 
   @Test
+  void embedsScalarSubqueriesAcrossValuePositionsAndProjectsCountParameters() throws Exception {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    QueryParameter<String> ownerName = Sql.parameter(String.class, "ownerName");
+    NonNullSingleColumnSelect<Long> ownerId =
+        Sql.select(innerOwner.id())
+            .from(innerOwner)
+            .where(
+                innerOwner
+                    .id()
+                    .eq(PET_TABLE.ownerId())
+                    .and(innerOwner.name().eq(ownerName)));
+    Selectable<Long> scalar = Sql.scalar(ownerId);
+    SingleColumnSelect<Long> description =
+        Sql.select(scalar)
+            .from(PET_TABLE)
+            .where(scalar.isNotNull())
+            .orderBy(scalar.desc().nullsLast());
+    DefaultSelectQuery<?, Long> query =
+        DefaultSelectQuery.create(
+            (DefaultQueryOperations) operations(),
+            queryPlanCatalog().require(PET),
+            description.state(),
+            QueryParameters.of(ownerName, "Ada"));
+
+    QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = query.countCompilation();
+    QueryBlockAnalysis analysis =
+        SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
+
+    assertEquals(Nullability.NULLABLE, scalar.nullability());
+    assertFalse(scalar instanceof NonNullSelectable<?>);
+    assertEquals(
+        "SELECT (SELECT \"scalar_owner\".\"id\" FROM \"shelter\".\"owner\" AS "
+            + "\"scalar_owner\" WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" "
+            + "AND \"scalar_owner\".\"owner_name\" = ?) FROM \"shelter\".\"pet\" WHERE "
+            + "(SELECT \"scalar_owner\".\"id\" FROM \"shelter\".\"owner\" AS "
+            + "\"scalar_owner\" WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" "
+            + "AND \"scalar_owner\".\"owner_name\" = ?) IS NOT NULL ORDER BY "
+            + "(SELECT \"scalar_owner\".\"id\" FROM \"shelter\".\"owner\" AS "
+            + "\"scalar_owner\" WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" "
+            + "AND \"scalar_owner\".\"owner_name\" = ?) DESC NULLS LAST",
+        compilation.plan().sql());
+    assertEquals(List.of("Ada", "Ada", "Ada"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1, 2),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertEquals(3, analysis.nestedBlocks().size());
+    assertTrue(
+        analysis.nestedBlocks().stream()
+            .allMatch(
+                nested ->
+                    nested.kind() == QueryBlockAnalysis.NestedQueryKind.SCALAR_SUBQUERY
+                        && nested.analysis().correlated()));
+    assertEquals(
+        "SELECT COUNT(*) FROM \"shelter\".\"pet\" WHERE (SELECT "
+            + "\"scalar_owner\".\"id\" FROM \"shelter\".\"owner\" AS \"scalar_owner\" "
+            + "WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" AND "
+            + "\"scalar_owner\".\"owner_name\" = ?) IS NOT NULL",
+        count.plan().sql());
+    assertEquals(List.of("Ada"), ((QueryArguments) count.argument()).values());
+    assertEquals(
+        9L,
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of(1, 9L)), RowReadContext.EMPTY));
+    assertNull(
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of()), RowReadContext.EMPTY));
+  }
+
+  @Test
+  void comparesScalarSubqueriesWithoutAddingAnImplicitLimit() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    Selectable<Long> scalar =
+        Sql.scalar(
+            Sql.select(innerOwner.id())
+                .from(innerOwner)
+                .where(innerOwner.id().eq(PET_TABLE.ownerId())));
+    NonNullSelectDescription<Pet> description =
+        Sql.selectFrom(PET_TABLE).where(scalar.eq(PET_TABLE.ownerId()));
+    DefaultSelectQuery<?, Pet> query =
+        (DefaultSelectQuery<?, Pet>) operations().query(description);
+
+    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+
+    assertEquals(
+        "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
+            + "FROM \"shelter\".\"pet\" WHERE (SELECT \"scalar_owner\".\"id\" "
+            + "FROM \"shelter\".\"owner\" AS \"scalar_owner\" WHERE "
+            + "\"scalar_owner\".\"id\" = \"pet\".\"owner_id\") = \"pet\".\"owner_id\"",
+        compilation.plan().sql());
+    assertFalse(compilation.plan().sql().contains("LIMIT"));
+  }
+
+  @Test
+  void validatesScalarCountSourcesBeforeRemovingTheirSelectionsAndParameters() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    OwnerTable invisible = OWNER_TABLE.as("invisible_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    Selectable<Long> invalid =
+        Sql.scalar(
+            Sql.select(invisible.id())
+                .from(innerOwner)
+                .where(innerOwner.name().eq(name)));
+    CountQuery count =
+        operations()
+            .query(Sql.select(invalid).from(PET_TABLE), QueryParameters.of(name, "Ada"))
+            .countQuery();
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class, () -> ((DefaultCountQuery) count).compilation());
+
+    assertTrue(failure.getMessage().contains("not visible in the current or any ancestor"));
+  }
+
+  @Test
+  void prunesEmptyScalarMembershipParametersAndDenselyRebindsTheRemainingValues() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<Long> petId = Sql.parameter(Long.class, "petId");
+    Selectable<Long> scalar =
+        Sql.scalar(
+            Sql.select(innerOwner.id())
+                .from(innerOwner)
+                .where(innerOwner.name().eq(name)));
+    QueryParameters parameters =
+        QueryParameters.builder().bind(name, "Ada").bind(petId, 7L).build();
+
+    for (boolean negated : List.of(false, true)) {
+      QueryCondition membership = negated ? scalar.notIn(List.of()) : scalar.in(List.of());
+      NonNullSelectDescription<Pet> description =
+          Sql.selectFrom(PET_TABLE).where(membership.and(PET_TABLE.id().eq(petId)));
+      DefaultSelectQuery<?, Pet> query =
+          (DefaultSelectQuery<?, Pet>) operations().query(description, parameters);
+
+      QueryCompilation<Pet> content = query.compilation(QueryPagination.None.INSTANCE);
+      QueryCompilation<Long> count = query.countCompilation();
+      String predicate = (negated ? "1 = 1" : "1 = 0") + " AND \"pet\".\"id\" = ?";
+      assertEquals(
+          "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
+              + "FROM \"shelter\".\"pet\" WHERE "
+              + predicate,
+          content.plan().sql());
+      assertEquals(
+          "SELECT COUNT(*) FROM \"shelter\".\"pet\" WHERE " + predicate,
+          count.plan().sql());
+      assertEquals(List.of(7L), ((QueryArguments) content.argument()).values());
+      assertEquals(List.of(7L), ((QueryArguments) count.argument()).values());
+      assertEquals(
+          List.of(0),
+          content.plan().renderedSql().parameters().stream()
+              .map(io.skis.sql.ast.ParameterSlot::ordinal)
+              .toList());
+      assertSame(count.argument(), query.countCompilation().argument());
+
+      ScriptedQueryConnectionProvider connections =
+          new ScriptedQueryConnectionProvider(List.of(List.of()));
+      queryPlanCatalog()
+          .bind(new JdbcExecutor(connections))
+          .query(description, parameters)
+          .fetchList();
+      assertEquals(List.of(List.of(7L)), connections.bindings());
+    }
+
+    NonNullSelectDescription<Pet> noRemainingParameters =
+        Sql.selectFrom(PET_TABLE).where(scalar.in(List.of()));
+    DefaultSelectQuery<?, Pet> query =
+        (DefaultSelectQuery<?, Pet>)
+            operations().query(noRemainingParameters, QueryParameters.of(name, "Ada"));
+    assertSame(NoParameters.INSTANCE, query.compilation(QueryPagination.None.INSTANCE).argument());
+    assertSame(NoParameters.INSTANCE, query.countCompilation().argument());
+    assertThrows(
+        QueryValidationException.class,
+        () -> operations().query(noRemainingParameters).fetchList());
+  }
+
+  @Test
+  void emptyScalarMembershipStillValidatesTheDiscardedOperandInItsOriginalScope() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    OwnerTable invisible = OWNER_TABLE.as("invisible_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    Selectable<Long> invalid =
+        Sql.scalar(
+            Sql.select(invisible.id())
+                .from(innerOwner)
+                .where(innerOwner.name().eq(name)));
+    NonNullSelectDescription<Pet> description =
+        Sql.selectFrom(PET_TABLE).where(invalid.in(List.of()));
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> operations().query(description, QueryParameters.of(name, "Ada")).fetchList());
+
+    assertTrue(failure.getMessage().contains("not visible in the current or any ancestor"));
+  }
+
+  @Test
+  void distinguishesIndependentScalarOrderingParametersAndRejectsActualDuplicates() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    QueryParameter<String> firstName = Sql.parameter(String.class, "name");
+    QueryParameter<String> secondName = Sql.parameter(String.class, "name");
+    Selectable<Long> first =
+        Sql.scalar(
+            Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(firstName)));
+    Selectable<Long> second =
+        Sql.scalar(
+            Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(secondName)));
+    Selectable<Long> sameReference =
+        Sql.scalar(
+            Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(firstName)));
+    NonNullSelectDescription<Pet> description =
+        Sql.selectFrom(PET_TABLE).orderBy(first.asc(), second.asc());
+    QueryParameters parameters =
+        QueryParameters.builder().bind(firstName, "Ada").bind(secondName, "Grace").build();
+    DefaultSelectQuery<?, Pet> query =
+        (DefaultSelectQuery<?, Pet>) operations().query(description, parameters);
+
+    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+
+    assertEquals(List.of("Ada", "Grace"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(
+        List.of(0, 1),
+        compilation.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertFalse(first.asc().equals(second.asc()));
+    assertEquals(first.asc(), sameReference.asc());
+    assertEquals(first.asc().hashCode(), sameReference.asc().hashCode());
+    assertThrows(
+        QueryValidationException.class,
+        () -> Sql.selectFrom(PET_TABLE).orderBy(first.asc(), sameReference.asc()));
+    assertThrows(
+        QueryValidationException.class,
+        () ->
+            operations()
+                .query(
+                    Sql.select(first).from(PET_TABLE).distinct().orderBy(second.asc()), parameters)
+                .fetchList());
+  }
+
+  @Test
+  void ordersDistinctScalarOutputsWithoutAllocatingUnusedOrderingParameters() {
+    OwnerTable lookup = OWNER_TABLE.as("scalar_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<Long> petId = Sql.parameter(Long.class, "petId");
+    Selectable<Long> scalar =
+        Sql.scalar(
+            Sql.select(lookup.id())
+                .from(lookup)
+                .where(lookup.id().eq(PET_TABLE.ownerId()).and(lookup.name().eq(name))));
+    SingleColumnSelect<Long> description =
+        Sql.select(scalar)
+            .from(PET_TABLE)
+            .where(PET_TABLE.id().eq(petId))
+            .distinct()
+            .orderBy(scalar.desc().nullsFirst());
+    QueryParameters parameters =
+        QueryParameters.builder().bind(name, "Ada").bind(petId, 7L).build();
+    DefaultSelectQuery<?, Long> query =
+        DefaultSelectQuery.create(
+            (DefaultQueryOperations) operations(),
+            queryPlanCatalog().require(PET),
+            description.state(),
+            parameters);
+
+    QueryCompilation<Long> content = query.compilation(QueryPagination.None.INSTANCE);
+    assertEquals(
+        "SELECT DISTINCT (SELECT \"scalar_owner\".\"id\" FROM \"shelter\".\"owner\" AS "
+            + "\"scalar_owner\" WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" AND "
+            + "\"scalar_owner\".\"owner_name\" = ?) FROM \"shelter\".\"pet\" WHERE "
+            + "\"pet\".\"id\" = ? ORDER BY 1 DESC NULLS FIRST",
+        content.plan().sql());
+    assertEquals(List.of("Ada", 7L), ((QueryArguments) content.argument()).values());
+    assertEquals(
+        List.of(0, 1),
+        content.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+    assertSame(content.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+
+    QueryCompilation<Long> page = query.compilation(new QueryPagination.Offset(2, 0));
+    assertTrue(page.plan().sql().endsWith("ORDER BY 1 DESC NULLS FIRST LIMIT ? OFFSET ?"));
+    assertEquals(List.of("Ada", 7L, 2, 0L), ((QueryArguments) page.argument()).values());
+    QueryCompilation<Long> count = query.countCompilation();
+    assertEquals(List.of("Ada", 7L), ((QueryArguments) count.argument()).values());
+    assertEquals(
+        List.of(0, 0, 1),
+        count.plan().renderedSql().parameters().stream()
+            .map(io.skis.sql.ast.ParameterSlot::ordinal)
+            .toList());
+
+    ScriptedQueryConnectionProvider connections =
+        new ScriptedQueryConnectionProvider(List.of(List.of()));
+    queryPlanCatalog().bind(new JdbcExecutor(connections)).query(description, parameters).fetchList();
+    assertEquals(List.of(List.of("Ada", 7L)), connections.bindings());
+  }
+
+  @Test
+  void validatesTheOriginalScalarOrderingOccurrenceBeforeSharingASelectedOutput() {
+    OwnerTable lookup = OWNER_TABLE.as("scalar_owner");
+    OwnerTable wrongInstance = OWNER_TABLE.as("scalar_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    Selectable<Long> selected =
+        Sql.scalar(Sql.select(lookup.id()).from(lookup).where(lookup.name().eq(name)));
+    Selectable<Long> invalidOrder =
+        Sql.scalar(Sql.select(wrongInstance.id()).from(lookup).where(lookup.name().eq(name)));
+    SingleColumnSelect<Long> description =
+        Sql.select(selected).from(PET_TABLE).distinct().orderBy(invalidOrder.asc());
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> operations().query(description, QueryParameters.of(name, "Ada")).fetchList());
+    assertTrue(failure.getMessage().contains("ORDER BY[0]"));
+    assertTrue(failure.getMessage().contains("not visible"));
+  }
+
+  @Test
+  void rejectsScalarSliceOrderingBeforeAcquiringJdbcRegardlessOfPageSize() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    Selectable<Long> scalar =
+        Sql.scalar(
+            Sql.select(innerOwner.id())
+                .from(innerOwner)
+                .where(innerOwner.id().eq(PET_TABLE.ownerId())));
+    SelectQuery<Pet, Pet> query =
+        operations().selectFrom(PET_TABLE).orderBy(scalar.asc().nullsLast(), PET_TABLE.id().asc());
+
+    for (int pageSize : List.of(1, 100)) {
+      QueryValidationException failure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> query.fetchSlice(SliceRequest.offset(0, pageSize)));
+      assertTrue(failure.getMessage().contains("pagination identity analysis"));
+    }
+    assertThrows(
+        QueryValidationException.class, () -> query.fetchSlice(SliceRequest.keysetFirst(1)));
+
+    QueryCompilation<Pet> pageContent =
+        ((DefaultSelectQuery<Pet, Pet>) query).compilation(new QueryPagination.Offset(10, 0));
+    assertTrue(pageContent.plan().sql().contains("ORDER BY (SELECT "));
+    assertTrue(pageContent.plan().sql().endsWith("LIMIT ? OFFSET ?"));
+  }
+
+  @Test
+  void distinguishesOuterNoRowFromPresentNullForScalarResultsWithoutExtraSql() {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    Selectable<String> scalar =
+        Sql.scalar(
+            Sql.select(innerOwner.name())
+                .from(innerOwner)
+                .where(innerOwner.id().eq(PET_TABLE.ownerId())));
+    SingleColumnSelect<String> description = Sql.select(scalar).from(PET_TABLE);
+    ScriptedQueryConnectionProvider connections =
+        new ScriptedQueryConnectionProvider(
+            List.of(List.of(Map.<Integer, Object>of()), List.of(), List.of(Map.of(1, "Ada"))));
+    QueryOperations operations = queryPlanCatalog().bind(new JdbcExecutor(connections));
+
+    SingleRow<String> presentNull = operations.query(description).fetchOne();
+    SingleRow<String> noRow = operations.query(description).fetchOne();
+    SingleRow<String> presentValue = operations.query(description).fetchOne();
+
+    assertTrue(
+        presentNull instanceof SingleRow.Present<?> present && present.value() == null);
+    assertTrue(noRow instanceof SingleRow.NoRow<?>);
+    assertEquals(new SingleRow.Present<>("Ada"), presentValue);
+    assertEquals(3, connections.sql().size());
+    assertTrue(connections.sql().stream().allMatch(sql -> sql.contains("(SELECT ")));
+  }
+
+  @Test
+  void preservesDatabaseScalarCardinalityFailureAndSuppressedCloseOrder() {
+    SQLException cardinality =
+        new SQLException("scalar subquery returned multiple rows", "21000", 41);
+    SQLException statementClose = new SQLException("statement close failed", "HY000", 42);
+    SQLException release = new SQLException("release failed", "08006", 43);
+    AtomicInteger releases = new AtomicInteger();
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) {
+            return (Connection)
+                Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[] {Connection.class},
+                    (ignored, method, arguments) -> {
+                      if (method.getName().equals("prepareStatement")) {
+                        return Proxy.newProxyInstance(
+                            PreparedStatement.class.getClassLoader(),
+                            new Class<?>[] {PreparedStatement.class},
+                            (target, statementMethod, statementArguments) -> {
+                              if (statementMethod.getName().equals("executeQuery")) {
+                                throw cardinality;
+                              }
+                              if (statementMethod.getName().equals("close")) {
+                                throw statementClose;
+                              }
+                              return defaultValue(statementMethod.getReturnType());
+                            });
+                      }
+                      return defaultValue(method.getReturnType());
+                    });
+          }
+
+          @Override
+          public void release(Connection connection, ExecutionContext context) throws SQLException {
+            releases.incrementAndGet();
+            throw release;
+          }
+        };
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    Selectable<String> scalar =
+        Sql.scalar(Sql.select(innerOwner.name()).from(innerOwner));
+    QueryOperations operations = queryPlanCatalog().bind(new JdbcExecutor(provider));
+
+    QueryExecutionException thrown =
+        assertThrows(
+            QueryExecutionException.class,
+            () -> operations.query(Sql.select(scalar).from(PET_TABLE)).fetchList());
+
+    assertSame(cardinality, thrown.getCause());
+    assertEquals("21000", thrown.sqlState());
+    assertEquals(41, thrown.vendorCode());
+    assertEquals(1, cardinality.getSuppressed().length);
+    assertSame(statementClose, cardinality.getSuppressed()[0]);
+    assertEquals(1, thrown.getSuppressed().length);
+    assertSame(release, thrown.getSuppressed()[0]);
+    assertEquals(1, releases.get());
+  }
+
+  @Test
   void rejectsInvalidDistinctOrderingInsideMembershipAndExistsSubqueries() {
     NonNullSingleColumnSelect<Long> invalidOwnerIds =
         Sql.select(OWNER_TABLE.id())
@@ -1659,6 +2100,7 @@ class JoinQueryDslTest {
             DialectFeature.COUNT_DISTINCT,
             DialectFeature.EXISTS_SUBQUERY,
             DialectFeature.IN_SUBQUERY,
+            DialectFeature.SCALAR_SUBQUERY,
             DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =
         new StandardSqlRenderer(id(), identifierRules(), capabilities);

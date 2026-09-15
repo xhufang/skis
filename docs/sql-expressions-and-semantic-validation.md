@@ -124,9 +124,15 @@ A description can be adapted as a top-level query or embedded through `Sql.exist
 `Sql.notExists(...)`. EXISTS accepts every result shape and preserves the complete child SELECT.
 A `SingleColumnSelect<V>` can also be passed to `Selectable<V>.in(...)` or `notIn(...)`; this
 invariant overload requires an exact boxed Java type match and equality-compatible SQL types.
-Collection membership remains a different overload and AST node. Scalar-subquery and
-derived-source adapters remain deferred to their later slices and will reuse this same description
-state instead of introducing a second query DSL.
+Collection membership remains a different overload and AST node.
+
+`Sql.scalar(SingleColumnSelect<V>)` embeds that description as one nullable value expression.
+`ScalarSubqueryExpression<V>` preserves the selected column's boxed Java type and SQL type, while
+its own nullability is always nullable because an empty child produces SQL NULL. Query compilation
+resolves the selected column's Codec without invoking an inner row decoder. The expression can be
+used in selection, comparison, NULL tests, the reserved HAVING structure, ordering, and nullable
+generated-projection positions. Derived-source adapters remain deferred to their later slice and
+will reuse the same description state instead of introducing a second query DSL.
 
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
@@ -314,9 +320,9 @@ introduced.
 
 Ordinary FROM/Join relation children use a non-correlated boundary. Their child analysis retains a
 stable path but receives no parent scope, preventing an accidental LATERAL contract. EXISTS, IN,
-scalar-subquery, and derived-source AST nodes use this shared machinery. The EXISTS slice now
-records each child occurrence and resolves WHERE/ON correlation; IN, scalar, and derived-source
-nodes remain assigned to later 0.2.5 slices.
+and scalar-subquery AST nodes use this shared machinery and record every child occurrence at its
+exact clause location. The scalar result is conservatively nullable even when the child's selected
+column is non-null. Derived-source nodes remain assigned to a later 0.2.5 slice.
 
 The public `ExistsPredicate` owns a complete `SelectStatement` subtree and a native negation flag.
 Its Boolean result is always non-null. Recursive validation preserves child selections, NULLs,

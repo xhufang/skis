@@ -31,7 +31,7 @@ record ResolvedResultShape<R>(
       if (selection.resultIndex() != ordinal + 1) {
         throw new QueryValidationException("resolved result indexes must be dense and one-based");
       }
-      if (!expressions.get(ordinal).equals(selection.valueMapping().selectable().expression())) {
+      if (!expressions.get(ordinal).equals(selection.valueMapping().expression())) {
         throw new QueryValidationException(
             "resolved value mapping does not match its selected SQL expression");
       }
@@ -67,8 +67,11 @@ record ResolvedResultShape<R>(
   }
 
   static <R> ResolvedResultShape<R> scalar(
-      Selectable<R> selectable, TableRuntimeScope scope, boolean nullableResult) {
-    ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, scope);
+      Selectable<R> selectable,
+      SqlExpression<R> expression,
+      TableRuntimeScope scope,
+      boolean nullableResult) {
+    ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
     if (!nullableResult && mapping.effectiveNullability().isNullable()) {
       throw new QueryValidationException(
           "non-null scalar selection '"
@@ -85,11 +88,13 @@ record ResolvedResultShape<R>(
           return value;
         };
     return new ResolvedResultShape<>(
-        List.of(selectable.expression()), decoder, List.of(new ResolvedSelection(mapping, 1)));
+        List.of(expression), decoder, List.of(new ResolvedSelection(mapping, 1)));
   }
 
   static <R> ResolvedResultShape<R> projection(
-      ProjectionSelection<R> selection, TableRuntimeScope scope) {
+      ProjectionSelection<R> selection,
+      List<SqlExpression<?>> compiledExpressions,
+      TableRuntimeScope scope) {
     ProjectionMapping<R> mapping = selection.mapping();
     List<ProjectionMapping.Parameter> parameters = mapping.parameters();
     List<Selectable<?>> selectables = selection.selections();
@@ -102,15 +107,20 @@ record ResolvedResultShape<R>(
               + " selections but received "
               + selectables.size());
     }
+    if (compiledExpressions.size() != selectables.size()) {
+      throw new QueryValidationException(
+          "compiled projection expression count does not match its generated mapping");
+    }
     List<SqlExpression<?>> expressions = new ArrayList<>(selectables.size());
     List<ResolvedSelection> resolved = new ArrayList<>(selectables.size());
     for (int ordinal = 0; ordinal < selectables.size(); ordinal++) {
       Selectable<?> selectable = selectables.get(ordinal);
+      SqlExpression<?> compiledExpression = compiledExpressions.get(ordinal);
       ProjectionMapping.Parameter parameter = parameters.get(ordinal);
       ResolvedValueMapping<?> valueMapping;
       String location = resolutionLocation(selectable, scope);
       try {
-        valueMapping = ResolvedValueMapping.resolve(selectable, scope);
+        valueMapping = resolveUntyped(selectable, compiledExpression, scope);
       } catch (QueryValidationException failure) {
         throw projectionFailure(
             mapping,
@@ -150,7 +160,7 @@ record ResolvedResultShape<R>(
             valueMapping.effectiveNullability(),
             "cannot satisfy the constructor's non-null contract");
       }
-      expressions.add(selectable.expression());
+      expressions.add(compiledExpression);
       resolved.add(new ResolvedSelection(valueMapping, ordinal + 1));
     }
     ProjectionMapping.Readers readers = new CompiledReaders(parameters, resolved);
@@ -168,6 +178,12 @@ record ResolvedResultShape<R>(
           return value;
         };
     return new ResolvedResultShape<>(expressions, decoder, resolved);
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static ResolvedValueMapping<?> resolveUntyped(
+      Selectable<?> selectable, SqlExpression<?> expression, TableRuntimeScope scope) {
+    return ResolvedValueMapping.resolve((Selectable) selectable, (SqlExpression) expression, scope);
   }
 
   private static String resolutionLocation(Selectable<?> selectable, TableRuntimeScope scope) {

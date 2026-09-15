@@ -1,10 +1,13 @@
 package io.skis.query;
 
+import io.skis.mapping.EntityRuntimeModel;
+import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcTypeCodec;
 import io.skis.mapping.JdbcWriteContext;
 import io.skis.mapping.PropertyRuntime;
 import io.skis.mapping.RowReadContext;
 import io.skis.sql.ast.Nullability;
+import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import java.sql.PreparedStatement;
@@ -16,6 +19,7 @@ import org.jspecify.annotations.Nullable;
 /** Query-local value contract resolved from a framework-owned selectable expression. */
 record ResolvedValueMapping<V>(
     Selectable<V> selectable,
+    SqlExpression<V> expression,
     Class<V> javaType,
     SqlType sqlType,
     Nullability effectiveNullability,
@@ -24,6 +28,7 @@ record ResolvedValueMapping<V>(
 
   ResolvedValueMapping {
     Objects.requireNonNull(selectable, "selectable");
+    Objects.requireNonNull(expression, "expression");
     Objects.requireNonNull(javaType, "javaType");
     Objects.requireNonNull(sqlType, "sqlType");
     Objects.requireNonNull(effectiveNullability, "effectiveNullability");
@@ -31,7 +36,6 @@ record ResolvedValueMapping<V>(
     if (sourceOccurrenceOrdinal < -1) {
       throw new IllegalArgumentException("source occurrence ordinal must be -1 or non-negative");
     }
-    SqlExpression<V> expression = Objects.requireNonNull(selectable.expression(), "expression");
     if (!javaType.equals(selectable.javaType()) || !javaType.equals(expression.javaType())) {
       throw new QueryValidationException(
           "selectable Java type does not match its resolved value mapping");
@@ -47,10 +51,19 @@ record ResolvedValueMapping<V>(
   }
 
   static <V> ResolvedValueMapping<V> resolve(Selectable<V> selectable, TableRuntimeScope scope) {
+    return resolve(selectable, selectable.expression(), scope);
+  }
+
+  static <V> ResolvedValueMapping<V> resolve(
+      Selectable<V> selectable, SqlExpression<V> expression, TableRuntimeScope scope) {
     Objects.requireNonNull(selectable, "selectable");
+    Objects.requireNonNull(expression, "expression");
     Objects.requireNonNull(scope, "scope");
     if (selectable instanceof QueryColumn<?, ?> column) {
-      return resolveColumnUntyped(column, scope);
+      return resolveColumnUntyped(column, expression, scope);
+    }
+    if (selectable instanceof ScalarSubquerySelectable<?> scalar) {
+      return resolveScalarUntyped(scalar, expression, scope);
     }
     throw new QueryValidationException(
         "no query-local value mapping is registered for framework expression '"
@@ -110,20 +123,51 @@ record ResolvedValueMapping<V>(
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static <V> ResolvedValueMapping<V> resolveColumnUntyped(
-      QueryColumn<?, ?> column, TableRuntimeScope scope) {
-    return (ResolvedValueMapping<V>) resolveColumn((QueryColumn) column, scope);
+      QueryColumn<?, ?> column, SqlExpression<V> expression, TableRuntimeScope scope) {
+    return (ResolvedValueMapping<V>)
+        resolveColumn((QueryColumn) column, (SqlExpression) expression, scope);
   }
 
   private static <E, V> ResolvedValueMapping<V> resolveColumn(
-      QueryColumn<E, V> column, TableRuntimeScope scope) {
+      QueryColumn<E, V> column, SqlExpression<V> expression, TableRuntimeScope scope) {
     TableRuntimeScope.Occurrence<E> occurrence = scope.require(column.table());
     PropertyRuntime<E, V> runtime = scope.property(column);
     return new ResolvedValueMapping<>(
         column,
+        expression,
         column.javaType(),
         column.sqlType(),
         scope.effectiveNullability(column),
         runtime.codec(),
         occurrence.occurrenceOrdinal());
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static <V> ResolvedValueMapping<V> resolveScalarUntyped(
+      ScalarSubquerySelectable<?> scalar, SqlExpression<V> expression, TableRuntimeScope scope) {
+    if (!(expression instanceof ScalarSubqueryExpression<?>)) {
+      throw new QueryValidationException(
+          "compiled scalar selection is not backed by a scalar-subquery AST node");
+    }
+    ScalarSubquerySelectable<V> typed = (ScalarSubquerySelectable) scalar;
+    JdbcTypeCodec<V> codec = (JdbcTypeCodec<V>) outputCodec(typed.output(), scope.registry());
+    return new ResolvedValueMapping<>(
+        typed, expression, typed.javaType(), typed.sqlType(), Nullability.NULLABLE, codec, -1);
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static JdbcTypeCodec<?> outputCodec(
+      Selectable<?> output, EntityRuntimeRegistry registry) {
+    if (output instanceof QueryColumn<?, ?> column) {
+      EntityRuntimeModel model = registry.require(column.table().entity());
+      return model.property(column.property()).codec();
+    }
+    if (output instanceof ScalarSubquerySelectable<?> scalar) {
+      return outputCodec(scalar.output(), registry);
+    }
+    throw new QueryValidationException(
+        "no result Codec is registered for scalar subquery output '"
+            + SelectableSupport.summary(output)
+            + "'");
   }
 }

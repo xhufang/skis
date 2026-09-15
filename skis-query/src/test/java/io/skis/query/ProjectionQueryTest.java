@@ -194,6 +194,45 @@ class ProjectionQueryTest {
   }
 
   @Test
+  void propagatesScalarSubqueryCodecAndNullabilityIntoGeneratedProjections() throws Exception {
+    OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
+    Selectable<String> ownerName =
+        Sql.scalar(
+            Sql.select(innerOwner.name())
+                .from(innerOwner)
+                .where(innerOwner.id().eq(PET_TABLE.ownerId())));
+    ProjectionSelection<PetOwnerView> selected =
+        nullableOwnerMapping().bind(PET_TABLE.id(), ownerName);
+
+    QueryCompilation<PetOwnerView> compilation = compile(selected, List.of());
+
+    assertEquals(
+        "SELECT \"pet\".\"id\", (SELECT \"scalar_owner\".\"owner_name\" "
+            + "FROM \"shelter\".\"owner\" AS \"scalar_owner\" WHERE "
+            + "\"scalar_owner\".\"id\" = \"pet\".\"owner_id\") FROM \"shelter\".\"pet\"",
+        compilation.plan().sql());
+    assertEquals(
+        new PetOwnerView(7L, "Ada"),
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of(1, 7L, 2, "Ada")), RowReadContext.EMPTY));
+    assertEquals(
+        new PetOwnerView(7L, null),
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(
+                resultSet(java.util.Collections.singletonMap(1, 7L)), RowReadContext.EMPTY));
+
+    ProjectionSelection<StrictPetOwnerView> strict =
+        strictOwnerMapping().bind(PET_TABLE.id(), ownerName);
+    QueryValidationException failure =
+        assertThrows(QueryValidationException.class, () -> compile(strict, List.of()));
+    assertTrue(failure.getMessage().contains("effective NULLABLE"));
+  }
+
+  @Test
   void rejectsInvisibleSelectionsAndDefensiveJavaTypeMismatches() {
     ProjectionSelection<PetOwnerView> invisible =
         nullableOwnerMapping().bind(PET_TABLE.id(), OWNER_TABLE.name());
@@ -453,7 +492,9 @@ class ProjectionQueryTest {
         DialectCapabilities.of(
             DialectFeature.SCHEMA_QUALIFIED_TABLES,
             DialectFeature.INNER_JOIN,
-            DialectFeature.LEFT_JOIN);
+            DialectFeature.LEFT_JOIN,
+            DialectFeature.SCALAR_SUBQUERY,
+            DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =
         new StandardSqlRenderer(id(), identifierRules(), capabilities);
 

@@ -95,6 +95,17 @@ public final class Sql {
   }
 
   /**
+   * Embeds a reusable one-column SELECT as one conservatively nullable SQL value expression.
+   *
+   * <p>The child is not executed independently. Zero rows evaluate to SQL {@code NULL}, one row
+   * evaluates to its selected value, and multiple rows remain a database cardinality error. This
+   * method never adds an implicit limit or asserts that a row exists.
+   */
+  public static <V> Selectable<V> scalar(SingleColumnSelect<V> subquery) {
+    return new ScalarSubquerySelectable<>(Objects.requireNonNull(subquery, "subquery"));
+  }
+
+  /**
    * Creates a nullable query-level parameter reference with no diagnostic name.
    *
    * <p>The reference contains no value or ordinal. Bind its value separately through {@link

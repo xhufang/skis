@@ -41,6 +41,9 @@ public enum DialectFeature {
   /** Predicates may compare one value with a one-column SELECT through IN or NOT IN. */
   IN_SUBQUERY,
 
+  /** Value-expression positions may embed a one-column SELECT as a scalar subquery. */
+  SCALAR_SUBQUERY,
+
   /** A nested SELECT may reference a source visible in an ancestor query block. */
   CORRELATED_SUBQUERY
 }

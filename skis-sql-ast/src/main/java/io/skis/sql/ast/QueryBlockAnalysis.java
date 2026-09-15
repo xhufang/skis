@@ -138,7 +138,10 @@ public final class QueryBlockAnalysis {
     EXISTS,
 
     /** {@code IN (SELECT ...)} or {@code NOT IN (SELECT ...)}. */
-    IN_SUBQUERY
+    IN_SUBQUERY,
+
+    /** A single-column SELECT evaluated as one nullable SQL value. */
+    SCALAR_SUBQUERY
   }
 
   record ScopeSite(QueryClause clause, int itemOrdinal) {

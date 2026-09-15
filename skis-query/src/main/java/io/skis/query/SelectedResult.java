@@ -2,6 +2,7 @@ package io.skis.query;
 
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.sql.ast.SqlExpression;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -66,14 +67,21 @@ final class SelectedResult<R> {
         null, null, Objects.requireNonNull(selection, "selection"), Kind.GENERATED_PROJECTION);
   }
 
-  ResolvedResultShape<R> resolve(TableRuntimeScope scope) {
+  ResolvedResultShape<R> resolve(
+      TableRuntimeScope scope, List<SqlExpression<?>> compiledExpressions) {
     Objects.requireNonNull(scope, "scope");
+    Objects.requireNonNull(compiledExpressions, "compiledExpressions");
     return switch (kind) {
-      case REQUIRED_ENTITY -> entityShape(scope, false);
-      case NULLABLE_ENTITY -> entityShape(scope, true);
-      case REQUIRED_SCALAR -> ResolvedResultShape.scalar(requireScalar(), scope, false);
-      case NULLABLE_SCALAR -> ResolvedResultShape.scalar(requireScalar(), scope, true);
-      case GENERATED_PROJECTION -> ResolvedResultShape.projection(requireProjection(), scope);
+      case REQUIRED_ENTITY -> entityShape(scope, compiledExpressions, false);
+      case NULLABLE_ENTITY -> entityShape(scope, compiledExpressions, true);
+      case REQUIRED_SCALAR ->
+          ResolvedResultShape.scalar(
+              requireScalar(), singleExpression(compiledExpressions), scope, false);
+      case NULLABLE_SCALAR ->
+          ResolvedResultShape.scalar(
+              requireScalar(), singleExpression(compiledExpressions), scope, true);
+      case GENERATED_PROJECTION ->
+          ResolvedResultShape.projection(requireProjection(), compiledExpressions, scope);
     };
   }
 
@@ -86,6 +94,44 @@ final class SelectedResult<R> {
               .<SqlExpression<?>>map(Selectable::expression)
               .toList();
     };
+  }
+
+  List<SqlExpression<?>> compileExpressions(QueryConditionCompiler compiler) {
+    Objects.requireNonNull(compiler, "compiler");
+    return switch (kind) {
+      case REQUIRED_ENTITY, NULLABLE_ENTITY -> List.copyOf(requireTable().selections());
+      case REQUIRED_SCALAR, NULLABLE_SCALAR -> List.of(compiler.expression(requireScalar()));
+      case GENERATED_PROJECTION -> {
+        List<SqlExpression<?>> expressions =
+            new ArrayList<>(requireProjection().selections().size());
+        for (Selectable<?> selectable : requireProjection().selections()) {
+          expressions.add(compiler.expression(selectable));
+        }
+        yield List.copyOf(expressions);
+      }
+    };
+  }
+
+  List<SelectableSupport.ExpressionIdentity> expressionIdentities() {
+    return switch (kind) {
+      case REQUIRED_ENTITY, NULLABLE_ENTITY ->
+          requireTable().selections().stream()
+              .map(expression -> new SelectableSupport.ExpressionIdentity(expression, List.of()))
+              .toList();
+      case REQUIRED_SCALAR, NULLABLE_SCALAR ->
+          List.of(SelectableSupport.expressionIdentity(requireScalar()));
+      case GENERATED_PROJECTION ->
+          requireProjection().selections().stream()
+              .map(SelectableSupport::expressionIdentity)
+              .toList();
+    };
+  }
+
+  Selectable<R> singleSelectable() {
+    if (kind != Kind.REQUIRED_SCALAR && kind != Kind.NULLABLE_SCALAR) {
+      throw new IllegalStateException("selected result is not a single SQL value");
+    }
+    return requireScalar();
   }
 
   boolean belongsTo(QueryTable<?> candidate) {
@@ -110,8 +156,10 @@ final class SelectedResult<R> {
     };
   }
 
-  /** Returns the single expression usable by the current automatic DISTINCT count path. */
-  @Nullable SqlExpression<?> automaticDistinctCountExpression(boolean hasJoins) {
+  /** Returns the compiled expression usable by the current automatic DISTINCT count path. */
+  @Nullable SqlExpression<?> automaticDistinctCountExpression(
+      boolean hasJoins, List<SqlExpression<?>> compiledExpressions) {
+    Objects.requireNonNull(compiledExpressions, "compiledExpressions");
     return switch (kind) {
       case REQUIRED_ENTITY, NULLABLE_ENTITY -> {
         var primaryKey = requireTable().entity().primaryKey().orElse(null);
@@ -133,15 +181,14 @@ final class SelectedResult<R> {
         }
         yield requireTable().selections().get(primaryKey.properties().getFirst().ordinal());
       }
-      case REQUIRED_SCALAR, NULLABLE_SCALAR -> requireScalar().expression();
+      case REQUIRED_SCALAR, NULLABLE_SCALAR -> singleExpression(compiledExpressions);
       case GENERATED_PROJECTION -> {
-        List<SqlExpression<?>> expressions = expressions();
-        if (expressions.size() != 1) {
+        if (compiledExpressions.size() != 1) {
           throw new QueryValidationException(
               "automatic count cannot preserve a multi-expression distinct result; provide an "
                   + "explicit count query");
         }
-        yield expressions.getFirst();
+        yield compiledExpressions.getFirst();
       }
     };
   }
@@ -151,9 +198,23 @@ final class SelectedResult<R> {
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
-  private ResolvedResultShape<R> entityShape(TableRuntimeScope scope, boolean nullable) {
+  private ResolvedResultShape<R> entityShape(
+      TableRuntimeScope scope, List<SqlExpression<?>> compiledExpressions, boolean nullable) {
+    if (!compiledExpressions.equals(requireTable().selections())) {
+      throw new QueryValidationException(
+          "compiled complete-entity selection does not match its table mapping");
+    }
     return (ResolvedResultShape)
         ResolvedResultShape.entity((QueryTable) requireTable(), scope, nullable);
+  }
+
+  @SuppressWarnings("unchecked")
+  private SqlExpression<R> singleExpression(List<SqlExpression<?>> compiledExpressions) {
+    if (compiledExpressions.size() != 1) {
+      throw new QueryValidationException(
+          "compiled scalar selection requires exactly one SQL expression");
+    }
+    return (SqlExpression<R>) compiledExpressions.getFirst();
   }
 
   private String scalarIdentity(String prefix) {

@@ -39,6 +39,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private final QueryParameters parameters;
   private final ExecutionContext executionContext;
   private volatile @Nullable QueryAnalysis analysis;
+  private volatile @Nullable QueryAnalysis countAnalysis;
   private final AtomicReference<@Nullable CachedPlan<R>> fastPlan = new AtomicReference<>();
   private final LocalPlanCache<R> plansByPagination = new LocalPlanCache<>();
   private final LocalPlanCache<OrderedRow<R>> orderedPlansByPagination = new LocalPlanCache<>();
@@ -246,6 +247,10 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private Slice<@Nullable R> fetchSliceResult(SliceRequest request) {
     Objects.requireNonNull(request, "request");
     validatePaginationOrder(false);
+    // Every Slice may need a continuation, including its first offset page.
+    for (SortSpecification item : state.orderBy()) {
+      requirePhysicalPaginationColumn(item);
+    }
     operations.validateRequestedRows(request.pageSize(), executionContext);
     return switch (request.mode()) {
       case OFFSET -> fetchOffsetSlice(request.offset(), request.pageSize());
@@ -359,10 +364,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   QueryCompilation<Long> countCompilation() {
-    QueryAnalysis queryAnalysis = analysis();
+    QueryAnalysis queryAnalysis = countAnalysis();
+    CompiledQueryStructure countStructure = queryAnalysis.structure();
+    List<@Nullable Object> countArguments = queryAnalysis.arguments();
+    Object countArgument = queryAnalysis.argument();
     CachedPlan<Long> existing = countPlan.get();
     if (existing != null) {
-      return new QueryCompilation<>(existing.plan(), queryAnalysis.argument(), existing.ast());
+      return new QueryCompilation<>(existing.plan(), countArgument, existing.ast());
     }
     QueryCompilation<Long> compiled =
         plans
@@ -371,13 +379,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                 plans.model(),
                 table(),
                 state.selected(),
-                queryAnalysis.structure(),
+                countStructure,
                 state.distinct(),
-                queryAnalysis.arguments());
+                countArguments);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     CachedPlan<Long> effective = published == null ? cached : published;
-    return new QueryCompilation<>(effective.plan(), queryAnalysis.argument(), effective.ast());
+    return new QueryCompilation<>(effective.plan(), countArgument, effective.ast());
   }
 
   private Object paginationArgument(QueryAnalysis queryAnalysis, QueryPagination pagination) {
@@ -488,11 +496,15 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (state.distinct()) {
       if (!hasStableDistinctOrdering()) {
         SqlExpression<?> missing =
-            state.selected().expressions().stream()
+            state.selected().expressionIdentities().stream()
                 .filter(
                     expression ->
                         state.orderBy().stream()
-                            .noneMatch(item -> item.expression().equals(expression)))
+                            .noneMatch(
+                                item ->
+                                    SelectableSupport.expressionIdentity(item.selectable())
+                                        .equals(expression)))
+                .map(SelectableSupport.ExpressionIdentity::expression)
                 .findFirst()
                 .orElseThrow();
         throw new QueryValidationException(
@@ -521,11 +533,16 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     if (!state.distinct()) {
       return false;
     }
-    List<SqlExpression<?>> expressions = state.selected().expressions();
+    List<SelectableSupport.ExpressionIdentity> expressions =
+        state.selected().expressionIdentities();
     return expressions.stream()
         .allMatch(
             expression ->
-                state.orderBy().stream().anyMatch(item -> item.expression().equals(expression)));
+                state.orderBy().stream()
+                    .anyMatch(
+                        item ->
+                            SelectableSupport.expressionIdentity(item.selectable())
+                                .equals(expression)));
   }
 
   private void validateOrderScope(FromClause fromClause) {
@@ -808,6 +825,26 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
             arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
         existing = new QueryAnalysis(structure, argument);
         analysis = existing;
+      }
+      return existing;
+    }
+  }
+
+  private QueryAnalysis countAnalysis() {
+    QueryAnalysis existing = countAnalysis;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = countAnalysis;
+      if (existing == null) {
+        analysis();
+        CompiledQueryStructure structure = state.countStructure();
+        List<@Nullable Object> arguments = structure.projectedArguments(parameters);
+        Object argument =
+            arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
+        existing = new QueryAnalysis(structure, argument);
+        countAnalysis = existing;
       }
       return existing;
     }

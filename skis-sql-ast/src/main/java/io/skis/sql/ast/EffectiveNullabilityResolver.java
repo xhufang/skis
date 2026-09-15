@@ -51,6 +51,7 @@ final class EffectiveNullabilityResolver {
       case InPredicate<?> in -> inNullability(in, nullExtendedTables);
       case InSubqueryPredicate<?> in -> inSubqueryNullability(in, nullExtendedTables);
       case ExistsPredicate ignored -> Nullability.NON_NULL;
+      case ScalarSubqueryExpression<?> ignored -> Nullability.NULLABLE;
       case NotPredicate not -> resolve(not.operand(), nullExtendedTables);
       case IncrementExpression<?> increment -> resolve(increment.operand(), nullExtendedTables);
       default ->

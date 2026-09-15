@@ -26,6 +26,7 @@ public final class H2Dialect implements Dialect {
           DialectFeature.CROSS_JOIN,
           DialectFeature.EXISTS_SUBQUERY,
           DialectFeature.IN_SUBQUERY,
+          DialectFeature.SCALAR_SUBQUERY,
           DialectFeature.CORRELATED_SUBQUERY);
 
   /** Stateless shared dialect instance. */

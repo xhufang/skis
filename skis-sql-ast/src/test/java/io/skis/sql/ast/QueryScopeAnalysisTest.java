@@ -474,6 +474,45 @@ class QueryScopeAnalysisTest {
   }
 
   @Test
+  void analyzesCorrelatedScalarSubqueriesAsNullableValueExpressions() {
+    PetTable outer = new PetTable().as("outer_pet");
+    PetTable inner = new PetTable().as("inner_pet");
+    SelectStatement child =
+        new SelectStatement(List.of(inner.name()), inner, inner.id().eq(outer.id()));
+    ScalarSubqueryExpression<String> scalar = new ScalarSubqueryExpression<>(child);
+    SelectStatement statement =
+        new SelectStatement(
+            false,
+            List.of(scalar),
+            List.of(),
+            outer,
+            new NullPredicate(scalar, NullOperator.IS_NULL),
+            List.of(outer.id()),
+            new ComparisonPredicate<>(scalar, ComparisonOperator.EQUAL, outer.name()),
+            List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+
+    assertEquals(4, analysis.nestedBlocks().size());
+    assertTrue(
+        analysis.nestedBlocks().stream()
+            .allMatch(
+                nested ->
+                    nested.kind() == QueryBlockAnalysis.NestedQueryKind.SCALAR_SUBQUERY
+                        && nested.analysis().correlated()));
+    assertEquals("$/SELECT[0]#0", analysis.nestedBlocks().get(0).analysis().path().toString());
+    assertEquals("$/WHERE[0]#0", analysis.nestedBlocks().get(1).analysis().path().toString());
+    assertEquals("$/HAVING[0]#0", analysis.nestedBlocks().get(2).analysis().path().toString());
+    assertEquals("$/ORDER BY[0]#0", analysis.nestedBlocks().get(3).analysis().path().toString());
+    assertTrue(
+        analysis.expressions().stream()
+            .filter(item -> item.position().clause() == QueryClause.SELECT)
+            .allMatch(item -> item.effectiveNullability() == Nullability.NULLABLE));
+    assertTrue(analysis.structureKey().canonicalForm().contains("SCALAR_SUBQUERY"));
+  }
+
+  @Test
   void validatesNestedParametersAsOneDenseStatementLayout() {
     PetTable outer = new PetTable().as("outer_pet");
     PetTable inner = new PetTable().as("inner_pet");

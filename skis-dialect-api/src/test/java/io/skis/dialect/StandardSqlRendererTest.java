@@ -34,7 +34,11 @@ import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
+import io.skis.sql.ast.NullOrder;
+import io.skis.sql.ast.OrderByItem;
+import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
@@ -172,6 +176,104 @@ class StandardSqlRendererTest {
     SqlRenderException missingCorrelation =
         assertThrows(SqlRenderException.class, () -> inOnly.render(correlated));
     assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
+  }
+
+  @Test
+  void distinguishesScalarSubqueryAndCorrelationCapabilities() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ScalarSubqueryExpression<String> uncorrelatedScalar =
+        new ScalarSubqueryExpression<>(new SelectStatement(List.of(inner.name()), inner));
+    SelectStatement uncorrelated =
+        new SelectStatement(List.of(outer.id(), uncorrelatedScalar), outer);
+
+    SqlRenderException missingScalar =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(uncorrelated));
+    assertTrue(missingScalar.getMessage().contains("SCALAR_SUBQUERY"));
+    assertTrue(missingScalar.getMessage().contains("$/SELECT[1]#0"));
+
+    SqlRenderer scalarOnly =
+        new StandardSqlRenderer(
+            "scalar-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.SCALAR_SUBQUERY));
+    assertTrue(scalarOnly.render(uncorrelated).sql().contains("(SELECT "));
+
+    SelectStatement correlatedChild =
+        new SelectStatement(List.of(inner.name()), inner, inner.id().eq(outer.id()));
+    SelectStatement correlated =
+        new SelectStatement(
+            List.of(outer.id(), new ScalarSubqueryExpression<>(correlatedChild)), outer);
+    SqlRenderException missingCorrelation =
+        assertThrows(SqlRenderException.class, () -> scalarOnly.render(correlated));
+    assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
+    assertTrue(missingCorrelation.getMessage().contains("$/SELECT[1]#0"));
+  }
+
+  @Test
+  void rejectsDistinctScalarOrderingWithIndependentLogicalParameters() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ScalarSubqueryExpression<String> selected =
+        new ScalarSubqueryExpression<>(
+            new SelectStatement(
+                List.of(inner.name()),
+                inner,
+                inner.name().eq(new ParameterSlot<>(0, String.class, true))));
+    ScalarSubqueryExpression<String> ordered =
+        new ScalarSubqueryExpression<>(
+            new SelectStatement(
+                List.of(inner.name()),
+                inner,
+                inner.name().eq(new ParameterSlot<>(1, String.class, true))));
+    SelectStatement statement =
+        new SelectStatement(
+            true,
+            List.of(selected),
+            List.of(),
+            outer,
+            null,
+            List.of(new OrderByItem(ordered, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+            null);
+    SqlRenderer renderer =
+        new StandardSqlRenderer(
+            "scalar-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> renderer.render(statement));
+    assertTrue(failure.getMessage().contains("same logical parameters"));
+  }
+
+  @Test
+  void rejectsDistinctScalarOutputNullOrderingWhenNativePlacementIsMissing() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ScalarSubqueryExpression<String> scalar =
+        new ScalarSubqueryExpression<>(new SelectStatement(List.of(inner.name()), inner));
+    SelectStatement statement =
+        new SelectStatement(
+            true,
+            List.of(scalar),
+            List.of(),
+            outer,
+            null,
+            List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+    SqlRenderer renderer =
+        new StandardSqlRenderer(
+            "scalar-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> renderer.render(statement));
+    assertTrue(failure.getMessage().contains("requires native NULLS FIRST/LAST"));
   }
 
   @Test
