@@ -1237,7 +1237,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class, () -> ((DefaultCountQuery) count).compilation());
 
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertTrue(failure.getMessage().contains("not visible in the current or any ancestor"));
   }
 
   @Test
@@ -1319,7 +1319,7 @@ class JoinQueryDslTest {
             QueryValidationException.class,
             () -> operations().query(description, QueryParameters.of(name, "Ada")).fetchList());
 
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertTrue(failure.getMessage().contains("not visible in the current or any ancestor"));
   }
 
   @Test
@@ -1439,7 +1439,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () -> operations().query(description, QueryParameters.of(name, "Ada")).fetchList());
-    assertTrue(failure.getMessage().contains("ORDER_BY[0]"));
+    assertTrue(failure.getMessage().contains("ORDER BY[0]"));
     assertTrue(failure.getMessage().contains("not visible"));
   }
 
