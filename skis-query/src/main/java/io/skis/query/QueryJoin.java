@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
+import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
@@ -34,26 +35,59 @@ final class QueryStructureCompiler {
 
   static CompiledQueryStructure compile(
       QueryTable<?> root, List<QueryJoin> joins, @Nullable QueryCondition where) {
-    StatementParameterLayout layout = new StatementParameterLayout();
+    return compile(root, joins, where, true);
+  }
+
+  private static CompiledQueryStructure compile(
+      QueryTable<?> root,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition where,
+      boolean retainOriginalExpressions) {
+    StatementParameterLayout layout =
+        new StatementParameterLayout(retainOriginalExpressions);
     QueryParameterBindings bindings = new QueryParameterBindings();
-    CompiledBlock block = compileBlock(root, joins, where, List.of(), null, layout, bindings);
-    return complete(block, layout, bindings);
+    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
+    CompiledBlock block = compileBlock(root, joins, where, List.of(), null, compiler);
+    CompiledQueryStructure structure = complete(List.of(), block, List.of(), layout, bindings);
+    return layout.requiresRewrite()
+        ? compile(root, joins, where, false).withValidationSource(structure)
+        : structure;
   }
 
   static CompiledQueryStructure compile(SelectQueryState<?> state) {
+    return compile(state, true);
+  }
+
+  private static CompiledQueryStructure compile(
+      SelectQueryState<?> state, boolean retainOriginalExpressions) {
     Objects.requireNonNull(state, "state");
-    StatementParameterLayout layout = new StatementParameterLayout();
+    StatementParameterLayout layout =
+        new StatementParameterLayout(retainOriginalExpressions);
     QueryParameterBindings bindings = new QueryParameterBindings();
+    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
+    List<SqlExpression<?>> selections = state.selected().compileExpressions(compiler);
     CompiledBlock block =
         compileBlock(
-            state.root(),
-            state.joins(),
-            state.where(),
-            state.groupBy(),
-            state.having(),
-            layout,
-            bindings);
-    return complete(block, layout, bindings);
+            state.root(), state.joins(), state.where(), state.groupBy(), state.having(), compiler);
+    List<OrderByItem> orderBy = compileOrderBy(state, selections, compiler);
+    CompiledQueryStructure structure = complete(selections, block, orderBy, layout, bindings);
+    return layout.requiresRewrite()
+        ? compile(state, false).withValidationSource(structure)
+        : structure;
+  }
+
+  static CompiledQueryStructure compileCount(SelectQueryState<?> state) {
+    Objects.requireNonNull(state, "state");
+    StatementParameterLayout layout = new StatementParameterLayout(false);
+    QueryParameterBindings bindings = new QueryParameterBindings();
+    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
+    List<SqlExpression<?>> selections =
+        state.distinct() ? state.selected().compileExpressions(compiler) : List.of();
+    CompiledBlock block =
+        compileBlock(
+            state.root(), state.joins(), state.where(), state.groupBy(), state.having(), compiler);
+    return complete(selections, block, List.of(), layout, bindings)
+        .withValidationSource(state.structure().validationStructure());
   }
 
   static SelectStatement compileSubquery(
@@ -66,25 +100,22 @@ final class QueryStructureCompiler {
       throw new QueryValidationException(
           "embedded SELECT descriptions do not yet support SQL pagination");
     }
+    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
+    List<SqlExpression<?>> selections = state.selected().compileExpressions(compiler);
     CompiledBlock block =
         compileBlock(
-            state.root(),
-            state.joins(),
-            state.where(),
-            state.groupBy(),
-            state.having(),
-            layout,
-            bindings);
+            state.root(), state.joins(), state.where(), state.groupBy(), state.having(), compiler);
+    List<OrderByItem> orderBy = compileOrderBy(state, selections, compiler);
     try {
       return new SelectStatement(
           state.distinct(),
-          state.selected().expressions(),
+          selections,
           List.of(),
           block.fromClause(),
           block.where(),
           block.groupBy(),
           block.having(),
-          state.orderBy().stream().map(SortSpecification::ast).toList(),
+          orderBy,
           null);
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
@@ -97,12 +128,10 @@ final class QueryStructureCompiler {
       @Nullable QueryCondition where,
       List<Selectable<?>> groupBy,
       @Nullable QueryCondition having,
-      StatementParameterLayout layout,
-      QueryParameterBindings bindings) {
+      QueryConditionCompiler compiler) {
     Objects.requireNonNull(root, "root");
     Objects.requireNonNull(joins, "joins");
     Objects.requireNonNull(groupBy, "groupBy");
-    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
     List<JoinClause> joinAst = new ArrayList<>(joins.size());
     try {
       for (QueryJoin join : joins) {
@@ -110,8 +139,10 @@ final class QueryStructureCompiler {
         joinAst.add(new JoinClause(join.type(), join.right(), on));
       }
       SqlPredicate whereAst = where == null ? null : QueryConditions.compile(where, compiler);
-      List<SqlExpression<?>> groupByAst =
-          groupBy.stream().<SqlExpression<?>>map(Selectable::expression).toList();
+      List<SqlExpression<?>> groupByAst = new ArrayList<>(groupBy.size());
+      for (Selectable<?> item : groupBy) {
+        groupByAst.add(compiler.expression(item));
+      }
       SqlPredicate havingAst = having == null ? null : QueryConditions.compile(having, compiler);
       return new CompiledBlock(new FromClause(root, joinAst), whereAst, groupByAst, havingAst);
     } catch (IllegalArgumentException failure) {
@@ -120,16 +151,52 @@ final class QueryStructureCompiler {
   }
 
   private static CompiledQueryStructure complete(
-      CompiledBlock block, StatementParameterLayout layout, QueryParameterBindings bindings) {
+      List<SqlExpression<?>> selections,
+      CompiledBlock block,
+      List<OrderByItem> orderBy,
+      StatementParameterLayout layout,
+      QueryParameterBindings bindings) {
     return new CompiledQueryStructure(
         block.fromClause(),
+        selections,
         block.where(),
         block.groupBy(),
         block.having(),
+        orderBy,
         layout.parameterSources(),
         layout.parameterReferences(),
         layout.parameterSlots(),
-        bindings.parameters());
+        bindings.parameters(),
+        null);
+  }
+
+  private static List<OrderByItem> compileOrderBy(
+      SelectQueryState<?> state,
+      List<SqlExpression<?>> selections,
+      QueryConditionCompiler compiler) {
+    List<OrderByItem> result = new ArrayList<>(state.orderBy().size());
+    List<SelectableSupport.ExpressionIdentity> selectedIdentities =
+        state.distinct() ? state.selected().expressionIdentities() : List.of();
+    for (SortSpecification specification : state.orderBy()) {
+      if (state.distinct()
+          && specification.selectable() instanceof ScalarSubquerySelectable<?>) {
+        int selectedIndex =
+            selectedIdentities.indexOf(
+                SelectableSupport.expressionIdentity(specification.selectable()));
+        if (selectedIndex >= 0) {
+          if (compiler.releaseOriginalExpressions()) {
+            // DISTINCT scalar ordering renders the selected output ordinal. Reuse its final
+            // expression/slots so no parameters exist only in the omitted ORDER BY subtree.
+            result.add(specification.ast(selections.get(selectedIndex)));
+            continue;
+          }
+          // Preserve the original ordering occurrence for scope validation before sharing it.
+          compiler.recordSelectedOrdering();
+        }
+      }
+      result.add(specification.ast(compiler.expression(specification.selectable())));
+    }
+    return List.copyOf(result);
   }
 
   private record CompiledBlock(
@@ -147,17 +214,22 @@ final class QueryStructureCompiler {
 
 record CompiledQueryStructure(
     FromClause fromClause,
+    List<SqlExpression<?>> selections,
     @Nullable SqlPredicate where,
     List<SqlExpression<?>> groupBy,
     @Nullable SqlPredicate having,
+    List<OrderByItem> orderBy,
     List<Selectable<?>> parameterSources,
     List<QueryParameter<?>> parameterReferences,
     List<ParameterSlot<?>> parameterSlots,
-    QueryParameters parameters) {
+    QueryParameters parameters,
+    @Nullable CompiledQueryStructure validationSource) {
 
   CompiledQueryStructure {
     Objects.requireNonNull(fromClause, "fromClause");
+    selections = List.copyOf(selections);
     groupBy = List.copyOf(groupBy);
+    orderBy = List.copyOf(orderBy);
     parameterSources = List.copyOf(parameterSources);
     parameterReferences = List.copyOf(parameterReferences);
     parameterSlots = List.copyOf(parameterSlots);
@@ -183,24 +255,52 @@ record CompiledQueryStructure(
       QueryParameters parameters) {
     this(
         fromClause,
+        List.of(),
         where,
         List.of(),
         null,
+        List.of(),
         parameterSources,
         parameterReferences,
         parameterSlots,
-        parameters);
+        parameters,
+        null);
+  }
+
+  CompiledQueryStructure withValidationSource(CompiledQueryStructure source) {
+    return new CompiledQueryStructure(
+        fromClause,
+        selections,
+        where,
+        groupBy,
+        having,
+        orderBy,
+        parameterSources,
+        parameterReferences,
+        parameterSlots,
+        parameters,
+        Objects.requireNonNull(source, "source").validationStructure());
+  }
+
+  /** Complete source retained for checks before operands are removed or ordering reuses a selection. */
+  CompiledQueryStructure validationStructure() {
+    return validationSource == null ? this : validationSource;
   }
 
   List<@Nullable Object> arguments() {
-    parameters.validateFor(parameterReferences);
-    return parameters.valuesFor(parameterReferences);
+    QueryParameters supplied = validationStructure().parameters();
+    return arguments(supplied);
   }
 
   List<@Nullable Object> arguments(QueryParameters suppliedParameters) {
     Objects.requireNonNull(suppliedParameters, "suppliedParameters");
-    suppliedParameters.validateFor(parameterReferences);
+    suppliedParameters.validateFor(validationStructure().parameterReferences());
     return suppliedParameters.valuesFor(parameterReferences);
+  }
+
+  List<@Nullable Object> projectedArguments(QueryParameters validatedParameters) {
+    return Objects.requireNonNull(validatedParameters, "validatedParameters")
+        .valuesFor(parameterReferences);
   }
 
   @Override
@@ -208,15 +308,19 @@ record CompiledQueryStructure(
     return this == other
         || other instanceof CompiledQueryStructure structure
             && fromClause.equals(structure.fromClause)
+            && selections.equals(structure.selections)
             && Objects.equals(where, structure.where)
             && groupBy.equals(structure.groupBy)
-            && Objects.equals(having, structure.having);
+            && Objects.equals(having, structure.having)
+            && orderBy.equals(structure.orderBy);
   }
 
   @Override
   public int hashCode() {
-    int result = 31 * fromClause.hashCode() + Objects.hashCode(where);
+    int result = 31 * fromClause.hashCode() + selections.hashCode();
+    result = 31 * result + Objects.hashCode(where);
     result = 31 * result + groupBy.hashCode();
-    return 31 * result + Objects.hashCode(having);
+    result = 31 * result + Objects.hashCode(having);
+    return 31 * result + orderBy.hashCode();
   }
 }

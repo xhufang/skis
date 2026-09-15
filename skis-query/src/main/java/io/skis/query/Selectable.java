@@ -13,7 +13,8 @@ import org.jspecify.annotations.Nullable;
  * Generated columns and framework-created standard expressions share this contract so selection,
  * predicates, ordering, and generated projections do not need expression-specific API families.
  */
-public sealed interface Selectable<V> permits ExpressionSelectable, NonNullSelectable, QueryColumn {
+public sealed interface Selectable<V>
+    permits ExpressionSelectable, NonNullSelectable, QueryColumn, ScalarSubquerySelectable {
 
   /** Returns the boxed Java value type produced by this expression. */
   Class<V> javaType();

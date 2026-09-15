@@ -47,8 +47,12 @@ public final class SortSpecification {
   }
 
   OrderByItem ast() {
+    return ast(expression());
+  }
+
+  OrderByItem ast(SqlExpression<?> compiledExpression) {
     return new OrderByItem(
-        expression(),
+        Objects.requireNonNull(compiledExpression, "compiledExpression"),
         direction == SortDirection.ASC ? OrderDirection.ASC : OrderDirection.DESC,
         switch (nullPlacement) {
           case DIALECT_DEFAULT -> NullOrder.DIALECT_DEFAULT;
@@ -68,14 +72,16 @@ public final class SortSpecification {
   public boolean equals(Object other) {
     return this == other
         || other instanceof SortSpecification specification
-            && expression().equals(specification.expression())
+            && SelectableSupport.expressionIdentity(selectable)
+                .equals(SelectableSupport.expressionIdentity(specification.selectable))
             && direction == specification.direction
             && nullPlacement == specification.nullPlacement;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(expression(), direction, nullPlacement);
+    return Objects.hash(
+        SelectableSupport.expressionIdentity(selectable), direction, nullPlacement);
   }
 
   @Override

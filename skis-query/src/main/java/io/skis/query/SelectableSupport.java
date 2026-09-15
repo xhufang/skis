@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.NullOperator;
+import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -159,6 +160,23 @@ final class SelectableSupport {
           && leftColumn.property() == rightColumn.property();
     }
     return left == right;
+  }
+
+  static ExpressionIdentity expressionIdentity(Selectable<?> selectable) {
+    return new ExpressionIdentity(
+        selectable.expression(),
+        selectable instanceof ScalarSubquerySelectable<?> scalar
+            ? scalar.parameterReferences()
+            : List.of());
+  }
+
+  /** Local expression equality retains query references erased by standalone JDBC slot layout. */
+  record ExpressionIdentity(SqlExpression<?> expression, List<QueryParameter<?>> parameters) {
+
+    ExpressionIdentity {
+      Objects.requireNonNull(expression, "expression");
+      parameters = List.copyOf(parameters);
+    }
   }
 
   private static <V> List<V> copyValues(

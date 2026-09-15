@@ -15,14 +15,17 @@ import java.util.Objects;
 /** Immutable query-local mapping from stable table occurrences to generated runtime models. */
 final class TableRuntimeScope {
 
+  private final EntityRuntimeRegistry registry;
   private final FromClause fromClause;
   private final List<Occurrence<?>> occurrences;
   private final IdentityHashMap<TableExpression<?>, Integer> ordinalsByTable;
 
   private TableRuntimeScope(
+      EntityRuntimeRegistry registry,
       FromClause fromClause,
       List<Occurrence<?>> occurrences,
       IdentityHashMap<TableExpression<?>, Integer> ordinalsByTable) {
+    this.registry = Objects.requireNonNull(registry, "registry");
     this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
     this.occurrences = List.copyOf(occurrences);
     this.ordinalsByTable = ordinalsByTable;
@@ -54,7 +57,11 @@ final class TableRuntimeScope {
       occurrences.add(resolved);
       indexed.put(table, occurrence.occurrenceOrdinal());
     }
-    return new TableRuntimeScope(fromClause, occurrences, indexed);
+    return new TableRuntimeScope(registry, fromClause, occurrences, indexed);
+  }
+
+  EntityRuntimeRegistry registry() {
+    return registry;
   }
 
   <E> Occurrence<E> require(QueryTable<E> table) {

@@ -1,6 +1,6 @@
 # 0.2.5 API compatibility ledger
 
-This ledger records the public API differences approved for steps 1, 3, 4, 5, 6, and 7 of the internal
+This ledger records the public API differences approved for steps 1, 3, 4, 5, 6, 7, and 8 of the internal
 `0.2.5-SNAPSHOT` milestone. It is not the consolidated compatibility report for the unfinished
 `0.2.x` development line. The root `pom.xml` japicmp allow-list names each approved class or
 method so unrelated public API breaks continue to fail compatibility checks.
@@ -219,3 +219,34 @@ Either nullable side makes the Boolean result conservatively nullable. SQL evalu
 the outer statement: SKIS does not materialize values, remove NULLs, deduplicate, add CASTs, or
 rewrite IN/NOT IN to Join/EXISTS. This preserves the empty-child, NULL, duplicate, and NOT IN versus
 NOT EXISTS contracts.
+
+## Step 8: scalar subqueries
+
+### Added API
+
+- `ScalarSubqueryExpression<T>` represents a complete SELECT subtree as one SQL value and validates
+  that its final visible plus hidden physical output count is exactly one.
+- `Sql.scalar(SingleColumnSelect<V>)` returns a `Selectable<V>`; its public type is deliberately
+  nullable and cannot be assigned to `NonNullSelectable<V>`.
+- `DialectFeature.SCALAR_SUBQUERY` independently declares scalar-subquery syntax. PostgreSQL and H2
+  enable it; correlated scalar expressions additionally require `CORRELATED_SUBQUERY`.
+- `QueryBlockAnalysis.NestedQueryKind.SCALAR_SUBQUERY` distinguishes scalar child occurrences in
+  recursive analysis and structure keys.
+
+### Validation and execution behavior
+
+The child selection supplies the boxed Java type, portable SQL type, and result Codec. The scalar
+boundary always has nullable effective nullability because a zero-row child evaluates to SQL NULL;
+there is no non-null assertion overload. A generated projection must therefore declare the target
+parameter nullable. The outer result mapping reads the scalar's physical result column directly and
+does not run the child's result decoder.
+
+Zero rows and one NULL row both evaluate to NULL, one non-null row evaluates to its value, and more
+than one row remains a database cardinality error. No limit, preflight query, Java materialization,
+or first-row truncation is introduced. Driver failures continue through the existing query exception
+translation with SQLState, vendor code, cause, and cleanup failures preserved.
+
+DISTINCT ordering by a selected scalar uses the selected output's one-based SQL position, retaining
+its parameter slots instead of generating a second parameterized subquery. The original ordering
+occurrence is validated before reuse. This fixes PostgreSQL DISTINCT matching without changing the
+public DSL, AST constructors, or generated ABI; independent parameter references remain distinct.

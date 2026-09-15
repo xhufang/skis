@@ -3,7 +3,6 @@ package io.skis.query;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.JoinType;
-import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -24,6 +23,7 @@ final class SelectQueryState<R> {
   private final boolean distinct;
   private final SqlPaginationStructure sqlPagination;
   private volatile @Nullable CompiledQueryStructure structure;
+  private volatile @Nullable CompiledQueryStructure countStructure;
 
   static <R> SelectQueryState<R> create(SelectedResult<R> selected, QueryTable<?> root) {
     return new SelectQueryState<>(
@@ -104,9 +104,9 @@ final class SelectQueryState<R> {
     if (!distinct || orderBy.isEmpty()) {
       return;
     }
-    List<SqlExpression<?>> expressions = selected.expressions();
+    List<SelectableSupport.ExpressionIdentity> expressions = selected.expressionIdentities();
     for (SortSpecification item : orderBy) {
-      if (!expressions.contains(item.expression())) {
+      if (!expressions.contains(SelectableSupport.expressionIdentity(item.selectable()))) {
         throw new QueryValidationException(
             "distinct ORDER BY expression '"
                 + SelectableSupport.summary(item.selectable())
@@ -201,6 +201,21 @@ final class SelectQueryState<R> {
     }
   }
 
+  CompiledQueryStructure countStructure() {
+    CompiledQueryStructure existing = countStructure;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = countStructure;
+      if (existing == null) {
+        existing = QueryStructureCompiler.compileCount(this);
+        countStructure = existing;
+      }
+      return existing;
+    }
+  }
+
   private SelectQueryState<R> copy(
       List<QueryJoin> newJoins,
       @Nullable QueryCondition newWhere,
@@ -238,10 +253,10 @@ final class SelectQueryState<R> {
     if (items.isEmpty()) {
       throw new QueryValidationException("orderBy requires at least one ordering item");
     }
-    Set<io.skis.sql.ast.SqlExpression<?>> expressions = new HashSet<>();
+    Set<SelectableSupport.ExpressionIdentity> expressions = new HashSet<>();
     for (SortSpecification item : items) {
       Objects.requireNonNull(item, "ordering item");
-      if (!expressions.add(item.expression())) {
+      if (!expressions.add(SelectableSupport.expressionIdentity(item.selectable()))) {
         throw new QueryValidationException(
             "ORDER BY repeats expression '" + SelectableSupport.summary(item.selectable()) + "'");
       }

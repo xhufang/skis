@@ -68,6 +68,9 @@ final class QueryPlanCompiler {
       EntityRuntimeModel<E> model, QueryTable<E> table, CompiledQueryStructure structure) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
+    if (structure.validationSource() != null) {
+      validateSelectionSource(SelectedResult.entity(table), structure, false);
+    }
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     SelectStatement statement =
@@ -117,39 +120,27 @@ final class QueryPlanCompiler {
       List<@Nullable Object> conditionArguments) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
+    validateSelectionSource(selected, structure, distinct);
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
-    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
+    SqlExpression<?> distinctExpression = null;
+    if (distinct) {
+      List<SqlExpression<?>> compiledSelections = selectionExpressions(structure, selected);
+      ResolvedResultShape<R> selection = selected.resolve(runtimeScope, compiledSelections);
+      distinctExpression =
+          selected.automaticDistinctCountExpression(
+              !structure.fromClause().joins().isEmpty(), selection.expressions());
+    }
     return compileResolvedCount(
-        model,
-        structure,
-        runtimeScope,
-        selection,
-        conditionArguments,
-        distinct
-            ? selected.automaticDistinctCountExpression(!structure.fromClause().joins().isEmpty())
-            : null);
+        model, structure, runtimeScope, conditionArguments, distinctExpression);
   }
 
-  private <E, R> QueryCompilation<Long> compileResolvedCount(
+  private <E> QueryCompilation<Long> compileResolvedCount(
       EntityRuntimeModel<E> model,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
-      ResolvedResultShape<R> selection,
       List<@Nullable Object> conditionArguments,
       @Nullable SqlExpression<?> distinctExpression) {
-    validatedStatement(
-        () ->
-            new SelectStatement(
-                false,
-                selection.expressions(),
-                List.of(),
-                structure.fromClause(),
-                structure.where(),
-                structure.groupBy(),
-                structure.having(),
-                List.of(),
-                null));
     if (!structure.groupBy().isEmpty() || structure.having() != null) {
       throw new QueryValidationException(
           "countQuery does not yet support GROUP BY or HAVING descriptions");
@@ -184,9 +175,13 @@ final class QueryPlanCompiler {
       List<@Nullable Object> conditionArguments) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
+    if (structure.validationSource() != null) {
+      validateSelectionSource(selected, structure, distinct);
+    }
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
-    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
+    ResolvedResultShape<R> selection =
+        selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     return compileResolvedOrdered(
         model,
         structure,
@@ -207,10 +202,11 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryPagination pagination,
       List<@Nullable Object> conditionArguments) {
+    List<OrderByItem> compiledOrder = orderItems(structure, orderBy);
     List<HiddenSelection> hidden = new ArrayList<>();
     int[] indexes = new int[orderBy.size()];
     for (int index = 0; index < orderBy.size(); index++) {
-      SqlExpression<?> expression = orderBy.get(index).expression();
+      SqlExpression<?> expression = compiledOrder.get(index).expression();
       int visibleIndex = selection.expressions().indexOf(expression);
       if (visibleIndex >= 0) {
         indexes[index] = visibleIndex + 1;
@@ -224,8 +220,12 @@ final class QueryPlanCompiler {
       }
     }
     List<ResolvedValueMapping<?>> resolvedOrderMappings = new ArrayList<>(orderBy.size());
-    for (SortSpecification item : orderBy) {
-      resolvedOrderMappings.add(ResolvedValueMapping.resolve(item.selectable(), runtimeScope));
+    for (int index = 0; index < orderBy.size(); index++) {
+      resolvedOrderMappings.add(
+          resolveValueMapping(
+              orderBy.get(index).selectable(),
+              compiledOrder.get(index).expression(),
+              runtimeScope));
     }
     List<ResolvedValueMapping<?>> orderMappings = List.copyOf(resolvedOrderMappings);
     RowDecoder<OrderedRow<R>> decoder =
@@ -303,9 +303,13 @@ final class QueryPlanCompiler {
       List<@Nullable Object> conditionArguments) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
+    if (structure.validationSource() != null) {
+      validateSelectionSource(selected, structure, distinct);
+    }
     TableRuntimeScope runtimeScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
-    ResolvedResultShape<R> selection = selected.resolve(runtimeScope);
+    ResolvedResultShape<R> selection =
+        selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     return compileResolvedSelection(
         model,
         structure,
@@ -328,9 +332,9 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       List<HiddenSelection> hidden,
       List<@Nullable Object> conditionArguments) {
-    List<OrderByItem> orderAst = orderBy.stream().map(SortSpecification::ast).toList();
+    List<OrderByItem> orderAst = orderItems(structure, orderBy);
     InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure, conditionArguments);
-    SelectPagination paginationAst = inputs.pagination(orderBy, pagination);
+    SelectPagination paginationAst = inputs.pagination(orderBy, orderAst, pagination);
     SelectStatement statement =
         constructedStatement(
             () ->
@@ -347,6 +351,55 @@ final class QueryPlanCompiler {
     CompiledQueryPlan<R, Object> plan =
         compilePlan(model, statement, inputs.logicalParameters(), selection.decoder());
     return new QueryCompilation<>(plan, inputs.argument(), statement);
+  }
+
+  private static List<SqlExpression<?>> selectionExpressions(
+      CompiledQueryStructure structure, SelectedResult<?> selected) {
+    return structure.selections().isEmpty() ? selected.expressions() : structure.selections();
+  }
+
+  /** Validates original scopes before count, empty-IN pruning, or selected scalar ordering reuse. */
+  private void validateSelectionSource(
+      SelectedResult<?> selected, CompiledQueryStructure structure, boolean distinct) {
+    CompiledQueryStructure source = structure.validationStructure();
+    TableRuntimeScope scope = TableRuntimeScope.resolve(runtimeRegistry, source.fromClause());
+    List<SqlExpression<?>> expressions = selectionExpressions(source, selected);
+    selected.resolve(scope, expressions);
+    try {
+      SelectStatement statement =
+          new SelectStatement(
+              distinct,
+              expressions,
+              List.of(),
+              source.fromClause(),
+              source.where(),
+              source.groupBy(),
+              source.having(),
+              source.orderBy(),
+              null);
+      SemanticValidator.validateComplete(statement);
+      dialect.validate(statement);
+    } catch (IllegalArgumentException failure) {
+      throw new QueryValidationException(failure.getMessage(), failure);
+    }
+  }
+
+  private static List<OrderByItem> orderItems(
+      CompiledQueryStructure structure, List<SortSpecification> specifications) {
+    if (structure.orderBy().isEmpty()) {
+      return specifications.stream().map(SortSpecification::ast).toList();
+    }
+    if (structure.orderBy().size() != specifications.size()) {
+      throw new QueryValidationException(
+          "compiled ORDER BY item count does not match the query description");
+    }
+    return structure.orderBy();
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static ResolvedValueMapping<?> resolveValueMapping(
+      Selectable<?> selectable, SqlExpression<?> expression, TableRuntimeScope scope) {
+    return ResolvedValueMapping.resolve((Selectable) selectable, (SqlExpression) expression, scope);
   }
 
   private <E, R> CompiledQueryPlan<R, Object> compilePlanFromProperties(
@@ -446,15 +499,6 @@ final class QueryPlanCompiler {
                 + " but found "
                 + parameter.descriptor().ordinal());
       }
-    }
-  }
-
-  private static <S extends StatementAst> void validatedStatement(Supplier<S> factory) {
-    try {
-      S statement = factory.get();
-      SemanticValidator.validateComplete(statement);
-    } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
     }
   }
 
@@ -658,20 +702,28 @@ final class QueryPlanCompiler {
     }
 
     private @Nullable SelectPagination pagination(
-        List<SortSpecification> orderBy, QueryPagination pagination) {
+        List<SortSpecification> orderBy,
+        List<OrderByItem> compiledOrder,
+        QueryPagination pagination) {
       return switch (pagination) {
         case QueryPagination.None ignored -> null;
         case QueryPagination.LimitOnly limit -> new Limit(addInteger(limit.limit()));
         case QueryPagination.Offset offset ->
             new OffsetLimit(addInteger(offset.limit()), addLong(offset.offset()));
         case QueryPagination.Keyset keyset ->
-            new KeysetSeek(keysetPredicate(orderBy, keyset.values()), addInteger(keyset.limit()));
+            new KeysetSeek(
+                keysetPredicate(orderBy, compiledOrder, keyset.values()),
+                addInteger(keyset.limit()));
       };
     }
 
     private SqlPredicate keysetPredicate(
-        List<SortSpecification> orderBy, List<@Nullable Object> values) {
-      if (orderBy.size() != values.size() || orderBy.isEmpty()) {
+        List<SortSpecification> orderBy,
+        List<OrderByItem> compiledOrder,
+        List<@Nullable Object> values) {
+      if (orderBy.size() != values.size()
+          || compiledOrder.size() != orderBy.size()
+          || orderBy.isEmpty()) {
         throw new QueryValidationException(
             "keyset continuation value count must match a non-empty ORDER BY");
       }
@@ -680,9 +732,10 @@ final class QueryPlanCompiler {
       boolean[] nullable = new boolean[values.size()];
       for (int index = 0; index < values.size(); index++) {
         SortSpecification sort = orderBy.get(index);
+        SqlExpression<?> expression = compiledOrder.get(index).expression();
         Object value = values.get(index);
         ResolvedValueMapping<?> mapping =
-            ResolvedValueMapping.resolve(sort.selectable(), runtimeScope);
+            resolveValueMapping(sort.selectable(), expression, runtimeScope);
         nullable[index] = mapping.effectiveNullability().isNullable();
         if (nullable[index] && sort.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw new QueryValidationException(
@@ -711,13 +764,23 @@ final class QueryPlanCompiler {
       List<SqlPredicate> disjunctions = new ArrayList<>();
       for (int index = 0; index < orderBy.size(); index++) {
         SqlPredicate after =
-            after(orderBy.get(index), values.get(index), slots[index], nullable[index]);
+            after(
+                orderBy.get(index),
+                compiledOrder.get(index).expression(),
+                values.get(index),
+                slots[index],
+                nullable[index]);
         if (after == null) {
           continue;
         }
         List<SqlPredicate> conjunctions = new ArrayList<>(index + 1);
         for (int prefix = 0; prefix < index; prefix++) {
-          conjunctions.add(equal(orderBy.get(prefix), values.get(prefix), slots[prefix]));
+          conjunctions.add(
+              equal(
+                  orderBy.get(prefix),
+                  compiledOrder.get(prefix).expression(),
+                  values.get(prefix),
+                  slots[prefix]));
         }
         conjunctions.add(after);
         disjunctions.add(combine(LogicalOperator.AND, conjunctions));
@@ -795,8 +858,10 @@ final class QueryPlanCompiler {
     }
 
     private static SqlPredicate equal(
-        SortSpecification sort, @Nullable Object value, @Nullable ParameterSlot<Object> slot) {
-      SqlExpression<?> expression = sort.expression();
+        SortSpecification sort,
+        SqlExpression<?> expression,
+        @Nullable Object value,
+        @Nullable ParameterSlot<Object> slot) {
       return value == null
           ? new NullPredicate(expression, NullOperator.IS_NULL)
           : comparison(expression, ComparisonOperator.EQUAL, Objects.requireNonNull(slot, "slot"));
@@ -804,10 +869,10 @@ final class QueryPlanCompiler {
 
     private static @Nullable SqlPredicate after(
         SortSpecification sort,
+        SqlExpression<?> expression,
         @Nullable Object value,
         @Nullable ParameterSlot<Object> slot,
         boolean nullable) {
-      SqlExpression<?> expression = sort.expression();
       if (value == null) {
         return sort.nullPlacement() == NullPlacement.FIRST
             ? new NullPredicate(expression, NullOperator.IS_NOT_NULL)

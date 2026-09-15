@@ -313,6 +313,27 @@ public final class SemanticValidator {
     }
   }
 
+  /** Validates one SQL scalar-subquery output contract without requiring a parent scope. */
+  static void validateScalarSubquery(SelectStatement subquery) {
+    Objects.requireNonNull(subquery, "subquery");
+    int physicalOutputs = subquery.selections().size() + subquery.hiddenSelections().size();
+    if (physicalOutputs != 1) {
+      throw new IllegalArgumentException(
+          "scalar subquery requires exactly one physical output column but received "
+              + physicalOutputs
+              + " ("
+              + subquery.selections().size()
+              + " visible, "
+              + subquery.hiddenSelections().size()
+              + " hidden)");
+    }
+    SqlExpression<?> output = subquery.selections().getFirst();
+    if (output.javaType().isPrimitive()) {
+      throw new IllegalArgumentException(
+          "scalar subquery output must use a boxed Java type because a zero-row result is NULL");
+    }
+  }
+
   static void validateArithmetic(
       SqlExpression<?> left, ArithmeticOperator operator, SqlExpression<?> right) {
     Objects.requireNonNull(operator, "operator");
@@ -610,6 +631,14 @@ public final class SemanticValidator {
                 clause + " uses an EXISTS subquery outside a SELECT query block");
           }
           validateLocal(exists.subquery());
+        }
+        case ScalarSubqueryExpression<?> scalar -> {
+          validateScalarSubquery(scalar.subquery());
+          if (validatesQueryContext) {
+            throw new IllegalArgumentException(
+                clause + " uses a scalar subquery outside a SELECT query block");
+          }
+          validateLocal(scalar.subquery());
         }
         case NotPredicate not -> validateExpression(not.operand(), clause);
         case IncrementExpression<?> increment -> {

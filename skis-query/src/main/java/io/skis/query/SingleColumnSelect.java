@@ -27,6 +27,10 @@ public class SingleColumnSelect<V> extends SelectDescription<V> {
     return (SqlExpression<V>) expression;
   }
 
+  final Selectable<V> valueSelectable() {
+    return state().selected().singleSelectable();
+  }
+
   @Override
   public SingleColumnSelect<V> where(QueryCondition condition) {
     return require(super.where(condition));
@@ -97,7 +101,6 @@ public class SingleColumnSelect<V> extends SelectDescription<V> {
         state(), type, Objects.requireNonNull(table, "table"));
   }
 
-  @SuppressWarnings("unchecked")
   private SingleColumnSelect<V> require(SelectDescription<V> description) {
     return (SingleColumnSelect<V>) description;
   }

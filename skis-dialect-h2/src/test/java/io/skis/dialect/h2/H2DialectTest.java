@@ -32,6 +32,7 @@ import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
@@ -58,6 +59,7 @@ class H2DialectTest {
     assertTrue(dialect.capabilities().supports(DialectFeature.NULLS_FIRST_LAST));
     assertTrue(dialect.capabilities().supports(DialectFeature.EXISTS_SUBQUERY));
     assertTrue(dialect.capabilities().supports(DialectFeature.IN_SUBQUERY));
+    assertTrue(dialect.capabilities().supports(DialectFeature.SCALAR_SUBQUERY));
     assertTrue(dialect.capabilities().supports(DialectFeature.CORRELATED_SUBQUERY));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
@@ -254,6 +256,70 @@ class H2DialectTest {
             + "\"inner_pet\".\"id\" > ?)",
         rendered.sql());
     assertEquals(List.of(minimum, minimum), rendered.parameters());
+  }
+
+  @Test
+  void rendersCorrelatedScalarSubqueryGoldenSql() {
+    PetAstTable outer = PetAstTable.PET.as("outer_pet");
+    PetAstTable inner = PetAstTable.PET.as("inner_pet");
+    ParameterSlot<String> name = new ParameterSlot<>(0, String.class, true);
+    SelectStatement child =
+        new SelectStatement(
+            List.of(inner.name()),
+            inner,
+            LogicalPredicate.and(
+                List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
+    ScalarSubqueryExpression<String> scalar = new ScalarSubqueryExpression<>(child);
+    SelectStatement statement =
+        new SelectStatement(
+            false,
+            List.of(outer.id(), scalar),
+            List.of(),
+            outer,
+            null,
+            List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+
+    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+
+    assertEquals(
+        "SELECT \"outer_pet\".\"id\", (SELECT \"inner_pet\".\"pet_name\" "
+            + "FROM \"shelter\".\"pet\" AS \"inner_pet\" WHERE "
+            + "\"inner_pet\".\"id\" = \"outer_pet\".\"id\" AND "
+            + "\"inner_pet\".\"pet_name\" = ?) FROM \"shelter\".\"pet\" AS \"outer_pet\" "
+            + "ORDER BY (SELECT \"inner_pet\".\"pet_name\" FROM \"shelter\".\"pet\" "
+            + "AS \"inner_pet\" WHERE \"inner_pet\".\"id\" = \"outer_pet\".\"id\" AND "
+            + "\"inner_pet\".\"pet_name\" = ?) ASC NULLS LAST",
+        rendered.sql());
+    assertEquals(List.of(name, name), rendered.parameters());
+  }
+
+  @Test
+  void rendersDistinctScalarOrderingByItsSelectedOutputIndex() {
+    PetAstTable outer = PetAstTable.PET.as("outer_pet");
+    PetAstTable inner = PetAstTable.PET.as("inner_pet");
+    ParameterSlot<String> name = new ParameterSlot<>(0, String.class, true);
+    ScalarSubqueryExpression<String> scalar =
+        new ScalarSubqueryExpression<>(
+            new SelectStatement(List.of(inner.name()), inner, inner.name().eq(name)));
+    SelectStatement statement =
+        new SelectStatement(
+            true,
+            List.of(outer.id(), scalar),
+            List.of(),
+            outer,
+            null,
+            List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+
+    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+
+    assertEquals(
+        "SELECT DISTINCT \"outer_pet\".\"id\", (SELECT \"inner_pet\".\"pet_name\" "
+            + "FROM \"shelter\".\"pet\" AS \"inner_pet\" WHERE \"inner_pet\".\"pet_name\" = ?) "
+            + "FROM \"shelter\".\"pet\" AS \"outer_pet\" ORDER BY 2 ASC NULLS LAST",
+        rendered.sql());
+    assertEquals(List.of(name), rendered.parameters());
   }
 
   @Test

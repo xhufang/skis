@@ -2,15 +2,19 @@ package io.skis.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.Dialect;
+import io.skis.jdbc.QueryExecutionException;
 import io.skis.query.NullableSelectQuery;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryParameter;
 import io.skis.query.QueryParameters;
 import io.skis.query.SelectQuery;
+import io.skis.query.Selectable;
+import io.skis.query.SingleRow;
 import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
 import io.skis.query.Sql;
@@ -28,6 +32,7 @@ import io.skis.testmodel.join.skis.PetOwnerPairViewProjection;
 import io.skis.testmodel.join.skis.PetOwnerViewProjection;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Arrays;
 import java.util.List;
@@ -450,6 +455,143 @@ abstract class AbstractSkisJoinContractTest {
   }
 
   @Test
+  void preservesScalarSubqueryRowAndCardinalitySemantics() {
+    JoinPetTable witness = pet.as("scalar_pet");
+    Selectable<Long> correlated =
+        Sql.scalar(
+            Sql.select(witness.ownerId())
+                .from(witness)
+                .where(witness.id().eq(pet.id())));
+    Selectable<Long> empty =
+        Sql.scalar(
+            Sql.select(witness.ownerId())
+                .from(witness)
+                .where(witness.id().ne(witness.id())));
+
+    SingleRow<Long> emptyChild =
+        executor.select(empty).from(pet).where(pet.id().eq(petAdaOneId)).fetchOne();
+    SingleRow<Long> nullValue =
+        executor.select(correlated).from(pet).where(pet.id().eq(petOrphanId)).fetchOne();
+    SingleRow<Long> value =
+        executor.select(correlated).from(pet).where(pet.id().eq(petAdaOneId)).fetchOne();
+    SingleRow<Long> noOuterRow =
+        executor
+            .select(correlated)
+            .from(pet)
+            .where(pet.id().ne(pet.id()))
+            .fetchOne();
+
+    assertTrue(
+        emptyChild instanceof SingleRow.Present<?> present && present.value() == null);
+    assertTrue(nullValue instanceof SingleRow.Present<?> present && present.value() == null);
+    assertEquals(new SingleRow.Present<>(ownerAdaId), value);
+    assertTrue(noOuterRow instanceof SingleRow.NoRow<?>);
+
+    Selectable<Long> duplicate =
+        Sql.scalar(
+            Sql.select(witness.id())
+                .from(witness)
+                .where(witness.ownerId().eq(pet.ownerId())));
+    QueryExecutionException failure =
+        assertThrows(
+            QueryExecutionException.class,
+            () ->
+                executor
+                    .select(duplicate)
+                    .from(pet)
+                    .where(pet.id().eq(petAdaOneId))
+                    .fetchList());
+    assertTrue(failure.getCause() instanceof SQLException);
+    SQLException cause = (SQLException) failure.getCause();
+    assertTrue(cause.getSQLState() != null && !cause.getSQLState().isBlank());
+    assertEquals(cause.getSQLState(), failure.sqlState());
+    assertEquals(cause.getErrorCode(), failure.vendorCode());
+  }
+
+  @Test
+  void decodesCorrelatedScalarSubqueriesInGeneratedProjections() {
+    OwnerTable lookup = owner.as("scalar_owner");
+    Selectable<String> ownerName =
+        Sql.scalar(
+            Sql.select(lookup.name())
+                .from(lookup)
+                .where(lookup.id().eq(pet.ownerId())));
+
+    List<PetOwnerView> result =
+        executor
+            .select(PetOwnerViewProjection.of(pet.id(), pet.name(), ownerName))
+            .from(pet)
+            .where(pet.id().in(petIds()))
+            .orderBy(pet.id().asc())
+            .fetchList();
+
+    assertEquals(
+        List.of(
+            new PetOwnerView(petAdaOneId, "Alpha", "Ada"),
+            new PetOwnerView(petAdaTwoId, "Beta", "Ada"),
+            new PetOwnerView(petGraceId, "Gamma", "Grace"),
+            new PetOwnerView(petOrphanId, "Orphan", null),
+            new PetOwnerView(petOrphanTwoId, "Orphan Two", null)),
+        result);
+  }
+
+  @Test
+  void preservesEmptyCollectionMembershipForParameterizedScalarOperands() {
+    OwnerTable lookup = owner.as("empty_scalar_owner");
+    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    Selectable<Long> scalar =
+        Sql.scalar(
+            Sql.select(lookup.id()).from(lookup).where(lookup.name().eq(name)));
+    QueryParameters parameters = QueryParameters.of(name, "Ada");
+
+    List<Long> none =
+        executor
+            .query(Sql.select(pet.id()).from(pet).where(scalar.in(List.of())), parameters)
+            .and(pet.id().in(petIds()))
+            .fetchList();
+    List<Long> all =
+        executor
+            .query(Sql.select(pet.id()).from(pet).where(scalar.notIn(List.of())), parameters)
+            .and(pet.id().in(petIds()))
+            .orderBy(pet.id().asc())
+            .fetchList();
+
+    assertEquals(List.of(), none);
+    assertEquals(petIds(), all);
+  }
+
+  @Test
+  void ordersBySeparateScalarParametersWithoutCollapsingTheirIdentities() {
+    OwnerTable lookup = owner.as("ordered_scalar_owner");
+    QueryParameter<String> firstName = Sql.parameter(String.class, "name");
+    QueryParameter<String> secondName = Sql.parameter(String.class, "name");
+    Selectable<Long> first =
+        Sql.scalar(
+            Sql.select(lookup.id())
+                .from(lookup)
+                .where(lookup.id().eq(pet.ownerId()).and(lookup.name().eq(firstName))));
+    Selectable<Long> second =
+        Sql.scalar(
+            Sql.select(lookup.id())
+                .from(lookup)
+                .where(lookup.id().eq(pet.ownerId()).and(lookup.name().eq(secondName))));
+    QueryParameters parameters =
+        QueryParameters.builder().bind(firstName, "Ada").bind(secondName, "Grace").build();
+
+    List<Long> rows =
+        executor
+            .query(
+                Sql.select(pet.id())
+                    .from(pet)
+                    .orderBy(first.asc().nullsLast(), second.asc().nullsLast(), pet.id().asc()),
+                parameters)
+            .where(pet.id().in(petIds()))
+            .fetchList();
+
+    assertEquals(petIds(), rows);
+  }
+
+  @Test
   void keepsJoinPaginationCountDistinctAndNullableKeysetEquivalent() {
     SelectQuery<Owner, Owner> duplicateOwners =
         executor
@@ -536,6 +678,20 @@ abstract class AbstractSkisJoinContractTest {
             .where(witness.ownerId().eq(owner.id()));
     return executor
         .query(Sql.selectFrom(owner).where(owner.id().in(ownerIds)).orderBy(owner.id().asc()));
+  }
+
+  protected NullableSelectQuery<JoinPet, String> correlatedScalarQuery() {
+    OwnerTable lookup = owner.as("scalar_owner");
+    Selectable<String> ownerName =
+        Sql.scalar(
+            Sql.select(lookup.name())
+                .from(lookup)
+                .where(lookup.id().eq(pet.ownerId())));
+    return executor
+        .select(ownerName)
+        .from(pet)
+        .where(pet.id().in(petIds()))
+        .orderBy(ownerName.asc().nullsLast(), pet.id().asc());
   }
 
   protected List<Long> petIds() {

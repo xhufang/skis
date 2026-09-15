@@ -389,6 +389,71 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
+  void keepsScalarSubqueriesInvariantAndConservativelyNullable() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidScalarSubquery {
+          static <E> void query(
+              QueryOperations operations,
+              NonNullQueryColumn<E, Long> id,
+              QueryTable<E> table) {
+            SingleColumnSelect<Long> ids = Sql.select(id).from(table);
+            Selectable<Long> scalar = Sql.scalar(ids);
+            NullableSelectFromStep<Long> selected = operations.select(scalar);
+            QueryCondition comparison = scalar.eq(id);
+            QueryCondition nullCheck = scalar.isNull();
+            SortSpecification ordering = scalar.asc().nullsLast();
+            selected.from(table).where(comparison.and(nullCheck)).orderBy(ordering);
+          }
+        }
+        """;
+    String invalidNonNull =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidNonNullScalarSubquery {
+          static <E> void query(
+              NonNullQueryColumn<E, Long> id,
+              QueryTable<E> table) {
+            NonNullSelectable<Long> scalar = Sql.scalar(Sql.select(id).from(table));
+          }
+        }
+        """;
+    String invalidType =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidScalarSubqueryType {
+          static <E> void query(
+              NonNullQueryColumn<E, Long> id,
+              NonNullQueryColumn<E, String> name,
+              QueryTable<E> table) {
+            Selectable<Long> scalar = Sql.scalar(Sql.select(id).from(table));
+            scalar.eq(name);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidScalarSubquery",
+            valid,
+            temporaryDirectory.resolve("valid-scalar-subquery")));
+    assertFalse(
+        compile(
+            "samples.InvalidNonNullScalarSubquery",
+            invalidNonNull,
+            temporaryDirectory.resolve("invalid-non-null-scalar-subquery")));
+    assertFalse(
+        compile(
+            "samples.InvalidScalarSubqueryType",
+            invalidType,
+            temporaryDirectory.resolve("invalid-scalar-subquery-type")));
+  }
+
+  @Test
   void requiresOnBeforeAJoinCanReachTerminalOperations() throws Exception {
     String valid =
         """

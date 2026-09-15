@@ -38,6 +38,7 @@ import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlExpression;
@@ -156,7 +157,8 @@ public final class StandardSqlRenderer implements SqlRenderer {
         if (index > 0) {
           context.sql.append(", ");
         }
-        renderOrderByItem(statement.orderBy().get(index), context);
+        OrderByItem item = statement.orderBy().get(index);
+        renderOrderByItem(item, selectedScalarOrderIndex(statement, item), context);
       }
     }
     statement
@@ -203,10 +205,31 @@ public final class StandardSqlRenderer implements SqlRenderer {
     return new RenderedSql(context.sql.toString(), context.parameters);
   }
 
-  private void renderOrderByItem(OrderByItem item, RenderContext context) {
+  private int selectedScalarOrderIndex(SelectStatement statement, OrderByItem item) {
+    if (!statement.distinct() || !(item.expression() instanceof ScalarSubqueryExpression<?>)) {
+      return 0;
+    }
+    int index = statement.selections().indexOf(item.expression());
+    if (index < 0) {
+      throw new SqlRenderException(
+          "DISTINCT scalar ORDER BY must reference a selected expression with the same logical "
+              + "parameters");
+    }
+    // Referring to the selected output avoids a second JDBC placeholder for the same value.
+    return index + 1;
+  }
+
+  private void renderOrderByItem(
+      OrderByItem item, int selectedIndex, RenderContext context) {
     NullOrder nullOrder = item.nullOrder();
     if (nullOrder != NullOrder.DIALECT_DEFAULT
         && !capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
+      if (selectedIndex > 0) {
+        throw new SqlRenderException(
+            "dialect '"
+                + dialectId
+                + "' requires native NULLS FIRST/LAST for DISTINCT scalar output ordering");
+      }
       context.sql.append("CASE WHEN ");
       renderExpression(item.expression(), context);
       context.sql.append(" IS NULL THEN ");
@@ -215,7 +238,11 @@ public final class StandardSqlRenderer implements SqlRenderer {
       context.sql.append(nullOrder == NullOrder.FIRST ? '1' : '0');
       context.sql.append(" END ASC, ");
     }
-    renderExpression(item.expression(), context);
+    if (selectedIndex > 0) {
+      context.sql.append(selectedIndex);
+    } else {
+      renderExpression(item.expression(), context);
+    }
     context.sql.append(item.direction() == OrderDirection.ASC ? " ASC" : " DESC");
     if (nullOrder != NullOrder.DIALECT_DEFAULT
         && capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
@@ -377,6 +404,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
         renderExists(exists, context);
         context.sql.append(')');
       }
+      case ScalarSubqueryExpression<?> scalar -> renderScalarSubquery(scalar, context);
       case NotPredicate not -> {
         context.sql.append('(');
         renderNot(not, context);
@@ -533,6 +561,13 @@ public final class StandardSqlRenderer implements SqlRenderer {
     require(DialectFeature.EXISTS_SUBQUERY, "EXISTS subquery");
     context.sql.append(predicate.negated() ? "NOT EXISTS (" : "EXISTS (");
     renderSelect(predicate.subquery(), context.child(predicate.subquery().fromClause()));
+    context.sql.append(')');
+  }
+
+  private void renderScalarSubquery(ScalarSubqueryExpression<?> expression, RenderContext context) {
+    require(DialectFeature.SCALAR_SUBQUERY, "scalar subquery");
+    context.sql.append('(');
+    renderSelect(expression.subquery(), context.child(expression.subquery().fromClause()));
     context.sql.append(')');
   }
 
