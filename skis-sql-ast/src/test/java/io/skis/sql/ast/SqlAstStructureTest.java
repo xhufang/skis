@@ -751,6 +751,11 @@ class SqlAstStructureTest {
     }
 
     @Override
+    public PetTable as(String alias) {
+      return new PetTable(Identifier.of(alias));
+    }
+
+    @Override
     public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
