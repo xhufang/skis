@@ -129,7 +129,10 @@ class DerivedTableAstTest {
             stableSource,
             List.of(
                 new JoinClause(
-                    JoinType.RIGHT, outerRoot, stableId.eq(outerRoot.id()))));
+                    JoinType.RIGHT,
+                    outerRoot,
+                    new ComparisonPredicate<>(
+                        stableId, ComparisonOperator.EQUAL, outerRoot.id()))));
     assertEquals(Nullability.NULLABLE, rightJoined.effectiveNullability(stableId));
 
     FromClause fullJoined =
