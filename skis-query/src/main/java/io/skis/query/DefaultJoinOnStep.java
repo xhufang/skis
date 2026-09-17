@@ -4,13 +4,13 @@ import io.skis.sql.ast.JoinType;
 import java.util.Objects;
 
 /** Built-in immutable required-ON stage. */
-final class DefaultJoinOnStep<F, R, J> implements JoinOnStep<F, R, J> {
+final class DefaultJoinOnStep<F, R> implements JoinOnStep<F, R> {
 
   private final DefaultSelectQuery<F, R> query;
   private final JoinType type;
-  private final QueryTable<J> right;
+  private final QueryRelation right;
 
-  DefaultJoinOnStep(DefaultSelectQuery<F, R> query, JoinType type, QueryTable<J> right) {
+  DefaultJoinOnStep(DefaultSelectQuery<F, R> query, JoinType type, QueryRelation right) {
     this.query = Objects.requireNonNull(query, "query");
     this.type = Objects.requireNonNull(type, "type");
     if (type == JoinType.CROSS) {

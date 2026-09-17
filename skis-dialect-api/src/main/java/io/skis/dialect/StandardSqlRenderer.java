@@ -14,6 +14,9 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedRelationReference;
+import io.skis.sql.ast.DerivedRelationSource;
 import io.skis.sql.ast.EntityRelationSource;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
@@ -101,6 +104,15 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderSelect(SelectStatement statement, RenderContext context) {
+    renderSelect(statement, context, List.of());
+  }
+
+  private void renderSelect(
+      SelectStatement statement, RenderContext context, List<Identifier> outputAliases) {
+    if (!outputAliases.isEmpty() && outputAliases.size() != statement.selections().size()) {
+      throw new SqlRenderException(
+          "derived SELECT alias count does not match its visible output count");
+    }
     if (!statement.groupBy().isEmpty() || statement.having().isPresent()) {
       throw new SqlRenderException(
           "dialect '"
@@ -117,6 +129,9 @@ public final class StandardSqlRenderer implements SqlRenderer {
         context.sql.append(", ");
       }
       renderExpression(statement.selections().get(index), context);
+      if (!outputAliases.isEmpty()) {
+        context.sql.append(" AS ").append(identifierRules.quote(outputAliases.get(index).value()));
+      }
     }
     for (HiddenSelection selection : statement.hiddenSelections()) {
       context.sql.append(", ");
@@ -219,8 +234,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     return index + 1;
   }
 
-  private void renderOrderByItem(
-      OrderByItem item, int selectedIndex, RenderContext context) {
+  private void renderOrderByItem(OrderByItem item, int selectedIndex, RenderContext context) {
     NullOrder nullOrder = item.nullOrder();
     if (nullOrder != NullOrder.DIALECT_DEFAULT
         && !capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
@@ -353,6 +367,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderExpression(SqlExpression<?> expression, RenderContext context) {
     switch (expression) {
       case ColumnExpression<?, ?> column -> renderColumn(column, context);
+      case DerivedColumnExpression<?> column -> renderDerivedColumn(column, context);
       case ParameterSlot<?> parameter -> {
         context.sql.append('?');
         context.parameters.add(parameter);
@@ -641,6 +656,17 @@ public final class StandardSqlRenderer implements SqlRenderer {
     context.sql.append(identifierRules.quote(column.property().column().name()));
   }
 
+  private void renderDerivedColumn(DerivedColumnExpression<?> column, RenderContext context) {
+    DerivedRelationReference relation = context.resolve(column.relation());
+    if (relation == null) {
+      throw new SqlRenderException(
+          "dialect '" + dialectId + "' cannot render a derived column outside the FROM scope");
+    }
+    context.sql.append(identifierRules.quote(relation.alias().value()));
+    context.sql.append('.');
+    context.sql.append(identifierRules.quote(column.output().name().value()));
+  }
+
   private void renderColumnName(ColumnExpression<?, ?> column, RenderContext context) {
     if (context.resolve(column.table()) == null) {
       throw new SqlRenderException(
@@ -666,10 +692,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderFromClause(FromClause fromClause, RenderContext context) {
-    renderRelation(fromClause.root(), context.sql);
+    renderRelation(fromClause.root(), context);
     for (JoinClause join : fromClause.joins()) {
       context.sql.append(' ').append(DialectJoinFeatures.keyword(join.type())).append(' ');
-      renderRelation(join.right(), context.sql);
+      renderRelation(join.right(), context);
       join.on()
           .ifPresent(
               predicate -> {
@@ -679,9 +705,21 @@ public final class StandardSqlRenderer implements SqlRenderer {
     }
   }
 
-  private void renderRelation(RelationSource source, StringBuilder sql) {
+  private void renderRelation(RelationSource source, RenderContext context) {
     switch (source) {
-      case EntityRelationSource entity -> renderTable(entity.table(), sql);
+      case EntityRelationSource entity -> renderTable(entity.table(), context.sql);
+      case DerivedRelationSource derived -> {
+        require(DialectFeature.DERIVED_TABLE, "derived tables");
+        context.sql.append('(');
+        List<Identifier> aliases =
+            derived.reference().outputs().stream().map(output -> output.name()).toList();
+        renderSelect(
+            derived.statement(), context.relationChild(derived.statement().fromClause()), aliases);
+        context
+            .sql
+            .append(") AS ")
+            .append(identifierRules.quote(derived.reference().alias().value()));
+      }
     }
   }
 
@@ -734,6 +772,16 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.parameters = parent.parameters;
     }
 
+    private RenderContext(
+        FromClause fromClause, StringBuilder sql, List<ParameterSlot<?>> parameters) {
+      this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
+      this.mutationTarget = null;
+      this.parent = null;
+      this.qualifyColumns = true;
+      this.sql = Objects.requireNonNull(sql, "sql");
+      this.parameters = Objects.requireNonNull(parameters, "parameters");
+    }
+
     private RenderContext(TableExpression<?> mutationTarget) {
       this.fromClause = null;
       this.mutationTarget = Objects.requireNonNull(mutationTarget, "mutationTarget");
@@ -745,6 +793,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
     private RenderContext child(FromClause childFromClause) {
       return new RenderContext(childFromClause, this);
+    }
+
+    private RenderContext relationChild(FromClause childFromClause) {
+      return new RenderContext(childFromClause, sql, parameters);
     }
 
     private @Nullable TableExpression<?> resolve(TableExpression<?> table) {
@@ -759,6 +811,20 @@ public final class StandardSqlRenderer implements SqlRenderer {
         return mutationTarget;
       }
       return parent == null ? null : parent.resolve(table);
+    }
+
+    private @Nullable DerivedRelationReference resolve(DerivedRelationReference relation) {
+      if (fromClause != null) {
+        DerivedRelationReference local =
+            fromClause
+                .occurrenceOf(relation)
+                .flatMap(TableOccurrence::derivedReference)
+                .orElse(null);
+        if (local != null) {
+          return local;
+        }
+      }
+      return parent == null ? null : parent.resolve(relation);
     }
   }
 }

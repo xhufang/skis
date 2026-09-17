@@ -82,9 +82,11 @@ public final class SemanticValidator {
 
   private static void validateSelectExpressions(
       SelectStatement statement, ValidationContext context) {
+    validateRelationSource(statement.fromClause().root());
     context.addVisible(statement.fromClause().root());
     for (int index = 0; index < statement.joins().size(); index++) {
       JoinClause join = statement.joins().get(index);
+      validateRelationSource(join.right());
       context.addVisible(join.right());
       int position = index + 1;
       join.on()
@@ -113,6 +115,12 @@ public final class SemanticValidator {
                 context.validateExpression(offset.offset(), "pagination offset");
               }
             });
+  }
+
+  private static void validateRelationSource(RelationSource source) {
+    if (source instanceof DerivedRelationSource derived) {
+      validateLocal(derived.statement());
+    }
   }
 
   /** Validates an independent COUNT plan. */
@@ -533,6 +541,8 @@ public final class SemanticValidator {
     private final boolean validatesQueryContext;
     private final IdentityHashMap<TableExpression<?>, Boolean> visibleTables =
         new IdentityHashMap<>();
+    private final IdentityHashMap<DerivedRelationReference, Boolean> visibleDerivedRelations =
+        new IdentityHashMap<>();
     private final Map<Integer, ParameterSlot<?>> parametersByOrdinal = new HashMap<>();
 
     private ValidationContext() {
@@ -549,6 +559,8 @@ public final class SemanticValidator {
       }
       switch (Objects.requireNonNull(source, "source")) {
         case EntityRelationSource entity -> addVisible(entity.table());
+        case DerivedRelationSource derived ->
+            visibleDerivedRelations.put(derived.reference(), Boolean.FALSE);
       }
     }
 
@@ -560,9 +572,39 @@ public final class SemanticValidator {
       if (!validatesQueryContext) {
         return;
       }
-      switch (join.right()) {
-        case EntityRelationSource entity ->
-            EffectiveNullabilityResolver.applyJoin(join.type(), entity.table(), visibleTables);
+      switch (join.type()) {
+        case INNER, CROSS -> {}
+        case LEFT -> markRightNullable(join.right());
+        case RIGHT -> markLeftNullable(join.right());
+        case FULL -> {
+          markLeftNullable(join.right());
+          markRightNullable(join.right());
+        }
+      }
+    }
+
+    private void markRightNullable(RelationSource right) {
+      switch (right) {
+        case EntityRelationSource entity -> visibleTables.put(entity.table(), Boolean.TRUE);
+        case DerivedRelationSource derived ->
+            visibleDerivedRelations.put(derived.reference(), Boolean.TRUE);
+      }
+    }
+
+    private void markLeftNullable(RelationSource right) {
+      TableExpression<?> rightTable =
+          right instanceof EntityRelationSource(TableExpression<?> table) ? table : null;
+      DerivedRelationReference rightDerived =
+          right instanceof DerivedRelationSource derived ? derived.reference() : null;
+      for (TableExpression<?> table : visibleTables.keySet()) {
+        if (table != rightTable) {
+          visibleTables.put(table, Boolean.TRUE);
+        }
+      }
+      for (DerivedRelationReference relation : visibleDerivedRelations.keySet()) {
+        if (relation != rightDerived) {
+          visibleDerivedRelations.put(relation, Boolean.TRUE);
+        }
       }
     }
 
@@ -573,6 +615,7 @@ public final class SemanticValidator {
       Objects.requireNonNull(expression.nullability(), "expression nullability");
       switch (expression) {
         case ColumnExpression<?, ?> column -> validateColumn(column, clause);
+        case DerivedColumnExpression<?> column -> validateDerivedColumn(column, clause);
         case ParameterSlot<?> parameter -> validateParameter(parameter);
         case LiteralExpression<?> literal ->
             validateLiteral(
@@ -653,7 +696,8 @@ public final class SemanticValidator {
       }
       Nullability resolvedNullability =
           validatesQueryContext
-              ? EffectiveNullabilityResolver.resolve(expression, visibleTables)
+              ? EffectiveNullabilityResolver.resolve(
+                  expression, visibleTables, visibleDerivedRelations)
               : expression.nullability();
       if (resolvedNullability.isNullable() && expression.javaType().isPrimitive()) {
         throw new IllegalArgumentException(
@@ -679,6 +723,22 @@ public final class SemanticValidator {
                     .map(alias -> " with alias '" + alias.value() + "'")
                     .orElse("")
                 + "; table references are matched by object identity");
+      }
+    }
+
+    private void validateDerivedColumn(DerivedColumnExpression<?> column, String clause) {
+      if (!validatesQueryContext) {
+        return;
+      }
+      if (!visibleDerivedRelations.containsKey(column.relation())) {
+        throw new IllegalArgumentException(
+            clause
+                + " derived column '"
+                + column.relation().alias().value()
+                + '.'
+                + column.output().name().value()
+                + "' references an invisible derived relation; relation references are matched "
+                + "by object identity");
       }
     }
 

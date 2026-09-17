@@ -1,6 +1,8 @@
 package io.skis.query;
 
+import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
+import java.util.Arrays;
 import java.util.Objects;
 
 /** Static construction entry point for reusable SQL query descriptions and their inputs. */
@@ -72,6 +74,60 @@ public final class Sql {
   public static <E> NonNullSelectDescription<E> selectFrom(QueryTable<E> table) {
     QueryTable<E> selected = Objects.requireNonNull(table, "table");
     return select(selected).from(selected);
+  }
+
+  /** Creates an explicitly named non-null output handle. */
+  public static <V> NonNullDerivedOutput<V> output(NonNullSelectable<V> selectable, String alias) {
+    return output(selectable, Identifier.of(alias));
+  }
+
+  /** Creates an explicitly named non-null output handle. */
+  public static <V> NonNullDerivedOutput<V> output(
+      NonNullSelectable<V> selectable, Identifier alias) {
+    return new NonNullDerivedOutput<>(
+        Objects.requireNonNull(selectable, "selectable"), Objects.requireNonNull(alias, "alias"));
+  }
+
+  /** Creates an explicitly named output handle preserving declared nullability. */
+  public static <V> DerivedOutput<V> output(Selectable<V> selectable, String alias) {
+    return output(selectable, Identifier.of(alias));
+  }
+
+  /** Creates an explicitly named output handle preserving declared nullability. */
+  public static <V> DerivedOutput<V> output(Selectable<V> selectable, Identifier alias) {
+    Selectable<V> selected = Objects.requireNonNull(selectable, "selectable");
+    return new DerivedOutput<>(
+        selected, Objects.requireNonNull(alias, "alias"), selected.nullability());
+  }
+
+  /** Explicitly exposes a declared non-null selection as a nullable derived output. */
+  public static <V> DerivedOutput<V> outputNullable(NonNullSelectable<V> selectable, String alias) {
+    return outputNullable(selectable, Identifier.of(alias));
+  }
+
+  /** Explicitly exposes a declared non-null selection as a nullable derived output. */
+  public static <V> DerivedOutput<V> outputNullable(
+      NonNullSelectable<V> selectable, Identifier alias) {
+    return new DerivedOutput<>(
+        Objects.requireNonNull(selectable, "selectable"),
+        Objects.requireNonNull(alias, "alias"),
+        Nullability.NULLABLE);
+  }
+
+  /** Freezes one reusable SELECT as an explicitly aliased derived relation. */
+  public static DerivedRelation derived(
+      SelectDescription<?> description, String alias, DerivedOutput<?>... outputs) {
+    return derived(description, Identifier.of(alias), outputs);
+  }
+
+  /** Freezes one reusable SELECT as an explicitly aliased derived relation. */
+  public static DerivedRelation derived(
+      SelectDescription<?> description, Identifier alias, DerivedOutput<?>... outputs) {
+    Objects.requireNonNull(outputs, "outputs");
+    return new DerivedRelation(
+        Objects.requireNonNull(description, "description"),
+        Objects.requireNonNull(alias, "alias"),
+        Arrays.asList(outputs.clone()));
   }
 
   /**

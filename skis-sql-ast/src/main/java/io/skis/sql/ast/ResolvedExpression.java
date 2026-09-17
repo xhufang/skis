@@ -7,7 +7,7 @@ import java.util.Objects;
 public record ResolvedExpression(
     ExpressionPosition position,
     ResolvedStructureKey structureKey,
-    List<ResolvedColumnIdentity> columnDependencies,
+    List<ResolvedColumnReference> columnDependencies,
     List<ResolvedParameterIdentity> parameterDependencies,
     Nullability effectiveNullability) {
 

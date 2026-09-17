@@ -34,33 +34,63 @@ final class DefaultNullableSelectQuery<F, R> implements NullableSelectQuery<F, R
   }
 
   @Override
-  public <J> NullableJoinOnStep<F, R, J> join(QueryTable<J> table) {
+  public NullableJoinOnStep<F, R> join(QueryTable<?> table) {
     return innerJoin(table);
   }
 
   @Override
-  public <J> NullableJoinOnStep<F, R, J> innerJoin(QueryTable<J> table) {
+  public NullableJoinOnStep<F, R> join(DerivedRelation relation) {
+    return innerJoin(relation);
+  }
+
+  @Override
+  public NullableJoinOnStep<F, R> innerJoin(QueryTable<?> table) {
     return joinOn(JoinType.INNER, table);
   }
 
   @Override
-  public <J> NullableJoinOnStep<F, R, J> leftJoin(QueryTable<J> table) {
+  public NullableJoinOnStep<F, R> innerJoin(DerivedRelation relation) {
+    return joinOn(JoinType.INNER, relation);
+  }
+
+  @Override
+  public NullableJoinOnStep<F, R> leftJoin(QueryTable<?> table) {
     return joinOn(JoinType.LEFT, table);
   }
 
   @Override
-  public <J> NullableJoinOnStep<F, R, J> rightJoin(QueryTable<J> table) {
+  public NullableJoinOnStep<F, R> leftJoin(DerivedRelation relation) {
+    return joinOn(JoinType.LEFT, relation);
+  }
+
+  @Override
+  public NullableJoinOnStep<F, R> rightJoin(QueryTable<?> table) {
     return joinOn(JoinType.RIGHT, table);
   }
 
   @Override
-  public <J> NullableJoinOnStep<F, R, J> fullJoin(QueryTable<J> table) {
+  public NullableJoinOnStep<F, R> rightJoin(DerivedRelation relation) {
+    return joinOn(JoinType.RIGHT, relation);
+  }
+
+  @Override
+  public NullableJoinOnStep<F, R> fullJoin(QueryTable<?> table) {
     return joinOn(JoinType.FULL, table);
   }
 
   @Override
-  public <J> NullableSelectQuery<F, R> crossJoin(QueryTable<J> table) {
+  public NullableJoinOnStep<F, R> fullJoin(DerivedRelation relation) {
+    return joinOn(JoinType.FULL, relation);
+  }
+
+  @Override
+  public NullableSelectQuery<F, R> crossJoin(QueryTable<?> table) {
     return appendJoin(JoinType.CROSS, Objects.requireNonNull(table, "table"), null);
+  }
+
+  @Override
+  public NullableSelectQuery<F, R> crossJoin(DerivedRelation relation) {
+    return appendJoin(JoinType.CROSS, Objects.requireNonNull(relation, "relation"), null);
   }
 
   @Override
@@ -133,12 +163,13 @@ final class DefaultNullableSelectQuery<F, R> implements NullableSelectQuery<F, R
   }
 
   DefaultNullableSelectQuery<F, R> appendJoin(
-      JoinType type, QueryTable<?> table, @Nullable QueryCondition on) {
-    return wrap(delegate.appendJoin(type, table, on));
+      JoinType type, QueryRelation relation, @Nullable QueryCondition on) {
+    return wrap(delegate.appendJoin(type, relation, on));
   }
 
-  private <J> NullableJoinOnStep<F, R, J> joinOn(JoinType type, QueryTable<J> table) {
-    return new DefaultNullableJoinOnStep<>(this, type, Objects.requireNonNull(table, "table"));
+  private NullableJoinOnStep<F, R> joinOn(JoinType type, QueryRelation relation) {
+    return new DefaultNullableJoinOnStep<>(
+        this, type, Objects.requireNonNull(relation, "relation"));
   }
 
   private DefaultNullableSelectQuery<F, R> wrap(DefaultSelectQuery<F, R> query) {

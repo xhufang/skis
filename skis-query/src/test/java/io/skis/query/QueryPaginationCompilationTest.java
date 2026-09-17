@@ -63,10 +63,8 @@ class QueryPaginationCompilationTest {
     QueryCompilation<Pet> content =
         compileEntity(fixture, predicate, order, false, new QueryPagination.Offset(20, 40));
     QueryCompilation<Long> count =
-        fixture
-            .compiler()
-            .compileCount(
-                fixture.model(), TABLE, SelectedResult.entity(TABLE), List.of(), predicate, false);
+        compileCount(
+            fixture.compiler(), TABLE, SelectedResult.entity(TABLE), List.of(), predicate, false);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\", \"pet\".\"nickname\" "
@@ -115,8 +113,6 @@ class QueryPaginationCompilationTest {
         fixture
             .compiler()
             .compileOrdered(
-                fixture.model(),
-                TABLE,
                 SelectedResult.requiredScalar(TABLE.id()),
                 structure,
                 List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
@@ -143,8 +139,8 @@ class QueryPaginationCompilationTest {
     CompilerFixture fixture = compilerFixture();
     QueryPlanCompiler compiler = fixture.compiler();
     QueryCompilation<Long> count =
-        compiler.compileCount(
-            fixture.model(),
+        compileCount(
+            compiler,
             TABLE,
             SelectedResult.requiredScalar(TABLE.name()),
             List.of(),
@@ -154,8 +150,8 @@ class QueryPaginationCompilationTest {
     assertEquals(
         "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"", count.plan().sql());
     QueryCompilation<Long> nullableCount =
-        compiler.compileCount(
-            fixture.model(),
+        compileCount(
+            compiler,
             TABLE,
             SelectedResult.nullableScalar(TABLE.nickname()),
             List.of(),
@@ -167,8 +163,7 @@ class QueryPaginationCompilationTest {
             + "FROM \"shelter\".\"pet\"",
         nullableCount.plan().sql());
     QueryCompilation<Long> entityCount =
-        compiler.compileCount(
-            fixture.model(), TABLE, SelectedResult.entity(TABLE), List.of(), null, true);
+        compileCount(compiler, TABLE, SelectedResult.entity(TABLE), List.of(), null, true);
     assertEquals("SELECT COUNT(*) FROM \"shelter\".\"pet\"", entityCount.plan().sql());
     ProjectionMapping<Object> unsafeTuple =
         ProjectionMapping.generated(
@@ -182,8 +177,8 @@ class QueryPaginationCompilationTest {
     assertThrows(
         QueryValidationException.class,
         () ->
-            compiler.compileCount(
-                fixture.model(),
+            compileCount(
+                compiler,
                 TABLE,
                 SelectedResult.projection(unsafeTuple.bind(TABLE.id(), TABLE.name())),
                 List.of(),
@@ -299,32 +294,42 @@ class QueryPaginationCompilationTest {
     return ((QueryArguments) compilation.argument()).values();
   }
 
+  private static <R> QueryCompilation<Long> compileCount(
+      QueryPlanCompiler compiler,
+      QueryTable<?> root,
+      SelectedResult<R> selected,
+      List<QueryJoin> joins,
+      @Nullable QueryCondition condition,
+      boolean distinct) {
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(root, joins, condition);
+    return compiler.compileCount(selected, structure, distinct, structure.arguments());
+  }
+
   private static QueryCompilation<Pet> compileEntity(
       CompilerFixture fixture,
       @Nullable QueryCondition predicate,
       List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
+    CompiledQueryStructure structure =
+        QueryStructureCompiler.compile(TABLE, List.of(), predicate);
     return fixture
         .compiler()
         .compileSelection(
-            fixture.model(),
-            TABLE,
             SelectedResult.entity(TABLE),
-            List.of(),
-            predicate,
+            structure,
             orderBy,
             distinct,
             pagination,
-            List.of());
+            List.of(),
+            structure.arguments());
   }
 
   private static CompilerFixture compilerFixture() {
     EntityRuntimeModel<Pet> model = model();
     QueryPlanCatalog catalog =
         QueryRuntime.compile(EntityRuntimeRegistry.of(List.of(model)), TestDialect.INSTANCE);
-    EntityPlanSet<Pet> plans = catalog.require(PET);
-    return new CompilerFixture(model, plans.compiler(), plans);
+    return new CompilerFixture(catalog.require(PET).compiler());
   }
 
   private static QueryOperations operations() {
@@ -359,8 +364,7 @@ class QueryPaginationCompilationTest {
 
   private record Pet(Long id, String name, String nickname) {}
 
-  private record CompilerFixture(
-      EntityRuntimeModel<Pet> model, QueryPlanCompiler compiler, EntityPlanSet<Pet> plans) {}
+  private record CompilerFixture(QueryPlanCompiler compiler) {}
 
   private static final class PetTable extends QueryTable<Pet> {
 

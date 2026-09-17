@@ -490,6 +490,83 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
+  void entityAndDerivedJoinsShareOnStepTypesWithoutARightEntityPhantom() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class UnifiedJoinOnSteps {
+          static final class Root {}
+          static final class Joined {}
+
+          static void queries(
+              SelectQuery<Root, String> query,
+              NullableSelectQuery<Root, String> nullableQuery,
+              QueryTable<Joined> table,
+              DerivedRelation derived,
+              QueryCondition condition) {
+            JoinOnStep<Root, String> tableStep = query.join(table);
+            JoinOnStep<Root, String> derivedStep = query.join(derived);
+            SelectQuery<Root, String> tableQuery = tableStep.on(condition);
+            SelectQuery<Root, String> derivedQuery = derivedStep.on(condition);
+
+            NullableJoinOnStep<Root, String> nullableTableStep = nullableQuery.join(table);
+            NullableJoinOnStep<Root, String> nullableDerivedStep = nullableQuery.join(derived);
+            NullableSelectQuery<Root, String> nullableTableQuery =
+                nullableTableStep.on(condition);
+            NullableSelectQuery<Root, String> nullableDerivedQuery =
+                nullableDerivedStep.on(condition);
+          }
+
+          static void descriptions(
+              SelectDescription<String> description,
+              NonNullSelectDescription<String> nonNullDescription,
+              SingleColumnSelect<String> singleColumn,
+              NonNullSingleColumnSelect<String> nonNullSingleColumn,
+              QueryTable<Joined> table,
+              DerivedRelation derived,
+              QueryCondition condition) {
+            SelectDescriptionJoinOnStep<String> descriptionTableStep =
+                description.join(table);
+            SelectDescriptionJoinOnStep<String> descriptionDerivedStep =
+                description.join(derived);
+            SelectDescription<String> tableDescription = descriptionTableStep.on(condition);
+            SelectDescription<String> derivedDescription = descriptionDerivedStep.on(condition);
+
+            NonNullSelectDescriptionJoinOnStep<String> nonNullTableStep =
+                nonNullDescription.join(table);
+            NonNullSelectDescriptionJoinOnStep<String> nonNullDerivedStep =
+                nonNullDescription.join(derived);
+            NonNullSelectDescription<String> nonNullTableDescription =
+                nonNullTableStep.on(condition);
+            NonNullSelectDescription<String> nonNullDerivedDescription =
+                nonNullDerivedStep.on(condition);
+
+            SingleColumnSelectJoinOnStep<String> singleTableStep = singleColumn.join(table);
+            SingleColumnSelectJoinOnStep<String> singleDerivedStep = singleColumn.join(derived);
+            SingleColumnSelect<String> singleTableDescription = singleTableStep.on(condition);
+            SingleColumnSelect<String> singleDerivedDescription = singleDerivedStep.on(condition);
+
+            NonNullSingleColumnSelectJoinOnStep<String> nonNullSingleTableStep =
+                nonNullSingleColumn.join(table);
+            NonNullSingleColumnSelectJoinOnStep<String> nonNullSingleDerivedStep =
+                nonNullSingleColumn.join(derived);
+            NonNullSingleColumnSelect<String> nonNullSingleTableDescription =
+                nonNullSingleTableStep.on(condition);
+            NonNullSingleColumnSelect<String> nonNullSingleDerivedDescription =
+                nonNullSingleDerivedStep.on(condition);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.UnifiedJoinOnSteps",
+            valid,
+            temporaryDirectory.resolve("unified-join-on-steps")));
+  }
+
+  @Test
   void allowsOrderByColumnsFromTheFinalJoinScope() throws Exception {
     String valid =
         """
@@ -624,6 +701,91 @@ class QueryTypeSafetyCompilationTest {
             "samples.ValidExplicitCount",
             valid,
             temporaryDirectory.resolve("valid-explicit-count")));
+  }
+
+  @Test
+  void preservesDerivedOutputNullnessAndUsesANeutralDerivedRootType() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ValidDerivedRelation {
+          static final class Pet {}
+          static void query(
+              QueryOperations operations,
+              QueryTable<Pet> pet,
+              NonNullQueryColumn<Pet, Long> id,
+              NullableQueryColumn<Pet, String> name,
+              QueryCondition on) {
+            NonNullDerivedOutput<Long> idOutput = Sql.output(id, "pet_id");
+            DerivedOutput<String> nameOutput = Sql.output(name, "display_name");
+            DerivedRelation derived =
+                Sql.derived(Sql.select(id).from(pet), "visible_pet", idOutput);
+            NonNullSelectable<Long> derivedId = derived.column(idOutput);
+            SelectQuery<?, Long> neutralRoot = operations.select(derivedId).from(derived);
+            SelectQuery<Pet, Long> entityRoot =
+                operations.select(derivedId).from(pet).join(derived).on(on);
+            DerivedRelation nullableRelation =
+                Sql.derived(Sql.select(name).from(pet), "named_pet", nameOutput);
+            Selectable<String> derivedName = nullableRelation.column(nameOutput);
+            NullableSelectQuery<?, String> nullableRoot =
+                operations.select(derivedName).from(nullableRelation);
+            neutralRoot.crossJoin(derived.as("other_pet"));
+            entityRoot.leftJoin(nullableRelation).on(on);
+            nullableRoot.where(derivedName.isNotNull());
+          }
+        }
+        """;
+    String invalidNullness =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidDerivedNullness {
+          static final class Pet {}
+          static void query(
+              QueryTable<Pet> pet,
+              NullableQueryColumn<Pet, String> name) {
+            DerivedOutput<String> output = Sql.output(name, "display_name");
+            DerivedRelation derived =
+                Sql.derived(Sql.select(name).from(pet), "named_pet", output);
+            NonNullSelectable<String> invalid = derived.column(output);
+          }
+        }
+        """;
+    String invalidRoot =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class InvalidDerivedRoot {
+          static final class Pet {}
+          static void query(
+              QueryOperations operations,
+              QueryTable<Pet> pet,
+              NonNullQueryColumn<Pet, Long> id) {
+            NonNullDerivedOutput<Long> output = Sql.output(id, "pet_id");
+            DerivedRelation derived =
+                Sql.derived(Sql.select(id).from(pet), "visible_pet", output);
+            SelectQuery<Pet, Long> invalid =
+                operations.select(derived.column(output)).from(derived);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidDerivedRelation",
+            valid,
+            temporaryDirectory.resolve("valid-derived-relation")));
+    assertFalse(
+        compile(
+            "samples.InvalidDerivedNullness",
+            invalidNullness,
+            temporaryDirectory.resolve("invalid-derived-nullness")));
+    assertFalse(
+        compile(
+            "samples.InvalidDerivedRoot",
+            invalidRoot,
+            temporaryDirectory.resolve("invalid-derived-root")));
   }
 
   private static boolean compile(String className, String source, Path output) throws IOException {

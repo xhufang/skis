@@ -150,16 +150,26 @@ final class SelectableSupport {
               .orElse(column.table().entity().table().name());
       return qualifier + '.' + column.property().name();
     }
+    if (selectable instanceof DerivedColumnSelectable<?> column) {
+      return column.relation().alias().value() + '.' + column.output().alias().value();
+    }
     return selectable.expression().getClass().getSimpleName();
   }
 
   static boolean sameOccurrence(Selectable<?> left, Selectable<?> right) {
-    if (left instanceof QueryColumn<?, ?> leftColumn
-        && right instanceof QueryColumn<?, ?> rightColumn) {
-      return leftColumn.table() == rightColumn.table()
-          && leftColumn.property() == rightColumn.property();
-    }
-    return left == right;
+    return switch (left) {
+      case QueryColumn<?, ?> leftColumn when right instanceof QueryColumn<?, ?> rightColumn ->
+          leftColumn.table() == rightColumn.table()
+              && leftColumn.property() == rightColumn.property();
+      case DerivedColumnSelectable<?> leftColumn
+          when right instanceof DerivedColumnSelectable<?> rightColumn ->
+          leftColumn.relation().reference() == rightColumn.relation().reference()
+              && leftColumn.output() == rightColumn.output();
+      case ScalarSubquerySelectable<?> scalarSubquerySelectable
+          when right instanceof ScalarSubquerySelectable<?> ->
+          expressionIdentity(left).equals(expressionIdentity(right));
+      default -> left == right;
+    };
   }
 
   static ExpressionIdentity expressionIdentity(Selectable<?> selectable) {

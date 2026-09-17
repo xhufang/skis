@@ -592,6 +592,54 @@ abstract class AbstractSkisJoinContractTest {
   }
 
   @Test
+  void executesAParameterizedDerivedRootWithoutMaterializingItsInnerRows() {
+    JoinPetTable inner = pet.as("derived_pet");
+    QueryParameter<Long> lower = Sql.parameter(Long.class, "lower");
+    QueryParameter<Long> upper = Sql.parameter(Long.class, "upper");
+    var child = Sql.select(inner.id()).from(inner).where(inner.id().ge(lower));
+    var idOutput = Sql.output(inner.id(), "pet_id");
+    var derived = Sql.derived(child, "filtered_pet", idOutput);
+    var derivedId = derived.column(idOutput);
+    var query =
+        Sql.select(derivedId)
+            .from(derived)
+            .where(derivedId.le(upper))
+            .orderBy(derivedId.asc());
+    QueryParameters parameters =
+        QueryParameters.builder()
+            .bind(lower, petAdaOneId)
+            .bind(upper, petGraceId)
+            .build();
+
+    List<Long> result = executor.query(query, parameters).fetchList();
+
+    assertEquals(List.of(petAdaOneId, petAdaTwoId, petGraceId), result);
+  }
+
+  @Test
+  void nullExtendsANonNullDerivedOutputWhenTheOuterJoinHasNoMatch() {
+    OwnerTable inner = owner.as("derived_owner");
+    var idOutput = Sql.output(inner.id(), "owner_id");
+    var nameOutput = Sql.output(inner.name(), "owner_name");
+    var derived =
+        Sql.derived(Sql.selectFrom(inner), "visible_owner", idOutput, nameOutput);
+    var derivedId = derived.column(idOutput);
+    var derivedName = derived.column(nameOutput);
+
+    List<String> result =
+        executor
+            .selectNullable(derivedName)
+            .from(pet)
+            .leftJoin(derived)
+            .on(pet.ownerId().eq(derivedId))
+            .where(pet.id().in(petIds()))
+            .orderBy(pet.id().asc())
+            .fetchList();
+
+    assertEquals(Arrays.asList("Ada", "Ada", "Grace", null, null), result);
+  }
+
+  @Test
   void keepsJoinPaginationCountDistinctAndNullableKeysetEquivalent() {
     SelectQuery<Owner, Owner> duplicateOwners =
         executor

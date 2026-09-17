@@ -47,33 +47,63 @@ public class SingleColumnSelect<V> extends SelectDescription<V> {
   }
 
   @Override
-  public <J> SingleColumnSelectJoinOnStep<V, J> join(QueryTable<J> table) {
+  public SingleColumnSelectJoinOnStep<V> join(QueryTable<?> table) {
     return innerJoin(table);
   }
 
   @Override
-  public <J> SingleColumnSelectJoinOnStep<V, J> innerJoin(QueryTable<J> table) {
+  public SingleColumnSelectJoinOnStep<V> join(DerivedRelation relation) {
+    return innerJoin(relation);
+  }
+
+  @Override
+  public SingleColumnSelectJoinOnStep<V> innerJoin(QueryTable<?> table) {
     return joinOn(JoinType.INNER, table);
   }
 
   @Override
-  public <J> SingleColumnSelectJoinOnStep<V, J> leftJoin(QueryTable<J> table) {
+  public SingleColumnSelectJoinOnStep<V> innerJoin(DerivedRelation relation) {
+    return joinOn(JoinType.INNER, relation);
+  }
+
+  @Override
+  public SingleColumnSelectJoinOnStep<V> leftJoin(QueryTable<?> table) {
     return joinOn(JoinType.LEFT, table);
   }
 
   @Override
-  public <J> SingleColumnSelectJoinOnStep<V, J> rightJoin(QueryTable<J> table) {
+  public SingleColumnSelectJoinOnStep<V> leftJoin(DerivedRelation relation) {
+    return joinOn(JoinType.LEFT, relation);
+  }
+
+  @Override
+  public SingleColumnSelectJoinOnStep<V> rightJoin(QueryTable<?> table) {
     return joinOn(JoinType.RIGHT, table);
   }
 
   @Override
-  public <J> SingleColumnSelectJoinOnStep<V, J> fullJoin(QueryTable<J> table) {
+  public SingleColumnSelectJoinOnStep<V> rightJoin(DerivedRelation relation) {
+    return joinOn(JoinType.RIGHT, relation);
+  }
+
+  @Override
+  public SingleColumnSelectJoinOnStep<V> fullJoin(QueryTable<?> table) {
     return joinOn(JoinType.FULL, table);
   }
 
   @Override
-  public <J> SingleColumnSelect<V> crossJoin(QueryTable<J> table) {
+  public SingleColumnSelectJoinOnStep<V> fullJoin(DerivedRelation relation) {
+    return joinOn(JoinType.FULL, relation);
+  }
+
+  @Override
+  public SingleColumnSelect<V> crossJoin(QueryTable<?> table) {
     return require(super.crossJoin(table));
+  }
+
+  @Override
+  public SingleColumnSelect<V> crossJoin(DerivedRelation relation) {
+    return require(super.crossJoin(relation));
   }
 
   @Override
@@ -96,9 +126,9 @@ public class SingleColumnSelect<V> extends SelectDescription<V> {
     return replacement == state() ? this : new SingleColumnSelect<>(replacement);
   }
 
-  private <J> SingleColumnSelectJoinOnStep<V, J> joinOn(JoinType type, QueryTable<J> table) {
+  private SingleColumnSelectJoinOnStep<V> joinOn(JoinType type, QueryRelation relation) {
     return new SingleColumnSelectJoinOnStep<>(
-        state(), type, Objects.requireNonNull(table, "table"));
+        state(), type, Objects.requireNonNull(relation, "relation"));
   }
 
   private SingleColumnSelect<V> require(SelectDescription<V> description) {

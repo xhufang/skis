@@ -1,6 +1,6 @@
 # 0.2.5 API compatibility ledger
 
-This ledger records the public API differences approved for steps 1, 3, 4, 5, 6, 7, and 8 of the internal
+This ledger records the public API differences approved for steps 1, 3, 4, 5, 6, 7, 8, and 9 of the internal
 `0.2.5-SNAPSHOT` milestone. It is not the consolidated compatibility report for the unfinished
 `0.2.x` development line. The root `pom.xml` japicmp allow-list names each approved class or
 method so unrelated public API breaks continue to fail compatibility checks.
@@ -250,3 +250,55 @@ DISTINCT ordering by a selected scalar uses the selected output's one-based SQL 
 its parameter slots instead of generating a second parameterized subquery. The original ordering
 occurrence is validated before reuse. This fixes PostgreSQL DISTINCT matching without changing the
 public DSL, AST constructors, or generated ABI; independent parameter references remain distinct.
+
+## Step 9: derived relations
+
+### Added API
+
+- `DerivedOutput<V>` and `NonNullDerivedOutput<V>` are explicit typed handles for one named output
+  in an ordered derived shape. `Sql.output(...)` preserves declared nullability and
+  `Sql.outputNullable(...)` explicitly weakens a declared non-null selection.
+- `DerivedRelation` is a framework-owned reusable relation created by
+  `Sql.derived(description, alias, outputs...)`. `column(handle)` returns a `Selectable<V>` or
+  `NonNullSelectable<V>` without accepting a string column name.
+- Static descriptions and executable query stages accept a `DerivedRelation` as a root or Join
+  right source. Entity roots retain `SelectQuery<Entity, R>`; a derived root exposes the neutral
+  `SelectQuery<?, R>` or `NullableSelectQuery<?, R>` view.
+- The AST adds `DerivedRelationSource`, `DerivedRelationReference`, `DerivedOutputColumn`, and
+  `DerivedColumnExpression<T>`. Resolved dependencies use the common `ResolvedColumnReference`,
+  with physical and derived identities distinguished explicitly.
+- `DialectFeature.DERIVED_TABLE` declares FROM/Join SELECT support. PostgreSQL and H2 enable it.
+
+### Join ON-step generic simplification
+
+The right-source entity parameter `J` has been removed from `JoinOnStep`, `NullableJoinOnStep`,
+`SelectDescriptionJoinOnStep`, and their nullability/single-column specializations. Entity-table
+and derived-relation overloads now return the same ON-step type; entity-table parameters use
+`QueryTable<?>`, and `crossJoin(QueryTable<?>)` no longer declares a method type parameter that is
+absent from its result.
+
+This does not remove an enforced query constraint: `on(...)` has always accepted the
+non-parameterized `QueryCondition`, while right-source visibility is resolved from the concrete
+relation occurrence during complete semantic validation. The package-owned `QueryRelation`
+continues to unify implementations without becoming a public parameter type.
+
+Source that explicitly names the old phantom argument must drop it, for example
+`JoinOnStep<Pet, Pet, Owner>` becomes `JoinOnStep<Pet, Pet>`. Fluent calls such as
+`query.leftJoin(owner).on(condition)` retain their form.
+
+### Validation and compatibility behavior
+
+Output aliases are mandatory and unique, and handles must match the visible selection count,
+order, Java types, SQL types, and logical expression occurrences. A handle from another shape is
+rejected by identity even when its descriptor is equal. `DerivedRelation#as(...)` creates another
+concrete source occurrence over the same immutable description and output handles.
+
+Complete inner analysis freezes effective output nullability after all inner Joins. Outer Joins
+apply null extension to the derived occurrence again. The query mapper recursively obtains each
+derived result and parameter Codec from its original selectable; no entity metadata, primary key,
+`EntityRuntimeModel`, temporary DTO, or inner row decoder is synthesized.
+
+Derived sources are non-correlated. An outer/sibling capture and an outer reference to an inner
+unpublished physical column fail before JDBC. Renderer and compiler traversal include derived
+children in recursive semantic and dialect checks, preserve dense nested parameter layout, and
+render explicit output aliases. Existing entity-only constructors and DSL overloads remain.

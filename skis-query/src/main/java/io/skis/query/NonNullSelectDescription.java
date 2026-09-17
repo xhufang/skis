@@ -26,33 +26,63 @@ public class NonNullSelectDescription<R> extends SelectDescription<R> {
   }
 
   @Override
-  public <J> NonNullSelectDescriptionJoinOnStep<R, J> join(QueryTable<J> table) {
+  public NonNullSelectDescriptionJoinOnStep<R> join(QueryTable<?> table) {
     return innerJoin(table);
   }
 
   @Override
-  public <J> NonNullSelectDescriptionJoinOnStep<R, J> innerJoin(QueryTable<J> table) {
+  public NonNullSelectDescriptionJoinOnStep<R> join(DerivedRelation relation) {
+    return innerJoin(relation);
+  }
+
+  @Override
+  public NonNullSelectDescriptionJoinOnStep<R> innerJoin(QueryTable<?> table) {
     return joinOn(JoinType.INNER, table);
   }
 
   @Override
-  public <J> NonNullSelectDescriptionJoinOnStep<R, J> leftJoin(QueryTable<J> table) {
+  public NonNullSelectDescriptionJoinOnStep<R> innerJoin(DerivedRelation relation) {
+    return joinOn(JoinType.INNER, relation);
+  }
+
+  @Override
+  public NonNullSelectDescriptionJoinOnStep<R> leftJoin(QueryTable<?> table) {
     return joinOn(JoinType.LEFT, table);
   }
 
   @Override
-  public <J> NonNullSelectDescriptionJoinOnStep<R, J> rightJoin(QueryTable<J> table) {
+  public NonNullSelectDescriptionJoinOnStep<R> leftJoin(DerivedRelation relation) {
+    return joinOn(JoinType.LEFT, relation);
+  }
+
+  @Override
+  public NonNullSelectDescriptionJoinOnStep<R> rightJoin(QueryTable<?> table) {
     return joinOn(JoinType.RIGHT, table);
   }
 
   @Override
-  public <J> NonNullSelectDescriptionJoinOnStep<R, J> fullJoin(QueryTable<J> table) {
+  public NonNullSelectDescriptionJoinOnStep<R> rightJoin(DerivedRelation relation) {
+    return joinOn(JoinType.RIGHT, relation);
+  }
+
+  @Override
+  public NonNullSelectDescriptionJoinOnStep<R> fullJoin(QueryTable<?> table) {
     return joinOn(JoinType.FULL, table);
   }
 
   @Override
-  public <J> NonNullSelectDescription<R> crossJoin(QueryTable<J> table) {
+  public NonNullSelectDescriptionJoinOnStep<R> fullJoin(DerivedRelation relation) {
+    return joinOn(JoinType.FULL, relation);
+  }
+
+  @Override
+  public NonNullSelectDescription<R> crossJoin(QueryTable<?> table) {
     return require(super.crossJoin(table));
+  }
+
+  @Override
+  public NonNullSelectDescription<R> crossJoin(DerivedRelation relation) {
+    return require(super.crossJoin(relation));
   }
 
   @Override
@@ -75,9 +105,9 @@ public class NonNullSelectDescription<R> extends SelectDescription<R> {
     return replacement == state() ? this : new NonNullSelectDescription<>(replacement);
   }
 
-  private <J> NonNullSelectDescriptionJoinOnStep<R, J> joinOn(JoinType type, QueryTable<J> table) {
+  private NonNullSelectDescriptionJoinOnStep<R> joinOn(JoinType type, QueryRelation relation) {
     return new NonNullSelectDescriptionJoinOnStep<>(
-        state(), type, Objects.requireNonNull(table, "table"));
+        state(), type, Objects.requireNonNull(relation, "relation"));
   }
 
   private NonNullSelectDescription<R> require(SelectDescription<R> description) {

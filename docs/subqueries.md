@@ -1,6 +1,6 @@
-# EXISTS, IN, scalar subqueries, and correlated SELECT descriptions
+# EXISTS, IN, scalar subqueries, derived tables, and correlated SELECT descriptions
 
-This document describes the EXISTS, IN, and scalar-subquery slices implemented by the internal
+This document describes the EXISTS, IN, scalar-subquery, and derived-table slices implemented by the internal
 `0.2.5-SNAPSHOT` milestone.
 It accumulates toward the public `0.3.0` SQL DSL and is not part of the published `0.2.0` API.
 
@@ -150,6 +150,48 @@ order. `Slice` currently requires physical-column ordering because its continuat
 not yet support scalar expressions. Both offset and keyset slices reject scalar ordering before
 acquiring JDBC resources, regardless of page size or whether the data would fill another page.
 
+## Derived tables and explicit output shapes
+
+`Sql.derived(description, relationAlias, outputs...)` freezes a reusable description as a FROM or
+Join relation. Every visible selection needs an explicitly aliased output handle in the same order:
+
+```java
+OwnerTable inner = OwnerTable.OWNER.as("inner_owner");
+var ownerId = Sql.output(inner.id(), "owner_id");
+var ownerName = Sql.output(inner.name(), "owner_name");
+DerivedRelation owners =
+    Sql.derived(Sql.selectFrom(inner), "visible_owner", ownerId, ownerName);
+
+var visibleId = owners.column(ownerId);
+var visibleName = owners.column(ownerName);
+
+List<String> names =
+    executor
+        .selectNullable(visibleName)
+        .from(pet)
+        .leftJoin(owners)
+        .on(pet.ownerId().eq(visibleId))
+        .fetchList();
+```
+
+`DerivedOutput<V>` preserves a nullable selection contract and `NonNullDerivedOutput<V>` preserves
+a declared non-null contract. The relation validates unique aliases, exact output count and order,
+Java/SQL types, and handle membership. It then analyzes the complete inner Join chain. If an inner
+outer Join makes a declared non-null selection effectively nullable, expose it deliberately through
+`Sql.outputNullable(...)`. An outer Join can null-extend a published non-null output again, so the
+outer result must use `selectNullable(...)` or a nullable projection parameter.
+
+Columns are resolved by concrete derived-source identity and output ordinal. There is no string
+lookup and no synthetic entity, property, primary key, runtime model, or child decoder. Result and
+parameter Codecs recursively come from the selectable bound to the output handle. A derived root
+therefore returns a root-neutral `SelectQuery<?, R>`/`NullableSelectQuery<?, R>` view; entity roots
+retain their existing concrete root generic. `owners.as("other_owner")` creates an independent
+occurrence over the same inner description and output handles.
+
+A normal derived source is a non-correlated boundary. Its child cannot capture an outer or sibling
+source, and the outer query cannot pierce the boundary to use an unselected physical column.
+LATERAL/APPLY remains a separate future capability.
+
 ## Correlation and scope
 
 A child description refers to an outer source by using the exact outer `QueryTable` object. No
@@ -201,10 +243,10 @@ produces one row even when its input is empty, and step 12 must verify that HAVI
 row. The base EXISTS implementation deliberately performs no transformation that could change
 either behavior; complete T06 closure waits for those contracts.
 
-PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, `SCALAR_SUBQUERY`, and
-`CORRELATED_SUBQUERY`. A dialect
+PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, `SCALAR_SUBQUERY`,
+`CORRELATED_SUBQUERY`, and `DERIVED_TABLE`. A dialect
 missing one syntax capability rejects only that nested construct; a dialect missing correlation
 support accepts an independent child but rejects a child that depends on an ancestor. Validation
 is recursive and reports the stable nested query-block path.
 
-Derived sources and aggregate expressions remain assigned to their subsequent `0.2.5` slices.
+Aggregate expressions remain assigned to their subsequent `0.2.5` slice.

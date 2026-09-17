@@ -14,7 +14,7 @@ import org.jspecify.annotations.Nullable;
 final class SelectQueryState<R> {
 
   private final SelectedResult<R> selected;
-  private final QueryTable<?> root;
+  private final QueryRelation root;
   private final List<QueryJoin> joins;
   private final @Nullable QueryCondition where;
   private final List<Selectable<?>> groupBy;
@@ -25,7 +25,7 @@ final class SelectQueryState<R> {
   private volatile @Nullable CompiledQueryStructure structure;
   private volatile @Nullable CompiledQueryStructure countStructure;
 
-  static <R> SelectQueryState<R> create(SelectedResult<R> selected, QueryTable<?> root) {
+  static <R> SelectQueryState<R> create(SelectedResult<R> selected, QueryRelation root) {
     return new SelectQueryState<>(
         selected,
         root,
@@ -40,7 +40,7 @@ final class SelectQueryState<R> {
 
   private SelectQueryState(
       SelectedResult<R> selected,
-      QueryTable<?> root,
+      QueryRelation root,
       List<QueryJoin> joins,
       @Nullable QueryCondition where,
       List<Selectable<?>> groupBy,
@@ -63,13 +63,12 @@ final class SelectQueryState<R> {
     return selected;
   }
 
-  QueryTable<?> root() {
+  QueryRelation root() {
     return root;
   }
 
-  @SuppressWarnings("unchecked")
-  <F> QueryTable<F> typedRoot() {
-    return (QueryTable<F>) root;
+  @Nullable QueryTable<?> entityRootOrNull() {
+    return root instanceof QueryTable<?> table ? table : null;
   }
 
   List<QueryJoin> joins() {
@@ -138,10 +137,11 @@ final class SelectQueryState<R> {
         distinct);
   }
 
-  SelectQueryState<R> appendJoin(JoinType type, QueryTable<?> table, @Nullable QueryCondition on) {
+  SelectQueryState<R> appendJoin(
+      JoinType type, QueryRelation relation, @Nullable QueryCondition on) {
     List<QueryJoin> appended = new ArrayList<>(joins.size() + 1);
     appended.addAll(joins);
-    appended.add(new QueryJoin(type, Objects.requireNonNull(table, "table"), on));
+    appended.add(new QueryJoin(type, Objects.requireNonNull(relation, "relation"), on));
     return copy(appended, where, groupBy, having, orderBy, distinct);
   }
 
@@ -155,14 +155,20 @@ final class SelectQueryState<R> {
 
   SelectQueryState<R> thenByPrimaryKey(SortDirection direction) {
     Objects.requireNonNull(direction, "direction");
+    QueryTable<?> entityRoot = entityRootOrNull();
+    if (entityRoot == null) {
+      throw new QueryValidationException(
+          "thenByPrimaryKey requires an entity-table root; this query root is derived");
+    }
     PrimaryKeyMeta<?> primaryKey =
-        root.entity()
+        entityRoot
+            .entity()
             .primaryKey()
             .orElseThrow(
                 () ->
                     new QueryValidationException(
                         "thenByPrimaryKey requires primary-key metadata for entity '"
-                            + root.entity().entityName()
+                            + entityRoot.entity().entityName()
                             + "'"));
     List<SortSpecification> items = new ArrayList<>(orderBy);
     for (PropertyMeta<?, ?> property : primaryKey.properties()) {
@@ -240,13 +246,18 @@ final class SelectQueryState<R> {
         .anyMatch(
             item ->
                 item.selectable() instanceof QueryColumn<?, ?> column
-                    && column.table() == root
+                    && column.table() == entityRootOrNull()
                     && column.property() == property);
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private QueryColumn<?, ?> rootColumn(PropertyMeta<?, ?> property) {
-    return ((QueryTable) root).queryColumn((PropertyMeta) property);
+    QueryTable<?> entityRoot = entityRootOrNull();
+    if (entityRoot == null) {
+      throw new QueryValidationException(
+          "root property access requires an entity-table query root");
+    }
+    return ((QueryTable) entityRoot).queryColumn((PropertyMeta) property);
   }
 
   private static void validateOrderItems(List<SortSpecification> items) {

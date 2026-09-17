@@ -14,22 +14,40 @@ public interface NullableSelectQuery<F, R> {
   NullableSelectQuery<F, R> or(QueryCondition condition);
 
   /** Starts an INNER JOIN whose ON condition is required before execution is available. */
-  <J> NullableJoinOnStep<F, R, J> join(QueryTable<J> table);
+  NullableJoinOnStep<F, R> join(QueryTable<?> table);
+
+  /** Starts an INNER JOIN against a derived relation. */
+  NullableJoinOnStep<F, R> join(DerivedRelation relation);
 
   /** Starts an explicit INNER JOIN whose ON condition is required. */
-  <J> NullableJoinOnStep<F, R, J> innerJoin(QueryTable<J> table);
+  NullableJoinOnStep<F, R> innerJoin(QueryTable<?> table);
+
+  /** Starts an explicit INNER JOIN against a derived relation. */
+  NullableJoinOnStep<F, R> innerJoin(DerivedRelation relation);
 
   /** Starts a LEFT JOIN whose ON condition is required. */
-  <J> NullableJoinOnStep<F, R, J> leftJoin(QueryTable<J> table);
+  NullableJoinOnStep<F, R> leftJoin(QueryTable<?> table);
+
+  /** Starts a LEFT JOIN against a derived relation. */
+  NullableJoinOnStep<F, R> leftJoin(DerivedRelation relation);
 
   /** Starts a RIGHT JOIN whose ON condition is required. */
-  <J> NullableJoinOnStep<F, R, J> rightJoin(QueryTable<J> table);
+  NullableJoinOnStep<F, R> rightJoin(QueryTable<?> table);
+
+  /** Starts a RIGHT JOIN against a derived relation. */
+  NullableJoinOnStep<F, R> rightJoin(DerivedRelation relation);
 
   /** Starts a FULL JOIN whose ON condition is required. */
-  <J> NullableJoinOnStep<F, R, J> fullJoin(QueryTable<J> table);
+  NullableJoinOnStep<F, R> fullJoin(QueryTable<?> table);
+
+  /** Starts a FULL JOIN against a derived relation. */
+  NullableJoinOnStep<F, R> fullJoin(DerivedRelation relation);
 
   /** Appends a CROSS JOIN directly; CROSS JOIN never accepts an ON condition. */
-  <J> NullableSelectQuery<F, R> crossJoin(QueryTable<J> table);
+  NullableSelectQuery<F, R> crossJoin(QueryTable<?> table);
+
+  /** Appends a derived CROSS JOIN directly. */
+  NullableSelectQuery<F, R> crossJoin(DerivedRelation relation);
 
   NullableSelectQuery<F, R> withOptions(ExecutionOptions executionOptions);
 

@@ -14,22 +14,40 @@ public interface SelectQuery<E, R> {
   SelectQuery<E, R> or(QueryCondition condition);
 
   /** Starts an INNER JOIN whose ON condition is required before query execution is available. */
-  <J> JoinOnStep<E, R, J> join(QueryTable<J> table);
+  JoinOnStep<E, R> join(QueryTable<?> table);
+
+  /** Starts an INNER JOIN against a derived relation. */
+  JoinOnStep<E, R> join(DerivedRelation relation);
 
   /** Starts an explicit INNER JOIN whose ON condition is required. */
-  <J> JoinOnStep<E, R, J> innerJoin(QueryTable<J> table);
+  JoinOnStep<E, R> innerJoin(QueryTable<?> table);
+
+  /** Starts an explicit INNER JOIN against a derived relation. */
+  JoinOnStep<E, R> innerJoin(DerivedRelation relation);
 
   /** Starts a LEFT JOIN whose ON condition is required. */
-  <J> JoinOnStep<E, R, J> leftJoin(QueryTable<J> table);
+  JoinOnStep<E, R> leftJoin(QueryTable<?> table);
+
+  /** Starts a LEFT JOIN against a derived relation. */
+  JoinOnStep<E, R> leftJoin(DerivedRelation relation);
 
   /** Starts a RIGHT JOIN whose ON condition is required. */
-  <J> JoinOnStep<E, R, J> rightJoin(QueryTable<J> table);
+  JoinOnStep<E, R> rightJoin(QueryTable<?> table);
+
+  /** Starts a RIGHT JOIN against a derived relation. */
+  JoinOnStep<E, R> rightJoin(DerivedRelation relation);
 
   /** Starts a FULL JOIN whose ON condition is required. */
-  <J> JoinOnStep<E, R, J> fullJoin(QueryTable<J> table);
+  JoinOnStep<E, R> fullJoin(QueryTable<?> table);
+
+  /** Starts a FULL JOIN against a derived relation. */
+  JoinOnStep<E, R> fullJoin(DerivedRelation relation);
 
   /** Appends a CROSS JOIN directly; CROSS JOIN never accepts an ON condition. */
-  <J> SelectQuery<E, R> crossJoin(QueryTable<J> table);
+  SelectQuery<E, R> crossJoin(QueryTable<?> table);
+
+  /** Appends a derived CROSS JOIN directly. */
+  SelectQuery<E, R> crossJoin(DerivedRelation relation);
 
   SelectQuery<E, R> withOptions(ExecutionOptions executionOptions);
 

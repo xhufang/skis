@@ -27,7 +27,8 @@ public final class H2Dialect implements Dialect {
           DialectFeature.EXISTS_SUBQUERY,
           DialectFeature.IN_SUBQUERY,
           DialectFeature.SCALAR_SUBQUERY,
-          DialectFeature.CORRELATED_SUBQUERY);
+          DialectFeature.CORRELATED_SUBQUERY,
+          DialectFeature.DERIVED_TABLE);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();

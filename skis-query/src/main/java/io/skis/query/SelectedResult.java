@@ -127,6 +127,29 @@ final class SelectedResult<R> {
     };
   }
 
+  boolean matchesOutput(int ordinal, Selectable<?> candidate) {
+    Objects.requireNonNull(candidate, "candidate");
+    return switch (kind) {
+      case REQUIRED_ENTITY, NULLABLE_ENTITY -> {
+        QueryTable<?> selectedTable = requireTable();
+        if (!(candidate instanceof QueryColumn<?, ?> column)
+            || column.table() != selectedTable
+            || ordinal < 0
+            || ordinal >= selectedTable.entity().properties().size()) {
+          yield false;
+        }
+        yield column.property() == selectedTable.entity().properties().get(ordinal);
+      }
+      case REQUIRED_SCALAR, NULLABLE_SCALAR ->
+          ordinal == 0 && SelectableSupport.sameOccurrence(requireScalar(), candidate);
+      case GENERATED_PROJECTION ->
+          ordinal >= 0
+              && ordinal < requireProjection().selections().size()
+              && SelectableSupport.sameOccurrence(
+                  requireProjection().selections().get(ordinal), candidate);
+    };
+  }
+
   Selectable<R> singleSelectable() {
     if (kind != Kind.REQUIRED_SCALAR && kind != Kind.NULLABLE_SCALAR) {
       throw new IllegalStateException("selected result is not a single SQL value");

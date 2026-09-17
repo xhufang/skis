@@ -125,7 +125,6 @@ public final class QueryBlockAnalysis {
       }
     }
 
-    /** Preserves the step-6 construction shape for existence subqueries. */
     public NestedBlock(
         SelectStatement statement, QueryBlockLocation location, QueryBlockAnalysis analysis) {
       this(statement, location, NestedQueryKind.EXISTS, analysis);
@@ -141,7 +140,10 @@ public final class QueryBlockAnalysis {
     IN_SUBQUERY,
 
     /** A single-column SELECT evaluated as one nullable SQL value. */
-    SCALAR_SUBQUERY
+    SCALAR_SUBQUERY,
+
+    /** A non-correlated SELECT used as a FROM or JOIN relation source. */
+    DERIVED_TABLE
   }
 
   record ScopeSite(QueryClause clause, int itemOrdinal) {
@@ -163,6 +165,10 @@ public final class QueryBlockAnalysis {
 
     @Nullable TableExpression<?> entityTableOrNull() {
       return source.entityTable().orElse(null);
+    }
+
+    @Nullable DerivedRelationReference derivedReferenceOrNull() {
+      return source.derivedReference().orElse(null);
     }
   }
 

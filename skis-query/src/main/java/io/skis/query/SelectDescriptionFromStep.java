@@ -16,9 +16,14 @@ public final class SelectDescriptionFromStep<D> {
     return factory.create(Objects.requireNonNull(table, "table"));
   }
 
+  /** Chooses a root-type-neutral derived relation for the reusable description. */
+  public D from(DerivedRelation relation) {
+    return factory.create(Objects.requireNonNull(relation, "relation"));
+  }
+
   @FunctionalInterface
   interface Factory<D> {
 
-    D create(QueryTable<?> table);
+    D create(QueryRelation relation);
   }
 }

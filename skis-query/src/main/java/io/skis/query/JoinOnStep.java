@@ -6,7 +6,7 @@ package io.skis.query;
  * <p>This type intentionally exposes no query terminal operation. Calling {@link #on} completes the
  * join and returns a new immutable query.
  */
-public interface JoinOnStep<F, R, J> {
+public interface JoinOnStep<F, R> {
 
   /**
    * Completes the pending join with a condition visible to its accumulated left scope and current

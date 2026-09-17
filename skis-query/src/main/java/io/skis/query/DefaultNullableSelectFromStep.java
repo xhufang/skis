@@ -19,4 +19,11 @@ final class DefaultNullableSelectFromStep<R> implements NullableSelectFromStep<R
         operations.selectFrom(selected, Objects.requireNonNull(table, "table"));
     return new DefaultNullableSelectQuery<>(operations, query);
   }
+
+  @Override
+  public NullableSelectQuery<?, R> from(DerivedRelation relation) {
+    DefaultSelectQuery<?, R> query =
+        operations.selectFrom(selected, Objects.requireNonNull(relation, "relation"));
+    return new DefaultNullableSelectQuery<>(operations, query);
+  }
 }
