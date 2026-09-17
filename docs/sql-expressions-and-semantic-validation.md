@@ -131,8 +131,8 @@ Collection membership remains a different overload and AST node.
 its own nullability is always nullable because an empty child produces SQL NULL. Query compilation
 resolves the selected column's Codec without invoking an inner row decoder. The expression can be
 used in selection, comparison, NULL tests, the reserved HAVING structure, ordering, and nullable
-generated-projection positions. Derived-source adapters remain deferred to their later slice and
-will reuse the same description state instead of introducing a second query DSL.
+generated-projection positions. Derived relations reuse the same description state and publish an
+explicit ordered output shape instead of introducing a second query DSL.
 
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
@@ -206,8 +206,8 @@ ordered `FromClause`: the root and each completed Join occurrence form its visib
 Subqueries, derived tables, joins, and CTEs were not represented by the `0.2.2` AST. Explicit joins
 were added by the `0.2.4` scope described below. The `0.2.5` AST now routes the FROM root, Join
 right-hand sides, and occurrences through sealed `RelationSource` nodes; the first slice provides
-only the entity adapter and retains the original `TableExpression<?>` reference. Derived and
-subquery source nodes remain deferred to their later capability slices, and CTEs remain deferred to
+the entity adapter and retains the original `TableExpression<?>` reference. The derived-table
+slice adds a SELECT-backed source with an explicit ordered output shape; CTEs remain deferred to
 0.2.6.
 
 SELECT validation has two boundaries. Construction enforces context-free local invariants,
@@ -318,11 +318,12 @@ identifiers are always quoted, so qualifier collision checks compare the final r
 another identifier rule must provide its corresponding normalized collision semantics when
 introduced.
 
-Ordinary FROM/Join relation children use a non-correlated boundary. Their child analysis retains a
-stable path but receives no parent scope, preventing an accidental LATERAL contract. EXISTS, IN,
+Ordinary derived FROM/Join relation children use a non-correlated boundary. Their child analysis
+retains a stable path but receives no parent scope, preventing an accidental LATERAL contract. EXISTS, IN,
 and scalar-subquery AST nodes use this shared machinery and record every child occurrence at its
 exact clause location. The scalar result is conservatively nullable even when the child's selected
-column is non-null. Derived-source nodes remain assigned to a later 0.2.5 slice.
+column is non-null. Derived columns resolve by concrete source occurrence plus public output
+ordinal, and their published nullability can be extended again by an outer Join.
 
 The public `ExistsPredicate` owns a complete `SelectStatement` subtree and a native negation flag.
 Its Boolean result is always non-null. Recursive validation preserves child selections, NULLs,

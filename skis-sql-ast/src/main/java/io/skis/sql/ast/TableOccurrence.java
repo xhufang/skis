@@ -27,4 +27,9 @@ public record TableOccurrence(int occurrenceOrdinal, RelationSource source) {
   public Optional<TableExpression<?>> entityTable() {
     return source.entityTable();
   }
+
+  /** Returns the underlying derived occurrence reference for a derived source. */
+  public Optional<DerivedRelationReference> derivedReference() {
+    return source.derivedReference();
+  }
 }

@@ -17,4 +17,9 @@ final class DefaultSelectFromStep<R> implements SelectFromStep<R> {
   public <F> SelectQuery<F, R> from(QueryTable<F> table) {
     return operations.selectFrom(selected, Objects.requireNonNull(table, "table"));
   }
+
+  @Override
+  public SelectQuery<?, R> from(DerivedRelation relation) {
+    return operations.selectFrom(selected, Objects.requireNonNull(relation, "relation"));
+  }
 }

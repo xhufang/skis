@@ -86,39 +86,16 @@ final class QueryPlanCompiler {
                     structure.having(),
                     List.of(),
                     null));
-    InputsBuilder<E> inputs =
-        new InputsBuilder<>(runtimeScope, structure, placeholderArguments(structure));
-    return compilePlan(model, statement, inputs.logicalParameters(), model.fullRowDecoder());
+    InputsBuilder inputs =
+        new InputsBuilder(runtimeScope, structure, placeholderArguments(structure));
+    return compilePlan(statement, inputs.logicalParameters(), model.fullRowDecoder());
   }
 
-  <E, R> QueryCompilation<Long> compileCount(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      SelectedResult<R> selected,
-      List<QueryJoin> joins,
-      @Nullable QueryCondition condition,
-      boolean distinct) {
-    return compileCount(
-        model, table, selected, QueryStructureCompiler.compile(table, joins, condition), distinct);
-  }
-
-  <E, R> QueryCompilation<Long> compileCount(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      SelectedResult<R> selected,
-      CompiledQueryStructure structure,
-      boolean distinct) {
-    return compileCount(model, table, selected, structure, distinct, structure.arguments());
-  }
-
-  <E, R> QueryCompilation<Long> compileCount(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
+  <R> QueryCompilation<Long> compileCount(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       boolean distinct,
       List<@Nullable Object> conditionArguments) {
-    requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
     validateSelectionSource(selected, structure, distinct);
     TableRuntimeScope runtimeScope =
@@ -131,12 +108,10 @@ final class QueryPlanCompiler {
           selected.automaticDistinctCountExpression(
               !structure.fromClause().joins().isEmpty(), selection.expressions());
     }
-    return compileResolvedCount(
-        model, structure, runtimeScope, conditionArguments, distinctExpression);
+    return compileResolvedCount(structure, runtimeScope, conditionArguments, distinctExpression);
   }
 
-  private <E> QueryCompilation<Long> compileResolvedCount(
-      EntityRuntimeModel<E> model,
+  private QueryCompilation<Long> compileResolvedCount(
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       List<@Nullable Object> conditionArguments,
@@ -148,10 +123,9 @@ final class QueryPlanCompiler {
     CountAst count =
         constructedStatement(
             () -> new CountAst(structure.fromClause(), structure.where(), distinctExpression));
-    InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure, conditionArguments);
+    InputsBuilder inputs = new InputsBuilder(runtimeScope, structure, conditionArguments);
     CompiledQueryPlan<Long, Object> plan =
         compilePlan(
-            model,
             count,
             inputs.logicalParameters(),
             (resultSet, context) -> {
@@ -164,16 +138,13 @@ final class QueryPlanCompiler {
     return new QueryCompilation<>(plan, inputs.argument(), count);
   }
 
-  <E, R> QueryCompilation<OrderedRow<R>> compileOrdered(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
+  <R> QueryCompilation<OrderedRow<R>> compileOrdered(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination,
       List<@Nullable Object> conditionArguments) {
-    requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
     if (structure.validationSource() != null) {
       validateSelectionSource(selected, structure, distinct);
@@ -183,18 +154,10 @@ final class QueryPlanCompiler {
     ResolvedResultShape<R> selection =
         selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     return compileResolvedOrdered(
-        model,
-        structure,
-        runtimeScope,
-        selection,
-        orderBy,
-        distinct,
-        pagination,
-        conditionArguments);
+        structure, runtimeScope, selection, orderBy, distinct, pagination, conditionArguments);
   }
 
-  private <E, R> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
-      EntityRuntimeModel<E> model,
+  private <R> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
@@ -238,7 +201,6 @@ final class QueryPlanCompiler {
           return new OrderedRow<>(value, orderValues);
         };
     return compileResolvedSelection(
-        model,
         structure,
         runtimeScope,
         new ResolvedResultShape<>(selection.expressions(), decoder, selection.selections()),
@@ -249,51 +211,7 @@ final class QueryPlanCompiler {
         conditionArguments);
   }
 
-  <E, R> QueryCompilation<R> compileSelection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      SelectedResult<R> selected,
-      List<QueryJoin> joins,
-      @Nullable QueryCondition condition,
-      List<SortSpecification> orderBy,
-      boolean distinct,
-      QueryPagination pagination,
-      List<HiddenSelection> hidden) {
-    return compileSelection(
-        model,
-        table,
-        selected,
-        QueryStructureCompiler.compile(table, joins, condition),
-        orderBy,
-        distinct,
-        pagination,
-        hidden);
-  }
-
-  <E, R> QueryCompilation<R> compileSelection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
-      SelectedResult<R> selected,
-      CompiledQueryStructure structure,
-      List<SortSpecification> orderBy,
-      boolean distinct,
-      QueryPagination pagination,
-      List<HiddenSelection> hidden) {
-    return compileSelection(
-        model,
-        table,
-        selected,
-        structure,
-        orderBy,
-        distinct,
-        pagination,
-        hidden,
-        structure.arguments());
-  }
-
-  <E, R> QueryCompilation<R> compileSelection(
-      EntityRuntimeModel<E> model,
-      QueryTable<E> table,
+  <R> QueryCompilation<R> compileSelection(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       List<SortSpecification> orderBy,
@@ -301,7 +219,6 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       List<HiddenSelection> hidden,
       List<@Nullable Object> conditionArguments) {
-    requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
     if (structure.validationSource() != null) {
       validateSelectionSource(selected, structure, distinct);
@@ -311,7 +228,6 @@ final class QueryPlanCompiler {
     ResolvedResultShape<R> selection =
         selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     return compileResolvedSelection(
-        model,
         structure,
         runtimeScope,
         selection,
@@ -322,8 +238,7 @@ final class QueryPlanCompiler {
         conditionArguments);
   }
 
-  private <E, R> QueryCompilation<R> compileResolvedSelection(
-      EntityRuntimeModel<E> model,
+  private <R> QueryCompilation<R> compileResolvedSelection(
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       ResolvedResultShape<R> selection,
@@ -333,7 +248,7 @@ final class QueryPlanCompiler {
       List<HiddenSelection> hidden,
       List<@Nullable Object> conditionArguments) {
     List<OrderByItem> orderAst = orderItems(structure, orderBy);
-    InputsBuilder<E> inputs = new InputsBuilder<>(runtimeScope, structure, conditionArguments);
+    InputsBuilder inputs = new InputsBuilder(runtimeScope, structure, conditionArguments);
     SelectPagination paginationAst = inputs.pagination(orderBy, orderAst, pagination);
     SelectStatement statement =
         constructedStatement(
@@ -349,7 +264,7 @@ final class QueryPlanCompiler {
                     orderAst,
                     paginationAst));
     CompiledQueryPlan<R, Object> plan =
-        compilePlan(model, statement, inputs.logicalParameters(), selection.decoder());
+        compilePlan(statement, inputs.logicalParameters(), selection.decoder());
     return new QueryCompilation<>(plan, inputs.argument(), statement);
   }
 
@@ -358,7 +273,9 @@ final class QueryPlanCompiler {
     return structure.selections().isEmpty() ? selected.expressions() : structure.selections();
   }
 
-  /** Validates original scopes before count, empty-IN pruning, or selected scalar ordering reuse. */
+  /**
+   * Validates original scopes before count, empty-IN pruning, or selected scalar ordering reuse.
+   */
   private void validateSelectionSource(
       SelectedResult<?> selected, CompiledQueryStructure structure, boolean distinct) {
     CompiledQueryStructure source = structure.validationStructure();
@@ -407,22 +324,18 @@ final class QueryPlanCompiler {
       StatementAst statement,
       List<PropertyMeta<E, ?>> properties,
       RowDecoder<R> rowDecoder) {
-    List<LogicalParameter<E>> parameters = new ArrayList<>(properties.size());
+    List<LogicalParameter> parameters = new ArrayList<>(properties.size());
     for (int ordinal = 0; ordinal < properties.size(); ordinal++) {
       PropertyMeta<E, ?> property = properties.get(ordinal);
       parameters.add(
           LogicalParameter.codec(
               expectedSlot(ordinal, property), model.property(property).codec()));
     }
-    return compilePlan(model, statement, parameters, rowDecoder);
+    return compilePlan(statement, parameters, rowDecoder);
   }
 
-  private <E, R> CompiledQueryPlan<R, Object> compilePlan(
-      EntityRuntimeModel<E> model,
-      StatementAst statement,
-      List<LogicalParameter<E>> logicalParameters,
-      RowDecoder<R> rowDecoder) {
-    Objects.requireNonNull(model, "model");
+  private <R> CompiledQueryPlan<R, Object> compilePlan(
+      StatementAst statement, List<LogicalParameter> logicalParameters, RowDecoder<R> rowDecoder) {
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(rowDecoder, "rowDecoder");
     validateLogicalParameters(logicalParameters);
@@ -434,8 +347,7 @@ final class QueryPlanCompiler {
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
     }
-    List<RenderedBinding<E>> renderedBindings =
-        renderedBindings(model, logicalParameters, rendered);
+    List<RenderedBinding> renderedBindings = renderedBindings(logicalParameters, rendered);
     int logicalParameterCount = logicalParameters.size();
     return new CompiledQueryPlan<>(
         dialect.id(),
@@ -443,7 +355,7 @@ final class QueryPlanCompiler {
         (preparedStatement, firstIndex, argument, context) -> {
           List<?> values = requireArguments(argument, logicalParameterCount);
           int index = firstIndex;
-          for (RenderedBinding<E> binding : renderedBindings) {
+          for (RenderedBinding binding : renderedBindings) {
             binding
                 .parameter()
                 .bind(preparedStatement, index, values.get(binding.argumentOrdinal()), context);
@@ -454,44 +366,38 @@ final class QueryPlanCompiler {
         rowDecoder);
   }
 
-  private <E> List<RenderedBinding<E>> renderedBindings(
-      EntityRuntimeModel<E> model,
-      List<LogicalParameter<E>> logicalParameters,
-      RenderedSql rendered) {
+  private List<RenderedBinding> renderedBindings(
+      List<LogicalParameter> logicalParameters, RenderedSql rendered) {
     boolean[] seen = new boolean[logicalParameters.size()];
-    List<RenderedBinding<E>> bindings = new ArrayList<>(rendered.parameterCount());
+    List<RenderedBinding> bindings = new ArrayList<>(rendered.parameterCount());
     for (ParameterSlot<?> renderedSlot : rendered.parameters()) {
       int ordinal = renderedSlot.ordinal();
       if (ordinal < 0 || ordinal >= logicalParameters.size()) {
-        throw unexpectedParameterShape(model);
+        throw unexpectedParameterShape();
       }
-      LogicalParameter<E> logical = logicalParameters.get(ordinal);
+      LogicalParameter logical = logicalParameters.get(ordinal);
       if (!logical.matches(renderedSlot)) {
-        throw unexpectedParameterShape(model);
+        throw unexpectedParameterShape();
       }
       seen[ordinal] = true;
-      bindings.add(new RenderedBinding<>(logical, ordinal));
+      bindings.add(new RenderedBinding(logical, ordinal));
     }
     for (boolean present : seen) {
       if (!present) {
-        throw unexpectedParameterShape(model);
+        throw unexpectedParameterShape();
       }
     }
     return List.copyOf(bindings);
   }
 
-  private QueryValidationException unexpectedParameterShape(EntityRuntimeModel<?> model) {
+  private QueryValidationException unexpectedParameterShape() {
     return new QueryValidationException(
-        "dialect '"
-            + dialect.id()
-            + "' rendered an unexpected parameter shape for entity '"
-            + model.entity().entityName()
-            + "'");
+        "dialect '" + dialect.id() + "' rendered an unexpected statement parameter shape");
   }
 
-  private static void validateLogicalParameters(List<? extends LogicalParameter<?>> parameters) {
+  private static void validateLogicalParameters(List<LogicalParameter> parameters) {
     for (int ordinal = 0; ordinal < parameters.size(); ordinal++) {
-      LogicalParameter<?> parameter = Objects.requireNonNull(parameters.get(ordinal), "parameter");
+      LogicalParameter parameter = Objects.requireNonNull(parameters.get(ordinal), "parameter");
       if (parameter.descriptor().ordinal() != ordinal) {
         throw new QueryValidationException(
             "logical parameter ordinals must be dense from zero; expected "
@@ -583,7 +489,7 @@ final class QueryPlanCompiler {
     }
   }
 
-  private record RenderedBinding<E>(LogicalParameter<E> parameter, int argumentOrdinal) {}
+  private record RenderedBinding(LogicalParameter parameter, int argumentOrdinal) {}
 
   private enum ScalarBinding {
     NONE,
@@ -591,7 +497,7 @@ final class QueryPlanCompiler {
     LONG
   }
 
-  private record LogicalParameter<E>(
+  private record LogicalParameter(
       ParameterSlot<?> descriptor, @Nullable JdbcTypeCodec<?> codec, ScalarBinding scalarBinding) {
 
     private LogicalParameter {
@@ -605,17 +511,17 @@ final class QueryPlanCompiler {
       }
     }
 
-    static <E> LogicalParameter<E> codec(ParameterSlot<?> descriptor, JdbcTypeCodec<?> codec) {
-      return new LogicalParameter<>(
+    static LogicalParameter codec(ParameterSlot<?> descriptor, JdbcTypeCodec<?> codec) {
+      return new LogicalParameter(
           descriptor, Objects.requireNonNull(codec, "codec"), ScalarBinding.NONE);
     }
 
-    static <E> LogicalParameter<E> integer(ParameterSlot<Integer> descriptor) {
-      return new LogicalParameter<>(descriptor, null, ScalarBinding.INTEGER);
+    static LogicalParameter integer(ParameterSlot<Integer> descriptor) {
+      return new LogicalParameter(descriptor, null, ScalarBinding.INTEGER);
     }
 
-    static <E> LogicalParameter<E> longValue(ParameterSlot<Long> descriptor) {
-      return new LogicalParameter<>(descriptor, null, ScalarBinding.LONG);
+    static LogicalParameter longValue(ParameterSlot<Long> descriptor) {
+      return new LogicalParameter(descriptor, null, ScalarBinding.LONG);
     }
 
     boolean matches(ParameterSlot<?> slot) {
@@ -678,10 +584,10 @@ final class QueryPlanCompiler {
     }
   }
 
-  private final class InputsBuilder<E> {
+  private final class InputsBuilder {
 
     private final TableRuntimeScope runtimeScope;
-    private final List<LogicalParameter<E>> logicalParameters = new ArrayList<>();
+    private final List<LogicalParameter> logicalParameters = new ArrayList<>();
     private final List<@Nullable Object> arguments = new ArrayList<>();
 
     private InputsBuilder(
@@ -837,19 +743,10 @@ final class QueryPlanCompiler {
     }
 
     private JdbcTypeCodec<?> parameterCodec(Selectable<?> source) {
-      if (source instanceof QueryColumn<?, ?> column) {
-        return parameterColumnCodec(column);
-      }
-      return ResolvedValueMapping.resolve(source, runtimeScope).codec();
+      return ResolvedValueMapping.codecFor(source, runtimeRegistry);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private JdbcTypeCodec<?> parameterColumnCodec(QueryColumn<?, ?> column) {
-      EntityRuntimeModel model = runtimeRegistry.require(column.table().entity());
-      return model.property(column.property()).codec();
-    }
-
-    private List<LogicalParameter<E>> logicalParameters() {
+    private List<LogicalParameter> logicalParameters() {
       return List.copyOf(logicalParameters);
     }
 

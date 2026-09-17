@@ -6,10 +6,10 @@ import java.util.Optional;
  * Framework-owned relation source for one occurrence in a {@link FromClause}.
  *
  * <p>The sealed hierarchy keeps source kinds traversable by semantic validation and dialect
- * rendering. Entity tables are adapted through {@link EntityRelationSource}; later source kinds
- * can therefore share the FROM/Join structure without pretending to be entity metadata.
+ * rendering. Entity tables are adapted through {@link EntityRelationSource}; later source kinds can
+ * therefore share the FROM/Join structure without pretending to be entity metadata.
  */
-public sealed interface RelationSource permits EntityRelationSource {
+public sealed interface RelationSource permits EntityRelationSource, DerivedRelationSource {
 
   /** Adapts an entity table while retaining the exact table-expression reference. */
   static RelationSource entity(TableExpression<?> table) {
@@ -21,6 +21,11 @@ public sealed interface RelationSource permits EntityRelationSource {
 
   /** Returns the adapted entity table, or empty for a non-entity relation source. */
   default Optional<TableExpression<?>> entityTable() {
+    return Optional.empty();
+  }
+
+  /** Returns the framework-owned derived occurrence reference, when this is a derived source. */
+  default Optional<DerivedRelationReference> derivedReference() {
     return Optional.empty();
   }
 }

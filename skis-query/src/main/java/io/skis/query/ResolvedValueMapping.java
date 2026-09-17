@@ -59,16 +59,16 @@ record ResolvedValueMapping<V>(
     Objects.requireNonNull(selectable, "selectable");
     Objects.requireNonNull(expression, "expression");
     Objects.requireNonNull(scope, "scope");
-    if (selectable instanceof QueryColumn<?, ?> column) {
-      return resolveColumnUntyped(column, expression, scope);
-    }
-    if (selectable instanceof ScalarSubquerySelectable<?> scalar) {
-      return resolveScalarUntyped(scalar, expression, scope);
-    }
-    throw new QueryValidationException(
-        "no query-local value mapping is registered for framework expression '"
-            + SelectableSupport.summary(selectable)
-            + "'");
+    return switch (selectable) {
+      case QueryColumn<?, ?> column -> resolveColumnUntyped(column, expression, scope);
+      case DerivedColumnSelectable<?> derived -> resolveDerivedUntyped(derived, expression, scope);
+      case ScalarSubquerySelectable<?> scalar -> resolveScalarUntyped(scalar, expression, scope);
+      default ->
+          throw new QueryValidationException(
+              "no query-local value mapping is registered for framework expression '"
+                  + SelectableSupport.summary(selectable)
+                  + "'");
+    };
   }
 
   ProjectionMapping.ValueReader<V> reader(int resultIndex, boolean requireNonNull) {
@@ -143,6 +143,29 @@ record ResolvedValueMapping<V>(
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
+  private static <V> ResolvedValueMapping<V> resolveDerivedUntyped(
+      DerivedColumnSelectable<?> derived, SqlExpression<V> expression, TableRuntimeScope scope) {
+    DerivedColumnSelectable<V> typed = (DerivedColumnSelectable) derived;
+    if (!(expression instanceof io.skis.sql.ast.DerivedColumnExpression<?> compiled)
+        || compiled.relation() != typed.relation().reference()
+        || compiled.outputOrdinal() != typed.outputOrdinal()) {
+      throw new QueryValidationException(
+          "compiled derived selection does not reference its concrete relation occurrence and "
+              + "output ordinal");
+    }
+    JdbcTypeCodec<V> codec =
+        (JdbcTypeCodec<V>) outputCodec(typed.output().selectable(), scope.registry());
+    return new ResolvedValueMapping<>(
+        typed,
+        expression,
+        typed.javaType(),
+        typed.sqlType(),
+        scope.effectiveNullability(typed),
+        codec,
+        scope.require(typed.relation()));
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
   private static <V> ResolvedValueMapping<V> resolveScalarUntyped(
       ScalarSubquerySelectable<?> scalar, SqlExpression<V> expression, TableRuntimeScope scope) {
     if (!(expression instanceof ScalarSubqueryExpression<?>)) {
@@ -158,16 +181,28 @@ record ResolvedValueMapping<V>(
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static JdbcTypeCodec<?> outputCodec(
       Selectable<?> output, EntityRuntimeRegistry registry) {
-    if (output instanceof QueryColumn<?, ?> column) {
-      EntityRuntimeModel model = registry.require(column.table().entity());
-      return model.property(column.property()).codec();
-    }
-    if (output instanceof ScalarSubquerySelectable<?> scalar) {
-      return outputCodec(scalar.output(), registry);
+    switch (output) {
+      case QueryColumn<?, ?> column -> {
+        EntityRuntimeModel model = registry.require(column.table().entity());
+        return model.property(column.property()).codec();
+      }
+      case DerivedColumnSelectable<?> derived -> {
+        return outputCodec(derived.output().selectable(), registry);
+      }
+      case ScalarSubquerySelectable<?> scalar -> {
+        return outputCodec(scalar.output(), registry);
+      }
+      default -> {}
     }
     throw new QueryValidationException(
-        "no result Codec is registered for scalar subquery output '"
+        "no result Codec is registered for selectable output '"
             + SelectableSupport.summary(output)
             + "'");
+  }
+
+  static JdbcTypeCodec<?> codecFor(Selectable<?> selectable, EntityRuntimeRegistry registry) {
+    return outputCodec(
+        Objects.requireNonNull(selectable, "selectable"),
+        Objects.requireNonNull(registry, "registry"));
   }
 }

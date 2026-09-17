@@ -14,7 +14,11 @@ import org.jspecify.annotations.Nullable;
  * predicates, ordering, and generated projections do not need expression-specific API families.
  */
 public sealed interface Selectable<V>
-    permits ExpressionSelectable, NonNullSelectable, QueryColumn, ScalarSubquerySelectable {
+    permits DerivedColumnSelectable,
+        ExpressionSelectable,
+        NonNullSelectable,
+        QueryColumn,
+        ScalarSubquerySelectable {
 
   /** Returns the boxed Java value type produced by this expression. */
   Class<V> javaType();

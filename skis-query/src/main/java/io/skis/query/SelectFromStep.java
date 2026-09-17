@@ -5,4 +5,7 @@ public interface SelectFromStep<R> {
 
   /** Chooses an independent root; selected expressions are validated in the final query scope. */
   <F> SelectQuery<F, R> from(QueryTable<F> table);
+
+  /** Chooses a derived root and returns a root-type-neutral query view. */
+  SelectQuery<?, R> from(DerivedRelation relation);
 }

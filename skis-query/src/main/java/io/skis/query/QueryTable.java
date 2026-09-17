@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Objects;
 
 /** Base class for generated entity tables exposed by the query DSL. */
-public abstract class QueryTable<E> extends TableExpression<E> {
+public abstract non-sealed class QueryTable<E> extends TableExpression<E> implements QueryRelation {
 
   private final List<ColumnExpression<E, ?>> selections;
 

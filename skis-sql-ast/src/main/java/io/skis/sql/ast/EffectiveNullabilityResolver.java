@@ -11,49 +11,73 @@ final class EffectiveNullabilityResolver {
 
   static Nullability resolve(
       SqlExpression<?> expression, Map<TableExpression<?>, Boolean> nullExtendedTables) {
+    return resolve(expression, nullExtendedTables, new IdentityHashMap<>());
+  }
+
+  static Nullability resolve(
+      SqlExpression<?> expression,
+      Map<TableExpression<?>, Boolean> nullExtendedTables,
+      Map<DerivedRelationReference, Boolean> nullExtendedDerivedRelations) {
     Objects.requireNonNull(expression, "expression");
     Objects.requireNonNull(nullExtendedTables, "nullExtendedTables");
+    Objects.requireNonNull(nullExtendedDerivedRelations, "nullExtendedDerivedRelations");
     return switch (expression) {
       case ColumnExpression<?, ?> column -> columnNullability(column, nullExtendedTables);
+      case DerivedColumnExpression<?> column ->
+          derivedColumnNullability(column, nullExtendedDerivedRelations);
       case ParameterSlot<?> parameter -> parameter.nullability();
       case LiteralExpression<?> literal -> literal.nullability();
       case ArithmeticExpression<?> arithmetic ->
-          resolve(arithmetic.left(), nullExtendedTables)
-              .union(resolve(arithmetic.right(), nullExtendedTables));
+          resolve(arithmetic.left(), nullExtendedTables, nullExtendedDerivedRelations)
+              .union(resolve(arithmetic.right(), nullExtendedTables, nullExtendedDerivedRelations));
       case ConcatExpression concat ->
           concat.operands().stream()
-                  .anyMatch(item -> resolve(item, nullExtendedTables).isNullable())
+                  .anyMatch(
+                      item ->
+                          resolve(item, nullExtendedTables, nullExtendedDerivedRelations)
+                              .isNullable())
               ? Nullability.NULLABLE
               : Nullability.NON_NULL;
-      case CaseExpression<?> caseExpression -> caseNullability(caseExpression, nullExtendedTables);
-      case CastExpression<?> cast -> resolve(cast.operand(), nullExtendedTables);
+      case CaseExpression<?> caseExpression ->
+          caseNullability(caseExpression, nullExtendedTables, nullExtendedDerivedRelations);
+      case CastExpression<?> cast ->
+          resolve(cast.operand(), nullExtendedTables, nullExtendedDerivedRelations);
       case CoalesceExpression<?> coalesce ->
           coalesce.operands().stream()
-                  .allMatch(item -> resolve(item, nullExtendedTables).isNullable())
+                  .allMatch(
+                      item ->
+                          resolve(item, nullExtendedTables, nullExtendedDerivedRelations)
+                              .isNullable())
               ? Nullability.NULLABLE
               : Nullability.NON_NULL;
       case ComparisonPredicate<?> comparison ->
-          resolve(comparison.left(), nullExtendedTables)
-              .union(resolve(comparison.right(), nullExtendedTables));
+          resolve(comparison.left(), nullExtendedTables, nullExtendedDerivedRelations)
+              .union(resolve(comparison.right(), nullExtendedTables, nullExtendedDerivedRelations));
       case LogicalPredicate logical ->
           logical.operands().stream()
-                  .anyMatch(item -> resolve(item, nullExtendedTables).isNullable())
+                  .anyMatch(
+                      item ->
+                          resolve(item, nullExtendedTables, nullExtendedDerivedRelations)
+                              .isNullable())
               ? Nullability.NULLABLE
               : Nullability.NON_NULL;
       case NullPredicate ignored -> Nullability.NON_NULL;
       case BetweenPredicate<?> between ->
-          resolve(between.value(), nullExtendedTables)
-              .union(resolve(between.lower(), nullExtendedTables))
-              .union(resolve(between.upper(), nullExtendedTables));
+          resolve(between.value(), nullExtendedTables, nullExtendedDerivedRelations)
+              .union(resolve(between.lower(), nullExtendedTables, nullExtendedDerivedRelations))
+              .union(resolve(between.upper(), nullExtendedTables, nullExtendedDerivedRelations));
       case LikePredicate like ->
-          resolve(like.value(), nullExtendedTables)
-              .union(resolve(like.pattern(), nullExtendedTables));
-      case InPredicate<?> in -> inNullability(in, nullExtendedTables);
-      case InSubqueryPredicate<?> in -> inSubqueryNullability(in, nullExtendedTables);
+          resolve(like.value(), nullExtendedTables, nullExtendedDerivedRelations)
+              .union(resolve(like.pattern(), nullExtendedTables, nullExtendedDerivedRelations));
+      case InPredicate<?> in -> inNullability(in, nullExtendedTables, nullExtendedDerivedRelations);
+      case InSubqueryPredicate<?> in ->
+          inSubqueryNullability(in, nullExtendedTables, nullExtendedDerivedRelations);
       case ExistsPredicate ignored -> Nullability.NON_NULL;
       case ScalarSubqueryExpression<?> ignored -> Nullability.NULLABLE;
-      case NotPredicate not -> resolve(not.operand(), nullExtendedTables);
-      case IncrementExpression<?> increment -> resolve(increment.operand(), nullExtendedTables);
+      case NotPredicate not ->
+          resolve(not.operand(), nullExtendedTables, nullExtendedDerivedRelations);
+      case IncrementExpression<?> increment ->
+          resolve(increment.operand(), nullExtendedTables, nullExtendedDerivedRelations);
       default ->
           throw new IllegalArgumentException(
               "unsupported SQL expression node " + expression.getClass().getName());
@@ -72,6 +96,24 @@ final class EffectiveNullabilityResolver {
           throw new IllegalStateException("relation occurrence has no null-extension state");
         }
         state.put(table, nullExtended);
+      }
+    }
+    return state;
+  }
+
+  static IdentityHashMap<DerivedRelationReference, Boolean> finalDerivedRelationState(
+      FromClause fromClause) {
+    Objects.requireNonNull(fromClause, "fromClause");
+    IdentityHashMap<DerivedRelationReference, Boolean> state = new IdentityHashMap<>();
+    IdentityHashMap<RelationSource, Boolean> sourceState = finalSourceState(fromClause);
+    for (TableOccurrence occurrence : fromClause.occurrences()) {
+      DerivedRelationReference reference = occurrence.derivedReference().orElse(null);
+      if (reference != null) {
+        Boolean nullExtended = sourceState.get(occurrence.source());
+        if (nullExtended == null) {
+          throw new IllegalStateException("relation occurrence has no null-extension state");
+        }
+        state.put(reference, nullExtended);
       }
     }
     return state;
@@ -123,38 +165,65 @@ final class EffectiveNullabilityResolver {
     return column.nullable() || nullExtended ? Nullability.NULLABLE : Nullability.NON_NULL;
   }
 
+  private static Nullability derivedColumnNullability(
+      DerivedColumnExpression<?> column, Map<DerivedRelationReference, Boolean> state) {
+    Boolean nullExtended = state.get(column.relation());
+    if (nullExtended == null) {
+      throw new IllegalArgumentException(
+          "derived column '"
+              + column.relation().alias().value()
+              + '.'
+              + column.output().name().value()
+              + "' references a relation outside the nullability scope");
+    }
+    return column.nullable() || nullExtended ? Nullability.NULLABLE : Nullability.NON_NULL;
+  }
+
   private static Nullability caseNullability(
-      CaseExpression<?> expression, Map<TableExpression<?>, Boolean> state) {
+      CaseExpression<?> expression,
+      Map<TableExpression<?>, Boolean> tableState,
+      Map<DerivedRelationReference, Boolean> derivedState) {
     if (expression.otherwise().isEmpty()
-        || resolve(expression.otherwise().orElseThrow(), state).isNullable()) {
+        || resolve(expression.otherwise().orElseThrow(), tableState, derivedState).isNullable()) {
       return Nullability.NULLABLE;
     }
     return expression.branches().stream()
-            .anyMatch(branch -> resolve(branch.result(), state).isNullable())
+            .anyMatch(branch -> resolve(branch.result(), tableState, derivedState).isNullable())
         ? Nullability.NULLABLE
         : Nullability.NON_NULL;
   }
 
   private static Nullability inNullability(
-      InPredicate<?> expression, Map<TableExpression<?>, Boolean> state) {
+      InPredicate<?> expression,
+      Map<TableExpression<?>, Boolean> tableState,
+      Map<DerivedRelationReference, Boolean> derivedState) {
     if (expression.candidates().isEmpty()) {
       return Nullability.NON_NULL;
     }
-    if (resolve(expression.value(), state).isNullable()) {
+    if (resolve(expression.value(), tableState, derivedState).isNullable()) {
       return Nullability.NULLABLE;
     }
     return expression.candidates().stream()
-            .anyMatch(candidate -> resolve(candidate, state).isNullable())
+            .anyMatch(candidate -> resolve(candidate, tableState, derivedState).isNullable())
         ? Nullability.NULLABLE
         : Nullability.NON_NULL;
   }
 
   private static Nullability inSubqueryNullability(
-      InSubqueryPredicate<?> expression, Map<TableExpression<?>, Boolean> state) {
-    IdentityHashMap<TableExpression<?>, Boolean> nestedState = new IdentityHashMap<>();
-    nestedState.putAll(state);
-    nestedState.putAll(finalTableState(expression.subquery().fromClause()));
-    return resolve(expression.value(), state)
-        .union(resolve(expression.subquery().selections().getFirst(), nestedState));
+      InSubqueryPredicate<?> expression,
+      Map<TableExpression<?>, Boolean> tableState,
+      Map<DerivedRelationReference, Boolean> derivedState) {
+    IdentityHashMap<TableExpression<?>, Boolean> nestedTableState = new IdentityHashMap<>();
+    nestedTableState.putAll(tableState);
+    nestedTableState.putAll(finalTableState(expression.subquery().fromClause()));
+    IdentityHashMap<DerivedRelationReference, Boolean> nestedDerivedState = new IdentityHashMap<>();
+    nestedDerivedState.putAll(derivedState);
+    nestedDerivedState.putAll(finalDerivedRelationState(expression.subquery().fromClause()));
+    return resolve(expression.value(), tableState, derivedState)
+        .union(
+            resolve(
+                expression.subquery().selections().getFirst(),
+                nestedTableState,
+                nestedDerivedState));
   }
 }

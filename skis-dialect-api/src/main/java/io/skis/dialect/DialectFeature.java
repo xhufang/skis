@@ -45,5 +45,8 @@ public enum DialectFeature {
   SCALAR_SUBQUERY,
 
   /** A nested SELECT may reference a source visible in an ancestor query block. */
-  CORRELATED_SUBQUERY
+  CORRELATED_SUBQUERY,
+
+  /** FROM and JOIN may contain an explicitly aliased SELECT-derived relation. */
+  DERIVED_TABLE
 }

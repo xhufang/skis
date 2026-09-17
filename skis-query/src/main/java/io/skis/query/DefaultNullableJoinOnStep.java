@@ -4,14 +4,14 @@ import io.skis.sql.ast.JoinType;
 import java.util.Objects;
 
 /** Built-in immutable required-ON stage for a nullable result query. */
-final class DefaultNullableJoinOnStep<F, R, J> implements NullableJoinOnStep<F, R, J> {
+final class DefaultNullableJoinOnStep<F, R> implements NullableJoinOnStep<F, R> {
 
   private final DefaultNullableSelectQuery<F, R> query;
   private final JoinType type;
-  private final QueryTable<J> right;
+  private final QueryRelation right;
 
   DefaultNullableJoinOnStep(
-      DefaultNullableSelectQuery<F, R> query, JoinType type, QueryTable<J> right) {
+      DefaultNullableSelectQuery<F, R> query, JoinType type, QueryRelation right) {
     this.query = Objects.requireNonNull(query, "query");
     this.type = Objects.requireNonNull(type, "type");
     if (type == JoinType.CROSS) {

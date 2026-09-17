@@ -136,21 +136,36 @@ final class DefaultQueryOperations implements QueryOperations {
     return DefaultSelectQuery.create(this, plans, table, selected);
   }
 
-  private <R> DefaultSelectQuery<?, R> executable(
-      SelectQueryState<R> state, QueryParameters parameters) {
-    return executableCaptured(state, parameters);
+  <R> DefaultSelectQuery<?, R> selectFrom(SelectedResult<R> selected, DerivedRelation relation) {
+    Objects.requireNonNull(selected, "selected");
+    Objects.requireNonNull(relation, "relation");
+    return DefaultSelectQuery.create(
+        this,
+        planCatalog.compiler(),
+        SelectQueryState.create(selected, relation),
+        QueryParameters.empty());
   }
 
-  private <F, R> DefaultSelectQuery<F, R> executableCaptured(
+  private <R> DefaultSelectQuery<?, R> executable(
       SelectQueryState<R> state, QueryParameters parameters) {
-    QueryTable<F> root = state.typedRoot();
+    QueryTable<?> entityRoot = state.entityRootOrNull();
+    if (entityRoot == null) {
+      return DefaultSelectQuery.create(this, planCatalog.compiler(), state, parameters);
+    }
+    return executableEntityCaptured(state, parameters, entityRoot);
+  }
+
+  @SuppressWarnings("unchecked")
+  private <F, R> DefaultSelectQuery<F, R> executableEntityCaptured(
+      SelectQueryState<R> state, QueryParameters parameters, QueryTable<?> entityRoot) {
+    QueryTable<F> root = (QueryTable<F>) entityRoot;
     EntityPlanSet<F> plans = requirePlanSet(root.entity());
     return DefaultSelectQuery.create(this, plans, state, parameters);
   }
 
   private <R> NullableSelectQuery<?, R> nullableExecutable(
       SelectQueryState<R> state, QueryParameters parameters) {
-    return nullable(executableCaptured(state, parameters));
+    return nullable(executable(state, parameters));
   }
 
   private <F, R> NullableSelectQuery<F, R> nullable(DefaultSelectQuery<F, R> query) {

@@ -4,6 +4,7 @@ import io.skis.metadata.PropertyMeta;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +14,7 @@ import org.jspecify.annotations.Nullable;
 /** Query-block scope resolver used by the complete semantic-validation boundary. */
 final class QueryScopeAnalyzer {
 
-  private static final int MAX_PORTABLE_QUALIFIER_BYTES = 63;
+  private static final int MAX_PORTABLE_IDENTIFIER_BYTES = 63;
 
   private QueryScopeAnalyzer() {}
 
@@ -64,6 +65,8 @@ final class QueryScopeAnalyzer {
     private final Map<QueryBlockAnalysis.ScopeSite, ResolvedStructureKey> expressionKeys =
         new HashMap<>();
     private final Map<QueryBlockAnalysis.ScopeSite, Integer> nestedOrdinals = new HashMap<>();
+    private final IdentityHashMap<DerivedRelationReference, QueryBlockAnalysis> derivedAnalyses =
+        new IdentityHashMap<>();
 
     private Analyzer(
         SelectStatement statement,
@@ -87,11 +90,13 @@ final class QueryScopeAnalyzer {
 
     private QueryBlockAnalysis analyze() {
       rememberScope(QueryClause.JOIN_SOURCE, 0, QueryBlockAnalysis.ScopeSnapshot.empty());
+      resolveRelationSource(statement.fromClause().root(), 0);
       registerSource(statement.fromClause().occurrences().getFirst());
       for (int index = 0; index < statement.joins().size(); index++) {
         JoinClause join = statement.joins().get(index);
         int joinOrdinal = index + 1;
         rememberScope(QueryClause.JOIN_SOURCE, joinOrdinal, snapshot());
+        resolveRelationSource(join.right(), joinOrdinal);
         registerSource(statement.fromClause().occurrences().get(joinOrdinal));
         QueryBlockAnalysis.ScopeSnapshot onScope = snapshot();
         join.on()
@@ -154,6 +159,70 @@ final class QueryScopeAnalyzer {
           path, occurrences, expressions, nestedBlocks, buildBlockKey(), clauseScopes);
     }
 
+    private void resolveRelationSource(RelationSource source, int sourceOrdinal) {
+      if (!(source instanceof DerivedRelationSource derived)) {
+        return;
+      }
+      requirePortableDerivedOutputs(derived.reference(), sourceOrdinal);
+      QueryBlockLocation location = QueryBlockLocation.relationSource(sourceOrdinal, 0);
+      QueryBlockAnalysis child =
+          QueryScopeAnalyzer.analyzeNested(
+              derived.statement(),
+              path.child(location),
+              QueryBlockAnalysis.ScopeSnapshot.empty(),
+              statementParameters);
+      validateDerivedOutputNullability(derived, child);
+      derivedAnalyses.put(derived.reference(), child);
+      nestedBlocks.add(
+          new QueryBlockAnalysis.NestedBlock(
+              derived.statement(),
+              location,
+              QueryBlockAnalysis.NestedQueryKind.DERIVED_TABLE,
+              child));
+    }
+
+    private void requirePortableDerivedOutputs(
+        DerivedRelationReference reference, int sourceOrdinal) {
+      for (int outputOrdinal = 0; outputOrdinal < reference.outputs().size(); outputOrdinal++) {
+        String alias = reference.outputs().get(outputOrdinal).name().value();
+        int byteLength = alias.getBytes(StandardCharsets.UTF_8).length;
+        if (byteLength > MAX_PORTABLE_IDENTIFIER_BYTES) {
+          throw new IllegalArgumentException(
+              "query block "
+                  + path
+                  + " derived source occurrence #"
+                  + sourceOrdinal
+                  + " output #"
+                  + outputOrdinal
+                  + " alias '"
+                  + alias
+                  + "' uses "
+                  + byteLength
+                  + " UTF-8 bytes; portable derived output aliases must not exceed "
+                  + MAX_PORTABLE_IDENTIFIER_BYTES
+                  + " bytes because PostgreSQL truncates longer identifiers; use a shorter "
+                  + "alias");
+        }
+      }
+    }
+
+    private void validateDerivedOutputNullability(
+        DerivedRelationSource derived, QueryBlockAnalysis child) {
+      for (int index = 0; index < derived.reference().outputs().size(); index++) {
+        Nullability effective = selectionNullability(child, index);
+        DerivedOutputColumn output = derived.reference().outputs().get(index);
+        if (!output.nullability().isNullable() && effective.isNullable()) {
+          throw new IllegalArgumentException(
+              "derived relation alias '"
+                  + derived.reference().alias().value()
+                  + "' output '"
+                  + output.name().value()
+                  + "' is effectively nullable after its complete join chain; declare it with "
+                  + "a nullable derived-output handle");
+        }
+      }
+    }
+
     private void resolvePagination(
         SelectPagination pagination, QueryBlockAnalysis.ScopeSnapshot scope) {
       int itemOrdinal = 0;
@@ -202,6 +271,7 @@ final class QueryScopeAnalyzer {
       Objects.requireNonNull(expression, "expression");
       return switch (expression) {
         case ColumnExpression<?, ?> column -> resolveColumn(column, position, scope);
+        case DerivedColumnExpression<?> column -> resolveDerivedColumn(column, position, scope);
         case ParameterSlot<?> parameter -> resolveParameter(parameter, position);
         case LiteralExpression<?> literal ->
             leafLiteral(List.of(literal.kind().name()), expression, literal.nullability());
@@ -374,6 +444,75 @@ final class QueryScopeAnalyzer {
           nullability);
     }
 
+    private Resolution resolveDerivedColumn(
+        DerivedColumnExpression<?> column,
+        ExpressionPosition position,
+        QueryBlockAnalysis.ScopeSnapshot scope) {
+      List<QueryBlockAnalysis.ScopeFrame> frames = scope.frames();
+      QueryBlockAnalysis.ScopeSource target = null;
+      int targetFrame = -1;
+      for (int frameIndex = 0; frameIndex < frames.size(); frameIndex++) {
+        for (QueryBlockAnalysis.ScopeSource source : frames.get(frameIndex).sources()) {
+          if (source.derivedReferenceOrNull() == column.relation()) {
+            target = source;
+            targetFrame = frameIndex;
+            break;
+          }
+        }
+        if (target != null) {
+          break;
+        }
+      }
+      if (target == null) {
+        QueryBlockAnalysis.ScopeSource unavailable = findUnavailable(column.relation(), frames);
+        if (unavailable != null) {
+          throw derivedScopeFailure(
+              position,
+              column,
+              "references query block "
+                  + unavailable.identity().blockPath()
+                  + " source occurrence #"
+                  + unavailable.identity().occurrenceOrdinal()
+                  + " before it is visible");
+        }
+        String reason;
+        if (path.locations().isEmpty()) {
+          reason = "is an unresolved outer reference in a top-level query block";
+        } else if (parentScope.frames().isEmpty()) {
+          reason = "crosses a non-correlated relation-source boundary";
+        } else {
+          reason = "is not visible in the current or any ancestor query-block scope";
+        }
+        throw derivedScopeFailure(position, column, reason);
+      }
+      if (targetFrame > 0) {
+        rejectHarmfulQualifierShadow(position, column, target, targetFrame, frames);
+      }
+
+      DerivedOutputColumn output = column.output();
+      ResolvedDerivedColumnIdentity identity =
+          new ResolvedDerivedColumnIdentity(
+              target.identity(),
+              column.outputOrdinal(),
+              output.name().value(),
+              output.javaType().getName(),
+              output.sqlType());
+      Nullability nullability = output.nullability().union(Nullability.of(target.nullExtended()));
+      return new Resolution(
+          new ResolvedStructureKey.Atom(
+              "DERIVED_COLUMN",
+              concat(
+                  descriptor(column),
+                  List.of(
+                      identity.source().blockPath().toString(),
+                      Integer.toString(identity.source().occurrenceOrdinal()),
+                      Integer.toString(identity.outputOrdinal()),
+                      identity.outputName()))),
+          linkedSet(identity),
+          new LinkedHashSet<>(),
+          nullability);
+    }
+
     private Resolution resolveParameter(ParameterSlot<?> parameter, ExpressionPosition position) {
       ResolvedParameterIdentity identity =
           new ResolvedParameterIdentity(
@@ -475,7 +614,7 @@ final class QueryScopeAnalyzer {
               scope,
               QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY);
       Nullability outputNullability = selectionNullability(nested.analysis);
-      LinkedHashSet<ResolvedColumnIdentity> columns = new LinkedHashSet<>(value.columns);
+      LinkedHashSet<ResolvedColumnReference> columns = new LinkedHashSet<>(value.columns);
       columns.addAll(nested.correlatedColumns);
       LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>(value.parameters);
       parameters.addAll(nested.parameters);
@@ -528,10 +667,10 @@ final class QueryScopeAnalyzer {
               subquery, path.child(location), scope, statementParameters);
       nestedBlocks.add(new QueryBlockAnalysis.NestedBlock(subquery, location, kind, child));
 
-      LinkedHashSet<ResolvedColumnIdentity> correlatedColumns = new LinkedHashSet<>();
+      LinkedHashSet<ResolvedColumnReference> correlatedColumns = new LinkedHashSet<>();
       LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>();
       for (ResolvedExpression resolved : child.expressions()) {
-        for (ResolvedColumnIdentity dependency : resolved.columnDependencies()) {
+        for (ResolvedColumnReference dependency : resolved.columnDependencies()) {
           if (!dependency.source().blockPath().equals(child.path())) {
             correlatedColumns.add(dependency);
           }
@@ -542,16 +681,20 @@ final class QueryScopeAnalyzer {
     }
 
     private Nullability selectionNullability(QueryBlockAnalysis child) {
+      return selectionNullability(child, 0);
+    }
+
+    private Nullability selectionNullability(QueryBlockAnalysis child, int outputOrdinal) {
       for (ResolvedExpression resolved : child.expressions()) {
         ExpressionPosition childPosition = resolved.position();
         if (childPosition.clause() == QueryClause.SELECT
-            && childPosition.itemOrdinal() == 0
+            && childPosition.itemOrdinal() == outputOrdinal
             && childPosition.operandPath().isEmpty()) {
           return resolved.effectiveNullability();
         }
       }
       throw new IllegalStateException(
-          "nested query block " + child.path() + " has no resolved SELECT item #" + 0);
+          "nested query block " + child.path() + " has no resolved SELECT item #" + outputOrdinal);
     }
 
     private Resolution leafLiteral(
@@ -617,7 +760,7 @@ final class QueryScopeAnalyzer {
         SqlExpression<?> expression,
         List<Resolution> children,
         Nullability nullability) {
-      LinkedHashSet<ResolvedColumnIdentity> columns = new LinkedHashSet<>();
+      LinkedHashSet<ResolvedColumnReference> columns = new LinkedHashSet<>();
       LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>();
       List<ResolvedStructureKey> childKeys = new ArrayList<>(children.size());
       for (Resolution child : children) {
@@ -653,6 +796,23 @@ final class QueryScopeAnalyzer {
           }
         }
       }
+      DerivedRelationReference derivedReference = source.derivedReference().orElse(null);
+      if (derivedReference != null) {
+        for (QueryBlockAnalysis.ScopeFrame frame : parentScope.frames()) {
+          for (QueryBlockAnalysis.ScopeSource ancestor : frame.sources()) {
+            if (ancestor.derivedReferenceOrNull() == derivedReference) {
+              throw new IllegalArgumentException(
+                  "query block "
+                      + path
+                      + " source occurrence #"
+                      + occurrence.occurrenceOrdinal()
+                      + " reuses the same derived-relation reference already visible as "
+                      + ancestor.identity()
+                      + "; create an independently aliased relation occurrence");
+            }
+          }
+        }
+      }
       currentSources.add(
           new MutableSource(
               new ResolvedSourceIdentity(path, occurrence.occurrenceOrdinal()), source));
@@ -660,7 +820,7 @@ final class QueryScopeAnalyzer {
 
     private void requirePortableQualifier(TableOccurrence occurrence, String qualifier) {
       int byteLength = qualifier.getBytes(StandardCharsets.UTF_8).length;
-      if (byteLength > MAX_PORTABLE_QUALIFIER_BYTES) {
+      if (byteLength > MAX_PORTABLE_IDENTIFIER_BYTES) {
         throw new IllegalArgumentException(
             "query block "
                 + path
@@ -671,7 +831,7 @@ final class QueryScopeAnalyzer {
                 + "' uses "
                 + byteLength
                 + " UTF-8 bytes; portable query qualifiers must not exceed "
-                + MAX_PORTABLE_QUALIFIER_BYTES
+                + MAX_PORTABLE_IDENTIFIER_BYTES
                 + " bytes because PostgreSQL truncates longer identifiers; use a shorter alias");
       }
     }
@@ -734,6 +894,30 @@ final class QueryScopeAnalyzer {
       }
     }
 
+    private void rejectHarmfulQualifierShadow(
+        ExpressionPosition position,
+        DerivedColumnExpression<?> column,
+        QueryBlockAnalysis.ScopeSource target,
+        int targetFrame,
+        List<QueryBlockAnalysis.ScopeFrame> frames) {
+      String qualifier = target.source().effectiveQualifier();
+      for (int frameIndex = 0; frameIndex < targetFrame; frameIndex++) {
+        for (QueryBlockAnalysis.ScopeSource nearer : frames.get(frameIndex).sources()) {
+          if (nearer.source().effectiveQualifier().equals(qualifier)) {
+            throw derivedScopeFailure(
+                position,
+                column,
+                "targets ancestor "
+                    + target.identity()
+                    + " but effective qualifier '"
+                    + qualifier
+                    + "' is shadowed by nearer "
+                    + nearer.identity());
+          }
+        }
+      }
+    }
+
     private QueryBlockAnalysis.@Nullable ScopeSource findUnavailable(
         TableExpression<?> table, List<QueryBlockAnalysis.ScopeFrame> frames) {
       for (QueryBlockAnalysis.ScopeFrame frame : frames) {
@@ -742,6 +926,21 @@ final class QueryScopeAnalyzer {
               frame.sources().stream()
                   .anyMatch(candidate -> candidate.identity().equals(source.identity()));
           if (source.entityTableOrNull() == table && !visible) {
+            return source;
+          }
+        }
+      }
+      return null;
+    }
+
+    private QueryBlockAnalysis.@Nullable ScopeSource findUnavailable(
+        DerivedRelationReference relation, List<QueryBlockAnalysis.ScopeFrame> frames) {
+      for (QueryBlockAnalysis.ScopeFrame frame : frames) {
+        for (QueryBlockAnalysis.ScopeSource source : frame.allBlockSources()) {
+          boolean visible =
+              frame.sources().stream()
+                  .anyMatch(candidate -> candidate.identity().equals(source.identity()));
+          if (source.derivedReferenceOrNull() == relation && !visible) {
             return source;
           }
         }
@@ -785,6 +984,19 @@ final class QueryScopeAnalyzer {
               + ") "
               + reason
               + "; table references are matched by object identity");
+    }
+
+    private IllegalArgumentException derivedScopeFailure(
+        ExpressionPosition position, DerivedColumnExpression<?> column, String reason) {
+      return new IllegalArgumentException(
+          position
+              + " derived column '"
+              + column.relation().alias().value()
+              + '.'
+              + column.output().name().value()
+              + "' "
+              + reason
+              + "; derived relation references are matched by object identity");
     }
 
     private ResolvedStructureKey buildBlockKey() {
@@ -842,6 +1054,29 @@ final class QueryScopeAnalyzer {
                   table.schema(),
                   table.name(),
                   entity.table().alias().map(Identifier::value).orElse("")));
+        }
+        case DerivedRelationSource derived -> {
+          QueryBlockAnalysis child = derivedAnalyses.get(derived.reference());
+          if (child == null) {
+            throw new IllegalStateException(
+                "derived source '"
+                    + derived.reference().alias().value()
+                    + "' has no resolved child query block");
+          }
+          List<String> attributes = new ArrayList<>();
+          attributes.add(source.identity.blockPath().toString());
+          attributes.add(Integer.toString(source.identity.occurrenceOrdinal()));
+          attributes.add(derived.reference().alias().value());
+          for (int index = 0; index < derived.reference().outputs().size(); index++) {
+            DerivedOutputColumn output = derived.reference().outputs().get(index);
+            attributes.add(Integer.toString(index));
+            attributes.add(output.name().value());
+            attributes.add(output.javaType().getName());
+            attributes.add(output.sqlType().name());
+            attributes.add(output.nullability().name());
+          }
+          yield new ResolvedStructureKey.Node(
+              "DERIVED_SOURCE", attributes, List.of(child.structureKey()));
         }
       };
     }
@@ -1009,7 +1244,7 @@ final class QueryScopeAnalyzer {
 
   private record Resolution(
       ResolvedStructureKey key,
-      LinkedHashSet<ResolvedColumnIdentity> columns,
+      LinkedHashSet<ResolvedColumnReference> columns,
       LinkedHashSet<ResolvedParameterIdentity> parameters,
       Nullability effectiveNullability) {
 
@@ -1024,7 +1259,7 @@ final class QueryScopeAnalyzer {
   private record NestedResolution(
       QueryBlockLocation location,
       QueryBlockAnalysis analysis,
-      LinkedHashSet<ResolvedColumnIdentity> correlatedColumns,
+      LinkedHashSet<ResolvedColumnReference> correlatedColumns,
       LinkedHashSet<ResolvedParameterIdentity> parameters) {
 
     private NestedResolution {

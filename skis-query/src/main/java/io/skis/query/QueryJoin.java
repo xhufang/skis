@@ -14,7 +14,7 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Query-layer join retaining its value-separated DSL condition until statement compilation. */
-record QueryJoin(JoinType type, QueryTable<?> right, @Nullable QueryCondition on) {
+record QueryJoin(JoinType type, QueryRelation right, @Nullable QueryCondition on) {
 
   QueryJoin {
     Objects.requireNonNull(type, "type");
@@ -39,12 +39,11 @@ final class QueryStructureCompiler {
   }
 
   private static CompiledQueryStructure compile(
-      QueryTable<?> root,
+      QueryRelation root,
       List<QueryJoin> joins,
       @Nullable QueryCondition where,
       boolean retainOriginalExpressions) {
-    StatementParameterLayout layout =
-        new StatementParameterLayout(retainOriginalExpressions);
+    StatementParameterLayout layout = new StatementParameterLayout(retainOriginalExpressions);
     QueryParameterBindings bindings = new QueryParameterBindings();
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
     CompiledBlock block = compileBlock(root, joins, where, List.of(), null, compiler);
@@ -61,8 +60,7 @@ final class QueryStructureCompiler {
   private static CompiledQueryStructure compile(
       SelectQueryState<?> state, boolean retainOriginalExpressions) {
     Objects.requireNonNull(state, "state");
-    StatementParameterLayout layout =
-        new StatementParameterLayout(retainOriginalExpressions);
+    StatementParameterLayout layout = new StatementParameterLayout(retainOriginalExpressions);
     QueryParameterBindings bindings = new QueryParameterBindings();
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
     List<SqlExpression<?>> selections = state.selected().compileExpressions(compiler);
@@ -123,7 +121,7 @@ final class QueryStructureCompiler {
   }
 
   private static CompiledBlock compileBlock(
-      QueryTable<?> root,
+      QueryRelation root,
       List<QueryJoin> joins,
       @Nullable QueryCondition where,
       List<Selectable<?>> groupBy,
@@ -134,9 +132,11 @@ final class QueryStructureCompiler {
     Objects.requireNonNull(groupBy, "groupBy");
     List<JoinClause> joinAst = new ArrayList<>(joins.size());
     try {
+      io.skis.sql.ast.RelationSource rootAst = QueryRelations.compile(root, compiler);
       for (QueryJoin join : joins) {
+        io.skis.sql.ast.RelationSource rightAst = QueryRelations.compile(join.right(), compiler);
         SqlPredicate on = join.on() == null ? null : QueryConditions.compile(join.on(), compiler);
-        joinAst.add(new JoinClause(join.type(), join.right(), on));
+        joinAst.add(new JoinClause(join.type(), rightAst, on));
       }
       SqlPredicate whereAst = where == null ? null : QueryConditions.compile(where, compiler);
       List<SqlExpression<?>> groupByAst = new ArrayList<>(groupBy.size());
@@ -144,7 +144,7 @@ final class QueryStructureCompiler {
         groupByAst.add(compiler.expression(item));
       }
       SqlPredicate havingAst = having == null ? null : QueryConditions.compile(having, compiler);
-      return new CompiledBlock(new FromClause(root, joinAst), whereAst, groupByAst, havingAst);
+      return new CompiledBlock(new FromClause(rootAst, joinAst), whereAst, groupByAst, havingAst);
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
     }
@@ -178,8 +178,7 @@ final class QueryStructureCompiler {
     List<SelectableSupport.ExpressionIdentity> selectedIdentities =
         state.distinct() ? state.selected().expressionIdentities() : List.of();
     for (SortSpecification specification : state.orderBy()) {
-      if (state.distinct()
-          && specification.selectable() instanceof ScalarSubquerySelectable<?>) {
+      if (state.distinct() && specification.selectable() instanceof ScalarSubquerySelectable<?>) {
         int selectedIndex =
             selectedIdentities.indexOf(
                 SelectableSupport.expressionIdentity(specification.selectable()));
@@ -282,7 +281,9 @@ record CompiledQueryStructure(
         Objects.requireNonNull(source, "source").validationStructure());
   }
 
-  /** Complete source retained for checks before operands are removed or ordering reuses a selection. */
+  /**
+   * Complete source retained for checks before operands are removed or ordering reuses a selection.
+   */
   CompiledQueryStructure validationStructure() {
     return validationSource == null ? this : validationSource;
   }

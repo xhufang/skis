@@ -23,6 +23,7 @@ public final class QueryPlanCatalog {
 
   private final Map<EntityMeta<?>, EntityPlanSet<?>> planSets;
   private final ProjectionPlanCache projectionPlans;
+  private final QueryPlanCompiler compiler;
 
   QueryPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
@@ -32,6 +33,7 @@ public final class QueryPlanCatalog {
     Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
     QueryPlanCompiler compiler =
         new QueryPlanCompiler(runtimeRegistry, Objects.requireNonNull(dialect, "dialect"));
+    this.compiler = compiler;
     this.projectionPlans =
         new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
@@ -78,6 +80,10 @@ public final class QueryPlanCatalog {
           "no generated runtime model is registered for entity '" + entity.entityName() + "'");
     }
     return (EntityPlanSet<E>) plans;
+  }
+
+  QueryPlanCompiler compiler() {
+    return compiler;
   }
 
   private static <E> EntityPlanSet<E> createPlanSet(

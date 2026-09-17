@@ -28,7 +28,8 @@ public final class PostgreSqlDialect implements Dialect {
           DialectFeature.EXISTS_SUBQUERY,
           DialectFeature.IN_SUBQUERY,
           DialectFeature.SCALAR_SUBQUERY,
-          DialectFeature.CORRELATED_SUBQUERY);
+          DialectFeature.CORRELATED_SUBQUERY,
+          DialectFeature.DERIVED_TABLE);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();

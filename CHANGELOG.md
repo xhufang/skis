@@ -6,6 +6,12 @@
 
 ### Added
 
+- 新增 `DerivedOutput<V>`/`NonNullDerivedOutput<V>`、`DerivedRelation` 与派生列 AST；派生关系使用显式唯一输出
+  别名和有序强类型形状，可作为根来源或任意 Join 右来源，并保留实体根原有泛型入口。
+- 派生输出在完整内层 Join 后冻结有效 nullability，进入外层 Join 后再次传播 null 扩展；普通派生来源为非相关
+  边界，外层只能按具体来源 occurrence 和输出 ordinal 引用公开列。
+- 派生列结果与参数 Codec 递归追溯到原始表达式，不创建伪实体、属性、主键、RuntimeModel 或内层 Decoder；
+  PostgreSQL/H2 新增 `DERIVED_TABLE` 能力、显式输出别名渲染及真实驱动合同。
 - 新增 `ScalarSubqueryExpression<T>` 与 `Sql.scalar(SingleColumnSelect<V>)`，将单列 SELECT 作为
   固定保守可空的 `Selectable<V>` 接入选择、比较、空值判断、HAVING 预留结构、排序和生成投影；不提供非空断言、
   隐式 `LIMIT 1`、预查询或首行截断。
@@ -133,6 +139,9 @@
 
 ### Changed
 
+- Join ON 阶段删除未参与 `on(QueryCondition)`、返回查询或作用域校验的右来源实体泛型 `J`；实体表与派生关系
+  现在统一返回 `JoinOnStep<F, R>`/`NullableJoinOnStep<F, R>` 及对应描述 step，实体表入口改为
+  `QueryTable<?>`，`crossJoin` 同步删除无输出关系的方法泛型。显式声明旧三参数 step 类型的源码需要迁移。
 - 比较、空值判断、集合条件和排序入口统一提升到 sealed `Selectable<V>`；`SortSpecification` 改为保存通用
   选择表达式、方向和 null 顺序，不再携带根实体泛型或属性 ordinal。
 - 删除实体泛型化 `QueryPredicate<E>`、专用 `ProjectionSelectFromStep` 及选择目标实体泛型；所有条件统一为

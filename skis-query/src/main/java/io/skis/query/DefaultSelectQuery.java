@@ -8,6 +8,7 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.JoinType;
@@ -34,7 +35,8 @@ import org.jspecify.annotations.Nullable;
 final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private final DefaultQueryOperations operations;
-  private final EntityPlanSet<E> plans;
+  private final QueryPlanCompiler compiler;
+  private final @Nullable EntityPlanSet<?> fastPlans;
   private final SelectQueryState<R> state;
   private final QueryParameters parameters;
   private final ExecutionContext executionContext;
@@ -52,6 +54,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       SelectedResult<R> selected) {
     return new DefaultSelectQuery<>(
         operations,
+        plans.compiler(),
         plans,
         SelectQueryState.create(selected, table),
         QueryParameters.empty(),
@@ -63,17 +66,29 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       EntityPlanSet<E> plans,
       SelectQueryState<R> state,
       QueryParameters parameters) {
-    return new DefaultSelectQuery<>(operations, plans, state, parameters, ExecutionContext.EMPTY);
+    return new DefaultSelectQuery<>(
+        operations, plans.compiler(), plans, state, parameters, ExecutionContext.EMPTY);
+  }
+
+  static <R> DefaultSelectQuery<?, R> create(
+      DefaultQueryOperations operations,
+      QueryPlanCompiler compiler,
+      SelectQueryState<R> state,
+      QueryParameters parameters) {
+    return new DefaultSelectQuery<>(
+        operations, compiler, null, state, parameters, ExecutionContext.EMPTY);
   }
 
   private DefaultSelectQuery(
       DefaultQueryOperations operations,
-      EntityPlanSet<E> plans,
+      QueryPlanCompiler compiler,
+      @Nullable EntityPlanSet<?> fastPlans,
       SelectQueryState<R> state,
       QueryParameters parameters,
       ExecutionContext executionContext) {
     this.operations = Objects.requireNonNull(operations, "operations");
-    this.plans = Objects.requireNonNull(plans, "plans");
+    this.compiler = Objects.requireNonNull(compiler, "compiler");
+    this.fastPlans = fastPlans;
     this.state = Objects.requireNonNull(state, "state");
     this.parameters = Objects.requireNonNull(parameters, "parameters");
     this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
@@ -99,33 +114,63 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   @Override
-  public <J> JoinOnStep<E, R, J> join(QueryTable<J> joinedTable) {
+  public JoinOnStep<E, R> join(QueryTable<?> joinedTable) {
     return innerJoin(joinedTable);
   }
 
   @Override
-  public <J> JoinOnStep<E, R, J> innerJoin(QueryTable<J> joinedTable) {
+  public JoinOnStep<E, R> join(DerivedRelation relation) {
+    return innerJoin(relation);
+  }
+
+  @Override
+  public JoinOnStep<E, R> innerJoin(QueryTable<?> joinedTable) {
     return joinOn(JoinType.INNER, joinedTable);
   }
 
   @Override
-  public <J> JoinOnStep<E, R, J> leftJoin(QueryTable<J> joinedTable) {
+  public JoinOnStep<E, R> innerJoin(DerivedRelation relation) {
+    return joinOn(JoinType.INNER, relation);
+  }
+
+  @Override
+  public JoinOnStep<E, R> leftJoin(QueryTable<?> joinedTable) {
     return joinOn(JoinType.LEFT, joinedTable);
   }
 
   @Override
-  public <J> JoinOnStep<E, R, J> rightJoin(QueryTable<J> joinedTable) {
+  public JoinOnStep<E, R> leftJoin(DerivedRelation relation) {
+    return joinOn(JoinType.LEFT, relation);
+  }
+
+  @Override
+  public JoinOnStep<E, R> rightJoin(QueryTable<?> joinedTable) {
     return joinOn(JoinType.RIGHT, joinedTable);
   }
 
   @Override
-  public <J> JoinOnStep<E, R, J> fullJoin(QueryTable<J> joinedTable) {
+  public JoinOnStep<E, R> rightJoin(DerivedRelation relation) {
+    return joinOn(JoinType.RIGHT, relation);
+  }
+
+  @Override
+  public JoinOnStep<E, R> fullJoin(QueryTable<?> joinedTable) {
     return joinOn(JoinType.FULL, joinedTable);
   }
 
   @Override
-  public <J> DefaultSelectQuery<E, R> crossJoin(QueryTable<J> joinedTable) {
+  public JoinOnStep<E, R> fullJoin(DerivedRelation relation) {
+    return joinOn(JoinType.FULL, relation);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> crossJoin(QueryTable<?> joinedTable) {
     return appendJoin(JoinType.CROSS, Objects.requireNonNull(joinedTable, "table"), null);
+  }
+
+  @Override
+  public DefaultSelectQuery<E, R> crossJoin(DerivedRelation relation) {
+    return appendJoin(JoinType.CROSS, Objects.requireNonNull(relation, "relation"), null);
   }
 
   @Override
@@ -289,18 +334,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return plansByPagination.getOrCompile(
         finalState.sqlPagination(),
         () ->
-            plans
-                .compiler()
-                .compileSelection(
-                    plans.model(),
-                    table(),
-                    finalState.selected(),
-                    queryAnalysis.structure(),
-                    finalState.orderBy(),
-                    finalState.distinct(),
-                    pagination,
-                    List.of(),
-                    queryAnalysis.arguments()),
+            compiler.compileSelection(
+                finalState.selected(),
+                queryAnalysis.structure(),
+                finalState.orderBy(),
+                finalState.distinct(),
+                pagination,
+                List.of(),
+                queryAnalysis.arguments()),
         paginationArgument(queryAnalysis, pagination));
   }
 
@@ -315,24 +356,24 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return orderedPlansByPagination.getOrCompile(
         finalState.sqlPagination(),
         () ->
-            plans
-                .compiler()
-                .compileOrdered(
-                    plans.model(),
-                    table(),
-                    finalState.selected(),
-                    queryAnalysis.structure(),
-                    finalState.orderBy(),
-                    finalState.distinct(),
-                    pagination,
-                    queryAnalysis.arguments()),
+            compiler.compileOrdered(
+                finalState.selected(),
+                queryAnalysis.structure(),
+                finalState.orderBy(),
+                finalState.distinct(),
+                pagination,
+                queryAnalysis.arguments()),
         paginationArgument(queryAnalysis, pagination));
   }
 
   private boolean isFastPathShape(QueryPagination pagination) {
+    QueryTable<?> entityRoot = state.entityRootOrNull();
     return pagination == QueryPagination.None.INSTANCE
+        && entityRoot != null
+        && fastPlans != null
+        && fastPlans.model().entity() == entityRoot.entity()
         && state.joins().isEmpty()
-        && state.selected().belongsTo(table())
+        && state.selected().belongsTo(entityRoot)
         && state.selected().supportsFastPath()
         && state.groupBy().isEmpty()
         && state.having() == null
@@ -352,7 +393,9 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       return existing;
     }
     QueryAnalysis queryAnalysis = analysis();
-    CompiledQueryPlan<R, Object> plan = state.selected().fastPlan(plans, queryAnalysis.structure());
+    EntityPlanSet<?> entityPlans = Objects.requireNonNull(fastPlans, "fast-path entity plans");
+    CompiledQueryPlan<R, Object> plan =
+        state.selected().fastPlan(entityPlans, queryAnalysis.structure());
     SelectStatement ast =
         new SelectStatement(
             state.selected().expressions(),
@@ -373,15 +416,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       return new QueryCompilation<>(existing.plan(), countArgument, existing.ast());
     }
     QueryCompilation<Long> compiled =
-        plans
-            .compiler()
-            .compileCount(
-                plans.model(),
-                table(),
-                state.selected(),
-                countStructure,
-                state.distinct(),
-                countArguments);
+        compiler.compileCount(state.selected(), countStructure, state.distinct(), countArguments);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     CachedPlan<Long> effective = published == null ? cached : published;
@@ -550,6 +585,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       SqlExpression<?> expression = item.expression();
       if (expression instanceof ColumnExpression<?, ?> column
           && fromClause.occurrenceOf(column.table()).isEmpty()) {
+        throw new QueryValidationException(
+            "ORDER BY expression '"
+                + expressionSummary(expression)
+                + "' is not visible in the final FROM/JOIN scope");
+      }
+      if (expression instanceof DerivedColumnExpression<?> column
+          && fromClause.occurrenceOf(column.relation()).isEmpty()) {
         throw new QueryValidationException(
             "ORDER BY expression '"
                 + expressionSummary(expression)
@@ -730,6 +772,9 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
               .orElse(column.table().entity().table().name());
       return qualifier + '.' + column.property().name();
     }
+    if (expression instanceof DerivedColumnExpression<?> column) {
+      return column.relation().alias().value() + '.' + column.output().name().value();
+    }
     return expression.getClass().getSimpleName();
   }
 
@@ -787,20 +832,21 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
             && replacementParameters == parameters
             && context == executionContext
         ? this
-        : new DefaultSelectQuery<>(operations, plans, replacement, replacementParameters, context);
+        : new DefaultSelectQuery<>(
+            operations, compiler, fastPlans, replacement, replacementParameters, context);
   }
 
-  private <J> JoinOnStep<E, R, J> joinOn(JoinType type, QueryTable<J> joinedTable) {
-    return new DefaultJoinOnStep<>(this, type, Objects.requireNonNull(joinedTable, "table"));
+  private JoinOnStep<E, R> joinOn(JoinType type, QueryRelation relation) {
+    return new DefaultJoinOnStep<>(this, type, Objects.requireNonNull(relation, "relation"));
   }
 
   DefaultSelectQuery<E, R> appendJoin(
-      JoinType type, QueryTable<?> joinedTable, @Nullable QueryCondition on) {
+      JoinType type, QueryRelation joinedRelation, @Nullable QueryCondition on) {
     QueryCondition structure = on == null ? null : QueryConditions.structure(on);
     QueryParameters appendedParameters =
         on == null ? parameters : parameters.merge(QueryConditions.parameters(on));
     return copy(
-        state.appendJoin(type, joinedTable, structure), appendedParameters, executionContext);
+        state.appendJoin(type, joinedRelation, structure), appendedParameters, executionContext);
   }
 
   private List<@Nullable Object> conditionArguments() {
@@ -848,10 +894,6 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       }
       return existing;
     }
-  }
-
-  private QueryTable<E> table() {
-    return state.typedRoot();
   }
 
   private static QueryColumn<?, ?> requirePhysicalPaginationColumn(SortSpecification item) {

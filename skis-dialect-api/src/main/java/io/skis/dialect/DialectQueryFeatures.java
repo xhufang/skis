@@ -65,6 +65,13 @@ final class DialectQueryFeatures {
                 DialectFeature.SCALAR_SUBQUERY,
                 "scalar subquery",
                 nested.analysis().path().toString());
+        case DERIVED_TABLE ->
+            require(
+                dialectId,
+                capabilities,
+                DialectFeature.DERIVED_TABLE,
+                "derived table",
+                nested.analysis().path().toString());
       }
       if (nested.analysis().correlated()) {
         require(

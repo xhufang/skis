@@ -194,6 +194,17 @@ record ResolvedResultShape<R>(
         return "an unresolved table occurrence";
       }
     }
+    if (selectable instanceof DerivedColumnSelectable<?> column) {
+      try {
+        return "derived relation occurrence #"
+            + scope.require(column.relation())
+            + " with alias '"
+            + column.relation().alias().value()
+            + "'";
+      } catch (QueryValidationException ignored) {
+        return "an unresolved derived relation occurrence";
+      }
+    }
     return "a query-local expression";
   }
 

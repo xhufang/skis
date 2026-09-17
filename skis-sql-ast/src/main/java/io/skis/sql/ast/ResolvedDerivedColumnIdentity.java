@@ -2,23 +2,21 @@ package io.skis.sql.ast;
 
 import java.util.Objects;
 
-/** Value-independent identity and descriptor of one resolved physical column reference. */
-public record ResolvedColumnIdentity(
+/** Value-independent identity and descriptor of one resolved derived output reference. */
+public record ResolvedDerivedColumnIdentity(
     ResolvedSourceIdentity source,
-    int propertyOrdinal,
-    String propertyName,
-    String columnName,
+    int outputOrdinal,
+    String outputName,
     String javaTypeName,
     SqlType sqlType)
     implements ResolvedColumnReference {
 
-  public ResolvedColumnIdentity {
+  public ResolvedDerivedColumnIdentity {
     Objects.requireNonNull(source, "source");
-    if (propertyOrdinal < 0) {
-      throw new IllegalArgumentException("propertyOrdinal must not be negative");
+    if (outputOrdinal < 0) {
+      throw new IllegalArgumentException("outputOrdinal must not be negative");
     }
-    requireText(propertyName, "propertyName");
-    requireText(columnName, "columnName");
+    requireText(outputName, "outputName");
     requireText(javaTypeName, "javaTypeName");
     Objects.requireNonNull(sqlType, "sqlType");
   }

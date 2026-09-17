@@ -233,6 +233,48 @@ class ProjectionQueryTest {
   }
 
   @Test
+  void propagatesOuterJoinedDerivedColumnsIntoGeneratedNullableProjections() throws Exception {
+    OwnerTable inner = OWNER_TABLE.as("projected_owner");
+    NonNullDerivedOutput<Long> idOutput = Sql.output(inner.id(), "owner_id");
+    NonNullDerivedOutput<String> nameOutput = Sql.output(inner.name(), "owner_name");
+    DerivedRelation derived =
+        Sql.derived(
+            Sql.selectFrom(inner), "projected_owner_view", idOutput, nameOutput);
+    NonNullSelectable<Long> derivedId = derived.column(idOutput);
+    NonNullSelectable<String> derivedName = derived.column(nameOutput);
+    QueryJoin leftJoin =
+        new QueryJoin(
+            JoinType.LEFT, derived, PET_TABLE.ownerId().eq(derivedId));
+    ProjectionSelection<PetOwnerView> selected =
+        nullableOwnerMapping().bind(PET_TABLE.id(), derivedName);
+
+    QueryCompilation<PetOwnerView> compilation = compile(selected, List.of(leftJoin));
+
+    assertTrue(compilation.plan().sql().contains("LEFT JOIN (SELECT"));
+    assertEquals(
+        new PetOwnerView(7L, "Ada"),
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of(1, 7L, 2, "Ada")), RowReadContext.EMPTY));
+    assertEquals(
+        new PetOwnerView(7L, null),
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(
+                resultSet(java.util.Collections.singletonMap(1, 7L)), RowReadContext.EMPTY));
+
+    ProjectionSelection<StrictPetOwnerView> strict =
+        strictOwnerMapping().bind(PET_TABLE.id(), derivedName);
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> compile(strict, List.of(leftJoin)));
+    assertTrue(failure.getMessage().contains("effective NULLABLE"));
+  }
+
+  @Test
   void rejectsInvisibleSelectionsAndDefensiveJavaTypeMismatches() {
     ProjectionSelection<PetOwnerView> invisible =
         nullableOwnerMapping().bind(PET_TABLE.id(), OWNER_TABLE.name());
@@ -275,19 +317,17 @@ class ProjectionQueryTest {
   private static <R> QueryCompilation<R> compile(
       ProjectionSelection<R> selection, List<QueryJoin> joins) {
     QueryPlanCatalog catalog = catalog();
-    EntityPlanSet<Pet> plans = catalog.require(PET);
-    return plans
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(PET_TABLE, joins, null);
+    return catalog
         .compiler()
         .compileSelection(
-            plans.model(),
-            PET_TABLE,
             SelectedResult.projection(selection),
-            joins,
-            null,
+            structure,
             List.of(),
             false,
             QueryPagination.None.INSTANCE,
-            List.of());
+            List.of(),
+            structure.arguments());
   }
 
   private static ProjectionMapping<PetOwnerView> nullableOwnerMapping() {
@@ -493,6 +533,7 @@ class ProjectionQueryTest {
             DialectFeature.SCHEMA_QUALIFIED_TABLES,
             DialectFeature.INNER_JOIN,
             DialectFeature.LEFT_JOIN,
+            DialectFeature.DERIVED_TABLE,
             DialectFeature.SCALAR_SUBQUERY,
             DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =

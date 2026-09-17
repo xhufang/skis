@@ -3,13 +3,13 @@ package io.skis.query;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.PropertyRuntime;
+import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.TableOccurrence;
-import java.util.ArrayList;
 import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Objects;
 
 /** Immutable query-local mapping from stable table occurrences to generated runtime models. */
@@ -17,47 +17,49 @@ final class TableRuntimeScope {
 
   private final EntityRuntimeRegistry registry;
   private final FromClause fromClause;
-  private final List<Occurrence<?>> occurrences;
-  private final IdentityHashMap<TableExpression<?>, Integer> ordinalsByTable;
+  private final IdentityHashMap<TableExpression<?>, Occurrence<?>> occurrencesByTable;
+  private final IdentityHashMap<DerivedRelationReference, Integer> ordinalsByDerivedRelation;
 
   private TableRuntimeScope(
       EntityRuntimeRegistry registry,
       FromClause fromClause,
-      List<Occurrence<?>> occurrences,
-      IdentityHashMap<TableExpression<?>, Integer> ordinalsByTable) {
+      IdentityHashMap<TableExpression<?>, Occurrence<?>> occurrencesByTable,
+      IdentityHashMap<DerivedRelationReference, Integer> ordinalsByDerivedRelation) {
     this.registry = Objects.requireNonNull(registry, "registry");
     this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
-    this.occurrences = List.copyOf(occurrences);
-    this.ordinalsByTable = ordinalsByTable;
+    this.occurrencesByTable = occurrencesByTable;
+    this.ordinalsByDerivedRelation = ordinalsByDerivedRelation;
   }
 
-  static TableRuntimeScope resolve(
-      EntityRuntimeRegistry registry, FromClause fromClause) {
+  static TableRuntimeScope resolve(EntityRuntimeRegistry registry, FromClause fromClause) {
     Objects.requireNonNull(registry, "registry");
     Objects.requireNonNull(fromClause, "fromClause");
-    List<Occurrence<?>> occurrences = new ArrayList<>(fromClause.occurrences().size());
-    IdentityHashMap<TableExpression<?>, Integer> indexed = new IdentityHashMap<>();
+    IdentityHashMap<TableExpression<?>, Occurrence<?>> entities = new IdentityHashMap<>();
+    IdentityHashMap<DerivedRelationReference, Integer> derived = new IdentityHashMap<>();
     for (TableOccurrence occurrence : fromClause.occurrences()) {
-      TableExpression<?> sourceTable =
-          occurrence
-              .entityTable()
-              .orElseThrow(
-                  () ->
-                      new QueryValidationException(
-                          "relation occurrence #"
-                              + occurrence.occurrenceOrdinal()
-                              + " is not backed by an entity table"));
-      if (!(sourceTable instanceof QueryTable<?> table)) {
-        throw new QueryValidationException(
-            "table occurrence #"
-                + occurrence.occurrenceOrdinal()
-                + " is not backed by a query table");
+      TableExpression<?> sourceTable = occurrence.entityTable().orElse(null);
+      if (sourceTable != null) {
+        if (!(sourceTable instanceof QueryTable<?> table)) {
+          throw new QueryValidationException(
+              "table occurrence #"
+                  + occurrence.occurrenceOrdinal()
+                  + " is not backed by a query table");
+        }
+        Occurrence<?> resolved = resolveOccurrence(registry, occurrence.occurrenceOrdinal(), table);
+        entities.put(table, resolved);
+        continue;
       }
-      Occurrence<?> resolved = resolveOccurrence(registry, occurrence.occurrenceOrdinal(), table);
-      occurrences.add(resolved);
-      indexed.put(table, occurrence.occurrenceOrdinal());
+      DerivedRelationReference reference = occurrence.derivedReference().orElse(null);
+      if (reference != null) {
+        derived.put(reference, occurrence.occurrenceOrdinal());
+        continue;
+      }
+      throw new QueryValidationException(
+          "relation occurrence #"
+              + occurrence.occurrenceOrdinal()
+              + " has no supported runtime source kind");
     }
-    return new TableRuntimeScope(registry, fromClause, occurrences, indexed);
+    return new TableRuntimeScope(registry, fromClause, entities, derived);
   }
 
   EntityRuntimeRegistry registry() {
@@ -66,8 +68,8 @@ final class TableRuntimeScope {
 
   <E> Occurrence<E> require(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
-    Integer ordinal = ordinalsByTable.get(table);
-    if (ordinal == null) {
+    Occurrence<?> occurrence = occurrencesByTable.get(table);
+    if (occurrence == null) {
       throw new QueryValidationException(
           "table entity '"
               + table.entity().entityName()
@@ -75,7 +77,7 @@ final class TableRuntimeScope {
               + table.alias().map(alias -> " with alias '" + alias.value() + "'").orElse("")
               + " is not visible in the final query scope");
     }
-    return castOccurrence(occurrences.get(ordinal));
+    return castOccurrence(occurrence);
   }
 
   <E, V> PropertyRuntime<E, V> property(QueryColumn<E, V> column) {
@@ -85,10 +87,7 @@ final class TableRuntimeScope {
       return occurrence.model().property(column.property());
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(
-          "property '"
-              + column.property().name()
-              + "' does not match "
-              + occurrence.description(),
+          "property '" + column.property().name() + "' does not match " + occurrence.description(),
           failure);
     }
   }
@@ -97,6 +96,24 @@ final class TableRuntimeScope {
     Objects.requireNonNull(column, "column");
     require(column.table());
     return fromClause.effectiveNullability(column.expression());
+  }
+
+  int require(DerivedRelation relation) {
+    Objects.requireNonNull(relation, "relation");
+    Integer ordinal = ordinalsByDerivedRelation.get(relation.reference());
+    if (ordinal == null) {
+      throw new QueryValidationException(
+          "derived relation alias '"
+              + relation.alias().value()
+              + "' is not visible in the final query scope");
+    }
+    return ordinal;
+  }
+
+  Nullability effectiveNullability(DerivedColumnSelectable<?> column) {
+    Objects.requireNonNull(column, "column");
+    require(column.relation());
+    return fromClause.effectiveNullability((DerivedColumnExpression<?>) column.expression());
   }
 
   boolean isNullExtended(QueryTable<?> table) {
@@ -125,8 +142,7 @@ final class TableRuntimeScope {
     return (Occurrence<E>) occurrence;
   }
 
-  record Occurrence<E>(
-      int occurrenceOrdinal, QueryTable<E> table, EntityRuntimeModel<E> model) {
+  record Occurrence<E>(int occurrenceOrdinal, QueryTable<E> table, EntityRuntimeModel<E> model) {
 
     Occurrence {
       if (occurrenceOrdinal < 0) {

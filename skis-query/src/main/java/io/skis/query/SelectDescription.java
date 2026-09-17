@@ -35,33 +35,63 @@ public class SelectDescription<R> {
   }
 
   /** Starts an INNER JOIN whose ON condition must be supplied. */
-  public <J> SelectDescriptionJoinOnStep<R, J> join(QueryTable<J> table) {
+  public SelectDescriptionJoinOnStep<R> join(QueryTable<?> table) {
     return innerJoin(table);
   }
 
+  /** Starts an INNER JOIN against a derived relation. */
+  public SelectDescriptionJoinOnStep<R> join(DerivedRelation relation) {
+    return innerJoin(relation);
+  }
+
   /** Starts an explicit INNER JOIN whose ON condition must be supplied. */
-  public <J> SelectDescriptionJoinOnStep<R, J> innerJoin(QueryTable<J> table) {
+  public SelectDescriptionJoinOnStep<R> innerJoin(QueryTable<?> table) {
     return joinOn(JoinType.INNER, table);
   }
 
+  /** Starts an explicit INNER JOIN against a derived relation. */
+  public SelectDescriptionJoinOnStep<R> innerJoin(DerivedRelation relation) {
+    return joinOn(JoinType.INNER, relation);
+  }
+
   /** Starts a LEFT JOIN whose ON condition must be supplied. */
-  public <J> SelectDescriptionJoinOnStep<R, J> leftJoin(QueryTable<J> table) {
+  public SelectDescriptionJoinOnStep<R> leftJoin(QueryTable<?> table) {
     return joinOn(JoinType.LEFT, table);
   }
 
+  /** Starts a LEFT JOIN against a derived relation. */
+  public SelectDescriptionJoinOnStep<R> leftJoin(DerivedRelation relation) {
+    return joinOn(JoinType.LEFT, relation);
+  }
+
   /** Starts a RIGHT JOIN whose ON condition must be supplied. */
-  public <J> SelectDescriptionJoinOnStep<R, J> rightJoin(QueryTable<J> table) {
+  public SelectDescriptionJoinOnStep<R> rightJoin(QueryTable<?> table) {
     return joinOn(JoinType.RIGHT, table);
   }
 
+  /** Starts a RIGHT JOIN against a derived relation. */
+  public SelectDescriptionJoinOnStep<R> rightJoin(DerivedRelation relation) {
+    return joinOn(JoinType.RIGHT, relation);
+  }
+
   /** Starts a FULL JOIN whose ON condition must be supplied. */
-  public <J> SelectDescriptionJoinOnStep<R, J> fullJoin(QueryTable<J> table) {
+  public SelectDescriptionJoinOnStep<R> fullJoin(QueryTable<?> table) {
     return joinOn(JoinType.FULL, table);
   }
 
+  /** Starts a FULL JOIN against a derived relation. */
+  public SelectDescriptionJoinOnStep<R> fullJoin(DerivedRelation relation) {
+    return joinOn(JoinType.FULL, relation);
+  }
+
   /** Appends a CROSS JOIN. */
-  public <J> SelectDescription<R> crossJoin(QueryTable<J> table) {
+  public SelectDescription<R> crossJoin(QueryTable<?> table) {
     return recreate(state.appendJoin(JoinType.CROSS, table, null));
+  }
+
+  /** Appends a derived CROSS JOIN. */
+  public SelectDescription<R> crossJoin(DerivedRelation relation) {
+    return recreate(state.appendJoin(JoinType.CROSS, relation, null));
   }
 
   /** Replaces this description's ordering. */
@@ -88,7 +118,8 @@ public class SelectDescription<R> {
     return replacement == state ? this : new SelectDescription<>(replacement);
   }
 
-  private <J> SelectDescriptionJoinOnStep<R, J> joinOn(JoinType type, QueryTable<J> table) {
-    return new SelectDescriptionJoinOnStep<>(state, type, Objects.requireNonNull(table, "table"));
+  private SelectDescriptionJoinOnStep<R> joinOn(JoinType type, QueryRelation relation) {
+    return new SelectDescriptionJoinOnStep<>(
+        state, type, Objects.requireNonNull(relation, "relation"));
   }
 }

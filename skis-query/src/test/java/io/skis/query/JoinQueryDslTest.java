@@ -1796,19 +1796,17 @@ class JoinQueryDslTest {
       QueryTable<E> root,
       SelectedResult<R> selected,
       List<QueryJoin> joins) {
-    EntityPlanSet<E> plans = catalog.require(root.entity());
-    return plans
+    CompiledQueryStructure structure = QueryStructureCompiler.compile(root, joins, null);
+    return catalog
         .compiler()
         .compileSelection(
-            plans.model(),
-            root,
             selected,
-            joins,
-            null,
+            structure,
             List.of(),
             false,
             QueryPagination.None.INSTANCE,
-            List.of());
+            List.of(),
+            structure.arguments());
   }
 
   private static EntityRuntimeModel<Pet> petModel() {
