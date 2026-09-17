@@ -3,23 +3,13 @@ package io.skis.sql.ast;
 import java.util.Objects;
 
 /** Typed reference to one output ordinal of one concrete derived-relation occurrence. */
-public final class DerivedColumnExpression<T> implements SqlExpression<T> {
-
-  private final DerivedRelationReference relation;
-  private final int outputOrdinal;
+public record DerivedColumnExpression<T>(DerivedRelationReference relation, int outputOrdinal)
+    implements SqlExpression<T> {
 
   public DerivedColumnExpression(DerivedRelationReference relation, int outputOrdinal) {
     this.relation = Objects.requireNonNull(relation, "relation");
     relation.output(outputOrdinal);
     this.outputOrdinal = outputOrdinal;
-  }
-
-  public DerivedRelationReference relation() {
-    return relation;
-  }
-
-  public int outputOrdinal() {
-    return outputOrdinal;
   }
 
   public DerivedOutputColumn output() {
@@ -50,13 +40,10 @@ public final class DerivedColumnExpression<T> implements SqlExpression<T> {
   @Override
   public boolean equals(Object other) {
     return this == other
-        || other instanceof DerivedColumnExpression<?> expression
-            && outputOrdinal == expression.outputOrdinal
-            && relation.equals(expression.relation);
-  }
-
-  @Override
-  public int hashCode() {
-    return 31 * relation.hashCode() + outputOrdinal;
+        || other
+                instanceof
+                DerivedColumnExpression<?>(DerivedRelationReference relation1, int ordinal)
+            && outputOrdinal == ordinal
+            && relation.equals(relation1);
   }
 }

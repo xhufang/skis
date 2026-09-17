@@ -10,6 +10,8 @@ import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedOutputColumn;
 import io.skis.sql.ast.DerivedRelationReference;
@@ -63,7 +65,11 @@ class DerivedTableSqlRendererTest {
 
     RenderedSql rendered =
         RENDERER.render(
-            new SelectStatement(List.of(name), FromClause.of(source), id.gt(outerMinimum)));
+            new SelectStatement(
+                List.of(name),
+                FromClause.of(source),
+                new ComparisonPredicate<>(
+                    id, ComparisonOperator.GREATER_THAN, outerMinimum)));
 
     assertEquals(
         "SELECT \"visible_pets\".\"display_name\" FROM "
