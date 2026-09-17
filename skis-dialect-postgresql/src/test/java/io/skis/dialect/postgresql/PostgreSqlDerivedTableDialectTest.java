@@ -84,5 +84,10 @@ class PostgreSqlDerivedTableDialectTest {
     private ColumnExpression<Pet, String> name() {
       return name;
     }
+
+    @Override
+    public PetAstTable as(Identifier alias) {
+      return new PetAstTable(alias);
+    }
   }
 }
