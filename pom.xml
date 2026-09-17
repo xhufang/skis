@@ -515,6 +515,42 @@
                   <exclude>io.skis.query.QueryPredicate</exclude>
                   <exclude>io.skis.query.SelectFromStep</exclude>
                   <exclude>io.skis.query.SortSpecification</exclude>
+                  <exclude>io.skis.query.JoinOnStep</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescriptionJoinOnStep</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelectJoinOnStep</exclude>
+                  <exclude>io.skis.query.NullableJoinOnStep</exclude>
+                  <exclude>io.skis.query.SelectDescriptionJoinOnStep</exclude>
+                  <exclude>io.skis.query.SingleColumnSelectJoinOnStep</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescription#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescription#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescription#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescription#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescription#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSelectDescription#crossJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelect#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelect#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelect#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelect#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelect#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NonNullSingleColumnSelect#crossJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#crossJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#join(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#innerJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#leftJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#rightJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#fullJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.NullableSelectQuery#crossJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SelectDescription#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectDescription#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectDescription#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectDescription#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectDescription#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectDescription#crossJoin(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.NullableSelectQuery#where(io.skis.query.QueryPredicate)</exclude>
                   <exclude>io.skis.query.NullableSelectQuery#and(io.skis.query.QueryPredicate)</exclude>
                   <exclude>io.skis.query.NullableSelectQuery#or(io.skis.query.QueryPredicate)</exclude>
@@ -530,6 +566,18 @@
                   <exclude>io.skis.query.SelectQuery#rightJoin(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.SelectQuery#fullJoin(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.query.SelectQuery#crossJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SelectQuery#join(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SelectQuery#innerJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SelectQuery#leftJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SelectQuery#rightJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SelectQuery#fullJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SelectQuery#crossJoin(io.skis.query.DerivedRelation)</exclude>
+                  <exclude>io.skis.query.SingleColumnSelect#join(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SingleColumnSelect#innerJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SingleColumnSelect#leftJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SingleColumnSelect#rightJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SingleColumnSelect#fullJoin(io.skis.query.QueryTable)</exclude>
+                  <exclude>io.skis.query.SingleColumnSelect#crossJoin(io.skis.query.QueryTable)</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#sqlType()</exclude>
                   <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
                   <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>
