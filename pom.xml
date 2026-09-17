@@ -534,7 +534,9 @@
                   <exclude>io.skis.sql.ast.SqlExpression#nullability()</exclude>
                   <exclude>io.skis.sql.ast.SqlPredicate#sqlType()</exclude>
                   <exclude>io.skis.sql.ast.FromClause#root()</exclude>
+                  <exclude>io.skis.sql.ast.FromClause#isNullExtended(io.skis.sql.ast.RelationSource)</exclude>
                   <exclude>io.skis.sql.ast.JoinClause#right()</exclude>
+                  <exclude>io.skis.sql.ast.ResolvedExpression#columnDependencies()</exclude>
                   <exclude>io.skis.sql.ast.TableOccurrence#table()</exclude>
                 </excludes>
                 <excludeModules>

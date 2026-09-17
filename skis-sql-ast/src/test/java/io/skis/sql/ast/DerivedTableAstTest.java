@@ -122,7 +122,7 @@ class DerivedTableAstTest {
         SemanticValidator.analyzeComplete(new SelectStatement(List.of(stableId), leftJoined));
     assertEquals(
         Nullability.NULLABLE,
-        leftAnalysis.expressions().getFirst().effectiveNullability());
+        expression(leftAnalysis, QueryClause.SELECT, 0).effectiveNullability());
 
     FromClause rightJoined =
         new FromClause(
@@ -248,6 +248,17 @@ class DerivedTableAstTest {
   private static DerivedRelationReference reference(
       String alias, DerivedOutputColumn... outputs) {
     return new DerivedRelationReference(Identifier.of(alias), List.of(outputs));
+  }
+
+  private static ResolvedExpression expression(
+      QueryBlockAnalysis analysis, QueryClause clause, int itemOrdinal) {
+    return analysis.expressions().stream()
+        .filter(
+            expression ->
+                expression.position().clause() == clause
+                    && expression.position().itemOrdinal() == itemOrdinal)
+        .findFirst()
+        .orElseThrow();
   }
 
   private record Pet(Long id, String name) {}
