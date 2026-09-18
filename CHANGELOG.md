@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `0.2.5` 已按子查询与派生表的重切范围收口；原步骤 10—18 的未完成项已迁移到明确里程碑，聚合语义归属
+  `0.2.9`。Reactor、子模块 parent、独立消费者和示例基线统一进入 `0.2.6-SNAPSHOT`，开始公平基准与
+  性能架构内部里程碑；不创建 `0.2.5` tag、Maven Central 发布或 GitHub Release。
+
 ### Added
 
 - 新增 `DerivedOutput<V>`/`NonNullDerivedOutput<V>`、`DerivedRelation` 与派生列 AST；派生关系使用显式唯一输出

@@ -18,7 +18,7 @@ its API may still change before 1.0 and it is not yet a production-support relea
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
 - PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
-The repository currently uses the internal `0.2.5-SNAPSHOT` version. The completed `0.2.1`
+The repository currently uses the internal `0.2.6-SNAPSHOT` version. The completed `0.2.1`
 milestone added immutable JDBC execution options and dialect-aware Spring exception translation.
 The `0.2.2` development milestone adds explicit SQL type/nullability metadata, immutable complex
 single-table predicates, query-level `where(...).and(...).or(...)` chaining, portable standard
@@ -32,7 +32,8 @@ so the same API covers single-table and joined results without reflection or sta
 The `0.2.5` milestone has established reusable execution-free SELECT descriptions and implemented
 the non-correlated/correlated `EXISTS`/`NOT EXISTS`, one-column `IN`/`NOT IN`, and nullable scalar
 subquery vertical slices, plus typed derived relations for `FROM` and Join sources.
-Aggregate/HAVING interoperability remains a later acceptance item.
+The active `0.2.6` milestone rebuilds the performance baseline and plan-cache architecture without
+expanding the SQL feature surface. Aggregate/HAVING interoperability remains assigned to `0.2.9`.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [EXISTS, IN, scalar, derived, and correlated SELECT descriptions](docs/subqueries.md),
