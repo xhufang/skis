@@ -28,7 +28,7 @@
     <jmh.version>1.37</jmh.version>
     <jimmer.version>0.11.4</jimmer.version>
     <mybatis.version>3.5.19</mybatis.version>
-    <mybatis-flex.version>1.11.4</mybatis-flex.version>
+    <mybatis-flex.version>1.11.8</mybatis-flex.version>
     <mybatis-plus.version>3.5.17</mybatis-plus.version>
     <jooq.version>3.21.7</jooq.version>
     <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>
