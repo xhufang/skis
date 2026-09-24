@@ -7,8 +7,14 @@
 ### Changed
 
 - `0.2.5` 已按子查询与派生表的重切范围收口；原步骤 10—18 的未完成项已迁移到明确里程碑，聚合语义归属
-  `0.2.9`。Reactor、子模块 parent、独立消费者和示例基线统一进入 `0.2.6-SNAPSHOT`，开始公平基准与
-  性能架构内部里程碑；不创建 `0.2.5` tag、Maven Central 发布或 GitHub Release。
+  `0.2.9`。Reactor、子模块 parent、独立消费者和示例基线统一进入 `0.2.6-SNAPSHOT`，开始计划缓存与
+  编译路径架构内部里程碑；不创建 `0.2.5` tag、Maven Central 发布或 GitHub Release。
+
+### Removed
+
+- 删除 benchmark 框架子模块、runner、源码、脚本、历史结果和执行工作流；`skis-benchmark` 保留为无子模块、
+  无依赖、无源码的空 POM。整个 `0.2.x` 开发阶段不实现或执行 benchmark；全部 `0.2.x` 里程碑完成并进入
+  功能冻结后，在 `0.3.0` 正式发布前通过新任务重新评审、建立并执行性能测试，旧结果和旧门槛不直接恢复。
 
 ### Added
 

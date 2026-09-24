@@ -14,6 +14,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  benchmark-freeze:
+    name: 0.2.x benchmark freeze
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Enforce the 0.2.x benchmark freeze
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f skis-benchmark/pom.xml
+
+          unexpected_files="$(find skis-benchmark -type f ! -path 'skis-benchmark/pom.xml' -print)"
+          if [[ -n "${unexpected_files}" ]]; then
+            echo "Benchmark files are forbidden during 0.2.x development:"
+            echo "${unexpected_files}"
+            exit 1
+          fi
+
+          if [[ -e docs/benchmark ]]; then
+            echo "docs/benchmark must remain absent during 0.2.x development"
+            exit 1
+          fi
+
+          unexpected_named_assets="$(find . -path './.git' -prune -o -type f \
+            \( -iname '*benchmark*' -o -iname '*jmh*' -o -iname '*fast-path-smoke*' -o -iname '*performance-smoke*' \) \
+            ! -path './skis-benchmark/pom.xml' -print)"
+          if [[ -n "${unexpected_named_assets}" ]]; then
+            echo "Benchmark assets are forbidden during 0.2.x development:"
+            echo "${unexpected_named_assets}"
+            exit 1
+          fi
+
+          if grep -Eq '<(modules|dependencies|dependencyManagement|profiles|build)([[:space:]]|>)' skis-benchmark/pom.xml; then
+            echo "skis-benchmark/pom.xml must remain an empty aggregator during 0.2.x development"
+            exit 1
+          fi
+
+          if find . -name pom.xml -not -path './.git/*' -print0 \
+              | xargs -0 grep -Eq 'org\.openjdk\.jmh|<artifactId>jmh-'; then
+            echo "JMH dependencies are forbidden during 0.2.x development"
+            exit 1
+          fi
+
+          unexpected_workflows="$(find .github/workflows -maxdepth 1 -type f \( -iname '*benchmark*' -o -iname '*performance-smoke*' -o -iname '*fast-path-smoke*' \) -print)"
+          if [[ -n "${unexpected_workflows}" ]]; then
+            echo "Benchmark execution workflows are forbidden during 0.2.x development:"
+            echo "${unexpected_workflows}"
+            exit 1
+          fi
+
+          if find .github/workflows -maxdepth 1 -type f ! -name compliance.yml -print0 \
+              | xargs -0 grep -Eiq 'org\.openjdk\.jmh|jmh-core|benchmark-runner|compare-fast-path|docs/benchmark|mvn[^[:cntrl:]]*skis-benchmark'; then
+            echo "A benchmark execution entry remains in a workflow during 0.2.x development"
+            exit 1
+          fi
+
   dependency-review:
     name: Dependency vulnerability review
     if: github.event_name == 'pull_request'
