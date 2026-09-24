@@ -32,8 +32,10 @@ so the same API covers single-table and joined results without reflection or sta
 The `0.2.5` milestone has established reusable execution-free SELECT descriptions and implemented
 the non-correlated/correlated `EXISTS`/`NOT EXISTS`, one-column `IN`/`NOT IN`, and nullable scalar
 subquery vertical slices, plus typed derived relations for `FROM` and Join sources.
-The active `0.2.6` milestone rebuilds the performance baseline and plan-cache architecture without
-expanding the SQL feature surface. Aggregate/HAVING interoperability remains assigned to `0.2.9`.
+The active `0.2.6` milestone removes the obsolete benchmark suite and develops the plan-cache
+architecture without expanding the SQL feature surface. Benchmark implementation and execution stay
+frozen until every `0.2.x` development milestone is complete; a newly reviewed performance suite will
+then run during `0.3.0` release preparation. Aggregate/HAVING interoperability remains assigned to `0.2.9`.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [EXISTS, IN, scalar, derived, and correlated SELECT descriptions](docs/subqueries.md),
@@ -209,7 +211,6 @@ Applications own DDL and assign identifiers before insert.
 - [0.2.4 projection API compatibility ledger](docs/api-compatibility-0.2.4.md)
 - [0.2.5 AST API compatibility ledger](docs/api-compatibility-0.2.5.md)
 - [Formal release checklist and component boundary](docs/release-checklist.md)
-- [Fast Path performance smoke](docs/benchmark/fast-path-smoke.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)
 - [0.0.6 injected executor and reflection-free read slice](docs/0.0.6-read-slice.md)
 - [0.0.7 reflection-free writes and transaction semantics](docs/0.0.7-write-transaction-slice.md)
