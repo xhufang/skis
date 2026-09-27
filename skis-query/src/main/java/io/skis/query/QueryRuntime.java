@@ -27,7 +27,12 @@ public final class QueryRuntime {
         QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS);
   }
 
-  /** Compiles a plan catalog with explicit bounded-cache capacity and idle expiration. */
+  /**
+   * Compiles a plan catalog with explicit bounded-cache capacity and idle expiration.
+   *
+   * <p>A {@code maximumSize} of zero disables the shared L1 cache while retaining query-local L0
+   * reuse and full L2 compilation.
+   */
   public static QueryPlanCatalog compile(
       EntityRuntimeRegistry runtimeRegistry,
       Dialect dialect,
