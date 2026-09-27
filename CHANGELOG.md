@@ -18,6 +18,16 @@
 
 ### Added
 
+- 新增 ADR-0007，固定执行器级共享查询计划的结构身份、catalog 所有权、per-key single-flight、容量/过期、
+  generation 失效、统计、旁路与 ClassLoader 生命周期合同；新增内部不可变 `QueryPlanKey`，显式隔离结果形状、
+  content/ordered/count 与分页变体、最终参数 Binder、方言能力版本和未来策略结构签名，普通值及执行资源不入键。
+- 结果形状由 `SelectedResult` 权威种类派生；结果和参数 Binder 身份绑定当前 runtime registry，并用不持有 `Class` 的
+  ClassLoader 感知类型令牌隔离同名类型。派生列与标量子查询递归解析原始属性来源；外部元数据或无安全来源返回
+  “无安全身份”，留给 T06 显式旁路；L0 与未来 L1 共用唯一的值无关 `QueryPaginationShape`，避免两套分页身份协议。
+- 计划缓存容量零固定为关闭共享 L1、保留 L0/L2 且全部 L1 活动计数为零；负数仍拒绝。新增/扩展键与配置合同测试，
+  覆盖不同查询对象和不同参数值的等价键、registry 所有权、同名 ClassLoader 隔离、全部计划维度、分页空值形状、
+  上下文规范化、防御性复制、预计算 hash 以及 hash 碰撞下的完整 `equals`；真实共享缓存和统一键组装/L0/L1/L2
+  接线仍分别归 T05、T06。
 - 新增 `DerivedOutput<V>`/`NonNullDerivedOutput<V>`、`DerivedRelation` 与派生列 AST；派生关系使用显式唯一输出
   别名和有序强类型形状，可作为根来源或任意 Join 右来源，并保留实体根原有泛型入口。
 - 派生输出在完整内层 Join 后冻结有效 nullability，进入外层 Join 后再次传播 null 扩展；普通派生来源为非相关

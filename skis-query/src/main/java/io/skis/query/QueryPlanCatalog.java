@@ -11,19 +11,26 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-/** Thread-safe catalog of entity Fast Path plans for one registry and dialect. */
+/**
+ * Thread-safe catalog of entity Fast Path plans and owner boundary for shared query plans belonging
+ * to one registry and dialect.
+ */
 public final class QueryPlanCatalog {
 
-  /** Legacy dynamic-plan capacity retained until the general cache lands in 0.2.7. */
+  /**
+   * Dynamic-plan capacity retained by the placeholder until T05 installs the shared L1 cache; zero
+   * disables L1.
+   */
   public static final int DEFAULT_MAXIMUM_SIZE = ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE;
 
-  /** Legacy dynamic-plan idle duration retained until the general cache lands in 0.2.7. */
+  /** Dynamic-plan idle duration retained by the placeholder until T05 installs the L1 cache. */
   public static final Duration DEFAULT_EXPIRE_AFTER_ACCESS =
       ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS;
 
   private final Map<EntityMeta<?>, EntityPlanSet<?>> planSets;
   private final ProjectionPlanCache projectionPlans;
   private final QueryPlanCompiler compiler;
+  private final QueryPlanKey.IdentityScope planIdentities;
 
   QueryPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
@@ -34,6 +41,7 @@ public final class QueryPlanCatalog {
     QueryPlanCompiler compiler =
         new QueryPlanCompiler(runtimeRegistry, Objects.requireNonNull(dialect, "dialect"));
     this.compiler = compiler;
+    this.planIdentities = new QueryPlanKey.IdentityScope(runtimeRegistry);
     this.projectionPlans =
         new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
@@ -84,6 +92,10 @@ public final class QueryPlanCatalog {
 
   QueryPlanCompiler compiler() {
     return compiler;
+  }
+
+  QueryPlanKey.IdentityScope planIdentities() {
+    return planIdentities;
   }
 
   private static <E> EntityPlanSet<E> createPlanSet(

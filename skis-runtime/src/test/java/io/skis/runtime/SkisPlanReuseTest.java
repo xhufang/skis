@@ -66,10 +66,20 @@ class SkisPlanReuseTest {
   }
 
   @Test
-  void rejectsInvalidDynamicPlanCacheConfigurationAtTheBuilderBoundary() {
+  void supportsDisabledDynamicPlanCacheAndRejectsInvalidConfiguration() {
+    SkisExecutor disabled =
+        SkisExecutorFactory.builder()
+            .dataSource(dataSource())
+            .dialect(new CountingDialect())
+            .runtimeRegistry(EntityRuntimeRegistry.of(List.of(runtimeModel())))
+            .planCacheMaximumSize(0)
+            .build();
+
+    assertEquals(0, disabled.queryPlanCacheStatistics().maximumSize());
+    assertEquals(0, disabled.queryPlanCacheStatistics().size());
     assertThrows(
         IllegalArgumentException.class,
-        () -> SkisExecutorFactory.builder().planCacheMaximumSize(0));
+        () -> SkisExecutorFactory.builder().planCacheMaximumSize(-1));
     assertThrows(
         IllegalArgumentException.class,
         () -> SkisExecutorFactory.builder().planCacheExpireAfterAccess(Duration.ZERO));

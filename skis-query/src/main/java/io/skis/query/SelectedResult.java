@@ -5,6 +5,7 @@ import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /** Query result target kept independent of the FROM root until final scope validation. */
@@ -65,6 +66,21 @@ final class SelectedResult<R> {
   static <R> SelectedResult<R> projection(ProjectionSelection<R> selection) {
     return new SelectedResult<>(
         null, null, Objects.requireNonNull(selection, "selection"), Kind.GENERATED_PROJECTION);
+  }
+
+  /** Derives the cache result contract from the authoritative selected-result variant. */
+  Optional<QueryPlanKey.ResultShape> planKeyResultShape(QueryPlanKey.IdentityScope identities) {
+    Objects.requireNonNull(identities, "identities");
+    return switch (kind) {
+      case REQUIRED_ENTITY -> QueryPlanKey.ResultShape.requiredEntity(identities, requireTable());
+      case NULLABLE_ENTITY -> QueryPlanKey.ResultShape.nullableEntity(identities, requireTable());
+      case REQUIRED_SCALAR ->
+          QueryPlanKey.ResultShape.requiredScalar(identities, requireScalar());
+      case NULLABLE_SCALAR ->
+          QueryPlanKey.ResultShape.nullableScalar(identities, requireScalar());
+      case GENERATED_PROJECTION ->
+          QueryPlanKey.ResultShape.projection(identities, requireProjection());
+    };
   }
 
   ResolvedResultShape<R> resolve(

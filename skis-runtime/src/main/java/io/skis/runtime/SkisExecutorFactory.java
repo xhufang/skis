@@ -94,10 +94,14 @@ public final class SkisExecutorFactory {
       return this;
     }
 
-    /** Configures the retained dynamic-plan capacity used by the future general plan cache. */
+    /**
+     * Configures the retained dynamic-plan capacity used by the future general plan cache.
+     *
+     * <p>Zero disables the shared L1 cache while preserving query-local reuse and full compilation.
+     */
     public Builder planCacheMaximumSize(int maximumSize) {
-      if (maximumSize < 1) {
-        throw new IllegalArgumentException("planCacheMaximumSize must be positive");
+      if (maximumSize < 0) {
+        throw new IllegalArgumentException("planCacheMaximumSize must not be negative");
       }
       this.planCacheMaximumSize = maximumSize;
       return this;

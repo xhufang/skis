@@ -975,11 +975,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private static final class LocalPlanCache<T> {
 
     private static final int MAXIMUM_SHAPES = 32;
-    private final LinkedHashMap<SqlPaginationStructure, CachedPlan<T>> plans =
+    private final LinkedHashMap<QueryPaginationShape, CachedPlan<T>> plans =
         new LinkedHashMap<>(8, 0.75F, true);
 
     private synchronized QueryCompilation<T> getOrCompile(
-        SqlPaginationStructure pagination,
+        QueryPaginationShape pagination,
         Supplier<QueryCompilation<T>> compiler,
         Object argument) {
       CachedPlan<T> existing = plans.get(pagination);

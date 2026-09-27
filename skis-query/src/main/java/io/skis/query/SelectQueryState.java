@@ -21,7 +21,7 @@ final class SelectQueryState<R> {
   private final @Nullable QueryCondition having;
   private final List<SortSpecification> orderBy;
   private final boolean distinct;
-  private final SqlPaginationStructure sqlPagination;
+  private final QueryPaginationShape sqlPagination;
   private volatile @Nullable CompiledQueryStructure structure;
   private volatile @Nullable CompiledQueryStructure countStructure;
 
@@ -35,7 +35,7 @@ final class SelectQueryState<R> {
         null,
         List.of(),
         false,
-        SqlPaginationStructure.none());
+        QueryPaginationShape.none());
   }
 
   private SelectQueryState(
@@ -47,7 +47,7 @@ final class SelectQueryState<R> {
       @Nullable QueryCondition having,
       List<SortSpecification> orderBy,
       boolean distinct,
-      SqlPaginationStructure sqlPagination) {
+      QueryPaginationShape sqlPagination) {
     this.selected = Objects.requireNonNull(selected, "selected");
     this.root = Objects.requireNonNull(root, "root");
     this.joins = List.copyOf(joins);
@@ -95,7 +95,7 @@ final class SelectQueryState<R> {
     return distinct;
   }
 
-  SqlPaginationStructure sqlPagination() {
+  QueryPaginationShape sqlPagination() {
     return sqlPagination;
   }
 
@@ -185,7 +185,7 @@ final class SelectQueryState<R> {
   }
 
   SelectQueryState<R> withSqlPagination(QueryPagination pagination) {
-    SqlPaginationStructure replacement = SqlPaginationStructure.from(pagination);
+    QueryPaginationShape replacement = QueryPaginationShape.from(pagination);
     return replacement.equals(sqlPagination)
         ? this
         : new SelectQueryState<>(
@@ -285,43 +285,5 @@ final class SelectQueryState<R> {
       }
     }
     return true;
-  }
-}
-
-/** Value-free SQL pagination shape combined with a description only for one final statement. */
-record SqlPaginationStructure(Mode mode, List<Boolean> keysetNullMarkers) {
-
-  private static final SqlPaginationStructure NONE =
-      new SqlPaginationStructure(Mode.NONE, List.of());
-
-  SqlPaginationStructure {
-    Objects.requireNonNull(mode, "mode");
-    keysetNullMarkers = List.copyOf(keysetNullMarkers);
-    if (mode != Mode.KEYSET && !keysetNullMarkers.isEmpty()) {
-      throw new IllegalArgumentException("only keyset pagination has null-marker structure");
-    }
-  }
-
-  static SqlPaginationStructure none() {
-    return NONE;
-  }
-
-  static SqlPaginationStructure from(QueryPagination pagination) {
-    Objects.requireNonNull(pagination, "pagination");
-    return switch (pagination) {
-      case QueryPagination.None ignored -> NONE;
-      case QueryPagination.LimitOnly ignored -> new SqlPaginationStructure(Mode.LIMIT, List.of());
-      case QueryPagination.Offset ignored -> new SqlPaginationStructure(Mode.OFFSET, List.of());
-      case QueryPagination.Keyset keyset ->
-          new SqlPaginationStructure(
-              Mode.KEYSET, keyset.values().stream().map(Objects::isNull).toList());
-    };
-  }
-
-  enum Mode {
-    NONE,
-    LIMIT,
-    OFFSET,
-    KEYSET
   }
 }
