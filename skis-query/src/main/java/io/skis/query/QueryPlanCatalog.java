@@ -10,11 +10,13 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Thread-safe catalog of entity Fast Path plans and owner boundary for shared query plans belonging
  * to one registry and dialect.
  */
+@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
 public final class QueryPlanCatalog {
 
   /**
@@ -31,6 +33,7 @@ public final class QueryPlanCatalog {
   private final ProjectionPlanCache projectionPlans;
   private final QueryPlanCompiler compiler;
   private final QueryPlanKey.IdentityScope planIdentities;
+  private final Optional<QueryPlanKey.DialectIdentity> dialectIdentity;
 
   QueryPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
@@ -38,10 +41,11 @@ public final class QueryPlanCatalog {
       int maximumSize,
       Duration expireAfterAccess) {
     Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
-    QueryPlanCompiler compiler =
-        new QueryPlanCompiler(runtimeRegistry, Objects.requireNonNull(dialect, "dialect"));
+    Dialect requiredDialect = Objects.requireNonNull(dialect, "dialect");
+    QueryPlanCompiler compiler = new QueryPlanCompiler(runtimeRegistry, requiredDialect);
     this.compiler = compiler;
     this.planIdentities = new QueryPlanKey.IdentityScope(runtimeRegistry);
+    this.dialectIdentity = QueryPlanKey.DialectIdentity.from(requiredDialect);
     this.projectionPlans =
         new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
@@ -96,6 +100,10 @@ public final class QueryPlanCatalog {
 
   QueryPlanKey.IdentityScope planIdentities() {
     return planIdentities;
+  }
+
+  Optional<QueryPlanKey.DialectIdentity> dialectIdentity() {
+    return dialectIdentity;
   }
 
   private static <E> EntityPlanSet<E> createPlanSet(

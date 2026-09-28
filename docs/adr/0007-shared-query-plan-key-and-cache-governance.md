@@ -4,9 +4,9 @@
 - 日期：2026-09-27
 - 影响版本：0.2.6-SNAPSHOT
 - 决策范围：通用查询计划 L1 缓存的身份、所有权、并发、驱逐、失效、统计、旁路和生命周期
-- 落地状态：T03 已实现 `QueryPlanKey`、注册表约束且 ClassLoader 感知的结果/参数身份工厂、L0/L1 共用的
-  `QueryPaginationShape`、`maximumSize == 0` 禁用合同及键合同测试；方言身份由 T04 接入，真实缓存与
-  L0/L1/L2 接线分别由 T05、T06 实现。本 ADR 的“已接受”不表示共享缓存已经可用。
+- 落地状态：T03 已实现并通过验证；T04 已把完整能力集合、能力集合之外的行为版本和显式稳定性 opt-in 接入 catalog
+  持有的可选 `DialectIdentity`，实现与合同测试待 CI 验证。真实缓存与 L0/L1/L2 接线仍分别由 T05、T06 实现。
+  本 ADR 的“已接受”不表示共享缓存已经可用。
 
 ## 背景
 
@@ -81,7 +81,7 @@ Codec、nullability 或 Decoder。把方言、策略和路由差异补成字符�
 完整解析的原查询/count 来源结构，再由独立 `COUNT` 变体、结果形状和最终参数形状描述 count 转换；在 `CountAst` 纳入
 统一解析结构前允许保留不会造成错误复用的冗余原选择维度，最多产生安全的额外 miss，不能省略影响 count SQL 的结构。
 
-未来策略改写和规范化落地后，键必须观察它们产生的最终可移植语义；方言 lowering 的差异通过方言能力版本隔离，不能把
+未来策略改写和规范化落地后，键必须观察它们产生的最终可移植语义；方言 lowering 的差异通过完整方言身份隔离，不能把
 lowered AST 或最终 SQL 字符串当作唯一主键。若在得到安全键之前仍必须执行部分解析，该成本由 T07 的不可变
 compilation context 收敛，不能退回对象身份键规避。
 
@@ -95,7 +95,7 @@ compilation context 收敛，不能退回对象身份键规避。
 | 结果形状 | `ResultShape(kind, stableId, resultType, selectionBindings)` | 区分 required/nullable entity、required/nullable scalar、生成式投影及其 Decoder/Codec 来源 |
 | 计划变体 | `PlanVariant(resultMode, QueryPaginationShape)` | 区分 content、ordered content、count、limit、offset 和 keyset |
 | 最终逻辑参数 | 有序 `ParameterShape` | 区分稠密 ordinal、Java/SQL 类型、nullability 和稳定 Binder 身份 |
-| 方言身份 | `DialectIdentity(id, capabilityVersion)` | 隔离不同产品、能力、lowering 和渲染合同 |
+| 方言身份 | `DialectIdentity(id, capabilities, capabilityVersion)` | 用完整能力集合和额外行为版本隔离不同产品、能力、lowering 和渲染合同；32 位版本不单独承担集合等价 |
 | 结构上下文 | 名称到稳定签名的不可变 Map | 为策略、Schema 路由、动态表等未来结构影响预留显式维度 |
 
 结果形状由 `SelectedResult` 的实际种类直接派生，不接受调用方另传 nullable 布尔值。`stableId`、ClassLoader 感知的
@@ -246,7 +246,8 @@ clear 后完成的旧编译悄悄恢复条目。
 
 - T03：新增本 ADR、内部 `QueryPlanKey`、注册表约束且 ClassLoader 感知的结果/参数身份工厂、共享
   `QueryPaginationShape`、`maximumSize == 0` 禁用合同，以及键相等/隔离/碰撞/防御复制测试。
-- T04：为 `Dialect` 提供稳定 `capabilityVersion()`，并把它接入 `DialectIdentity`；同时完成最大参数数合同。
+- T04：为 `Dialect` 提供 `capabilityVersion()` 和显式稳定身份 opt-in，把完整能力集合与额外行为版本接入可选
+  `DialectIdentity`；不能安全标识的方言保留 L0/L2 并由 T06 旁路 L1；同时完成最大参数数合同。
 - T05：按本 ADR 实现 catalog 所有的有界 L1、single-flight、generation、统计、clear、依赖失效和过期/驱逐。
 - T06：完成统一键组装器，返回“可缓存键/带原因旁路”结果；接入 L0/L1/L2，并覆盖所有不能稳定标识的形状。
 - T07/T08：复用不可变 compilation context、收敛重复 walk 和参数复制，不改变本 ADR 的身份与值安全边界。
@@ -258,7 +259,7 @@ clear 后完成的旧编译悄悄恢复条目。
 - 共享缓存不会跨 catalog 复用。两个 catalog 即使键相等也各自编译，这是换取 runtime registry、Codec 和 ClassLoader
   边界清晰的有意选择。
 - 不能稳定标识的第三方扩展先旁路，命中率让位于正确性。
-- T03 只建立身份模型和禁用配置合同，不会让当前全零缓存统计提前变成真实值；该变化属于 T05/T06。
+- T03/T04 只建立键、禁用配置和方言身份合同，不会让当前全零缓存统计提前变成真实值；该变化属于 T05/T06。
 
 ## 兼容性
 
@@ -266,8 +267,10 @@ clear 后完成的旧编译悄悄恢复条目。
 `QueryPlanCacheStatistics` 或清理入口签名。公共容量配置从“必须大于零”扩展为“零表示关闭、正数表示启用”，已有正数
 配置语义不变。
 
-后续 T04 为 `Dialect` 增加能力版本时必须使用兼容默认方法，并由不可变能力内容稳定派生；第三方方言在不能给出安全版本时
-旁路共享缓存。T05/T06 激活现有统计和清理入口属于把占位行为实现为文档承诺的真实语义，不删除方法。
+T04 已通过兼容默认方法为 `Dialect` 增加能力版本与稳定身份声明。旧第三方方言默认不声明稳定身份，因此不会因继承一个
+派生整数而被静默纳入共享 L1；它们仍可通过 L0/L2 正确执行。显式 opt-in 的方言身份保存完整能力集合和额外行为版本，
+避免把 32 位派生值当作集合的完整等价依据。T05/T06 激活现有统计和清理入口属于把占位行为实现为文档承诺的真实语义，
+不删除方法。
 
 ## 性能影响
 

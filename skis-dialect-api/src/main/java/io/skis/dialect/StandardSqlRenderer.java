@@ -15,6 +15,7 @@ import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedOutputColumn;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.DerivedRelationSource;
 import io.skis.sql.ast.EntityRelationSource;
@@ -712,7 +713,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
         require(DialectFeature.DERIVED_TABLE, "derived tables");
         context.sql.append('(');
         List<Identifier> aliases =
-            derived.reference().outputs().stream().map(output -> output.name()).toList();
+            derived.reference().outputs().stream().map(DerivedOutputColumn::name).toList();
         renderSelect(
             derived.statement(), context.relationChild(derived.statement().fromClause()), aliases);
         context

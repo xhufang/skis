@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.dialect.Dialect;
+import io.skis.dialect.DialectCapabilities;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import io.skis.sql.ast.Nullability;
@@ -19,10 +21,11 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Immutable, value-independent identity of one shareable compiled query plan.
  *
- * <p>The key is scoped to one {@link QueryPlanCatalog}. It deliberately stores structural value
- * tokens, strings, and enums instead of runtime values, metadata objects, classes, codecs,
- * connections, sessions, or other execution resources. The composite hash is calculated once
- * because shared-cache lookups will read it on every execution after T05/T06 wire the L1 cache.
+ * <p>The key is scoped to one {@link QueryPlanCatalog}. It deliberately stores immutable framework
+ * values, structural tokens, strings, and enums instead of runtime parameter values, metadata
+ * objects, classes, codecs, connections, sessions, or other execution resources. The composite hash
+ * is calculated once because shared-cache lookups will read it on every execution after T05/T06
+ * wire the L1 cache.
  */
 final class QueryPlanKey {
 
@@ -107,8 +110,7 @@ final class QueryPlanKey {
     return 31 * result + structuralContextSignatures.hashCode();
   }
 
-  private static List<ParameterShape> copyParameters(
-      List<? extends ParameterShape> parameters) {
+  private static List<ParameterShape> copyParameters(List<? extends ParameterShape> parameters) {
     Objects.requireNonNull(parameters, "parameters");
     List<ParameterShape> copy = List.copyOf(parameters);
     for (int ordinal = 0; ordinal < copy.size(); ordinal++) {
@@ -157,7 +159,9 @@ final class QueryPlanKey {
     return RUNTIME_TYPE_IDENTITIES.get(Objects.requireNonNull(type, "type"));
   }
 
-  /** Catalog-bound authority for converting canonical entity metadata into value-only identities. */
+  /**
+   * Catalog-bound authority for converting canonical entity metadata into value-only identities.
+   */
   static final class IdentityScope {
 
     private final EntityRuntimeRegistry runtimeRegistry;
@@ -187,8 +191,8 @@ final class QueryPlanKey {
   }
 
   /**
-   * Stable result-construction contract; selected expressions remain in the enclosing key's
-   * {@code ResolvedStructureKey}.
+   * Stable result-construction contract; selected expressions remain in the enclosing key's {@code
+   * ResolvedStructureKey}.
    */
   record ResultShape(
       Kind kind,
@@ -272,10 +276,7 @@ final class QueryPlanKey {
           .map(
               entityType ->
                   new ResultShape(
-                      kind,
-                      selected.entity().javaType().getName(),
-                      entityType,
-                      List.of()));
+                      kind, selected.entity().javaType().getName(), entityType, List.of()));
     }
 
     private static Optional<ResultShape> scalar(
@@ -307,8 +308,7 @@ final class QueryPlanKey {
     PlanVariant {
       Objects.requireNonNull(resultMode, "resultMode");
       Objects.requireNonNull(pagination, "pagination");
-      if (resultMode == ResultMode.COUNT
-          && pagination.mode() != QueryPaginationShape.Mode.NONE) {
+      if (resultMode == ResultMode.COUNT && pagination.mode() != QueryPaginationShape.Mode.NONE) {
         throw new IllegalArgumentException("a count plan must not carry content pagination");
       }
     }
@@ -439,14 +439,28 @@ final class QueryPlanKey {
         .map(entityType -> new CodecBindingIdentity(entityType, ordinal));
   }
 
-  /** Dialect plan identity; T04 will source the capability version from the Dialect contract. */
-  record DialectIdentity(String dialectId, int capabilityVersion) {
+  /** Dialect plan identity sourced from the complete, stable dialect contract. */
+  record DialectIdentity(
+      String dialectId, DialectCapabilities capabilities, int capabilityVersion) {
 
     DialectIdentity {
       dialectId = requireText(dialectId, "dialectId");
+      Objects.requireNonNull(capabilities, "capabilities");
       if (!dialectId.equals(dialectId.toLowerCase(Locale.ROOT))) {
         throw new IllegalArgumentException("dialectId must be lowercase");
       }
+    }
+
+    static Optional<DialectIdentity> from(Dialect dialect) {
+      Dialect requiredDialect = Objects.requireNonNull(dialect, "dialect");
+      if (!requiredDialect.hasStablePlanCacheIdentity()) {
+        return Optional.empty();
+      }
+      DialectCapabilities capabilities =
+          Objects.requireNonNull(requiredDialect.capabilities(), "dialect capabilities");
+      return Optional.of(
+          new DialectIdentity(
+              requiredDialect.id(), capabilities, requiredDialect.capabilityVersion()));
     }
   }
 }

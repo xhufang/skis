@@ -7,6 +7,7 @@ import io.skis.dialect.ExceptionClassifier;
 import io.skis.dialect.IdentifierRules;
 import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardIdentifierRules;
+import io.skis.dialect.StatementParameterLimit;
 
 /** H2 development-and-test dialect composition root. */
 public final class H2Dialect implements Dialect {
@@ -29,6 +30,9 @@ public final class H2Dialect implements Dialect {
           DialectFeature.SCALAR_SUBQUERY,
           DialectFeature.CORRELATED_SUBQUERY,
           DialectFeature.DERIVED_TABLE);
+  // No stable dialect-level maximum has been accepted for the supported H2 contract.
+  private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
+      StatementParameterLimit.unknown();
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();
@@ -48,6 +52,16 @@ public final class H2Dialect implements Dialect {
   @Override
   public DialectCapabilities capabilities() {
     return CAPABILITIES;
+  }
+
+  @Override
+  public boolean hasStablePlanCacheIdentity() {
+    return true;
+  }
+
+  @Override
+  public StatementParameterLimit maxStatementParameters() {
+    return MAX_STATEMENT_PARAMETERS;
   }
 
   @Override

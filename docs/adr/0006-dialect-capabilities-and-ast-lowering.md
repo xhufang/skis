@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-09-09
-- 影响版本：0.2.5-SNAPSHOT
+- 影响版本：0.2.5-SNAPSHOT；0.2.6-SNAPSHOT T04 补充方言计划身份与参数上限合同
 
 ## 背景
 
@@ -74,6 +74,34 @@ SKIS 方言实现已经通过 SQL golden 和适用的真实数据库合同，而
 - 普通 COUNT 要求 `COUNT_AGGREGATE`；COUNT DISTINCT 同时要求 `COUNT_AGGREGATE` 和 `COUNT_DISTINCT`。
 - `GROUP_BY`、`HAVING` 与各聚合能力互不推导。
 
+### 0.2.6 T04：方言计划身份与参数上限
+
+`Dialect#capabilityVersion()` 是方言计划身份的一部分。兼容默认值由不可变
+`DialectCapabilities#version()` 提供，并按稳定能力名称确定性派生；该整数是进程内使用的不透明行为修订，调用方不得
+持久化或比较大小。`DialectIdentity` 同时保存完整 `DialectCapabilities`，因此不同能力集合即使派生出相同整数也不会
+被当作同一身份。若产品版本、配置、lowering 或 Renderer 行为会在能力集合不变时改变校验或最终 SQL，方言实现必须
+覆写 `capabilityVersion()`。
+
+已有第三方方言不能因为继承了兼容默认方法就自动证明上述身份完整。`Dialect#hasStablePlanCacheIdentity()` 默认返回
+`false`；只有保证 ID、能力、版本、校验、lowering 和渲染行为在 catalog 生命周期内不可变且线程安全的方言才能显式
+返回 `true`。`QueryPlanCatalog` 只为这类方言捕获 `DialectIdentity(id, capabilities, capabilityVersion)`；其余方言保留
+执行能力，但由 T06 旁路共享 L1。
+
+最大单语句绑定参数数使用独立 `StatementParameterLimit`，只允许以下三种状态：
+
+- `unknown`：没有可安全依赖的静态上限；调用方必须保守处理，不能当成无限。
+- `unbounded`：方言明确证明不存在参数个数上限。
+- `explicit(n)`：存在严格正数的有限上限；零和负数非法。`Integer.MAX_VALUE` 在确为有限上限时合法，但不得用来
+  代替 `unknown` 或 `unbounded` 状态。
+
+`Dialect#maxStatementParameters()` 表示无连接信息时框架可安全依赖的保守上限，不声称是每个连接或驱动模式的实际物理
+最大值；默认方法返回 `unknown`，保证已有第三方方言保持源代码和二进制兼容。当前支持的
+[PgJDBC 42.7.11 实现](https://github.com/pgjdbc/pgjdbc/blob/REL42.7.11/pgjdbc/src/main/java/org/postgresql/jdbc/PgPreparedStatement.java#L110-L112)
+在 simple 模式报告 `Integer.MAX_VALUE`、其他模式报告 65535；[42.4.0 发布说明](https://jdbc.postgresql.org/changelogs/2022-06-09-42/)
+记录了后者由 32767 提升为包含 65535。因此 PostgreSQL 使用跨模式的保守值 `explicit(65535)`；H2 没有在当前支持合同中
+声明稳定上限，显式保持 `unknown`。连接、驱动或部署配置可以在后续连接感知阶段进一步收紧方言级声明，但不得放宽
+显式上限。T04 只建立合同，批量分块消费该合同仍属于 0.2.10。
+
 ### 聚合类型规则
 
 D08 的公共聚合 Java 返回类型、SQL 类型、nullability、允许输入、精度和溢出边界由 SQL AST/语义层的集中
@@ -144,6 +172,11 @@ PostgreSQL 的真实合同；H2 未通过的组合保持拒绝。MySQL 正式能
 
 `AggregateTypeRules` 是框架集中语义，不向第三方开放任意覆写公共返回类型的入口。需要新增公共类型组合时按版本兼容规则
 评审，而不是由单个方言静默扩展。
+
+0.2.6 T04 新增的 `capabilityVersion()`、`hasStablePlanCacheIdentity()` 与 `maxStatementParameters()` 都是默认方法；
+旧方言实现无需立即增加方法，仍可通过 L0/L2 正确执行，但默认不参与共享 L1。新增的 `StatementParameterLimit` 是加法式
+公共值类型，不删除或改变既有方言方法。默认参数上限为 `unknown`，因此旧实现不会因一个臆测的无限或魔法数字上限而被
+批量路径错误放大。
 
 ## 性能影响
 
