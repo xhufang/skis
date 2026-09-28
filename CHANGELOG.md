@@ -18,9 +18,15 @@
 
 ### Added
 
+- `Dialect` 新增兼容默认的 `capabilityVersion()`、`hasStablePlanCacheIdentity()` 与
+  `maxStatementParameters()` 合同；`DialectIdentity` 同时保存完整不可变能力集合和能力集合之外的行为版本，不把
+  32 位派生版本单独当作语义等价依据。PostgreSQL/H2 显式提供稳定计划身份，旧第三方方言默认旁路未来共享 L1；
+  `StatementParameterLimit` 明确区分 unknown、unbounded 和正数 explicit limit，允许 `Integer.MAX_VALUE` 表示已确认的
+  有限上限但禁止将其用作状态哨兵；PostgreSQL 为当前 PgJDBC 基线声明跨模式保守上限 65535，H2 与未覆写的自定义方言
+  保守返回 unknown。
 - 新增 ADR-0007，固定执行器级共享查询计划的结构身份、catalog 所有权、per-key single-flight、容量/过期、
   generation 失效、统计、旁路与 ClassLoader 生命周期合同；新增内部不可变 `QueryPlanKey`，显式隔离结果形状、
-  content/ordered/count 与分页变体、最终参数 Binder、方言能力版本和未来策略结构签名，普通值及执行资源不入键。
+  content/ordered/count 与分页变体、最终参数 Binder、完整方言身份和未来策略结构签名，普通值及执行资源不入键。
 - 结果形状由 `SelectedResult` 权威种类派生；结果和参数 Binder 身份绑定当前 runtime registry，并用不持有 `Class` 的
   ClassLoader 感知类型令牌隔离同名类型。派生列与标量子查询递归解析原始属性来源；外部元数据或无安全来源返回
   “无安全身份”，留给 T06 显式旁路；L0 与未来 L1 共用唯一的值无关 `QueryPaginationShape`，避免两套分页身份协议。

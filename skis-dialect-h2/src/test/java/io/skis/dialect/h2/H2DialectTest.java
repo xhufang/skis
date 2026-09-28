@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.skis.dialect.DialectFeature;
 import io.skis.dialect.RenderedSql;
 import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.StatementParameterLimit;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
@@ -52,6 +53,9 @@ class H2DialectTest {
     assertEquals("h2", dialect.id());
     assertSame(H2Renderer.INSTANCE, dialect.renderer());
     assertSame(H2ExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
+    assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
+    assertTrue(dialect.hasStablePlanCacheIdentity());
+    assertSame(StatementParameterLimit.unknown(), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_LIMIT));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_OFFSET));

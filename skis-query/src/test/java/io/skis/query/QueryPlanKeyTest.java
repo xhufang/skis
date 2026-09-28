@@ -6,6 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.dialect.Dialect;
+import io.skis.dialect.DialectCapabilities;
+import io.skis.dialect.DialectFeature;
+import io.skis.dialect.IdentifierRules;
+import io.skis.dialect.SqlRenderer;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcCodecs;
@@ -26,6 +31,7 @@ import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlType;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -64,8 +70,57 @@ class QueryPlanKeyTest {
       result(SelectedResult.entity(KEY_TABLE));
   private static final QueryPlanKey.ParameterShape LONG_PARAMETER =
       parameter(0, KEY_TABLE.id(), Nullability.NON_NULL);
+  private static final DialectCapabilities POSTGRES_CAPABILITIES =
+      DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
   private static final QueryPlanKey.DialectIdentity POSTGRES =
-      new QueryPlanKey.DialectIdentity("postgresql", 17);
+      new QueryPlanKey.DialectIdentity("postgresql", POSTGRES_CAPABILITIES, 17);
+
+  @Test
+  void catalogSourcesTheCompleteStableDialectIdentity() {
+    Dialect dialect = testDialect("postgresql", POSTGRES_CAPABILITIES, 17, true);
+    QueryPlanCatalog catalog =
+        new QueryPlanCatalog(
+            EntityRuntimeRegistry.empty(), dialect, 0, Duration.ofSeconds(1));
+    QueryPlanCatalog changedCapabilities =
+        new QueryPlanCatalog(
+            EntityRuntimeRegistry.empty(),
+            testDialect(
+                "postgresql",
+                DialectCapabilities.of(DialectFeature.CATALOG_QUALIFIED_TABLES),
+                17,
+                true),
+            0,
+            Duration.ofSeconds(1));
+    QueryPlanCatalog changedBehaviorVersion =
+        new QueryPlanCatalog(
+            EntityRuntimeRegistry.empty(),
+            testDialect("postgresql", POSTGRES_CAPABILITIES, 18, true),
+            0,
+            Duration.ofSeconds(1));
+    QueryPlanKey.DialectIdentity identity = catalog.dialectIdentity().orElseThrow();
+    QueryPlanKey.DialectIdentity capabilityChangedIdentity =
+        changedCapabilities.dialectIdentity().orElseThrow();
+    QueryPlanKey.DialectIdentity versionChangedIdentity =
+        changedBehaviorVersion.dialectIdentity().orElseThrow();
+
+    assertEquals(POSTGRES, identity);
+    assertEquals(identity.capabilityVersion(), capabilityChangedIdentity.capabilityVersion());
+    assertNotEquals(identity.capabilities(), capabilityChangedIdentity.capabilities());
+    assertNotEquals(identity, capabilityChangedIdentity);
+    assertNotEquals(identity, versionChangedIdentity);
+  }
+
+  @Test
+  void catalogBypassesDialectsWithoutAnExplicitlyStableIdentity() {
+    QueryPlanCatalog catalog =
+        new QueryPlanCatalog(
+            EntityRuntimeRegistry.empty(),
+            testDialect("custom", DialectCapabilities.none(), 1, false),
+            0,
+            Duration.ofSeconds(1));
+
+    assertTrue(catalog.dialectIdentity().isEmpty());
+  }
 
   @Test
   void equalQueriesAcrossValuesAndObjectInstancesHaveTheSameKey() {
@@ -336,7 +391,7 @@ class QueryPlanKeyTest {
             ENTITY_RESULT,
             QueryPlanKey.PlanVariant.content(QueryPaginationShape.none()),
             List.of(LONG_PARAMETER),
-            new QueryPlanKey.DialectIdentity("h2", 17),
+            new QueryPlanKey.DialectIdentity("h2", POSTGRES_CAPABILITIES, 17),
             Map.of()));
     assertNotEquals(
         base,
@@ -345,7 +400,7 @@ class QueryPlanKeyTest {
             ENTITY_RESULT,
             QueryPlanKey.PlanVariant.content(QueryPaginationShape.none()),
             List.of(LONG_PARAMETER),
-            new QueryPlanKey.DialectIdentity("postgresql", 18),
+            new QueryPlanKey.DialectIdentity("postgresql", POSTGRES_CAPABILITIES, 18),
             Map.of()));
     assertNotEquals(
         base,
@@ -454,7 +509,7 @@ class QueryPlanKeyTest {
             ENTITY_RESULT,
             QueryPlanKey.PlanVariant.content(QueryPaginationShape.none()),
             List.of(LONG_PARAMETER),
-            new QueryPlanKey.DialectIdentity("an", 1),
+            new QueryPlanKey.DialectIdentity("an", DialectCapabilities.none(), 1),
             Map.of());
     QueryPlanKey second =
         key(
@@ -462,7 +517,7 @@ class QueryPlanKeyTest {
             ENTITY_RESULT,
             QueryPlanKey.PlanVariant.content(QueryPaginationShape.none()),
             List.of(LONG_PARAMETER),
-            new QueryPlanKey.DialectIdentity("c0", 1),
+            new QueryPlanKey.DialectIdentity("c0", DialectCapabilities.none(), 1),
             Map.of());
 
     assertEquals(first.hashCode(), second.hashCode());
@@ -505,7 +560,9 @@ class QueryPlanKeyTest {
                 KEY_TABLE.name()));
     assertThrows(
         IllegalArgumentException.class,
-        () -> new QueryPlanKey.DialectIdentity("PostgreSQL", 1));
+        () ->
+            new QueryPlanKey.DialectIdentity(
+                "PostgreSQL", DialectCapabilities.none(), 1));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -574,6 +631,46 @@ class QueryPlanKeyTest {
       Map<String, String> contextSignatures) {
     return new QueryPlanKey(
         structure, resultShape, variant, parameters, dialect, contextSignatures);
+  }
+
+  private static Dialect testDialect(
+      String id,
+      DialectCapabilities capabilities,
+      int capabilityVersion,
+      boolean stablePlanCacheIdentity) {
+    return new Dialect() {
+      @Override
+      public String id() {
+        return id;
+      }
+
+      @Override
+      public IdentifierRules identifierRules() {
+        return identifier -> identifier;
+      }
+
+      @Override
+      public DialectCapabilities capabilities() {
+        return capabilities;
+      }
+
+      @Override
+      public int capabilityVersion() {
+        return capabilityVersion;
+      }
+
+      @Override
+      public boolean hasStablePlanCacheIdentity() {
+        return stablePlanCacheIdentity;
+      }
+
+      @Override
+      public SqlRenderer renderer() {
+        return statement -> {
+          throw new AssertionError("empty catalog must not invoke the renderer");
+        };
+      }
+    };
   }
 
   private static <V> QueryPlanKey.ParameterShape parameter(

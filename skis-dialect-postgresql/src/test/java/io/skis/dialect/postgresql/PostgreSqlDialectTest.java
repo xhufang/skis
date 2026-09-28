@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.skis.dialect.DialectFeature;
 import io.skis.dialect.RenderedSql;
 import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.StatementParameterLimit;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
@@ -52,6 +53,10 @@ class PostgreSqlDialectTest {
     assertEquals("postgresql", dialect.id());
     assertSame(PostgreSqlRenderer.INSTANCE, dialect.renderer());
     assertSame(PostgreSqlExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
+    assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
+    assertTrue(dialect.hasStablePlanCacheIdentity());
+    assertEquals(
+        StatementParameterLimit.explicit(65_535), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_LIMIT));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_OFFSET));

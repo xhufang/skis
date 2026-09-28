@@ -11,9 +11,11 @@ public final class DialectCapabilities {
   private static final DialectCapabilities NONE = new DialectCapabilities(Collections.emptySet());
 
   private final Set<DialectFeature> features;
+  private final int version;
 
   private DialectCapabilities(Set<DialectFeature> features) {
     this.features = features;
+    this.version = calculateVersion(features);
   }
 
   /** Creates an empty capability set. */
@@ -44,6 +46,18 @@ public final class DialectCapabilities {
     return features;
   }
 
+  /**
+   * Returns a compact, deterministic version of this immutable feature set.
+   *
+   * <p>The version is derived from stable feature names instead of enum or object identity. It is
+   * suitable as one component of an in-process plan identity, but it is not collision-free: callers
+   * must retain the complete capability set for equality. Callers must not persist it or interpret
+   * its numeric ordering.
+   */
+  public int version() {
+    return version;
+  }
+
   @Override
   public boolean equals(Object other) {
     return this == other
@@ -59,5 +73,13 @@ public final class DialectCapabilities {
   @Override
   public String toString() {
     return features.toString();
+  }
+
+  private static int calculateVersion(Set<DialectFeature> features) {
+    int version = 1;
+    for (DialectFeature feature : features) {
+      version = 31 * version + feature.name().hashCode();
+    }
+    return version;
   }
 }

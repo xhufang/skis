@@ -7,6 +7,7 @@ import io.skis.dialect.ExceptionClassifier;
 import io.skis.dialect.IdentifierRules;
 import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardIdentifierRules;
+import io.skis.dialect.StatementParameterLimit;
 
 /** PostgreSQL dialect composition root for the currently supported SQL subset. */
 public final class PostgreSqlDialect implements Dialect {
@@ -30,6 +31,10 @@ public final class PostgreSqlDialect implements Dialect {
           DialectFeature.SCALAR_SUBQUERY,
           DialectFeature.CORRELATED_SUBQUERY,
           DialectFeature.DERIVED_TABLE);
+  // PgJDBC 42.7.11 reports Integer.MAX_VALUE in simple mode and 65,535 otherwise.
+  // Use the connection-independent value as the conservative framework cap.
+  private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
+      StatementParameterLimit.explicit(65_535);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();
@@ -49,6 +54,16 @@ public final class PostgreSqlDialect implements Dialect {
   @Override
   public DialectCapabilities capabilities() {
     return CAPABILITIES;
+  }
+
+  @Override
+  public boolean hasStablePlanCacheIdentity() {
+    return true;
+  }
+
+  @Override
+  public StatementParameterLimit maxStatementParameters() {
+    return MAX_STATEMENT_PARAMETERS;
   }
 
   @Override
