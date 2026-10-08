@@ -33,26 +33,6 @@ final class QueryStructureCompiler {
 
   private QueryStructureCompiler() {}
 
-  static CompiledQueryStructure compile(
-      QueryTable<?> root, List<QueryJoin> joins, @Nullable QueryCondition where) {
-    return compile(root, joins, where, true);
-  }
-
-  private static CompiledQueryStructure compile(
-      QueryRelation root,
-      List<QueryJoin> joins,
-      @Nullable QueryCondition where,
-      boolean retainOriginalExpressions) {
-    StatementParameterLayout layout = new StatementParameterLayout(retainOriginalExpressions);
-    QueryParameterBindings bindings = new QueryParameterBindings();
-    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
-    CompiledBlock block = compileBlock(root, joins, where, List.of(), null, compiler);
-    CompiledQueryStructure structure = complete(List.of(), block, List.of(), layout, bindings);
-    return layout.requiresRewrite()
-        ? compile(root, joins, where, false).withValidationSource(structure)
-        : structure;
-  }
-
   static CompiledQueryStructure compile(SelectQueryState<?> state) {
     return compile(state, true);
   }
@@ -245,27 +225,6 @@ record CompiledQueryStructure(
     }
   }
 
-  CompiledQueryStructure(
-      FromClause fromClause,
-      @Nullable SqlPredicate where,
-      List<Selectable<?>> parameterSources,
-      List<QueryParameter<?>> parameterReferences,
-      List<ParameterSlot<?>> parameterSlots,
-      QueryParameters parameters) {
-    this(
-        fromClause,
-        List.of(),
-        where,
-        List.of(),
-        null,
-        List.of(),
-        parameterSources,
-        parameterReferences,
-        parameterSlots,
-        parameters,
-        null);
-  }
-
   CompiledQueryStructure withValidationSource(CompiledQueryStructure source) {
     return new CompiledQueryStructure(
         fromClause,
@@ -286,11 +245,6 @@ record CompiledQueryStructure(
    */
   CompiledQueryStructure validationStructure() {
     return validationSource == null ? this : validationSource;
-  }
-
-  List<@Nullable Object> arguments() {
-    QueryParameters supplied = validationStructure().parameters();
-    return arguments(supplied);
   }
 
   List<@Nullable Object> arguments(QueryParameters suppliedParameters) {

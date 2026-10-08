@@ -6,12 +6,18 @@
 
 ### Changed
 
+- T05 第二轮复核修复：共享键保留查询块/来源位置与 loader-aware 实体身份的对应关系，隔离同名类型交换来源后的
+  ordered reader；活跃编译中的同缓存嵌套 miss 立即失败，clear/实体失效不丢失 owner 记录，嵌套命中仍可用；
+  admission 等待可直接返回已发布计划，不再等待无关 key 的编译名额。相应回归测试源码已补充，待 CI 验证。
 - `0.2.5` 已按子查询与派生表的重切范围收口；原步骤 10—18 的未完成项已迁移到明确里程碑，聚合语义归属
   `0.2.9`。Reactor、子模块 parent、独立消费者和示例基线统一进入 `0.2.6-SNAPSHOT`，开始计划缓存与
   编译路径架构内部里程碑；不创建 `0.2.5` tag、Maven Central 发布或 GitHub Release。
 
 ### Removed
 
+- 清理仅测试使用的 `EntityPlanSet` 条件封装、`QueryStructureCompiler` 旧入口、`CompiledQueryStructure` 简化构造器和
+  无参参数读取方法，以及无调用的 `EntityPlanSet.entity()`、`ResolvedValueMapping.read/bind`；测试组装移入
+  `src/test`，通过真实 `SelectQueryState` 编译路径构造结构。T06 明确预留入口保留。
 - 删除 benchmark 框架子模块、runner、源码、脚本、历史结果和执行工作流；`skis-benchmark` 保留为无子模块、
   无依赖、无源码的空 POM。整个 `0.2.x` 开发阶段不实现或执行 benchmark；全部 `0.2.x` 里程碑完成并进入
   功能冻结后，在 `0.3.0` 正式发布前通过新任务重新评审、建立并执行性能测试，旧结果和旧门槛不直接恢复。
@@ -24,16 +30,32 @@
   `StatementParameterLimit` 明确区分 unknown、unbounded 和正数 explicit limit，允许 `Integer.MAX_VALUE` 表示已确认的
   有限上限但禁止将其用作状态哨兵；PostgreSQL 为当前 PgJDBC 基线声明跨模式保守上限 65535，H2 与未覆写的自定义方言
   保守返回 unknown。
-- 新增 ADR-0007，固定执行器级共享查询计划的结构身份、catalog 所有权、per-key single-flight、容量/过期、
-  generation 失效、统计、旁路与 ClassLoader 生命周期合同；新增内部不可变 `QueryPlanKey`，显式隔离结果形状、
-  content/ordered/count 与分页变体、最终参数 Binder、完整方言身份和未来策略结构签名，普通值及执行资源不入键。
+- 新增 ADR-0007，固定执行器级共享查询计划的结构身份、catalog 所有权、per-key single-flight、有界编译 admission、
+  generation 失效、统计、旁路与 ClassLoader 生命周期合同；新增内部不可变 `QueryPlanKey`，显式隔离完整实体依赖、
+  结果 DecoderFactory 合同、content/ordered/count 与分页变体、最终参数 Binder、完整方言身份和未来策略结构签名，
+  普通值及执行资源不入键。
 - 结果形状由 `SelectedResult` 权威种类派生；结果和参数 Binder 身份绑定当前 runtime registry，并用不持有 `Class` 的
   ClassLoader 感知类型令牌隔离同名类型。派生列与标量子查询递归解析原始属性来源；外部元数据或无安全来源返回
   “无安全身份”，留给 T06 显式旁路；L0 与未来 L1 共用唯一的值无关 `QueryPaginationShape`，避免两套分页身份协议。
 - 计划缓存容量零固定为关闭共享 L1、保留 L0/L2 且全部 L1 活动计数为零；负数仍拒绝。新增/扩展键与配置合同测试，
   覆盖不同查询对象和不同参数值的等价键、registry 所有权、同名 ClassLoader 隔离、全部计划维度、分页空值形状、
-  上下文规范化、防御性复制、预计算 hash 以及 hash 碰撞下的完整 `equals`；真实共享缓存和统一键组装/L0/L1/L2
-  接线仍分别归 T05、T06。
+  上下文规范化、防御性复制、预计算 hash 以及 hash 碰撞下的完整 `equals`；统一键组装/L0/L1/L2 接线仍归 T06。
+- `QueryPlanCatalog` 所有的动态计划占位对象已替换为真实有界 L1：同键 miss 使用 per-key single-flight，不同键仍可并行
+  但同时注册的 flight/编译工作受容量 admission 约束；正常完成的 `FlightOutcome` 让 owner/waiter 对普通异常、
+  `CompletionException` 与 `Error` 观察同一失败，失败不缓存且可重试。global/entity generation 防止 clear 或实体失效前
+  启动的编译重新发布旧条目，命中不获取全缓存维护锁；miss 在 owner/waiter 注册后计数。
+- 缓存使用单调访问过期、严格容量发布和累计 hit/miss/eviction/invalidation 统计，零容量完全旁路 L1 活动。容量合同测试
+  在编译阻塞期间直接检查 active compilation 上限，不再只检查结束后的最终 size。
+- 新增值无关 `CachedQueryPlan` 与显式 `QueryPlanDependencies`；共享值只保存不可变 `CompiledQueryPlan`，不保存本次参数、
+  AST、查询表或 mapping/selection/order 对象图，命中后重新附着当前参数与 AST。依赖从完整查询块分析递归覆盖根、Join、
+  子查询和派生表内部实体，其来源位置与不持有 `Class` 的 loader-aware 值身份一并进入 key，去重规范元数据集合用于精确失效。
+- 投影和有序 Decoder 已拆出只含 Codec、JDBC 下标、稳定参数合同及安全诊断值的 reader；生成式结果身份包含实际
+  DecoderFactory 的 loader-aware 类型与完整投影参数合同，有状态 factory 使用 mapping-instance 令牌隔离同 ID
+  异构实现。
+- 确定性测试源码补充同名 ClassLoader 的 JOIN/EXISTS/派生依赖、真实 scalar/ordered/projection 计划并发绑定与解码、
+  调用期 AST/table/mapping/argument 弱引用、clear 后结果 ClassLoader 回收、失败/旧代 waiter 交错及递归编译。卸载结果
+  类型或插件 ClassLoader 前必须先停稳受影响查询再显式清空计划缓存；普通查询终止路径仍待 T06 接入，T05 源码仍待
+  CI 验证。
 - 新增 `DerivedOutput<V>`/`NonNullDerivedOutput<V>`、`DerivedRelation` 与派生列 AST；派生关系使用显式唯一输出
   别名和有序强类型形状，可作为根来源或任意 Join 右来源，并保留实体根原有泛型入口。
 - 派生输出在完整内层 Join 后冻结有效 nullability，进入外层 Join 后再次传播 null 扩展；普通派生来源为非相关

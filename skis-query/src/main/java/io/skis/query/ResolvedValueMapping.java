@@ -3,18 +3,15 @@ package io.skis.query;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcTypeCodec;
-import io.skis.mapping.JdbcWriteContext;
 import io.skis.mapping.PropertyRuntime;
-import io.skis.mapping.RowReadContext;
+import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Objects;
-import org.jspecify.annotations.Nullable;
 
 /** Query-local value contract resolved from a framework-owned selectable expression. */
 record ResolvedValueMapping<V>(
@@ -75,50 +72,18 @@ record ResolvedValueMapping<V>(
     if (resultIndex < 1) {
       throw new IllegalArgumentException("result index must be positive");
     }
+    JdbcTypeCodec<V> readerCodec = codec;
+    String selectionSummary = SelectableSupport.summary(selectable);
     return (resultSet, context) -> {
-      V value = read(resultSet, resultIndex, context);
+      Objects.requireNonNull(resultSet, "resultSet");
+      Objects.requireNonNull(context, "context");
+      V value = readerCodec.read(resultSet, resultIndex, context);
       if (value == null && requireNonNull) {
         throw new SQLException(
-            "required selection '"
-                + SelectableSupport.summary(selectable)
-                + "' is null at JDBC index "
-                + resultIndex);
+            "required selection '" + selectionSummary + "' is null at JDBC index " + resultIndex);
       }
       return value;
     };
-  }
-
-  @Nullable V read(ResultSet resultSet, int resultIndex, RowReadContext context)
-      throws SQLException {
-    Objects.requireNonNull(resultSet, "resultSet");
-    Objects.requireNonNull(context, "context");
-    if (resultIndex < 1) {
-      throw new IllegalArgumentException("result index must be positive");
-    }
-    return codec.read(resultSet, resultIndex, context);
-  }
-
-  void bind(
-      PreparedStatement statement,
-      int parameterIndex,
-      @Nullable Object value,
-      JdbcWriteContext context)
-      throws SQLException {
-    Objects.requireNonNull(statement, "statement");
-    Objects.requireNonNull(context, "context");
-    if (parameterIndex < 1) {
-      throw new IllegalArgumentException("JDBC parameter index must be positive");
-    }
-    if (value != null && !javaType.isInstance(value)) {
-      throw new SQLException(
-          "query value for expression '"
-              + SelectableSupport.summary(selectable)
-              + "' requires "
-              + javaType.getTypeName()
-              + " but received "
-              + value.getClass().getTypeName());
-    }
-    codec.bind(statement, parameterIndex, value == null ? null : javaType.cast(value), context);
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -146,9 +111,11 @@ record ResolvedValueMapping<V>(
   private static <V> ResolvedValueMapping<V> resolveDerivedUntyped(
       DerivedColumnSelectable<?> derived, SqlExpression<V> expression, TableRuntimeScope scope) {
     DerivedColumnSelectable<V> typed = (DerivedColumnSelectable) derived;
-    if (!(expression instanceof io.skis.sql.ast.DerivedColumnExpression<?> compiled)
-        || compiled.relation() != typed.relation().reference()
-        || compiled.outputOrdinal() != typed.outputOrdinal()) {
+    if (!(expression
+            instanceof
+            DerivedColumnExpression<?>(DerivedRelationReference relation, int outputOrdinal))
+        || relation != typed.relation().reference()
+        || outputOrdinal != typed.outputOrdinal()) {
       throw new QueryValidationException(
           "compiled derived selection does not reference its concrete relation occurrence and "
               + "output ordinal");

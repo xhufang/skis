@@ -99,7 +99,7 @@ class QueryValueSnapshotsTest {
   }
 
   private static List<@Nullable Object> arguments(QueryCondition condition) {
-    return QueryStructureCompiler.compile(TABLE, List.of(), condition).arguments();
+    return QueryTestSupport.arguments(QueryTestSupport.compile(TABLE, List.of(), condition));
   }
 
   private record SnapshotRow(byte[] bytes, Timestamp timestamp, Date date, Time time) {}

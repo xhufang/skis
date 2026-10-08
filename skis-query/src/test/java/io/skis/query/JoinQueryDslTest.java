@@ -755,7 +755,7 @@ class JoinQueryDslTest {
 
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
     CompiledQueryStructure structure =
-        QueryStructureCompiler.compile(
+        QueryTestSupport.compile(
             PET_TABLE,
             List.of(
                 new QueryJoin(io.skis.sql.ast.JoinType.INNER, OWNER_TABLE, firstOn),
@@ -942,14 +942,14 @@ class JoinQueryDslTest {
     String sensitiveValue = "8675309";
     QueryCondition validCondition = PET_TABLE.name().eq(sensitiveValue);
     CompiledQueryStructure validStructure =
-        QueryStructureCompiler.compile(PET_TABLE, List.of(), validCondition);
+        QueryTestSupport.compile(PET_TABLE, List.of(), validCondition);
     SelectStatement validStatement =
         new SelectStatement(
             List.of(PET_TABLE.id().expression()),
             validStructure.fromClause(),
             validStructure.where());
 
-    assertEquals(List.of(sensitiveValue), validStructure.arguments());
+    assertEquals(List.of(sensitiveValue), QueryTestSupport.arguments(validStructure));
     QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(validStatement);
     assertFalse(analysis.structureKey().canonicalForm().contains(sensitiveValue));
 
@@ -960,8 +960,8 @@ class JoinQueryDslTest {
             .eq(sensitiveValue)
             .and(PET_TABLE.ownerId().eq(invisible.id()));
     CompiledQueryStructure invalidStructure =
-        QueryStructureCompiler.compile(PET_TABLE, List.of(), invalidCondition);
-    assertEquals(List.of(sensitiveValue), invalidStructure.arguments());
+        QueryTestSupport.compile(PET_TABLE, List.of(), invalidCondition);
+    assertEquals(List.of(sensitiveValue), QueryTestSupport.arguments(invalidStructure));
     EntityPlanSet<Pet> plans = queryPlanCatalog().require(PET);
 
     QueryValidationException failure =
@@ -1796,7 +1796,7 @@ class JoinQueryDslTest {
       QueryTable<E> root,
       SelectedResult<R> selected,
       List<QueryJoin> joins) {
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(root, joins, null);
+    CompiledQueryStructure structure = QueryTestSupport.compile(selected, root, joins, null);
     return catalog
         .compiler()
         .compileSelection(
@@ -1806,7 +1806,7 @@ class JoinQueryDslTest {
             false,
             QueryPagination.None.INSTANCE,
             List.of(),
-            structure.arguments());
+            QueryTestSupport.arguments(structure));
   }
 
   private static EntityRuntimeModel<Pet> petModel() {

@@ -1,5 +1,8 @@
 package io.skis.query;
 
+import static io.skis.query.QueryTestSupport.argument;
+import static io.skis.query.QueryTestSupport.arguments;
+import static io.skis.query.QueryTestSupport.selectPlan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -116,11 +119,16 @@ class EntityPlanSetTest {
     CompiledQueryStructure structure =
         new CompiledQueryStructure(
             FromClause.of(TABLE),
+            List.of(),
             TABLE.id().expression().eq(OTHER_TABLE.id().expression()),
             List.of(),
+            null,
             List.of(),
             List.of(),
-            QueryParameters.empty());
+            List.of(),
+            List.of(),
+            QueryParameters.empty(),
+            null);
 
     QueryValidationException failure =
         assertThrows(
@@ -136,8 +144,8 @@ class EntityPlanSetTest {
     EntityPlanSet<Pet> plans = plans();
 
     CompiledQueryPlan<Pet, Object> findById = plans.findByIdPlan();
-    CompiledQueryPlan<Pet, Object> firstName = plans.selectPlan(TABLE, TABLE.name().eq("Mimi"));
-    CompiledQueryPlan<Pet, Object> secondName = plans.selectPlan(TABLE, TABLE.name().eq("Fifi"));
+    CompiledQueryPlan<Pet, Object> firstName = selectPlan(plans, TABLE, TABLE.name().eq("Mimi"));
+    CompiledQueryPlan<Pet, Object> secondName = selectPlan(plans, TABLE, TABLE.name().eq("Fifi"));
 
     assertSame(ID, plans.findByIdProperty());
     assertSame(findById, plans.findByIdPlan());
@@ -156,22 +164,22 @@ class EntityPlanSetTest {
     QueryCondition mimi = TABLE.name().eq("Mimi");
     QueryCondition fifi = TABLE.name().eq("Fifi");
 
-    assertSame(plans.selectPlan(TABLE, mimi), plans.selectPlan(TABLE, fifi));
-    assertEquals(List.of("Mimi"), ((QueryArguments) plans.argument(mimi)).values());
-    assertEquals(List.of("Fifi"), ((QueryArguments) plans.argument(fifi)).values());
+    assertSame(selectPlan(plans, TABLE, mimi), selectPlan(plans, TABLE, fifi));
+    assertEquals(List.of("Mimi"), ((QueryArguments) argument(TABLE, mimi)).values());
+    assertEquals(List.of("Fifi"), ((QueryArguments) argument(TABLE, fifi)).values());
     QueryCondition firstComplex = TABLE.name().like("Mi%").and(TABLE.id().between(1L, 9L));
     QueryCondition secondComplex = TABLE.name().like("Mo%").and(TABLE.id().between(2L, 10L));
     CompiledQueryStructure firstCompiled =
-        QueryStructureCompiler.compile(TABLE, List.of(), firstComplex);
+        QueryTestSupport.compile(TABLE, List.of(), firstComplex);
     CompiledQueryStructure secondCompiled =
-        QueryStructureCompiler.compile(TABLE, List.of(), secondComplex);
+        QueryTestSupport.compile(TABLE, List.of(), secondComplex);
     assertEquals(firstCompiled.where(), secondCompiled.where());
     assertEquals(firstCompiled, secondCompiled);
     assertEquals(firstCompiled.hashCode(), secondCompiled.hashCode());
-    assertEquals(List.of("Mi%", 1L, 9L), firstCompiled.arguments());
-    assertEquals(List.of("Mo%", 2L, 10L), secondCompiled.arguments());
-    assertSame(NoParameters.INSTANCE, plans.argument(null));
-    assertEquals(0, plans.selectPlan(TABLE, null).parameterCount());
+    assertEquals(List.of("Mi%", 1L, 9L), arguments(firstCompiled));
+    assertEquals(List.of("Mo%", 2L, 10L), arguments(secondCompiled));
+    assertSame(NoParameters.INSTANCE, argument(TABLE, null));
+    assertEquals(0, selectPlan(plans, TABLE, null).parameterCount());
   }
 
   @Test
@@ -180,21 +188,21 @@ class EntityPlanSetTest {
     QueryCondition predicate =
         TABLE.name().isNull().or(TABLE.name().like("Mi%")).and(TABLE.id().ge(1L));
 
-    CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
+    CompiledQueryPlan<Pet, Object> plan = selectPlan(plans, TABLE, predicate);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" "
             + "WHERE (\"pet\".\"pet_name\" IS NULL OR \"pet\".\"pet_name\" LIKE ?) "
             + "AND \"pet\".\"id\" >= ?",
         plan.sql());
-    assertEquals(List.of("Mi%", 1L), ((QueryArguments) plans.argument(predicate)).values());
+    assertEquals(List.of("Mi%", 1L), ((QueryArguments) argument(TABLE, predicate)).values());
   }
 
   @Test
   void bindsComplexPredicateArgumentsInPlaceholderEncounterOrder() throws Exception {
     EntityPlanSet<Pet> plans = plans();
     QueryCondition predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
-    CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
+    CompiledQueryPlan<Pet, Object> plan = selectPlan(plans, TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
         (PreparedStatement)
@@ -210,7 +218,7 @@ class EntityPlanSetTest {
 
     int nextIndex =
         plan.parameterBinder()
-            .bind(statement, 3, plans.argument(predicate), JdbcWriteContext.EMPTY);
+            .bind(statement, 3, argument(TABLE, predicate), JdbcWriteContext.EMPTY);
 
     assertEquals(5, nextIndex);
     assertEquals(List.of(List.of("setString", 3, "Mi%"), List.of("setLong", 4, 1L)), bindings);
@@ -222,8 +230,8 @@ class EntityPlanSetTest {
     QueryCondition oneReference = TABLE.name().eq("Mimi");
     QueryCondition repeated = oneReference.and(oneReference);
     CompiledQueryStructure compiled =
-        QueryStructureCompiler.compile(TABLE, List.of(), repeated);
-    CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, repeated);
+        QueryTestSupport.compile(TABLE, List.of(), repeated);
+    CompiledQueryPlan<Pet, Object> plan = selectPlan(plans, TABLE, repeated);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
         (PreparedStatement)
@@ -239,10 +247,10 @@ class EntityPlanSetTest {
 
     int nextIndex =
         plan.parameterBinder()
-            .bind(statement, 4, plans.argument(repeated), JdbcWriteContext.EMPTY);
+            .bind(statement, 4, argument(TABLE, repeated), JdbcWriteContext.EMPTY);
 
     assertEquals(1, compiled.parameterReferences().size());
-    assertEquals(List.of("Mimi"), compiled.arguments());
+    assertEquals(List.of("Mimi"), arguments(compiled));
     assertEquals(
         List.of(0, 0),
         plan.renderedSql().parameters().stream().map(slot -> slot.ordinal()).toList());
@@ -295,11 +303,16 @@ class EntityPlanSetTest {
     CompiledQueryStructure structure =
         new CompiledQueryStructure(
             FromClause.of(TABLE),
+            List.of(),
             TABLE.id().expression().eq(slot),
+            List.of(),
+            null,
+            List.of(),
             layout.parameterSources(),
             layout.parameterReferences(),
             layout.parameterSlots(),
-            parameters);
+            parameters,
+            null);
     CompiledQueryPlan<Pet, Object> plan = compiler.compileQuery(runtimeModel, TABLE, structure);
     AtomicReference<List<Object>> binding = new AtomicReference<>();
     PreparedStatement statement =
@@ -319,7 +332,7 @@ class EntityPlanSetTest {
             .bind(
                 statement,
                 1,
-                new QueryArguments(structure.arguments()),
+                new QueryArguments(arguments(structure)),
                 JdbcWriteContext.EMPTY);
 
     assertEquals(2, nextIndex);
@@ -336,7 +349,7 @@ class EntityPlanSetTest {
                 EntityRuntimeRegistry.of(List.of(runtimeModel)),
                 ReorderedParameterDialect.INSTANCE));
     QueryCondition predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
-    CompiledQueryPlan<Pet, Object> plan = plans.selectPlan(TABLE, predicate);
+    CompiledQueryPlan<Pet, Object> plan = selectPlan(plans, TABLE, predicate);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
         (PreparedStatement)
@@ -352,7 +365,7 @@ class EntityPlanSetTest {
 
     int nextIndex =
         plan.parameterBinder()
-            .bind(statement, 1, plans.argument(predicate), JdbcWriteContext.EMPTY);
+            .bind(statement, 1, argument(TABLE, predicate), JdbcWriteContext.EMPTY);
 
     assertEquals(3, nextIndex);
     assertEquals(
@@ -367,29 +380,29 @@ class EntityPlanSetTest {
     EntityPlanSet<Pet> plans = plans();
     String prefix = "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE ";
 
-    assertEquals(prefix + "\"pet\".\"id\" <> ?", plans.selectPlan(TABLE, TABLE.id().ne(1L)).sql());
-    assertEquals(prefix + "\"pet\".\"id\" > ?", plans.selectPlan(TABLE, TABLE.id().gt(1L)).sql());
-    assertEquals(prefix + "\"pet\".\"id\" >= ?", plans.selectPlan(TABLE, TABLE.id().ge(1L)).sql());
-    assertEquals(prefix + "\"pet\".\"id\" < ?", plans.selectPlan(TABLE, TABLE.id().lt(1L)).sql());
-    assertEquals(prefix + "\"pet\".\"id\" <= ?", plans.selectPlan(TABLE, TABLE.id().le(1L)).sql());
+    assertEquals(prefix + "\"pet\".\"id\" <> ?", selectPlan(plans, TABLE, TABLE.id().ne(1L)).sql());
+    assertEquals(prefix + "\"pet\".\"id\" > ?", selectPlan(plans, TABLE, TABLE.id().gt(1L)).sql());
+    assertEquals(prefix + "\"pet\".\"id\" >= ?", selectPlan(plans, TABLE, TABLE.id().ge(1L)).sql());
+    assertEquals(prefix + "\"pet\".\"id\" < ?", selectPlan(plans, TABLE, TABLE.id().lt(1L)).sql());
+    assertEquals(prefix + "\"pet\".\"id\" <= ?", selectPlan(plans, TABLE, TABLE.id().le(1L)).sql());
     assertEquals(
         prefix + "\"pet\".\"pet_name\" IS NOT NULL",
-        plans.selectPlan(TABLE, TABLE.name().isNotNull()).sql());
+        selectPlan(plans, TABLE, TABLE.name().isNotNull()).sql());
     assertEquals(
         prefix + "\"pet\".\"id\" BETWEEN ? AND ?",
-        plans.selectPlan(TABLE, TABLE.id().between(1L, 9L)).sql());
+        selectPlan(plans, TABLE, TABLE.id().between(1L, 9L)).sql());
     assertEquals(
         prefix + "\"pet\".\"pet_name\" LIKE ?",
-        plans.selectPlan(TABLE, TABLE.name().like("Mi%")).sql());
+        selectPlan(plans, TABLE, TABLE.name().like("Mi%")).sql());
     assertEquals(
         prefix + "\"pet\".\"id\" IN (?, ?)",
-        plans.selectPlan(TABLE, TABLE.id().in(List.of(1L, 2L))).sql());
+        selectPlan(plans, TABLE, TABLE.id().in(List.of(1L, 2L))).sql());
     assertEquals(
         prefix + "\"pet\".\"id\" NOT IN (?, ?)",
-        plans.selectPlan(TABLE, TABLE.id().notIn(List.of(1L, 2L))).sql());
+        selectPlan(plans, TABLE, TABLE.id().notIn(List.of(1L, 2L))).sql());
     assertEquals(
         prefix + "NOT (\"pet\".\"id\" = ?)",
-        plans.selectPlan(TABLE, TABLE.id().eq(1L).not()).sql());
+        selectPlan(plans, TABLE, TABLE.id().eq(1L).not()).sql());
   }
 
   @Test
@@ -400,12 +413,12 @@ class EntityPlanSetTest {
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE 1 = 0",
-        plans.selectPlan(TABLE, emptyIn).sql());
+        selectPlan(plans, TABLE, emptyIn).sql());
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE 1 = 1",
-        plans.selectPlan(TABLE, emptyNotIn).sql());
-    assertSame(NoParameters.INSTANCE, plans.argument(emptyIn));
-    assertSame(NoParameters.INSTANCE, plans.argument(emptyNotIn));
+        selectPlan(plans, TABLE, emptyNotIn).sql());
+    assertSame(NoParameters.INSTANCE, argument(TABLE, emptyIn));
+    assertSame(NoParameters.INSTANCE, argument(TABLE, emptyNotIn));
   }
 
   @Test
@@ -440,7 +453,7 @@ class EntityPlanSetTest {
     List<CompiledQueryPlan<Pet, Object>> observed =
         IntStream.range(0, 64)
             .parallel()
-            .mapToObj(index -> plans.selectPlan(TABLE, TABLE.name().eq("pet-" + index)))
+            .mapToObj(index -> selectPlan(plans, TABLE, TABLE.name().eq("pet-" + index)))
             .toList();
 
     CompiledQueryPlan<Pet, Object> published = observed.getFirst();
@@ -453,10 +466,10 @@ class EntityPlanSetTest {
 
     assertThrows(QueryValidationException.class, () -> TABLE.name().eq((String) null));
     assertThrows(
-        QueryValidationException.class, () -> plans().selectPlan(TABLE, alias.name().eq("Mimi")));
+        QueryValidationException.class, () -> selectPlan(plans(), TABLE, alias.name().eq("Mimi")));
     assertThrows(
         QueryValidationException.class,
-        () -> plans().selectPlan(TABLE, TABLE.id().eq(1L).and(alias.name().isNotNull())));
+        () -> selectPlan(plans(), TABLE, TABLE.id().eq(1L).and(alias.name().isNotNull())));
   }
 
   @Test

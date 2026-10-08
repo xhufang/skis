@@ -163,17 +163,20 @@ record ResolvedResultShape<R>(
       expressions.add(compiledExpression);
       resolved.add(new ResolvedSelection(valueMapping, ordinal + 1));
     }
-    ProjectionMapping.Readers readers = new CompiledReaders(parameters, resolved);
+    List<ProjectionMapping.ValueReader<?>> detachedReaders = new ArrayList<>(resolved.size());
+    for (int ordinal = 0; ordinal < resolved.size(); ordinal++) {
+      detachedReaders.add(resolved.get(ordinal).reader(parameters.get(ordinal).acceptsNoNull()));
+    }
+    ProjectionMapping.Readers readers = new CompiledReaders(parameters, detachedReaders);
     RowDecoder<R> generated =
         Objects.requireNonNull(mapping.decoderFactory().create(readers), "projection row decoder");
+    String resultTypeName = mapping.resultType().getTypeName();
     RowDecoder<R> decoder =
         (resultSet, context) -> {
           R value = generated.decode(resultSet, context);
           if (value == null) {
             throw new SQLException(
-                "generated projection decoder returned null for '"
-                    + mapping.resultType().getTypeName()
-                    + "'");
+                "generated projection decoder returned null for '" + resultTypeName + "'");
           }
           return value;
         };
@@ -244,12 +247,17 @@ record ResolvedResultShape<R>(
   }
 
   private record CompiledReaders(
-      List<ProjectionMapping.Parameter> parameters, List<ResolvedSelection> selections)
+      List<ProjectionMapping.Parameter> parameters,
+      List<ProjectionMapping.ValueReader<?>> detachedReaders)
       implements ProjectionMapping.Readers {
 
     private CompiledReaders {
       parameters = List.copyOf(parameters);
-      selections = List.copyOf(selections);
+      detachedReaders = List.copyOf(detachedReaders);
+      if (parameters.size() != detachedReaders.size()) {
+        throw new IllegalArgumentException(
+            "projection parameter and detached reader counts must match");
+      }
     }
 
     @Override
@@ -275,7 +283,7 @@ record ResolvedResultShape<R>(
                 + parameter.javaType().getTypeName());
       }
       return (ProjectionMapping.ValueReader<V>)
-          selections.get(parameterOrdinal).reader(parameter.acceptsNoNull());
+          detachedReaders.get(parameterOrdinal);
     }
   }
 
