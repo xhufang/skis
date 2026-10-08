@@ -66,7 +66,7 @@ class ProjectionQueryTest {
     EntityRuntimeRegistry registry =
         EntityRuntimeRegistry.of(List.of(petModel(), ownerModel()));
     CompiledQueryStructure structure =
-        QueryStructureCompiler.compile(
+        QueryTestSupport.compile(
             PET_TABLE,
             List.of(
                 new QueryJoin(
@@ -317,7 +317,8 @@ class ProjectionQueryTest {
   private static <R> QueryCompilation<R> compile(
       ProjectionSelection<R> selection, List<QueryJoin> joins) {
     QueryPlanCatalog catalog = catalog();
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(PET_TABLE, joins, null);
+    CompiledQueryStructure structure =
+        QueryTestSupport.compile(SelectedResult.projection(selection), PET_TABLE, joins, null);
     return catalog
         .compiler()
         .compileSelection(
@@ -327,7 +328,7 @@ class ProjectionQueryTest {
             false,
             QueryPagination.None.INSTANCE,
             List.of(),
-            structure.arguments());
+            QueryTestSupport.arguments(structure));
   }
 
   private static ProjectionMapping<PetOwnerView> nullableOwnerMapping() {

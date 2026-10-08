@@ -4,16 +4,17 @@
 - 日期：2026-09-27
 - 影响版本：0.2.6-SNAPSHOT
 - 决策范围：通用查询计划 L1 缓存的身份、所有权、并发、驱逐、失效、统计、旁路和生命周期
-- 落地状态：T03 已实现并通过验证；T04 已把完整能力集合、能力集合之外的行为版本和显式稳定性 opt-in 接入 catalog
-  持有的可选 `DialectIdentity`，实现与合同测试待 CI 验证。真实缓存与 L0/L1/L2 接线仍分别由 T05、T06 实现。
-  本 ADR 的“已接受”不表示共享缓存已经可用。
+- 落地状态：T03—T04 已实现并通过验证；T05 已完成 catalog 所有的有界 L1 容器主体及审查修复源码，包括
+  per-key single-flight、有界编译 admission、统一 failure outcome、generation、完整依赖键、值安全载体、统计、clear、
+  显式依赖失效和访问过期/容量驱逐，合同测试源码已完成、待 CI 验证，尚不标记为开发完成。普通查询的统一键组装与
+  L0/L1/L2 接线仍由 T06 实现，因此本 ADR 的“已接受”仍不表示通用 DSL 已可跨对象命中共享缓存。
 
 ## 背景
 
 SKIS 已经把查询结构与普通值分开：查询条件最终形成无值 `ParameterSlot`，值由 `QueryParameters` 或查询对象的快照
 环境保存。ADR-0005 又保证内置可变 JDBC 值只在捕获边界快照，并让同一个不可变查询对象复用局部分析和计划。
 
-当前复用仍停留在单个查询对象。应用在方法体中重新构造等价查询时，新的查询对象不能命中已有计划；执行器级
+本 ADR 形成时，复用仍停留在单个查询对象。应用在方法体中重新构造等价查询时，新的查询对象不能命中已有计划；执行器级
 `ProjectionPlanCache` 只是保留配置和公共统计入口的占位对象，所有统计恒为零。另一方面，0.2.5 已经通过查询块作用域
 分析产生 `ResolvedStructureKey`：它包含稳定查询块路径、来源 occurrence、表达式、选择、排序和分页结构，不包含普通
 参数值或 JVM 对象地址。
@@ -92,7 +93,8 @@ compilation context 收敛，不能退回对象身份键规避。
 | 维度 | 当前表示 | 目的 |
 |---|---|---|
 | 最终查询结构 | `ResolvedStructureKey` | 来源 occurrence、Join、谓词、选择、隐藏选择、排序、分页和嵌套查询块 |
-| 结果形状 | `ResultShape(kind, stableId, resultType, selectionBindings)` | 区分 required/nullable entity、required/nullable scalar、生成式投影及其 Decoder/Codec 来源 |
+| 完整实体依赖 | `Dependencies` | 保存每个查询块路径/来源 ordinal 到 loader-aware 类型令牌及实体/表值身份的映射，不持有 `Class` |
+| 结果形状 | `ResultShape(kind, stableId, resultType, decoderIdentity, selectionBindings)` | 区分 required/nullable entity、required/nullable scalar、生成式投影及其 Decoder/Codec 来源 |
 | 计划变体 | `PlanVariant(resultMode, QueryPaginationShape)` | 区分 content、ordered content、count、limit、offset 和 keyset |
 | 最终逻辑参数 | 有序 `ParameterShape` | 区分稠密 ordinal、Java/SQL 类型、nullability 和稳定 Binder 身份 |
 | 方言身份 | `DialectIdentity(id, capabilities, capabilityVersion)` | 用完整能力集合和额外行为版本隔离不同产品、能力、lowering 和渲染合同；32 位版本不单独承担集合等价 |
@@ -104,8 +106,15 @@ compilation context 收敛，不能退回对象身份键规避。
 - 实体：结果种类、已在当前 runtime registry 注册的实体运行时类型令牌和二进制类名；具体选择表达式和表 occurrence
   已在结构键中。
 - 标量：结果种类、boxed Java 运行时类型令牌、SQL 类型和所选值的规范 Codec 来源。
-- 生成式投影：结果运行时类型令牌、二进制类名、APT 生成的 `ProjectionMapping.mappingId()`，以及每个有序选择的
-  规范 Codec 来源。mapping ID 已包含生成 ABI、构造器描述符和有序参数合同。
+- 生成式投影：结果运行时类型令牌、二进制类名、APT 生成的 `ProjectionMapping.mappingId()`、完整有序参数合同，以及
+  每个有序选择的规范 Codec 来源。即使 public `generated(...)` 的调用方复用 mapping ID，实际 DecoderFactory 的
+  loader-aware 类型仍进入结果身份，携带实例状态的 factory 再使用 mapping-instance 令牌保守隔离。
+
+完整依赖身份与缓存条目保存的规范元数据依赖承担不同职责：前者参与 key 的 `equals/hashCode`，避免同名、不同
+ClassLoader 的 JOIN/EXISTS/派生源碰撞；后者服务实体精确失效。依赖不变量检查只负责发现组装错误，不能代替键维度。
+键必须保留 `ResolvedSourceIdentity`（查询块路径与来源 ordinal）到实体身份的对应关系，不能只对实体集合去重排序。
+两种同名、不同 ClassLoader 的实体同时参与查询而交换来源位置时，依赖集合不变，但隐藏排序列的 Codec/reader 可能改变。
+同一实体在多个查询块或多个来源位置出现时，每个 occurrence 都进入键；仅失效用的规范元数据集合按引用身份去重。
 
 `ResultShape` 不接受调用方自行拼接的任意字符串；实体、标量和生成式投影必须通过 `SelectedResult` 和 catalog 的
 `IdentityScope` 从规范查询元数据生成。元数据不属于当前 registry，或任一选择没有安全 Codec 身份时，工厂返回
@@ -145,8 +154,13 @@ runtime registry 或 Codec 配置变化必须创建新的 `QueryPlanCatalog`，�
 - `Connection`、`PreparedStatement`、`ResultSet`、Session、事务或单次 `ExecutionContext`。
 - query tag、timeout、fetch size、max rows 等不改变 SQL/Binder/Decoder 结构的执行选项。
 
-共享缓存值可以保存不可变 SQL 模板、最终参数布局/Binder、RowDecoder、执行提示和安全诊断，也可以保存 catalog 已经拥有的
-规范 runtime model 依赖；不得保存本次 `QueryParameters`、参数 List、Connection 或会话。
+共享缓存值只保存不可变 `CompiledQueryPlan`，其中可以包含 SQL 模板、最终参数布局/Binder、RowDecoder、执行提示和
+安全诊断；不得保存本次 `StatementAst`、`QueryParameters`、参数 List、查询表、mapping/selection/order 图、Connection
+或会话。命中后必须将当前调用的 AST 与参数附着到共享计划，不能把首次编译查询对象的 AST 身份返回给后续调用者。
+
+框架生成的 reader/Decoder 只保留必要 Codec、JDBC 下标、稳定参数合同和预计算诊断值。`ProjectionMapping.generated(...)`
+虽然是 public 基础设施入口，其实际 DecoderFactory 合同仍必须进入结果身份；factory 在 mapping 生命周期内必须不可变，
+实例状态检测只发生在 mapping 建立阶段，不得进入逐行或命中热路径。
 
 租户/权限规则的**结构版本**可以进入结构上下文，实际租户、用户或权限数据值不得进入。若策略直接产生不同 AST，最终
 `ResolvedStructureKey` 还必须反映改写结果。
@@ -165,26 +179,37 @@ hash 只用于定位桶，绝不代表完整身份。即使两个键具有相同
 元数据对象。运行时类型令牌由静态 `ClassValue` 按真实 `Class` 身份分配；值只含单调进程内编号和诊断用二进制类名，
 不反向持有 `Class`。因此同名类型来自不同 ClassLoader 时令牌不同，类卸载时对应 `ClassValue` 条目又可随类回收。
 
-一个 registry/catalog 即使登记来自多个 ClassLoader 的模型也不会因同名二进制类而串用结果或 Codec。缓存值中的
-Decoder/Codec 与 runtime registry 本来就属于 catalog 生命周期；只要 catalog 不再可达，整个缓存图必须可回收。
-后续 ClassLoader 合同测试仍须验证没有静态 Map、维护线程或监听器在 catalog 释放后继续持有它；运行时令牌只用于
-进程内缓存身份，不得持久化或作为跨进程协议。
+一个 registry/catalog 即使登记来自多个 ClassLoader 的模型也不会因同名二进制类而串用结果、依赖或 Codec。缓存值中的
+Decoder/Codec 可以合法持有 DTO 或插件 ClassLoader；expire-after-access 是惰性维护，统计读取也不清理，因此二者都不是
+卸载屏障。应用卸载或替换结果类型/插件 ClassLoader 前必须先停止并等待受影响查询执行结束，再调用公共 clear 入口；
+只有当所有受影响实体已知且 loader 不仅由结果类型持有时，才可使用精确实体失效。clear 后的弱引用合同测试必须证明
+loader、结果 Class 和 Decoder 可回收。
+运行时令牌只用于进程内缓存身份，不得持久化或作为跨进程协议。
 
 ### 8. 并发 miss 与编译失败
 
 L1 命中使用并发 Map 的只读查找，不获取覆盖全缓存的锁，也不为了精确 LRU 在每次命中修改一条全局链表。
 
 同一键的并发 miss 采用 per-key single-flight：第一个调用者成为编译者，其他调用者等待同一不可变结果。编译在并发 Map
-内部锁之外执行，避免递归查询编译或慢 Renderer 长时间占有 Map 锁。不同键可以并行编译。
+内部锁之外执行，避免慢 Renderer 长时间占有 Map 锁。启用 L1 时，同一线程在本缓存的编译 supplier 内再次发生 miss
+必须立即失败，包括不同 key，以及 clear/实体失效已经移除外层 flight 的情况；嵌套读取已有缓存条目仍然允许。
+实际活跃的编译 owner 独立于可加入的 flight 记录，在 supplier 的 finally 中清除，不随失效提前删除，也不提前释放 permit。
+不同线程可以并行编译不同键，但同时注册的不同 key flight/编译工作受容量对应的 admission 上界约束；等待 admission 的
+请求尚未写入 `inFlight`。
 
-- 每个观察到“尚无可用缓存条目”的请求计一次 miss；等待 in-flight 结果不计 hit。
+- 每个观察到“尚无可用缓存条目”的请求计一次 miss；计数发生在 owner/waiter 注册成功或交接窗口复用已成立之后，
+  等待 in-flight 结果不计 hit。测试可以把该计数作为注册完成的观察点，不能在注册前提前递增。
 - 成功编译只发布一个条目，等待者收到同一计划。
-- 编译失败不进入缓存；in-flight 占位必须移除，等待者观察同一失败，后续调用可以重试。
+- flight future 以正常完成的 `FlightOutcome` 承载计划或失败；编译失败不进入缓存，owner 和 waiter 重抛同一个
+  `RuntimeException`/`Error` 实例，不无条件解开任意 `CompletionException`。in-flight 占位必须移除，后续调用可以重试。
 - 编译失败不能增加 eviction 或 invalidation。
+- admission 等待同时观察目标条目是否已经发布；发现条目后回到外层查找，统一检查过期和依赖，复用时计一次 miss。
+  读取已发布计划不需要编译 permit，不能继续等待占据名额的无关 key；也不能在 admission 锁内调用 ticker 或编译器。
 
 clear/实体失效与 in-flight 编译竞态通过缓存 generation 处理：编译者记录开始时的全局 generation 和相关实体 generation；
 发布前任一 generation 已变化，则本次结果可以返回给已经开始的调用者，但不得重新插入已被清理/失效的 L1。不能让
-clear 后完成的旧编译悄悄恢复条目。
+clear 后完成的旧编译悄悄恢复条目。失效只移除旧代 `inFlight` 注册，不提前归还其 admission；旧 owner 到实际完成或
+失败时才释放 permit，使新旧代可能重叠但真实并发编译总量仍不超过 admission 上限。
 
 ### 9. 容量、过期和驱逐
 
@@ -192,7 +217,8 @@ clear 后完成的旧编译悄悄恢复条目。
 负数仍属非法：
 
 - 一次插入的发布线性化点结束时 `size` 不得超过最大容量；并发插入可以由窄范围维护锁串行化发布，但不得让命中读取
-  获取该锁。in-flight 编译占位不属于已缓存计划条目，也不计入 `size`。
+  获取该锁。in-flight 编译占位不属于已缓存计划条目，也不计入 `size`，但正常运行时同时注册的不同 key flight 数同样
+  受最大容量 admission 约束，不能形成另一张无界 Map。
 - 容量为零时不查找、不创建 in-flight、不发布条目，直接走 L2，并保留查询对象自己的 L0；该路径不产生任何 L1
   hit/miss/eviction/invalidation 活动计数。
 - 过期基于单调 ticker，不读取墙上时钟。
@@ -209,8 +235,10 @@ clear 后完成的旧编译悄悄恢复条目。
 `clear` 删除调用线性化点之前可见的全部 L1 条目并推进全局 generation。按实体失效删除所有依赖该实体的计划并推进该
 实体 generation，依赖范围必须覆盖根来源、Join、子查询和派生表内部来源。
 
-实体依赖由解析/编译结果显式收集并随缓存条目保存，不通过字符串搜索 SQL 或 `ResolvedStructureKey.canonicalForm()` 推断。
-依赖可以引用 catalog 已拥有的规范 `EntityMeta`，因为其生命周期不超过 catalog；它不是普通值或单次资源。
+实体依赖由解析/编译结果显式收集，不通过字符串搜索 SQL 或 `ResolvedStructureKey.canonicalForm()` 推断。完整来源位置与
+loader-aware 实体值身份的映射按查询块路径/来源 ordinal 排序后进入 `QueryPlanKey`；去重的规范 `EntityMeta` 集合另随
+flight/缓存条目保存以支持 generation 与精确失效。
+后者可以引用 catalog 已拥有的元数据，因为其生命周期不超过 catalog；它不是普通值或单次资源。
 
 `clear` 和按实体失效不重置累计 hit/miss/eviction 统计。每个实际删除的条目使 invalidationCount 增加一；按实体失效的
 公共返回值等于本次实际删除条目数。没有匹配项时返回零且不增加计数。
@@ -220,7 +248,8 @@ clear 后完成的旧编译悄悄恢复条目。
 `QueryPlanCacheStatistics` 保持现有公共字段：
 
 - hitCount：L1 找到一个未过期、可直接使用的条目。
-- missCount：请求尝试 L1，但在线性化查找点没有可用条目；加入同键 in-flight 的请求仍是 miss。
+- missCount：请求尝试 L1，但在线性化查找点没有可用条目，并已注册/加入 flight 或在交接窗口复用刚发布计划；加入同键
+  in-flight 的请求仍是 miss，等待不同 key admission 尚未完成时不提前计数。
 - evictionCount：容量或访问过期自动删除的条目数。
 - invalidationCount：clear 或实体失效实际删除的条目数。
 - size：生成快照时 L1 中未被删除的条目数。
@@ -248,7 +277,8 @@ clear 后完成的旧编译悄悄恢复条目。
   `QueryPaginationShape`、`maximumSize == 0` 禁用合同，以及键相等/隔离/碰撞/防御复制测试。
 - T04：为 `Dialect` 提供 `capabilityVersion()` 和显式稳定身份 opt-in，把完整能力集合与额外行为版本接入可选
   `DialectIdentity`；不能安全标识的方言保留 L0/L2 并由 T06 旁路 L1；同时完成最大参数数合同。
-- T05：按本 ADR 实现 catalog 所有的有界 L1、single-flight、generation、统计、clear、依赖失效和过期/驱逐。
+- T05：按本 ADR 实现 catalog 所有的有界 L1、single-flight、有界 admission、统一 outcome、generation、完整依赖键、
+  值安全计划载体、统计、clear、依赖失效和过期/驱逐，并补真实计划并发及 ClassLoader/对象可达性合同测试。
 - T06：完成统一键组装器，返回“可缓存键/带原因旁路”结果；接入 L0/L1/L2，并覆盖所有不能稳定标识的形状。
 - T07/T08：复用不可变 compilation context、收敛重复 walk 和参数复制，不改变本 ADR 的身份与值安全边界。
 
@@ -259,7 +289,8 @@ clear 后完成的旧编译悄悄恢复条目。
 - 共享缓存不会跨 catalog 复用。两个 catalog 即使键相等也各自编译，这是换取 runtime registry、Codec 和 ClassLoader
   边界清晰的有意选择。
 - 不能稳定标识的第三方扩展先旁路，命中率让位于正确性。
-- T03/T04 只建立键、禁用配置和方言身份合同，不会让当前全零缓存统计提前变成真实值；该变化属于 T05/T06。
+- T03/T04 只建立键、禁用配置和方言身份合同；T05 容器主体及审查修复源码已让独立合同路径产生符合本 ADR 的活动统计，
+  但尚待 CI 验证，普通查询也只有在 T06 完成统一键组装与 L0/L1/L2 接线后才会使用该容器。
 
 ## 兼容性
 
@@ -269,8 +300,8 @@ clear 后完成的旧编译悄悄恢复条目。
 
 T04 已通过兼容默认方法为 `Dialect` 增加能力版本与稳定身份声明。旧第三方方言默认不声明稳定身份，因此不会因继承一个
 派生整数而被静默纳入共享 L1；它们仍可通过 L0/L2 正确执行。显式 opt-in 的方言身份保存完整能力集合和额外行为版本，
-避免把 32 位派生值当作集合的完整等价依据。T05/T06 激活现有统计和清理入口属于把占位行为实现为文档承诺的真实语义，
-不删除方法。
+避免把 32 位派生值当作集合的完整等价依据。T05 容器主体及审查修复源码已把现有统计、清理与实体失效入口背后的
+占位行为实现为真实语义，仍待 CI 验证；T06 再让普通查询路径使用它。两步都不删除既有公共方法。
 
 ## 性能影响
 
@@ -297,5 +328,6 @@ T04 已通过兼容默认方法为 `Dialect` 增加能力版本与稳定身份�
 若共享缓存出现正确性或生命周期问题，执行器可以把 `maximumSize` 配置为零整体关闭 L1，或对特定形状旁路，继续使用
 L0 查询对象局部复用、实体 Fast Path 和 L2 完整编译。回滚不得重新引入静态缓存、值入键、对象地址键或跳过校验。
 
-部署期可通过现有 clear 入口释放所有 L1 条目；配置/策略更新使用 clear 或精确实体失效。若某个新维度无法安全加入旧键，
+部署期可通过现有 clear 入口释放所有 L1 条目；卸载结果类型或插件 ClassLoader 前必须先停稳受影响查询再 clear。
+配置/策略更新使用 clear 或精确实体失效。若某个新维度无法安全加入旧键，
 先旁路该能力并新增键版本/ADR 修订，再恢复共享，不允许用清空缓存掩盖永久身份缺失。

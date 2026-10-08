@@ -95,7 +95,8 @@ public final class SkisExecutorFactory {
     }
 
     /**
-     * Configures the retained dynamic-plan capacity used by the future general plan cache.
+     * Configures the maximum number of shared dynamic plans retained by the catalog-owned L1 and
+     * the admission bound for concurrent distinct-key plan compilations.
      *
      * <p>Zero disables the shared L1 cache while preserving query-local reuse and full compilation.
      */
@@ -107,7 +108,7 @@ public final class SkisExecutorFactory {
       return this;
     }
 
-    /** Configures the retained dynamic-plan idle duration used by the future general plan cache. */
+    /** Configures the shared dynamic-plan idle duration used for expire-after-access. */
     public Builder planCacheExpireAfterAccess(Duration expireAfterAccess) {
       Objects.requireNonNull(expireAfterAccess, "expireAfterAccess");
       if (expireAfterAccess.isZero() || expireAfterAccess.isNegative()) {

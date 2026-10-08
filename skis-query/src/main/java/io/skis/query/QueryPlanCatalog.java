@@ -11,26 +11,30 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /**
  * Thread-safe catalog of entity Fast Path plans and owner boundary for shared query plans belonging
  * to one registry and dialect.
+ *
+ * <p>A compiled decoder can legitimately retain its result type's class loader. Containers that
+ * unload or replace application/plugin classes must first quiesce affected query executions and
+ * then call {@link #clearProjectionPlans()} before dropping that loader; entity-scoped model
+ * replacement may use {@link
+ * #invalidateProjectionPlans(EntityMeta)} when every affected entity is known.
  */
 @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
 public final class QueryPlanCatalog {
 
-  /**
-   * Dynamic-plan capacity retained by the placeholder until T05 installs the shared L1 cache; zero
-   * disables L1.
-   */
+  /** Shared dynamic-plan capacity and distinct-key compilation admission bound; zero disables L1. */
   public static final int DEFAULT_MAXIMUM_SIZE = ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE;
 
-  /** Dynamic-plan idle duration retained by the placeholder until T05 installs the L1 cache. */
+  /** Shared dynamic-plan idle duration. */
   public static final Duration DEFAULT_EXPIRE_AFTER_ACCESS =
       ProjectionPlanCache.DEFAULT_EXPIRE_AFTER_ACCESS;
 
   private final Map<EntityMeta<?>, EntityPlanSet<?>> planSets;
-  private final ProjectionPlanCache projectionPlans;
+  private final ProjectionPlanCache sharedPlans;
   private final QueryPlanCompiler compiler;
   private final QueryPlanKey.IdentityScope planIdentities;
   private final Optional<QueryPlanKey.DialectIdentity> dialectIdentity;
@@ -46,8 +50,7 @@ public final class QueryPlanCatalog {
     this.compiler = compiler;
     this.planIdentities = new QueryPlanKey.IdentityScope(runtimeRegistry);
     this.dialectIdentity = QueryPlanKey.DialectIdentity.from(requiredDialect);
-    this.projectionPlans =
-        new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
+    this.sharedPlans = new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
     for (EntityRuntimeModel<?> model : runtimeRegistry.models()) {
       EntityPlanSet<?> previous = indexed.put(model.entity(), createPlanSet(model, compiler));
@@ -64,24 +67,46 @@ public final class QueryPlanCatalog {
     return new DefaultQueryOperations(this, Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
   }
 
-  /**
-   * Returns the shared dynamic-plan cache snapshot.
-   *
-   * <p>Generated projection plans are query-local in 0.2.4, so this snapshot is empty until the
-   * general structural cache replaces the removed entity-bound projection cache.
-   */
+  /** Returns the shared dynamic-plan cache snapshot. */
   public QueryPlanCacheStatistics projectionPlanCacheStatistics() {
-    return projectionPlans.statistics();
+    return sharedPlans.statistics();
   }
 
-  /** Clears shared dynamic plans; this is a no-op for query-local 0.2.4 projection plans. */
+  /**
+   * Clears every shared dynamic plan without resetting cumulative activity counters.
+   *
+   * <p>After affected query executions have been quiesced, this is the required lifecycle cleanup
+   * before unloading a result-type/plugin class loader.
+   */
   public void clearProjectionPlans() {
-    projectionPlans.clear();
+    sharedPlans.clear();
   }
 
-  /** Invalidates shared plans for one entity; returns zero for query-local 0.2.4 projections. */
+  /**
+   * Invalidates shared plans depending on one canonical registered entity and returns the number
+   * actually removed. An unregistered metadata identity has no plans in this catalog and returns
+   * zero.
+   */
   public int invalidateProjectionPlans(EntityMeta<?> entity) {
-    return projectionPlans.invalidate(entity);
+    EntityMeta<?> requiredEntity = Objects.requireNonNull(entity, "entity");
+    return planSets.containsKey(requiredEntity) ? sharedPlans.invalidate(requiredEntity) : 0;
+  }
+
+  <R> CachedQueryPlan<R> sharedPlan(
+      QueryPlanKey key,
+      QueryPlanDependencies dependencies,
+      Supplier<? extends CachedQueryPlan<R>> compiler) {
+    QueryPlanDependencies requiredDependencies =
+        Objects.requireNonNull(dependencies, "dependencies");
+    for (EntityMeta<?> entity : requiredDependencies.entities()) {
+      if (!planSets.containsKey(entity)) {
+        throw new QueryValidationException(
+            "query plan dependency '"
+                + entity.entityName()
+                + "' is not registered in this plan catalog");
+      }
+    }
+    return sharedPlans.getOrCompile(key, requiredDependencies, compiler);
   }
 
   @SuppressWarnings("unchecked")

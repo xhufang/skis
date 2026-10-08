@@ -2,14 +2,12 @@ package io.skis.query;
 
 import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
-import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlExpression;
-import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicReferenceArray;
@@ -36,10 +34,6 @@ final class EntityPlanSet<E> {
     this.findByIdPlan = findByIdProperty == null ? null : equalityPlan(findByIdProperty.ordinal());
   }
 
-  EntityMeta<E> entity() {
-    return model.entity();
-  }
-
   EntityRuntimeModel<E> model() {
     return model;
   }
@@ -64,14 +58,6 @@ final class EntityPlanSet<E> {
     return property;
   }
 
-  CompiledQueryPlan<E, Object> selectPlan(QueryTable<E> table, @Nullable QueryCondition condition) {
-    if (condition == null) {
-      return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
-    }
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(table, List.of(), condition);
-    return selectPlanForStructure(table, structure);
-  }
-
   CompiledQueryPlan<E, Object> selectPlanForStructure(
       QueryTable<E> table, CompiledQueryStructure structure) {
     Objects.requireNonNull(structure, "structure");
@@ -85,15 +71,6 @@ final class EntityPlanSet<E> {
     return table.alias().isEmpty()
         ? equalityPlan(property.ordinal())
         : compiler.compileQuery(model, table, structure);
-  }
-
-  Object argument(@Nullable QueryCondition condition) {
-    if (condition == null) {
-      return NoParameters.INSTANCE;
-    }
-    List<@Nullable Object> arguments =
-        QueryStructureCompiler.compile(canonicalTable, List.of(), condition).arguments();
-    return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
   }
 
   private CompiledQueryPlan<E, Object> cachedSelectAll() {

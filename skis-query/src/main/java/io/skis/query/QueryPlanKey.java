@@ -6,10 +6,12 @@ import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.ResolvedSourceIdentity;
 import io.skis.sql.ast.ResolvedStructureKey;
 import io.skis.sql.ast.SqlType;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,9 +25,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * <p>The key is scoped to one {@link QueryPlanCatalog}. It deliberately stores immutable framework
  * values, structural tokens, strings, and enums instead of runtime parameter values, metadata
- * objects, classes, codecs, connections, sessions, or other execution resources. The composite hash
- * is calculated once because shared-cache lookups will read it on every execution after T05/T06
- * wire the L1 cache.
+ * objects, classes, codecs, connections, sessions, or other execution resources. It includes every
+ * entity dependency's loader-aware identity and the executable result-decoder contract. The
+ * composite hash is calculated once because shared-cache lookups read it on every execution.
  */
 final class QueryPlanKey {
 
@@ -43,6 +45,7 @@ final class QueryPlanKey {
       };
 
   private final ResolvedStructureKey structure;
+  private final Dependencies dependencies;
   private final ResultShape resultShape;
   private final PlanVariant variant;
   private final List<ParameterShape> parameters;
@@ -52,12 +55,14 @@ final class QueryPlanKey {
 
   QueryPlanKey(
       ResolvedStructureKey structure,
+      Dependencies dependencies,
       ResultShape resultShape,
       PlanVariant variant,
       List<? extends ParameterShape> parameters,
       DialectIdentity dialect,
       Map<String, String> structuralContextSignatures) {
     this.structure = Objects.requireNonNull(structure, "structure");
+    this.dependencies = Objects.requireNonNull(dependencies, "dependencies");
     this.resultShape = Objects.requireNonNull(resultShape, "resultShape");
     this.variant = Objects.requireNonNull(variant, "variant");
     this.parameters = copyParameters(parameters);
@@ -72,6 +77,7 @@ final class QueryPlanKey {
         || other instanceof QueryPlanKey key
             && hashCode == key.hashCode
             && structure.equals(key.structure)
+            && dependencies.equals(key.dependencies)
             && resultShape.equals(key.resultShape)
             && variant.equals(key.variant)
             && parameters.equals(key.parameters)
@@ -88,6 +94,8 @@ final class QueryPlanKey {
   public String toString() {
     return "QueryPlanKey[structure="
         + structure.canonicalForm()
+        + ", dependencies="
+        + dependencies
         + ", resultShape="
         + resultShape
         + ", variant="
@@ -103,6 +111,7 @@ final class QueryPlanKey {
 
   private int calculateHashCode() {
     int result = structure.hashCode();
+    result = 31 * result + dependencies.hashCode();
     result = 31 * result + resultShape.hashCode();
     result = 31 * result + variant.hashCode();
     result = 31 * result + parameters.hashCode();
@@ -159,6 +168,17 @@ final class QueryPlanKey {
     return RUNTIME_TYPE_IDENTITIES.get(Objects.requireNonNull(type, "type"));
   }
 
+  void requireDependencies(QueryPlanDependencies requested) {
+    Dependencies actual = Dependencies.from(requested);
+    if (!dependencies.equals(actual)) {
+      throw new IllegalArgumentException(
+          "query plan key dependencies "
+              + dependencies
+              + " do not match requested dependencies "
+              + actual);
+    }
+  }
+
   /**
    * Catalog-bound authority for converting canonical entity metadata into value-only identities.
    */
@@ -190,6 +210,56 @@ final class QueryPlanKey {
     }
   }
 
+  /** Complete loader-aware identity of every entity at its resolved source position. */
+  record Dependencies(List<EntityDependency> entities) {
+
+    Dependencies {
+      entities = List.copyOf(entities);
+      if (entities.isEmpty()) {
+        throw new IllegalArgumentException("query plan dependencies must not be empty");
+      }
+      entities.forEach(entity -> Objects.requireNonNull(entity, "entity dependency"));
+    }
+
+    static Dependencies from(QueryPlanDependencies dependencies) {
+      Objects.requireNonNull(dependencies, "dependencies");
+      List<EntityDependency> identities = new ArrayList<>(dependencies.sources().size());
+      for (QueryPlanDependencies.SourceDependency source : dependencies.sources()) {
+        EntityMeta<?> entity = source.entity();
+        identities.add(
+            new EntityDependency(
+                source.source(),
+                runtimeTypeIdentity(entity.javaType()),
+                entity.entityName(),
+                entity.table().catalog(),
+                entity.table().schema(),
+                entity.table().name()));
+      }
+      identities.sort(
+          Comparator.comparing((EntityDependency identity) -> identity.source().blockPath().toString())
+              .thenComparingInt(identity -> identity.source().occurrenceOrdinal()));
+      return new Dependencies(identities);
+    }
+  }
+
+  private record EntityDependency(
+      ResolvedSourceIdentity source,
+      RuntimeTypeIdentity entityType,
+      String entityName,
+      String catalog,
+      String schema,
+      String table) {
+
+    private EntityDependency {
+      Objects.requireNonNull(source, "source");
+      Objects.requireNonNull(entityType, "entityType");
+      entityName = requireText(entityName, "entityName");
+      Objects.requireNonNull(catalog, "catalog");
+      Objects.requireNonNull(schema, "schema");
+      table = requireText(table, "table");
+    }
+  }
+
   /**
    * Stable result-construction contract; selected expressions remain in the enclosing key's {@code
    * ResolvedStructureKey}.
@@ -198,12 +268,14 @@ final class QueryPlanKey {
       Kind kind,
       String stableId,
       RuntimeTypeIdentity resultType,
+      DecoderIdentity decoderIdentity,
       List<BindingIdentity> selectionBindings) {
 
     ResultShape {
       Objects.requireNonNull(kind, "kind");
       stableId = requireText(stableId, "result shape stableId");
       Objects.requireNonNull(resultType, "resultType");
+      Objects.requireNonNull(decoderIdentity, "decoderIdentity");
       selectionBindings = List.copyOf(selectionBindings);
       selectionBindings.forEach(
           binding -> Objects.requireNonNull(binding, "result selection binding"));
@@ -264,6 +336,12 @@ final class QueryPlanKey {
               Kind.GENERATED_PROJECTION,
               stableIdentity(selected.resultType().getName(), selected.mappingId()),
               runtimeTypeIdentity(selected.resultType()),
+              new ProjectionDecoderIdentity(
+                  runtimeTypeIdentity(selected.mapping().decoderFactoryType()),
+                  selected.mapping().statefulDecoderToken(),
+                  selected.mapping().parameters().stream()
+                      .map(ProjectionParameterIdentity::from)
+                      .toList()),
               bindings));
     }
 
@@ -276,7 +354,11 @@ final class QueryPlanKey {
           .map(
               entityType ->
                   new ResultShape(
-                      kind, selected.entity().javaType().getName(), entityType, List.of()));
+                      kind,
+                      selected.entity().javaType().getName(),
+                      entityType,
+                      BuiltInDecoderIdentity.ENTITY,
+                      List.of()));
     }
 
     private static Optional<ResultShape> scalar(
@@ -290,6 +372,7 @@ final class QueryPlanKey {
                       kind,
                       stableIdentity(selected.javaType().getName(), selected.sqlType().name()),
                       runtimeTypeIdentity(selected.javaType()),
+                      BuiltInDecoderIdentity.SCALAR,
                       List.of(binding)));
     }
 
@@ -299,6 +382,59 @@ final class QueryPlanKey {
       REQUIRED_SCALAR,
       NULLABLE_SCALAR,
       GENERATED_PROJECTION
+    }
+  }
+
+  /** Decoder construction identity; values never retain the factory class or mapping object. */
+  private sealed interface DecoderIdentity
+      permits BuiltInDecoderIdentity, ProjectionDecoderIdentity {}
+
+  private enum BuiltInDecoderIdentity implements DecoderIdentity {
+    ENTITY,
+    SCALAR
+  }
+
+  private record ProjectionDecoderIdentity(
+      RuntimeTypeIdentity factoryType,
+      long statefulFactoryToken,
+      List<ProjectionParameterIdentity> parameters) implements DecoderIdentity {
+
+    private ProjectionDecoderIdentity {
+      Objects.requireNonNull(factoryType, "factoryType");
+      if (statefulFactoryToken < 0) {
+        throw new IllegalArgumentException("stateful decoder token must not be negative");
+      }
+      parameters = List.copyOf(parameters);
+      if (parameters.isEmpty()) {
+        throw new IllegalArgumentException("projection decoder parameters must not be empty");
+      }
+    }
+  }
+
+  private record ProjectionParameterIdentity(
+      int ordinal,
+      String name,
+      RuntimeTypeIdentity javaType,
+      Nullability nullability,
+      int constructorPosition) {
+
+    private ProjectionParameterIdentity {
+      if (ordinal < 0 || constructorPosition < 0) {
+        throw new IllegalArgumentException("projection parameter positions must not be negative");
+      }
+      name = requireText(name, "projection parameter name");
+      Objects.requireNonNull(javaType, "javaType");
+      Objects.requireNonNull(nullability, "nullability");
+    }
+
+    private static ProjectionParameterIdentity from(ProjectionMapping.Parameter parameter) {
+      ProjectionMapping.Parameter required = Objects.requireNonNull(parameter, "parameter");
+      return new ProjectionParameterIdentity(
+          required.ordinal(),
+          required.name(),
+          runtimeTypeIdentity(required.javaType()),
+          required.nullability(),
+          required.constructorPosition());
     }
   }
 

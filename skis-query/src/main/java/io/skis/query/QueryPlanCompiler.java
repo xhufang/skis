@@ -190,13 +190,21 @@ final class QueryPlanCompiler {
               compiledOrder.get(index).expression(),
               runtimeScope));
     }
-    List<ResolvedValueMapping<?>> orderMappings = List.copyOf(resolvedOrderMappings);
+    List<ProjectionMapping.ValueReader<?>> mutableOrderReaders =
+        new ArrayList<>(orderBy.size());
+    for (int index = 0; index < resolvedOrderMappings.size(); index++) {
+      mutableOrderReaders.add(resolvedOrderMappings.get(index).reader(indexes[index], false));
+    }
+    List<ProjectionMapping.ValueReader<?>> orderReaders =
+        List.copyOf(mutableOrderReaders);
+    RowDecoder<R> valueDecoder = selection.decoder();
+    int orderValueCount = orderReaders.size();
     RowDecoder<OrderedRow<R>> decoder =
         (resultSet, context) -> {
-          var value = selection.decoder().decode(resultSet, context);
-          List<@Nullable Object> orderValues = new ArrayList<>(orderBy.size());
-          for (int index = 0; index < orderBy.size(); index++) {
-            orderValues.add(orderMappings.get(index).read(resultSet, indexes[index], context));
+          R value = valueDecoder.decode(resultSet, context);
+          List<@Nullable Object> orderValues = new ArrayList<>(orderValueCount);
+          for (ProjectionMapping.ValueReader<?> reader : orderReaders) {
+            orderValues.add(reader.read(resultSet, context));
           }
           return new OrderedRow<>(value, orderValues);
         };

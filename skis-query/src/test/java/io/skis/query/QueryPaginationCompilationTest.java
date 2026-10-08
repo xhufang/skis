@@ -108,7 +108,8 @@ class QueryPaginationCompilationTest {
   @Test
   void addsHiddenOrderingSelectionsWithoutChangingTheUserProjection() {
     CompilerFixture fixture = compilerFixture();
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(TABLE, List.of(), null);
+    CompiledQueryStructure structure =
+        QueryTestSupport.compile(SelectedResult.requiredScalar(TABLE.id()), TABLE, List.of(), null);
     QueryCompilation<OrderedRow<Long>> query =
         fixture
             .compiler()
@@ -118,7 +119,7 @@ class QueryPaginationCompilationTest {
                 List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
                 false,
                 new QueryPagination.LimitOnly(11),
-                structure.arguments());
+                QueryTestSupport.arguments(structure));
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"nickname\" AS \"__skis_order_0\" "
@@ -281,11 +282,13 @@ class QueryPaginationCompilationTest {
     QueryCompilation<Pet> unfilteredCompilation =
         unfiltered.compilation(QueryPagination.None.INSTANCE);
 
-    assertTrue(compilation.plan() == catalog.require(PET).selectPlan(TABLE, predicate));
+    assertSame(
+        compilation.plan(), QueryTestSupport.selectPlan(catalog.require(PET), TABLE, predicate));
     assertSame(compilation.plan(), repeated.plan());
     assertSame(compilation.ast(), repeated.ast());
     assertSame(compilation.argument(), repeated.argument());
-    assertTrue(unfilteredCompilation.plan() == catalog.require(PET).selectPlan(TABLE, null));
+    assertSame(
+        unfilteredCompilation.plan(), QueryTestSupport.selectPlan(catalog.require(PET), TABLE, null));
     assertTrue(((SelectStatement) compilation.ast()).joins().isEmpty());
     assertTrue(((SelectStatement) unfilteredCompilation.ast()).joins().isEmpty());
   }
@@ -301,8 +304,8 @@ class QueryPaginationCompilationTest {
       List<QueryJoin> joins,
       @Nullable QueryCondition condition,
       boolean distinct) {
-    CompiledQueryStructure structure = QueryStructureCompiler.compile(root, joins, condition);
-    return compiler.compileCount(selected, structure, distinct, structure.arguments());
+    CompiledQueryStructure structure = QueryTestSupport.compile(selected, root, joins, condition);
+    return compiler.compileCount(selected, structure, distinct, QueryTestSupport.arguments(structure));
   }
 
   private static QueryCompilation<Pet> compileEntity(
@@ -312,7 +315,7 @@ class QueryPaginationCompilationTest {
       boolean distinct,
       QueryPagination pagination) {
     CompiledQueryStructure structure =
-        QueryStructureCompiler.compile(TABLE, List.of(), predicate);
+        QueryTestSupport.compile(TABLE, List.of(), predicate);
     return fixture
         .compiler()
         .compileSelection(
@@ -322,7 +325,7 @@ class QueryPaginationCompilationTest {
             distinct,
             pagination,
             List.of(),
-            structure.arguments());
+            QueryTestSupport.arguments(structure));
   }
 
   private static CompilerFixture compilerFixture() {

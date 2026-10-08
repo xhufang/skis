@@ -63,6 +63,11 @@ public interface SkisExecutor extends QueryOperations, MutationOperations {
   /** Returns an immutable snapshot of the shared dynamic query-plan cache. */
   QueryPlanCacheStatistics queryPlanCacheStatistics();
 
-  /** Explicitly invalidates all shared dynamic query plans. */
+  /**
+   * Invalidates all shared dynamic query plans without resetting activity counters.
+   *
+   * <p>Applications with unloadable result-type or plugin class loaders must first quiesce affected
+   * query executions and then call this method before dropping the loader.
+   */
   void clearQueryPlanCache();
 }

@@ -21,6 +21,7 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.query.QueryPlanCacheStatistics;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -75,8 +76,13 @@ class SkisPlanReuseTest {
             .planCacheMaximumSize(0)
             .build();
 
-    assertEquals(0, disabled.queryPlanCacheStatistics().maximumSize());
-    assertEquals(0, disabled.queryPlanCacheStatistics().size());
+    assertEquals(
+        new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 0),
+        disabled.queryPlanCacheStatistics());
+    disabled.clearQueryPlanCache();
+    assertEquals(
+        new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 0),
+        disabled.queryPlanCacheStatistics());
     assertThrows(
         IllegalArgumentException.class,
         () -> SkisExecutorFactory.builder().planCacheMaximumSize(-1));

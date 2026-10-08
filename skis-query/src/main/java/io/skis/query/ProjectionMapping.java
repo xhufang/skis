@@ -4,27 +4,33 @@ import io.skis.mapping.RowDecoder;
 import io.skis.mapping.RowReadContext;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.sql.ast.Nullability;
+import java.lang.reflect.Modifier;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import org.jspecify.annotations.Nullable;
 
 /**
  * Immutable, query-independent constructor contract emitted by the SKIS annotation processor.
  *
- * <p>A mapping contains no table, expression, codec, alias, or runtime parameter value. Generated
- * companion classes keep their mapping private and expose fixed-arity {@code of(...)} methods that
- * bind it to one query's selections.
+ * <p>A mapping contains no table, expression, codec, alias, or runtime parameter value. Its decoder
+ * factory is part of the executable result contract and therefore participates in shared-plan
+ * identity. Generated companion classes keep their mapping private and expose fixed-arity {@code
+ * of(...)} methods that bind it to one query's selections.
  */
 public final class ProjectionMapping<R> {
+
+  private static final AtomicLong NEXT_STATEFUL_DECODER_TOKEN = new AtomicLong();
 
   private final Class<R> resultType;
   private final String mappingId;
   private final List<Parameter> parameters;
   private final DecoderFactory<R> decoderFactory;
+  private final long statefulDecoderToken;
 
   private ProjectionMapping(
       Class<R> resultType,
@@ -61,13 +67,17 @@ public final class ProjectionMapping<R> {
     }
     this.parameters = List.copyOf(copy);
     this.decoderFactory = Objects.requireNonNull(decoderFactory, "decoderFactory");
+    this.statefulDecoderToken = statefulDecoderToken(decoderFactory);
   }
 
   /**
    * Infrastructure factory used only by APT-generated projection companions.
    *
    * <p>The ABI check deliberately runs during companion initialization so incompatible generated
-   * sources fail with an actionable error before a query reaches JDBC.
+   * sources fail with an actionable error before a query reaches JDBC. The factory must be
+   * immutable for the lifetime of this mapping; factories carrying instance state receive a
+   * mapping-instance identity so a caller-supplied {@code mappingId} cannot alias a different
+   * executable decoder contract.
    */
   public static <R> ProjectionMapping<R> generated(
       int generatedAbi,
@@ -102,6 +112,35 @@ public final class ProjectionMapping<R> {
 
   DecoderFactory<R> decoderFactory() {
     return decoderFactory;
+  }
+
+  Class<?> decoderFactoryType() {
+    return decoderFactory.getClass();
+  }
+
+  long statefulDecoderToken() {
+    return statefulDecoderToken;
+  }
+
+  private static long statefulDecoderToken(DecoderFactory<?> decoderFactory) {
+    if (!hasInstanceState(decoderFactory.getClass())) {
+      return 0;
+    }
+    long token = NEXT_STATEFUL_DECODER_TOKEN.incrementAndGet();
+    if (token <= 0) {
+      throw new IllegalStateException("projection decoder identity space is exhausted");
+    }
+    return token;
+  }
+
+  private static boolean hasInstanceState(Class<?> factoryType) {
+    for (Class<?> current = factoryType; current != null; current = current.getSuperclass()) {
+      if (Arrays.stream(current.getDeclaredFields())
+          .anyMatch(field -> !Modifier.isStatic(field.getModifiers()))) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static String requireText(String value, String name) {
