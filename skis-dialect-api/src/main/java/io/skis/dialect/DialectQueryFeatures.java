@@ -27,6 +27,31 @@ final class DialectQueryFeatures {
     }
   }
 
+  static void validate(
+      String dialectId,
+      DialectCapabilities capabilities,
+      StatementAst statement,
+      QueryBlockAnalysis analysis) {
+    Objects.requireNonNull(dialectId, "dialectId");
+    Objects.requireNonNull(capabilities, "capabilities");
+    Objects.requireNonNull(statement, "statement");
+    Objects.requireNonNull(analysis, "analysis");
+    if (!analysis.path().locations().isEmpty()) {
+      throw new IllegalArgumentException("complete statement analysis must use the root query path");
+    }
+    switch (statement) {
+      case SelectStatement select -> validateBlock(dialectId, capabilities, select, analysis);
+      case CountAst count -> {
+        DialectJoinFeatures.validate(dialectId, capabilities, count);
+        validateNested(dialectId, capabilities, analysis);
+      }
+      default ->
+          throw new IllegalArgumentException(
+              "resolved query analysis cannot validate statement node "
+                  + statement.getClass().getName());
+    }
+  }
+
   private static void validateBlock(
       String dialectId,
       DialectCapabilities capabilities,

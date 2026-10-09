@@ -62,6 +62,35 @@ final class TableRuntimeScope {
     return new TableRuntimeScope(registry, fromClause, entities, derived);
   }
 
+  /** Reuses resolved runtime models when a validation copy has the same source occurrences. */
+  TableRuntimeScope forFromClause(FromClause candidate) {
+    Objects.requireNonNull(candidate, "candidate");
+    if (candidate == fromClause) {
+      return this;
+    }
+    for (TableOccurrence occurrence : candidate.occurrences()) {
+      TableExpression<?> sourceTable = occurrence.entityTable().orElse(null);
+      if (sourceTable != null) {
+        Occurrence<?> resolved = occurrencesByTable.get(sourceTable);
+        if (resolved == null || resolved.occurrenceOrdinal() != occurrence.occurrenceOrdinal()) {
+          return resolve(registry, candidate);
+        }
+        continue;
+      }
+      DerivedRelationReference reference = occurrence.derivedReference().orElse(null);
+      Integer ordinal = reference == null ? null : ordinalsByDerivedRelation.get(reference);
+      if (ordinal == null || ordinal != occurrence.occurrenceOrdinal()) {
+        return resolve(registry, candidate);
+      }
+    }
+    if (candidate.occurrences().size()
+        != occurrencesByTable.size() + ordinalsByDerivedRelation.size()) {
+      return resolve(registry, candidate);
+    }
+    return new TableRuntimeScope(
+        registry, candidate, occurrencesByTable, ordinalsByDerivedRelation);
+  }
+
   EntityRuntimeRegistry registry() {
     return registry;
   }

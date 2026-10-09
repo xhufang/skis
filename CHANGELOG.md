@@ -6,12 +6,24 @@
 
 ### Changed
 
+- T07 以不可变 `QueryCompilationContext` 收敛 SELECT/COUNT 编译阶段：同一最终语句只产生一次完整查询块分析，
+  resolved 方言能力校验与标准 Renderer 直接消费该结果，H2/PostgreSQL Renderer 委托层同步转发，计划编译不再重复解析。
+  PostgreSQL/H2 显式 opt-in；旧第三方
+  方言默认继续调用原 `validate(StatementAst)`，不绕过自定义校验，第三方 Renderer 的兼容默认也保留旧行为。
+  完整原描述与改写后最终语句仍使用
+  独立 context；runtime scope 仅在来源 occurrence/ordinal 一致时复用映射，并按各自 FROM 保留外连接 nullability。
+  新增阶段调用计数、直接/resolved SQL golden 与失败诊断对照，以及嵌套、相关、派生、LEFT JOIN 和分页变体合同测试；
+  review 后将 `CountAst` 构造边界收窄为局部不变量校验，完整 COUNT 直接进入 query-block 分析，删除构造时被丢弃的完整分析和
+  分析专用临时 SELECT；补普通/distinct/裁剪嵌套选择/空集合改写 COUNT 的 analysis 同一性交接断言，以及 runtime scope
+  来源身份、ordinal、数量和派生引用不一致时的回退合同。当前裸 `StatementAst + QueryBlockAnalysis` 公共 SPI 的 provenance
+  决策登记到 0.2.7，不能通过 Renderer 重分析规避；
+  源码及静态复核已完成、待 CI，按项目约定未在本地编译运行，也未执行 benchmark。
 - T06 已接入普通查询 L0/L1/L2：统一键组装显式返回可缓存键或旁路原因，content/ordered/count、分页、Join、子查询和
   派生表按完整身份共享；命中后使用当前 AST/参数，别名单表与复杂谓词回退进入 L1，实体 Fast Path 槽保持独立。
   分页 L0 改为每种结果模式的最近计划引用，删除 `synchronized LinkedHashMap`。接线及单元/H2/PostgreSQL 合同测试
-  源码已完成，待 CI 验证；按项目约定未在本地编译运行。2026-10-09 审查后补强不同实体的嵌套依赖失效、
+  已通过 CI（2026-10-09 用户确认，未提供作业链接）；按项目约定未在本地编译运行。审查后补强不同实体的嵌套依赖失效、
   count 裁剪依赖、同对象分页反序发布、H2 逐终止操作命中统计和生成式投影跨值解码，以及真实 L1 并发解码与
-  catalog/ClassLoader 生命周期测试；补强源码同样待 CI。
+  catalog/ClassLoader 生命周期测试。
 - T05 第二轮复核修复：共享键保留查询块/来源位置与 loader-aware 实体身份的对应关系，隔离同名类型交换来源后的
   ordered reader；活跃编译中的同缓存嵌套 miss 立即失败，clear/实体失效不丢失 owner 记录，嵌套命中仍可用；
   admission 等待可直接返回已发布计划，不再等待无关 key 的编译名额。相应回归测试已通过 CI（2026-10-08 用户确认）。
@@ -47,7 +59,7 @@
   “无安全身份”，由 T06 统一键组装器显式旁路；L0 与 L1 共用唯一的值无关 `QueryPaginationShape`，避免两套分页身份协议。
 - 计划缓存容量零固定为关闭共享 L1、保留 L0/L2 且全部 L1 活动计数为零；负数仍拒绝。新增/扩展键与配置合同测试，
   覆盖不同查询对象和不同参数值的等价键、registry 所有权、同名 ClassLoader 隔离、全部计划维度、分页空值形状、
-  上下文规范化、防御性复制、预计算 hash 以及 hash 碰撞下的完整 `equals`；T06 接线源码已完成，待本轮 CI。
+  上下文规范化、防御性复制、预计算 hash 以及 hash 碰撞下的完整 `equals`；T06 接线已通过 CI。
 - `QueryPlanCatalog` 所有的动态计划占位对象已替换为真实有界 L1：同键 miss 使用 per-key single-flight，不同键仍可并行
   但同时注册的 flight/编译工作受容量 admission 约束；正常完成的 `FlightOutcome` 让 owner/waiter 对普通异常、
   `CompletionException` 与 `Error` 观察同一失败，失败不缓存且可重试。global/entity generation 防止 clear 或实体失效前
@@ -62,7 +74,7 @@
   异构实现。
 - 确定性测试源码补充同名 ClassLoader 的 JOIN/EXISTS/派生依赖、真实 scalar/ordered/projection 计划并发绑定与解码、
   调用期 AST/table/mapping/argument 弱引用、clear 后结果 ClassLoader 回收、失败/旧代 waiter 交错及递归编译。卸载结果
-  类型或插件 ClassLoader 前必须先停稳受影响查询再显式清空计划缓存；T05 CI 已通过，T06 普通查询接线测试待 CI 验证。
+  类型或插件 ClassLoader 前必须先停稳受影响查询再显式清空计划缓存；T05、T06 CI 已通过。
 - 新增 `DerivedOutput<V>`/`NonNullDerivedOutput<V>`、`DerivedRelation` 与派生列 AST；派生关系使用显式唯一输出
   别名和有序强类型形状，可作为根来源或任意 Join 右来源，并保留实体根原有泛型入口。
 - 派生输出在完整内层 Join 后冻结有效 nullability，进入外层 Join 后再次传播 null 扩展；普通派生来源为非相关

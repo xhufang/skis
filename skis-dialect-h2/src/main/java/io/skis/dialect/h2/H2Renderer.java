@@ -3,6 +3,7 @@ package io.skis.dialect.h2;
 import io.skis.dialect.RenderedSql;
 import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardSqlRenderer;
+import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.StatementAst;
 
 /** H2 renderer for the portable SELECT/Join and single-table mutation subset. */
@@ -22,5 +23,11 @@ public final class H2Renderer implements SqlRenderer {
   @Override
   public RenderedSql render(StatementAst statement) {
     return delegate.render(statement);
+  }
+
+  @Override
+  public RenderedSql renderValidated(
+      StatementAst statement, QueryBlockAnalysis analysis) {
+    return delegate.renderValidated(statement, analysis);
   }
 }

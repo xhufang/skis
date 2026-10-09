@@ -87,6 +87,7 @@ class DialectValueTypesTest {
 
     assertEquals(capabilities.version(), dialect.capabilityVersion());
     assertFalse(dialect.hasStablePlanCacheIdentity());
+    assertFalse(dialect.supportsResolvedQueryValidation());
     assertSame(StatementParameterLimit.unknown(), dialect.maxStatementParameters());
   }
 

@@ -55,6 +55,7 @@ class PostgreSqlDialectTest {
     assertSame(PostgreSqlExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());
+    assertTrue(dialect.supportsResolvedQueryValidation());
     assertEquals(
         StatementParameterLimit.explicit(65_535), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));

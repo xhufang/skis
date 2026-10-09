@@ -38,13 +38,16 @@ import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class StandardSqlRendererTest {
@@ -81,6 +84,94 @@ class StandardSqlRendererTest {
         "SELECT \"pet\".\"id\", ? FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
         rendered.sql());
     assertEquals(List.of(selectedName, id), rendered.parameters());
+  }
+
+  @Test
+  void validatedRenderingReusesAnalysisAndPreservesDirectGoldenOutput() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+    SelectStatement statement =
+        new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    DialectQueryFeatures.validate(
+        "test",
+        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES),
+        statement,
+        analysis);
+
+    RenderedSql direct = RENDERER.render(statement);
+    RenderedSql validated = RENDERER.renderValidated(statement, analysis);
+
+    assertEquals(direct, validated);
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
+        validated.sql());
+  }
+
+  @Test
+  void resolvedDialectValidationPreservesDirectFailureDiagnostics() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new ExistsPredicate(new SelectStatement(List.of(inner.id()), inner), false));
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+
+    SqlRenderException direct =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(statement));
+    SqlRenderException resolved =
+        assertThrows(
+            SqlRenderException.class,
+            () ->
+                DialectQueryFeatures.validate(
+                    "test",
+                    DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES),
+                    statement,
+                    analysis));
+
+    assertEquals(direct.getMessage(), resolved.getMessage());
+  }
+
+  @Test
+  void resolvedDialectValidationCompatibilityDefaultKeepsLegacyOverride() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement statement = new SelectStatement(List.of(pet.id()), pet);
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    AtomicInteger legacyValidations = new AtomicInteger();
+    Dialect dialect =
+        new Dialect() {
+          @Override
+          public String id() {
+            return "legacy-test";
+          }
+
+          @Override
+          public IdentifierRules identifierRules() {
+            return StandardIdentifierRules.INSTANCE;
+          }
+
+          @Override
+          public DialectCapabilities capabilities() {
+            return DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+          }
+
+          @Override
+          public SqlRenderer renderer() {
+            return RENDERER;
+          }
+
+          @Override
+          public void validate(StatementAst candidate) {
+            legacyValidations.incrementAndGet();
+            Dialect.super.validate(candidate);
+          }
+        };
+
+    dialect.validate(statement, analysis);
+
+    assertEquals(1, legacyValidations.get());
   }
 
   @Test

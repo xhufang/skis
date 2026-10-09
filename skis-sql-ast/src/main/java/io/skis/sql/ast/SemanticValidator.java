@@ -82,19 +82,7 @@ public final class SemanticValidator {
 
   private static void validateSelectExpressions(
       SelectStatement statement, ValidationContext context) {
-    validateRelationSource(statement.fromClause().root());
-    context.addVisible(statement.fromClause().root());
-    for (int index = 0; index < statement.joins().size(); index++) {
-      JoinClause join = statement.joins().get(index);
-      validateRelationSource(join.right());
-      context.addVisible(join.right());
-      int position = index + 1;
-      join.on()
-          .ifPresent(
-              predicate ->
-                  context.validateExpression(predicate, "SELECT FROM join #" + position + " ON"));
-      context.applyJoin(join);
-    }
+    validateFromClause(statement.fromClause(), context);
     statement.selections().forEach(item -> context.validateExpression(item, "SELECT"));
     statement
         .hiddenSelections()
@@ -117,6 +105,22 @@ public final class SemanticValidator {
             });
   }
 
+  private static void validateFromClause(FromClause fromClause, ValidationContext context) {
+    validateRelationSource(fromClause.root());
+    context.addVisible(fromClause.root());
+    for (int index = 0; index < fromClause.joins().size(); index++) {
+      JoinClause join = fromClause.joins().get(index);
+      validateRelationSource(join.right());
+      context.addVisible(join.right());
+      int position = index + 1;
+      join.on()
+          .ifPresent(
+              predicate ->
+                  context.validateExpression(predicate, "SELECT FROM join #" + position + " ON"));
+      context.applyJoin(join);
+    }
+  }
+
   private static void validateRelationSource(RelationSource source) {
     if (source instanceof DerivedRelationSource derived) {
       validateLocal(derived.statement());
@@ -128,23 +132,25 @@ public final class SemanticValidator {
     analyzeComplete(statement);
   }
 
-  /** Resolves an independent COUNT plan through the same nested-query scope boundary as SELECT. */
+  /**
+   * Resolves an independent COUNT plan through the same SELECT-shaped nested-query scope boundary
+   * without constructing an analysis-only SELECT statement.
+   */
   public static QueryBlockAnalysis analyzeComplete(CountAst statement) {
     Objects.requireNonNull(statement, "statement");
-    SqlExpression<?> analysisSelection =
-        statement.distinctExpression().orElse(LiteralExpression.trueLiteral());
-    SelectStatement analysisStatement =
-        new SelectStatement(
-            false,
-            List.of(analysisSelection),
-            List.of(),
-            statement.fromClause(),
-            statement.predicate().orElse(null),
-            List.of(),
-            null,
-            List.of(),
-            null);
-    return analyzeComplete(analysisStatement);
+    validateLocal(statement);
+    return QueryScopeAnalyzer.analyzeTopLevel(statement);
+  }
+
+  /** Validates COUNT invariants that do not require a completed query-block scope. */
+  static void validateLocal(CountAst statement) {
+    Objects.requireNonNull(statement, "statement");
+    ValidationContext context = new ValidationContext(false);
+    validateFromClause(statement.fromClause(), context);
+    statement
+        .distinctExpression()
+        .ifPresent(expression -> context.validateExpression(expression, "SELECT"));
+    statement.predicate().ifPresent(predicate -> context.validateExpression(predicate, "WHERE"));
   }
 
   static void validateInsert(
