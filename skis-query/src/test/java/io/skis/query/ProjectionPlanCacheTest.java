@@ -136,7 +136,8 @@ class ProjectionPlanCacheTest {
   }
 
   private static CompiledQueryPlan<Pet, Object> catalogQuery(QueryOperations operations) {
-    return ((DefaultSelectQuery<Pet, Pet>) operations.selectFrom(new PetTable().as("p")))
+    PetTable table = new PetTable(Identifier.of("p"));
+    return ((DefaultSelectQuery<Pet, Pet>) operations.selectFrom(table))
         .compilation(QueryPagination.None.INSTANCE).plan();
   }
 
