@@ -62,6 +62,11 @@ public final class PostgreSqlDialect implements Dialect {
   }
 
   @Override
+  public boolean supportsResolvedQueryValidation() {
+    return true;
+  }
+
+  @Override
   public StatementParameterLimit maxStatementParameters() {
     return MAX_STATEMENT_PARAMETERS;
   }

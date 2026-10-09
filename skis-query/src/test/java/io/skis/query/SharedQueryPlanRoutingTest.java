@@ -25,9 +25,12 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.Nullability;
+import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.StatementAst;
@@ -36,7 +39,10 @@ import java.sql.PreparedStatement;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -89,6 +95,152 @@ class SharedQueryPlanRoutingTest {
     assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
     assertEquals(1, fixture.dialect().renders.get());
     assertEquals(2, fixture.dialect().validations.get());
+    assertEquals(0, fixture.dialect().legacyRenders.get());
+    assertEquals(0, fixture.dialect().legacyValidations.get());
+  }
+
+  @Test
+  void nestedAndDerivedQueriesUseOnlyResolvedCompilationStages() {
+    for (int shape = 0; shape < 6; shape++) {
+      Fixture fixture = fixture(16, true);
+
+      compile(nested(fixture, shape, 100L + shape));
+
+      assertEquals(1, fixture.dialect().validations.get(), "shape " + shape);
+      assertEquals(1, fixture.dialect().renders.get(), "shape " + shape);
+      assertEquals(0, fixture.dialect().legacyValidations.get(), "shape " + shape);
+      assertEquals(0, fixture.dialect().legacyRenders.get(), "shape " + shape);
+    }
+  }
+
+  @Test
+  void outerJoinPaginationVariantsKeepIndependentResolvedContextsAndGoldenSql() {
+    Fixture fixture = fixture(16, true);
+    PetTable pet = new PetTable().as("p");
+    OwnerTable owner = new OwnerTable().as("o");
+    DefaultSelectQuery<?, Long> query =
+        (DefaultSelectQuery<?, Long>)
+            fixture
+                .operations()
+                .select(pet.id)
+                .from(pet)
+                .leftJoin(owner)
+                .on(pet.id.eq(owner.id))
+                .orderBy(pet.id.asc());
+
+    QueryCompilation<Long> content = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> offset = query.compilation(new QueryPagination.Offset(10, 20));
+    QueryCompilation<Long> keyset =
+        query.compilation(new QueryPagination.Keyset(10, List.of(7L)));
+
+    assertEquals(
+        "SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" LEFT JOIN \"owner\" AS \"o\" "
+            + "ON \"p\".\"id\" = \"o\".\"id\" ORDER BY \"p\".\"id\" ASC",
+        content.plan().sql());
+    assertEquals(content.plan().sql() + " LIMIT ? OFFSET ?", offset.plan().sql());
+    assertEquals(
+        "SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" LEFT JOIN \"owner\" AS \"o\" "
+            + "ON \"p\".\"id\" = \"o\".\"id\" WHERE \"p\".\"id\" > ? "
+            + "ORDER BY \"p\".\"id\" ASC LIMIT ?",
+        keyset.plan().sql());
+    assertEquals(3, fixture.dialect().validations.get());
+    assertEquals(3, fixture.dialect().renders.get());
+    assertEquals(0, fixture.dialect().legacyValidations.get());
+    assertEquals(0, fixture.dialect().legacyRenders.get());
+  }
+
+  @Test
+  void reusedRuntimeScopeRebasesOuterJoinNullExtension() {
+    PetTable pet = new PetTable().as("p");
+    OwnerTable owner = new OwnerTable().as("o");
+    QueryCondition on = pet.id.eq(owner.id);
+    CompiledQueryStructure innerStructure =
+        QueryTestSupport.compile(
+            pet, List.of(new QueryJoin(JoinType.INNER, owner, on)), null);
+    CompiledQueryStructure leftStructure =
+        QueryTestSupport.compile(
+            pet, List.of(new QueryJoin(JoinType.LEFT, owner, on)), null);
+
+    TableRuntimeScope innerScope =
+        TableRuntimeScope.resolve(REGISTRY, innerStructure.fromClause());
+    TableRuntimeScope leftScope = innerScope.forFromClause(leftStructure.fromClause());
+
+    assertSame(innerScope.require(owner).model(), leftScope.require(owner).model());
+    assertEquals(Nullability.NON_NULL, innerScope.effectiveNullability(owner.id));
+    assertEquals(Nullability.NULLABLE, leftScope.effectiveNullability(owner.id));
+  }
+
+  @Test
+  void runtimeScopeFallsBackForChangedEntityIdentityOrdinalAndSourceCount() {
+    PetTable pet = new PetTable().as("p");
+    OwnerTable owner = new OwnerTable().as("o");
+    CompiledQueryStructure original =
+        QueryTestSupport.compile(
+            pet, List.of(new QueryJoin(JoinType.CROSS, owner, null)), null);
+    TableRuntimeScope scope = TableRuntimeScope.resolve(REGISTRY, original.fromClause());
+
+    PetTable replacementPet = new PetTable().as("p");
+    CompiledQueryStructure changedIdentity =
+        QueryTestSupport.compile(
+            replacementPet, List.of(new QueryJoin(JoinType.CROSS, owner, null)), null);
+    TableRuntimeScope identityScope = scope.forFromClause(changedIdentity.fromClause());
+    assertEquals(0, identityScope.require(replacementPet).occurrenceOrdinal());
+    assertThrows(QueryValidationException.class, () -> identityScope.require(pet));
+
+    CompiledQueryStructure changedOrdinals =
+        QueryTestSupport.compile(
+            owner, List.of(new QueryJoin(JoinType.CROSS, pet, null)), null);
+    TableRuntimeScope ordinalScope = scope.forFromClause(changedOrdinals.fromClause());
+    assertEquals(0, ordinalScope.require(owner).occurrenceOrdinal());
+    assertEquals(1, ordinalScope.require(pet).occurrenceOrdinal());
+
+    CompiledQueryStructure rootOnly = QueryTestSupport.compile(pet, List.of(), null);
+    TableRuntimeScope contracted = scope.forFromClause(rootOnly.fromClause());
+    assertEquals(0, contracted.require(pet).occurrenceOrdinal());
+    assertThrows(QueryValidationException.class, () -> contracted.require(owner));
+  }
+
+  @Test
+  void runtimeScopeFallsBackForChangedDerivedRelationReference() {
+    OwnerTable inner = new OwnerTable().as("inner_owner");
+    var output = Sql.output(inner.id, "id");
+    DerivedRelation original =
+        Sql.derived(Sql.select(inner.id).from(inner), "derived_owner", output);
+    DerivedRelation replacement = original.as("derived_owner");
+    CompiledQueryStructure originalStructure =
+        SelectQueryState.create(SelectedResult.requiredScalar(original.column(output)), original)
+            .structure();
+    CompiledQueryStructure replacementStructure =
+        SelectQueryState.create(
+                SelectedResult.requiredScalar(replacement.column(output)), replacement)
+            .structure();
+
+    TableRuntimeScope scope =
+        TableRuntimeScope.resolve(REGISTRY, originalStructure.fromClause());
+    TableRuntimeScope replacementScope =
+        scope.forFromClause(replacementStructure.fromClause());
+
+    assertEquals(0, replacementScope.require(replacement));
+    assertThrows(QueryValidationException.class, () -> replacementScope.require(original));
+  }
+
+  @Test
+  void rewrittenMembershipValidatesOriginalAndFinalStructuresWithoutLegacyReanalysis() {
+    Fixture fixture = fixture(16, true);
+    PetTable pet = new PetTable().as("p");
+    DefaultSelectQuery<?, Long> query =
+        (DefaultSelectQuery<?, Long>)
+            fixture.operations().select(pet.id).from(pet).where(pet.id.in(List.of()));
+
+    QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
+
+    assertEquals(
+        "SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" WHERE 1 = 0",
+        compilation.plan().sql());
+    assertEquals(2, fixture.dialect().validations.get());
+    assertEquals(1, fixture.dialect().renders.get());
+    assertEquals(0, fixture.dialect().legacyValidations.get());
+    assertEquals(0, fixture.dialect().legacyRenders.get());
   }
 
   @Test
@@ -233,6 +385,49 @@ class SharedQueryPlanRoutingTest {
     assertSame(ordered.plan(), repeated.plan());
     assertNotSame(content.plan(), count.plan());
     assertEquals(new QueryPlanCacheStatistics(1, 3, 0, 0, 3, 16), fixture.stats());
+  }
+
+  @Test
+  void countVariantsShareTheirSingleResolvedAnalysisAcrossValidationAndRendering()
+      throws Exception {
+    List<String> expectedSql =
+        List.of(
+            "SELECT COUNT(*) FROM \"pet\" AS \"p\" WHERE \"p\".\"id\" >= ?",
+            "SELECT COUNT(DISTINCT \"p\".\"id\") FROM \"pet\" AS \"p\" "
+                + "WHERE \"p\".\"id\" >= ?",
+            "SELECT COUNT(*) FROM \"pet\" AS \"p\"",
+            "SELECT COUNT(*) FROM \"pet\" AS \"p\" WHERE 1 = 0");
+    List<List<?>> expectedBindings =
+        List.of(List.of(7L), List.of(7L), List.of(), List.of());
+    for (int shape = 0; shape < 4; shape++) {
+      Fixture fixture = fixture(16, true);
+      PetTable table = new PetTable().as("p");
+      DefaultSelectQuery<?, Long> query =
+          switch (shape) {
+            case 0 -> scalar(fixture, table, 7L);
+            case 1 -> scalar(fixture, table, 7L).distinct();
+            case 2 -> nested(fixture, 3, 7L);
+            case 3 ->
+                (DefaultSelectQuery<?, Long>)
+                    fixture
+                        .operations()
+                        .select(table.id)
+                        .from(table)
+                        .where(table.id.in(List.of()));
+            default -> throw new AssertionError(shape);
+          };
+
+      QueryCompilation<Long> count = query.countCompilation();
+
+      assertTrue(count.ast() instanceof CountAst, "shape " + shape);
+      fixture.dialect().assertAnalysisHandoff(count.ast());
+      assertEquals(2, fixture.dialect().validations.get(), "shape " + shape);
+      assertEquals(1, fixture.dialect().renders.get(), "shape " + shape);
+      assertEquals(0, fixture.dialect().legacyValidations.get(), "shape " + shape);
+      assertEquals(0, fixture.dialect().legacyRenders.get(), "shape " + shape);
+      assertEquals(expectedSql.get(shape), count.plan().sql(), "shape " + shape);
+      assertEquals(expectedBindings.get(shape), bindings(count), "shape " + shape);
+    }
   }
 
   @Test
@@ -534,8 +729,13 @@ class SharedQueryPlanRoutingTest {
   }
 
   private static DefaultSelectQuery<Pet, Long> scalar(Fixture fixture, long value) {
-    PetTable table = new PetTable();
-    return (DefaultSelectQuery<Pet, Long>) fixture.operations().select(table.id).from(table).where(table.id.ge(value));
+    return scalar(fixture, new PetTable(), value);
+  }
+
+  private static DefaultSelectQuery<Pet, Long> scalar(
+      Fixture fixture, PetTable table, long value) {
+    return (DefaultSelectQuery<Pet, Long>)
+        fixture.operations().select(table.id).from(table).where(table.id.ge(value));
   }
 
   private static DefaultSelectQuery<Pet, Long> orderedScalar(Fixture fixture, PetTable table, long value) {
@@ -596,6 +796,10 @@ class SharedQueryPlanRoutingTest {
     QueryOperations operations = QueryTestSupport.operations(catalog);
     dialect.renders.set(0);
     dialect.validations.set(0);
+    dialect.legacyRenders.set(0);
+    dialect.legacyValidations.set(0);
+    dialect.validatedAnalyses.clear();
+    dialect.renderedAnalyses.clear();
     return new Fixture(catalog, operations, dialect);
   }
 
@@ -672,6 +876,12 @@ class SharedQueryPlanRoutingTest {
   private static final class CountingDialect implements Dialect {
     private final AtomicInteger renders = new AtomicInteger();
     private final AtomicInteger validations = new AtomicInteger();
+    private final AtomicInteger legacyRenders = new AtomicInteger();
+    private final AtomicInteger legacyValidations = new AtomicInteger();
+    private final Map<StatementAst, QueryBlockAnalysis> validatedAnalyses =
+        Collections.synchronizedMap(new IdentityHashMap<>());
+    private final Map<StatementAst, QueryBlockAnalysis> renderedAnalyses =
+        Collections.synchronizedMap(new IdentityHashMap<>());
     private final boolean stable;
     private final DialectCapabilities capabilities = DialectCapabilities.of(DialectFeature.values());
     private final SqlRenderer delegate = new StandardSqlRenderer(id(), identifierRules(), capabilities);
@@ -695,6 +905,11 @@ class SharedQueryPlanRoutingTest {
     }
 
     @Override
+    public boolean supportsResolvedQueryValidation() {
+      return true;
+    }
+
+    @Override
     public IdentifierRules identifierRules() {
       return StandardIdentifierRules.INSTANCE;
     }
@@ -706,40 +921,72 @@ class SharedQueryPlanRoutingTest {
 
     @Override
     public void validate(StatementAst statement) {
-      validations.incrementAndGet();
+      legacyValidations.incrementAndGet();
       Dialect.super.validate(statement);
     }
 
     @Override
+    public void validate(StatementAst statement, QueryBlockAnalysis analysis) {
+      validations.incrementAndGet();
+      QueryBlockAnalysis previous = validatedAnalyses.put(statement, analysis);
+      assertTrue(previous == null, "the same statement was resolved more than once");
+      Dialect.super.validate(statement, analysis);
+    }
+
+    @Override
     public SqlRenderer renderer() {
-      return statement -> {
-        renders.incrementAndGet();
-        RenderSequence currentSequence = sequence;
-        if (currentSequence != null) {
-          try {
-            currentSequence.awaitTurn();
-          } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(interrupted);
-          }
+      return new SqlRenderer() {
+        @Override
+        public io.skis.dialect.RenderedSql render(StatementAst statement) {
+          legacyRenders.incrementAndGet();
+          beforeRender();
+          return delegate.render(statement);
         }
-        if (failNext) {
-          failNext = false;
-          throw new IllegalArgumentException("scripted render failure");
+
+        @Override
+        public io.skis.dialect.RenderedSql renderValidated(
+            StatementAst statement, QueryBlockAnalysis analysis) {
+          renders.incrementAndGet();
+          assertSame(validatedAnalyses.get(statement), analysis);
+          QueryBlockAnalysis previous = renderedAnalyses.put(statement, analysis);
+          assertTrue(previous == null, "the same statement was rendered more than once");
+          beforeRender();
+          return delegate.renderValidated(statement, analysis);
         }
-        CountDownLatch signal = entered;
-        CountDownLatch gate = release;
-        if (signal != null && gate != null) {
-          signal.countDown();
-          try {
-            assertTrue(gate.await(15, TimeUnit.SECONDS));
-          } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new AssertionError(interrupted);
-          }
-        }
-        return delegate.render(statement);
       };
+    }
+
+    private void assertAnalysisHandoff(StatementAst statement) {
+      assertTrue(validatedAnalyses.containsKey(statement));
+      assertTrue(renderedAnalyses.containsKey(statement));
+      assertSame(validatedAnalyses.get(statement), renderedAnalyses.get(statement));
+    }
+
+    private void beforeRender() {
+      RenderSequence currentSequence = sequence;
+      if (currentSequence != null) {
+        try {
+          currentSequence.awaitTurn();
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError(interrupted);
+        }
+      }
+      if (failNext) {
+        failNext = false;
+        throw new IllegalArgumentException("scripted render failure");
+      }
+      CountDownLatch signal = entered;
+      CountDownLatch gate = release;
+      if (signal != null && gate != null) {
+        signal.countDown();
+        try {
+          assertTrue(gate.await(15, TimeUnit.SECONDS));
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new AssertionError(interrupted);
+        }
+      }
     }
   }
 }

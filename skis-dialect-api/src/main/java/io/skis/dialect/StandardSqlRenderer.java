@@ -41,6 +41,7 @@ import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
@@ -80,14 +81,42 @@ public final class StandardSqlRenderer implements SqlRenderer {
   @Override
   public RenderedSql render(StatementAst statement) {
     Objects.requireNonNull(statement, "statement");
-    if (statement instanceof SelectStatement
-        || statement instanceof CountAst
-        || statement instanceof InsertStatement
+    if (statement instanceof SelectStatement select) {
+      QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(select);
+      DialectQueryFeatures.validate(dialectId, capabilities, statement, analysis);
+      return renderValidatedStatement(statement);
+    }
+    if (statement instanceof CountAst count) {
+      QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(count);
+      DialectQueryFeatures.validate(dialectId, capabilities, statement, analysis);
+      return renderValidatedStatement(statement);
+    }
+    if (statement instanceof InsertStatement
         || statement instanceof UpdateStatement
         || statement instanceof DeleteStatement) {
       SemanticValidator.validateComplete(statement);
     }
     DialectQueryFeatures.validate(dialectId, capabilities, statement);
+    return renderValidatedStatement(statement);
+  }
+
+  @Override
+  public RenderedSql renderValidated(
+      StatementAst statement, QueryBlockAnalysis analysis) {
+    Objects.requireNonNull(statement, "statement");
+    Objects.requireNonNull(analysis, "analysis");
+    if (!(statement instanceof SelectStatement) && !(statement instanceof CountAst)) {
+      throw new IllegalArgumentException(
+          "validated query rendering does not support statement node "
+              + statement.getClass().getName());
+    }
+    if (!analysis.path().locations().isEmpty()) {
+      throw new IllegalArgumentException("complete statement analysis must use the root query path");
+    }
+    return renderValidatedStatement(statement);
+  }
+
+  private RenderedSql renderValidatedStatement(StatementAst statement) {
     return switch (statement) {
       case SelectStatement select -> renderSelect(select);
       case CountAst count -> renderCount(count);

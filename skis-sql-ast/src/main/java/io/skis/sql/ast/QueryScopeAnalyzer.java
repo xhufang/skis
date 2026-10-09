@@ -9,6 +9,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /** Query-block scope resolver used by the complete semantic-validation boundary. */
@@ -19,10 +20,18 @@ final class QueryScopeAnalyzer {
   private QueryScopeAnalyzer() {}
 
   static QueryBlockAnalysis analyzeTopLevel(SelectStatement statement) {
+    return analyzeTopLevelStatement(Objects.requireNonNull(statement, "statement"));
+  }
+
+  static QueryBlockAnalysis analyzeTopLevel(CountAst statement) {
+    return analyzeTopLevelStatement(Objects.requireNonNull(statement, "statement"));
+  }
+
+  private static QueryBlockAnalysis analyzeTopLevelStatement(StatementAst statement) {
     StatementParameters statementParameters = new StatementParameters();
     QueryBlockAnalysis analysis =
         new Analyzer(
-                Objects.requireNonNull(statement, "statement"),
+                statement,
                 QueryBlockPath.root(),
                 QueryBlockAnalysis.ScopeSnapshot.empty(),
                 statementParameters)
@@ -52,7 +61,7 @@ final class QueryScopeAnalyzer {
 
   private static final class Analyzer {
 
-    private final SelectStatement statement;
+    private final StatementAst statement;
     private final QueryBlockPath path;
     private final QueryBlockAnalysis.ScopeSnapshot parentScope;
     private final StatementParameters statementParameters;
@@ -69,16 +78,21 @@ final class QueryScopeAnalyzer {
         new IdentityHashMap<>();
 
     private Analyzer(
-        SelectStatement statement,
+        StatementAst statement,
         QueryBlockPath path,
         QueryBlockAnalysis.ScopeSnapshot parentScope,
         StatementParameters statementParameters) {
       this.statement = Objects.requireNonNull(statement, "statement");
+      if (!(statement instanceof SelectStatement) && !(statement instanceof CountAst)) {
+        throw new IllegalArgumentException(
+            "query-block analysis does not support statement node "
+                + statement.getClass().getName());
+      }
       this.path = Objects.requireNonNull(path, "path");
       this.parentScope = Objects.requireNonNull(parentScope, "parentScope");
       this.statementParameters = Objects.requireNonNull(statementParameters, "statementParameters");
       List<QueryBlockAnalysis.ScopeSource> allSources = new ArrayList<>();
-      for (TableOccurrence occurrence : statement.fromClause().occurrences()) {
+      for (TableOccurrence occurrence : fromClause().occurrences()) {
         allSources.add(
             new QueryBlockAnalysis.ScopeSource(
                 new ResolvedSourceIdentity(path, occurrence.occurrenceOrdinal()),
@@ -90,14 +104,14 @@ final class QueryScopeAnalyzer {
 
     private QueryBlockAnalysis analyze() {
       rememberScope(QueryClause.JOIN_SOURCE, 0, QueryBlockAnalysis.ScopeSnapshot.empty());
-      resolveRelationSource(statement.fromClause().root(), 0);
-      registerSource(statement.fromClause().occurrences().getFirst());
-      for (int index = 0; index < statement.joins().size(); index++) {
-        JoinClause join = statement.joins().get(index);
+      resolveRelationSource(fromClause().root(), 0);
+      registerSource(fromClause().occurrences().getFirst());
+      for (int index = 0; index < joins().size(); index++) {
+        JoinClause join = joins().get(index);
         int joinOrdinal = index + 1;
         rememberScope(QueryClause.JOIN_SOURCE, joinOrdinal, snapshot());
         resolveRelationSource(join.right(), joinOrdinal);
-        registerSource(statement.fromClause().occurrences().get(joinOrdinal));
+        registerSource(fromClause().occurrences().get(joinOrdinal));
         QueryBlockAnalysis.ScopeSnapshot onScope = snapshot();
         join.on()
             .ifPresent(
@@ -109,46 +123,42 @@ final class QueryScopeAnalyzer {
       }
 
       QueryBlockAnalysis.ScopeSnapshot finalScope = snapshot();
-      for (int index = 0; index < statement.selections().size(); index++) {
+      for (int index = 0; index < selectionCount(); index++) {
         rememberScope(QueryClause.SELECT, index, finalScope);
-        resolveClauseExpression(
-            statement.selections().get(index), QueryClause.SELECT, index, finalScope);
+        resolveClauseExpression(selection(index), QueryClause.SELECT, index, finalScope);
       }
-      int hiddenOffset = statement.selections().size();
-      for (int index = 0; index < statement.hiddenSelections().size(); index++) {
+      int hiddenOffset = selectionCount();
+      for (int index = 0; index < hiddenSelections().size(); index++) {
         int itemOrdinal = hiddenOffset + index;
         rememberScope(QueryClause.SELECT, itemOrdinal, finalScope);
         resolveClauseExpression(
-            statement.hiddenSelections().get(index).expression(),
+            hiddenSelections().get(index).expression(),
             QueryClause.SELECT,
             itemOrdinal,
             finalScope);
       }
-      statement
-          .where()
+      where()
           .ifPresent(
               where -> {
                 rememberScope(QueryClause.WHERE, 0, finalScope);
                 resolveClauseExpression(where, QueryClause.WHERE, 0, finalScope);
               });
-      for (int index = 0; index < statement.groupBy().size(); index++) {
+      for (int index = 0; index < groupBy().size(); index++) {
         rememberScope(QueryClause.GROUP_BY, index, finalScope);
-        resolveClauseExpression(
-            statement.groupBy().get(index), QueryClause.GROUP_BY, index, finalScope);
+        resolveClauseExpression(groupBy().get(index), QueryClause.GROUP_BY, index, finalScope);
       }
-      statement
-          .having()
+      having()
           .ifPresent(
               having -> {
                 rememberScope(QueryClause.HAVING, 0, finalScope);
                 resolveClauseExpression(having, QueryClause.HAVING, 0, finalScope);
               });
-      for (int index = 0; index < statement.orderBy().size(); index++) {
+      for (int index = 0; index < orderBy().size(); index++) {
         rememberScope(QueryClause.ORDER_BY, index, finalScope);
         resolveClauseExpression(
-            statement.orderBy().get(index).expression(), QueryClause.ORDER_BY, index, finalScope);
+            orderBy().get(index).expression(), QueryClause.ORDER_BY, index, finalScope);
       }
-      statement.pagination().ifPresent(pagination -> resolvePagination(pagination, finalScope));
+      pagination().ifPresent(value -> resolvePagination(value, finalScope));
       List<QueryBlockAnalysis.SourceOccurrence> occurrences = new ArrayList<>();
       for (MutableSource source : currentSources) {
         occurrences.add(
@@ -1005,10 +1015,10 @@ final class QueryScopeAnalyzer {
         sourceKeys.add(sourceKey(source));
       }
 
-      List<ResolvedStructureKey> joinKeys = new ArrayList<>(statement.joins().size());
-      for (int index = 0; index < statement.joins().size(); index++) {
+      List<ResolvedStructureKey> joinKeys = new ArrayList<>(joins().size());
+      for (int index = 0; index < joins().size(); index++) {
         int joinOrdinal = index + 1;
-        JoinClause join = statement.joins().get(index);
+        JoinClause join = joins().get(index);
         ResolvedStructureKey on =
             expressionKeys.get(new QueryBlockAnalysis.ScopeSite(QueryClause.JOIN_ON, joinOrdinal));
         joinKeys.add(
@@ -1024,16 +1034,16 @@ final class QueryScopeAnalyzer {
       children.add(
           new ResolvedStructureKey.Node("FROM", List.of(), List.of(sourceKeys.getFirst())));
       children.add(new ResolvedStructureKey.Node("JOINS", List.of(), joinKeys));
-      children.add(sectionKeyOffset0(QueryClause.SELECT, statement.selections().size()));
+      children.add(sectionKeyOffset0(QueryClause.SELECT, selectionCount()));
       children.add(hiddenSelectionsKey());
       children.add(optionalKeyItemOrdinal0(QueryClause.WHERE));
-      children.add(sectionKeyOffset0(QueryClause.GROUP_BY, statement.groupBy().size()));
+      children.add(sectionKeyOffset0(QueryClause.GROUP_BY, groupBy().size()));
       children.add(optionalKeyItemOrdinal0(QueryClause.HAVING));
       children.add(orderByKey());
       children.add(paginationKey());
       return new ResolvedStructureKey.Node(
           "SELECT_BLOCK",
-          List.of(path.toString(), Boolean.toString(statement.distinct())),
+          List.of(path.toString(), Boolean.toString(distinct())),
           children);
     }
 
@@ -1096,10 +1106,10 @@ final class QueryScopeAnalyzer {
     }
 
     private ResolvedStructureKey hiddenSelectionsKey() {
-      List<ResolvedStructureKey> items = new ArrayList<>(statement.hiddenSelections().size());
-      int offset = statement.selections().size();
-      for (int index = 0; index < statement.hiddenSelections().size(); index++) {
-        HiddenSelection hidden = statement.hiddenSelections().get(index);
+      List<ResolvedStructureKey> items = new ArrayList<>(hiddenSelections().size());
+      int offset = selectionCount();
+      for (int index = 0; index < hiddenSelections().size(); index++) {
+        HiddenSelection hidden = hiddenSelections().get(index);
         ResolvedStructureKey key =
             expressionKeys.get(
                 new QueryBlockAnalysis.ScopeSite(QueryClause.SELECT, offset + index));
@@ -1115,9 +1125,9 @@ final class QueryScopeAnalyzer {
     }
 
     private ResolvedStructureKey orderByKey() {
-      List<ResolvedStructureKey> items = new ArrayList<>(statement.orderBy().size());
-      for (int index = 0; index < statement.orderBy().size(); index++) {
-        OrderByItem item = statement.orderBy().get(index);
+      List<ResolvedStructureKey> items = new ArrayList<>(orderBy().size());
+      for (int index = 0; index < orderBy().size(); index++) {
+        OrderByItem item = orderBy().get(index);
         ResolvedStructureKey key =
             expressionKeys.get(new QueryBlockAnalysis.ScopeSite(QueryClause.ORDER_BY, index));
         if (key == null) {
@@ -1151,11 +1161,77 @@ final class QueryScopeAnalyzer {
       }
       return new ResolvedStructureKey.Node(
           "PAGINATION",
-          statement
-              .pagination()
+          pagination()
               .map(value -> List.of(value.getClass().getSimpleName()))
               .orElse(List.of()),
           items);
+    }
+
+    private FromClause fromClause() {
+      return switch (statement) {
+        case SelectStatement select -> select.fromClause();
+        case CountAst count -> count.fromClause();
+        default -> throw unsupportedStatement();
+      };
+    }
+
+    private List<JoinClause> joins() {
+      return fromClause().joins();
+    }
+
+    private int selectionCount() {
+      return statement instanceof SelectStatement select ? select.selections().size() : 1;
+    }
+
+    private SqlExpression<?> selection(int index) {
+      return switch (statement) {
+        case SelectStatement select -> select.selections().get(index);
+        case CountAst count -> {
+          if (index != 0) {
+            throw new IndexOutOfBoundsException(index);
+          }
+          yield count.distinctExpression().orElse(LiteralExpression.trueLiteral());
+        }
+        default -> throw unsupportedStatement();
+      };
+    }
+
+    private List<HiddenSelection> hiddenSelections() {
+      return statement instanceof SelectStatement select ? select.hiddenSelections() : List.of();
+    }
+
+    private Optional<SqlPredicate> where() {
+      return switch (statement) {
+        case SelectStatement select -> select.where();
+        case CountAst count -> count.predicate();
+        default -> throw unsupportedStatement();
+      };
+    }
+
+    private List<SqlExpression<?>> groupBy() {
+      return statement instanceof SelectStatement select ? select.groupBy() : List.of();
+    }
+
+    private Optional<SqlPredicate> having() {
+      return statement instanceof SelectStatement select ? select.having() : Optional.empty();
+    }
+
+    private List<OrderByItem> orderBy() {
+      return statement instanceof SelectStatement select ? select.orderBy() : List.of();
+    }
+
+    private Optional<SelectPagination> pagination() {
+      return statement instanceof SelectStatement select ? select.pagination() : Optional.empty();
+    }
+
+    private boolean distinct() {
+      return statement instanceof SelectStatement select && select.distinct();
+    }
+
+    private IllegalStateException unsupportedStatement() {
+      return new IllegalStateException(
+          "query-block analysis does not support statement node "
+              + statement.getClass().getName());
     }
   }
 

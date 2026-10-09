@@ -1,6 +1,8 @@
 package io.skis.dialect;
 
+import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.StatementAst;
+import java.util.Objects;
 
 /** Small composition root for database-specific SQL behavior. */
 public interface Dialect {
@@ -62,6 +64,37 @@ public interface Dialect {
    */
   default void validate(StatementAst statement) {
     DialectQueryFeatures.validate(id(), capabilities(), statement);
+  }
+
+  /**
+   * Returns whether the default resolved-validation entry point may consume an existing analysis.
+   *
+   * <p>The compatibility default is {@code false}: an existing dialect that overrides {@link
+   * #validate(StatementAst)} keeps that behavior, even though it may resolve the query again.
+   * Dialects whose validation is completely represented by {@link #capabilities()} may return
+   * {@code true} to use the single-analysis path.
+   */
+  default boolean supportsResolvedQueryValidation() {
+    return false;
+  }
+
+  /**
+   * Performs dialect validation using the semantic analysis already produced for this statement.
+   *
+   * <p>This pipeline entry point avoids resolving the same query-block tree again between semantic
+   * validation and dialect capability validation. The analysis must belong to the supplied complete
+   * SELECT or COUNT statement; the caller currently owns that pairing because this compatibility
+   * signature does not carry a provenance token. Existing dialects retain their legacy validation
+   * override unless they explicitly opt in through {@link #supportsResolvedQueryValidation()} or
+   * override this method.
+   */
+  default void validate(StatementAst statement, QueryBlockAnalysis analysis) {
+    Objects.requireNonNull(analysis, "analysis");
+    if (!supportsResolvedQueryValidation()) {
+      validate(statement);
+      return;
+    }
+    DialectQueryFeatures.validate(id(), capabilities(), statement, analysis);
   }
 
   /** JDBC error classifier; returned instances must be thread-safe. */

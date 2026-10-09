@@ -6,11 +6,12 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Immutable, query-local result of resolving one SELECT block against its embedding scope.
+ * Immutable, query-local result of resolving one SELECT-shaped block against its embedding scope.
  *
  * <p>The result never writes identities, effective nullability, or correlation targets back to the
- * reusable {@link SelectStatement}. A child analyzed at another structural location therefore
- * receives an independent result.
+ * reusable {@link SelectStatement} or {@link CountAst}. An independent count uses its counted
+ * expression as the block's single visible analysis expression. A child analyzed at another
+ * structural location therefore receives an independent result.
  */
 public final class QueryBlockAnalysis {
 

@@ -36,13 +36,19 @@ The active `0.2.6` milestone removes the obsolete benchmark suite and develops t
 architecture without expanding the SQL feature surface. Benchmark implementation and execution stay
 frozen until every `0.2.x` development milestone is complete; a newly reviewed performance suite will
 then run during `0.3.0` release preparation. Aggregate/HAVING interoperability remains assigned to `0.2.9`.
-The bounded shared plan-cache container (T05) has passed CI. T06 source now connects ordinary queries
+The bounded shared plan-cache container (T05) and T06 routing have passed CI. Ordinary queries now connect
 through per-query recent plans (L0), catalog-owned shared plans (L1), and compilation (L2), with explicit
-bypass reasons and invocation-local AST/argument binding. Its unit and real-driver contract tests await
-CI verification; this remains an internal snapshot change. Zero capacity disables L1 while preserving
+bypass reasons and invocation-local AST/argument binding. Zero capacity disables L1 while preserving
 L0 and entity Fast Path slots; L0 hits, Fast Path operations, and bypasses do not count as L1 activity.
 T06 review cleanup removes unused test-only catalog accessors and strengthens routing, concurrent
-pagination, per-terminal cache statistics, decoding, and lifecycle tests; these updates also await CI.
+pagination, per-terminal cache statistics, decoding, and lifecycle tests. T07 source now hands one
+immutable query-block analysis from semantic validation to opted-in dialect validation and rendering,
+while preserving legacy third-party validation/renderer fallbacks. Review follow-up removes COUNT's
+discarded constructor-time analysis and analysis-only temporary SELECT, adds count-stage hand-off and
+runtime-scope fallback contracts, and fixes empty-membership lowering so original and final structures
+are both validated even when the removed operand allocates no parameters. The final resolved-SPI
+provenance decision remains assigned to `0.2.7`;
+these contract tests await CI. This remains an internal snapshot change.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [EXISTS, IN, scalar, derived, and correlated SELECT descriptions](docs/subqueries.md),

@@ -26,10 +26,8 @@ import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterSlot;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.SelectPagination;
 import io.skis.sql.ast.SelectStatement;
-import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -89,9 +87,12 @@ final class QueryPlanCompiler {
       boolean distinct,
       List<@Nullable Object> conditionArguments) {
     Objects.requireNonNull(structure, "structure");
-    QueryBlockAnalysis analysis = validateSelectionSource(selected, structure, distinct);
-    TableRuntimeScope runtimeScope =
-        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
+    TableRuntimeScope sourceScope =
+        TableRuntimeScope.resolve(
+            runtimeRegistry, structure.validationStructure().fromClause());
+    QueryCompilationContext sourceContext =
+        validateSelectionSource(selected, structure, distinct, sourceScope);
+    TableRuntimeScope runtimeScope = sourceScope.forFromClause(structure.fromClause());
     SqlExpression<?> distinctExpression = null;
     if (distinct) {
       List<SqlExpression<?>> compiledSelections = selectionExpressions(structure, selected);
@@ -101,12 +102,17 @@ final class QueryPlanCompiler {
               !structure.fromClause().joins().isEmpty(), selection.expressions());
     }
     return compileResolvedCount(
-        selected, analysis, structure, runtimeScope, conditionArguments, distinctExpression);
+        selected,
+        sourceContext,
+        structure,
+        runtimeScope,
+        conditionArguments,
+        distinctExpression);
   }
 
   private QueryCompilation<Long> compileResolvedCount(
       SelectedResult<?> selected,
-      QueryBlockAnalysis analysis,
+      QueryCompilationContext sourceContext,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       List<@Nullable Object> conditionArguments,
@@ -120,18 +126,19 @@ final class QueryPlanCompiler {
             () -> new CountAst(structure.fromClause(), structure.where(), distinctExpression));
     InputsBuilder inputs = new InputsBuilder(runtimeScope, structure, conditionArguments);
     List<LogicalParameter> parameters = inputs.logicalParameters();
-    validatePlan(count, parameters);
+    validateLogicalParameters(parameters);
+    QueryCompilationContext compilationContext = prepareContext(count);
     return plans.resolve(
-        analysis,
+        sourceContext.analysis(),
         selected,
         QueryPlanKey.PlanVariant.count(),
         parameters,
         inputs.parameterSources,
-        count,
+        compilationContext.statement(),
         inputs.argument(),
         () ->
             renderPlan(
-                count,
+                compilationContext,
                 parameters,
                 (resultSet, context) -> {
                   long value = resultSet.getLong(1);
@@ -150,11 +157,16 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       List<@Nullable Object> conditionArguments) {
     Objects.requireNonNull(structure, "structure");
+    TableRuntimeScope runtimeScope;
     if (structure.validationSource() != null) {
-      validateSelectionSource(selected, structure, distinct);
+      TableRuntimeScope sourceScope =
+          TableRuntimeScope.resolve(
+              runtimeRegistry, structure.validationStructure().fromClause());
+      validateSelectionSource(selected, structure, distinct, sourceScope);
+      runtimeScope = sourceScope.forFromClause(structure.fromClause());
+    } else {
+      runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     }
-    TableRuntimeScope runtimeScope =
-        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     ResolvedResultShape<R> selection =
         selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     return compileResolvedOrdered(
@@ -235,11 +247,16 @@ final class QueryPlanCompiler {
       List<HiddenSelection> hidden,
       List<@Nullable Object> conditionArguments) {
     Objects.requireNonNull(structure, "structure");
+    TableRuntimeScope runtimeScope;
     if (structure.validationSource() != null) {
-      validateSelectionSource(selected, structure, distinct);
+      TableRuntimeScope sourceScope =
+          TableRuntimeScope.resolve(
+              runtimeRegistry, structure.validationStructure().fromClause());
+      validateSelectionSource(selected, structure, distinct, sourceScope);
+      runtimeScope = sourceScope.forFromClause(structure.fromClause());
+    } else {
+      runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     }
-    TableRuntimeScope runtimeScope =
-        TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     ResolvedResultShape<R> selection =
         selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     return compileResolvedSelection(
@@ -284,22 +301,16 @@ final class QueryPlanCompiler {
                     paginationAst));
     List<LogicalParameter> parameters = inputs.logicalParameters();
     validateLogicalParameters(parameters);
-    QueryBlockAnalysis analysis;
-    try {
-      analysis = SemanticValidator.analyzeComplete(statement);
-      dialect.validate(statement);
-    } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
-    }
+    QueryCompilationContext compilationContext = prepareContext(statement);
     return plans.resolve(
-        analysis,
+        compilationContext.analysis(),
         selected,
         variant,
         parameters,
         inputs.parameterSources,
-        statement,
+        compilationContext.statement(),
         inputs.argument(),
-        () -> renderPlan(statement, parameters, selection.decoder()));
+        () -> renderPlan(compilationContext, parameters, selection.decoder()));
   }
 
   private static List<SqlExpression<?>> selectionExpressions(
@@ -310,30 +321,29 @@ final class QueryPlanCompiler {
   /**
    * Validates original scopes before count, empty-IN pruning, or selected scalar ordering reuse.
    */
-  private QueryBlockAnalysis validateSelectionSource(
-      SelectedResult<?> selected, CompiledQueryStructure structure, boolean distinct) {
+  private QueryCompilationContext validateSelectionSource(
+      SelectedResult<?> selected,
+      CompiledQueryStructure structure,
+      boolean distinct,
+      TableRuntimeScope runtimeScope) {
     CompiledQueryStructure source = structure.validationStructure();
-    TableRuntimeScope scope = TableRuntimeScope.resolve(runtimeRegistry, source.fromClause());
+    TableRuntimeScope scope = runtimeScope.forFromClause(source.fromClause());
     List<SqlExpression<?>> expressions = selectionExpressions(source, selected);
     selected.resolve(scope, expressions);
-    try {
-      SelectStatement statement =
-          new SelectStatement(
-              distinct,
-              expressions,
-              List.of(),
-              source.fromClause(),
-              source.where(),
-              source.groupBy(),
-              source.having(),
-              source.orderBy(),
-              null);
-      QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
-      dialect.validate(statement);
-      return analysis;
-    } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
-    }
+    SelectStatement statement =
+        constructedStatement(
+            () ->
+                new SelectStatement(
+                    distinct,
+                    expressions,
+                    List.of(),
+                    source.fromClause(),
+                    source.where(),
+                    source.groupBy(),
+                    source.having(),
+                    source.orderBy(),
+                    null));
+    return prepareContext(statement);
   }
 
   private static List<OrderByItem> orderItems(
@@ -373,25 +383,17 @@ final class QueryPlanCompiler {
       StatementAst statement, List<LogicalParameter> logicalParameters, RowDecoder<R> rowDecoder) {
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(rowDecoder, "rowDecoder");
-    validatePlan(statement, logicalParameters);
-    return renderPlan(statement, logicalParameters, rowDecoder);
-  }
-
-  private void validatePlan(StatementAst statement, List<LogicalParameter> logicalParameters) {
     validateLogicalParameters(logicalParameters);
-    try {
-      SemanticValidator.validateComplete(statement);
-      dialect.validate(statement);
-    } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
-    }
+    return renderPlan(prepareContext(statement), logicalParameters, rowDecoder);
   }
 
   private <R> CompiledQueryPlan<R, Object> renderPlan(
-      StatementAst statement, List<LogicalParameter> logicalParameters, RowDecoder<R> rowDecoder) {
+      QueryCompilationContext compilationContext,
+      List<LogicalParameter> logicalParameters,
+      RowDecoder<R> rowDecoder) {
     RenderedSql rendered;
     try {
-      rendered = dialect.renderer().render(statement);
+      rendered = compilationContext.render(dialect);
     } catch (IllegalArgumentException failure) {
       throw new QueryValidationException(failure.getMessage(), failure);
     }
@@ -412,6 +414,14 @@ final class QueryPlanCompiler {
           return index;
         },
         rowDecoder);
+  }
+
+  private QueryCompilationContext prepareContext(StatementAst statement) {
+    try {
+      return QueryCompilationContext.prepare(statement, dialect);
+    } catch (IllegalArgumentException failure) {
+      throw new QueryValidationException(failure.getMessage(), failure);
+    }
   }
 
   private List<RenderedBinding> renderedBindings(

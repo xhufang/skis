@@ -55,6 +55,7 @@ class H2DialectTest {
     assertSame(H2ExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());
+    assertTrue(dialect.supportsResolvedQueryValidation());
     assertSame(StatementParameterLimit.unknown(), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_LIMIT));

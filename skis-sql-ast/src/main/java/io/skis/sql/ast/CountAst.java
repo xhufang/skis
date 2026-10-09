@@ -5,7 +5,12 @@ import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-/** Independent count plan; ordering and pagination never belong to this node. */
+/**
+ * Independent count plan; ordering and pagination never belong to this node.
+ *
+ * <p>Construction validates local expression invariants. Complete scope, parameter, and
+ * nested-block validation occurs at the semantic-analysis or renderer boundary.
+ */
 public final class CountAst implements StatementAst {
 
   private final FromClause fromClause;
@@ -24,7 +29,7 @@ public final class CountAst implements StatementAst {
     this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
     this.predicate = predicate;
     this.distinctExpression = distinctExpression;
-    SemanticValidator.validate(this);
+    SemanticValidator.validateLocal(this);
   }
 
   /** Creates a single-table count plan. */
