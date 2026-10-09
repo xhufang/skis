@@ -275,10 +275,9 @@ final class FrameworkQueryCondition implements QueryCondition {
       if (candidates.isEmpty() && compiler.releaseOriginalExpressions()) {
         return new InPredicate<>(LiteralExpression.trueLiteral(), List.of(), negated);
       }
-      int previousParameterCount = compiler.parameterCount();
       SqlExpression<V> expression = compiler.expression(value);
       if (candidates.isEmpty()) {
-        compiler.recordEmptyMembership(previousParameterCount);
+        compiler.recordEmptyMembership();
       }
       List<ParameterSlot<V>> slots = new ArrayList<>(candidates.size());
       for (QueryParameter<V> candidate : candidates) {
@@ -407,12 +406,8 @@ final class QueryConditionCompiler {
     layout.recordSelectedOrdering();
   }
 
-  int parameterCount() {
-    return layout.parameterCount();
-  }
-
-  void recordEmptyMembership(int previousParameterCount) {
-    layout.recordEmptyMembership(previousParameterCount);
+  void recordEmptyMembership() {
+    layout.recordEmptyMembership();
   }
 
   <V> SqlExpression<V> expression(Selectable<V> selectable) {

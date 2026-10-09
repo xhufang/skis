@@ -15,7 +15,9 @@
   新增阶段调用计数、直接/resolved SQL golden 与失败诊断对照，以及嵌套、相关、派生、LEFT JOIN 和分页变体合同测试；
   review 后将 `CountAst` 构造边界收窄为局部不变量校验，完整 COUNT 直接进入 query-block 分析，删除构造时被丢弃的完整分析和
   分析专用临时 SELECT；补普通/distinct/裁剪嵌套选择/空集合改写 COUNT 的 analysis 同一性交接断言，以及 runtime scope
-  来源身份、ordinal、数量和派生引用不一致时的回退合同。当前裸 `StatementAst + QueryBlockAnalysis` 公共 SPI 的 provenance
+  来源身份、ordinal、数量和派生引用不一致时的回退合同。首轮测试反馈进一步修复普通列空集合 membership 未触发二次
+  lowering 的缺口，所有空集合 membership 现在都保留原始校验结构并生成独立的最终常量谓词结构。当前裸
+  `StatementAst + QueryBlockAnalysis` 公共 SPI 的 provenance
   决策登记到 0.2.7，不能通过 Renderer 重分析规避；
   源码及静态复核已完成、待 CI，按项目约定未在本地编译运行，也未执行 benchmark。
 - T06 已接入普通查询 L0/L1/L2：统一键组装显式返回可缓存键或旁路原因，content/ordered/count、分页、Join、子查询和

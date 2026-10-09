@@ -45,7 +45,9 @@ pagination, per-terminal cache statistics, decoding, and lifecycle tests. T07 so
 immutable query-block analysis from semantic validation to opted-in dialect validation and rendering,
 while preserving legacy third-party validation/renderer fallbacks. Review follow-up removes COUNT's
 discarded constructor-time analysis and analysis-only temporary SELECT, adds count-stage hand-off and
-runtime-scope fallback contracts, and leaves the final resolved-SPI provenance decision to `0.2.7`;
+runtime-scope fallback contracts, and fixes empty-membership lowering so original and final structures
+are both validated even when the removed operand allocates no parameters. The final resolved-SPI
+provenance decision remains assigned to `0.2.7`;
 these contract tests await CI. This remains an internal snapshot change.
 These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),

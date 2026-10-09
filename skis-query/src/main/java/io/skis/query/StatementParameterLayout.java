@@ -39,12 +39,8 @@ final class StatementParameterLayout {
     return retainOriginalExpressions;
   }
 
-  int parameterCount() {
-    return parameterSlots.size();
-  }
-
-  void recordEmptyMembership(int previousParameterCount) {
-    rewriteRequired |= parameterSlots.size() != previousParameterCount;
+  void recordEmptyMembership() {
+    rewriteRequired = true;
   }
 
   void recordSelectedOrdering() {
