@@ -99,32 +99,16 @@ class QueryPlanKeyTest {
       new QueryPlanKey.DialectIdentity("postgresql", POSTGRES_CAPABILITIES, 17);
 
   @Test
-  void catalogSourcesTheCompleteStableDialectIdentity() {
+  void identityFactoryCapturesCompleteStableDialectIdentity() {
     Dialect dialect = testDialect("postgresql", POSTGRES_CAPABILITIES, 17, true);
-    QueryPlanCatalog catalog =
-        new QueryPlanCatalog(
-            EntityRuntimeRegistry.empty(), dialect, 0, Duration.ofSeconds(1));
-    QueryPlanCatalog changedCapabilities =
-        new QueryPlanCatalog(
-            EntityRuntimeRegistry.empty(),
-            testDialect(
-                "postgresql",
-                DialectCapabilities.of(DialectFeature.CATALOG_QUALIFIED_TABLES),
-                17,
-                true),
-            0,
-            Duration.ofSeconds(1));
-    QueryPlanCatalog changedBehaviorVersion =
-        new QueryPlanCatalog(
-            EntityRuntimeRegistry.empty(),
-            testDialect("postgresql", POSTGRES_CAPABILITIES, 18, true),
-            0,
-            Duration.ofSeconds(1));
-    QueryPlanKey.DialectIdentity identity = catalog.dialectIdentity().orElseThrow();
+    QueryPlanKey.DialectIdentity identity = QueryPlanKey.DialectIdentity.from(dialect).orElseThrow();
     QueryPlanKey.DialectIdentity capabilityChangedIdentity =
-        changedCapabilities.dialectIdentity().orElseThrow();
+        QueryPlanKey.DialectIdentity.from(testDialect(
+            "postgresql", DialectCapabilities.of(DialectFeature.CATALOG_QUALIFIED_TABLES),
+            17, true)).orElseThrow();
     QueryPlanKey.DialectIdentity versionChangedIdentity =
-        changedBehaviorVersion.dialectIdentity().orElseThrow();
+        QueryPlanKey.DialectIdentity.from(
+            testDialect("postgresql", POSTGRES_CAPABILITIES, 18, true)).orElseThrow();
 
     assertEquals(POSTGRES, identity);
     assertEquals(identity.capabilityVersion(), capabilityChangedIdentity.capabilityVersion());
@@ -134,15 +118,9 @@ class QueryPlanKeyTest {
   }
 
   @Test
-  void catalogBypassesDialectsWithoutAnExplicitlyStableIdentity() {
-    QueryPlanCatalog catalog =
-        new QueryPlanCatalog(
-            EntityRuntimeRegistry.empty(),
-            testDialect("custom", DialectCapabilities.none(), 1, false),
-            0,
-            Duration.ofSeconds(1));
-
-    assertTrue(catalog.dialectIdentity().isEmpty());
+  void identityFactoryRejectsDialectsWithoutAnExplicitlyStableIdentity() {
+    assertTrue(QueryPlanKey.DialectIdentity.from(
+        testDialect("custom", DialectCapabilities.none(), 1, false)).isEmpty());
   }
 
   @Test
@@ -384,7 +362,7 @@ class QueryPlanKeyTest {
     EntityRuntimeRegistry registry =
         EntityRuntimeRegistry.of(
             List.of(petRuntimeModel(), first.runtimeModel(), second.runtimeModel()));
-    QueryPlanCompiler compiler = new QueryPlanCompiler(registry, OrderedDialect.INSTANCE);
+    QueryPlanCompiler compiler = QueryTestSupport.compiler(registry, OrderedDialect.INSTANCE);
     QueryPlanKey.IdentityScope identities = new QueryPlanKey.IdentityScope(registry);
     SelectedResult<Pet> selected = SelectedResult.entity(KEY_TABLE);
     QueryPagination pagination = new QueryPagination.LimitOnly(11);

@@ -23,7 +23,6 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -974,26 +973,21 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
 
   private static final class LocalPlanCache<T> {
 
-    private static final int MAXIMUM_SHAPES = 32;
-    private final LinkedHashMap<QueryPaginationShape, CachedPlan<T>> plans =
-        new LinkedHashMap<>(8, 0.75F, true);
+    private volatile @Nullable RecentPlan<T> recent;
 
-    private synchronized QueryCompilation<T> getOrCompile(
+    private QueryCompilation<T> getOrCompile(
         QueryPaginationShape pagination,
         Supplier<QueryCompilation<T>> compiler,
         Object argument) {
-      CachedPlan<T> existing = plans.get(pagination);
-      if (existing != null) {
-        return new QueryCompilation<>(existing.plan(), argument, existing.ast());
+      RecentPlan<T> existing = recent;
+      if (existing != null && existing.pagination().equals(pagination)) {
+        return new QueryCompilation<>(existing.plan().plan(), argument, existing.plan().ast());
       }
       QueryCompilation<T> compiled = Objects.requireNonNull(compiler.get(), "compiled query");
-      plans.put(pagination, new CachedPlan<>(compiled.plan(), compiled.ast()));
-      if (plans.size() > MAXIMUM_SHAPES) {
-        var entries = plans.entrySet().iterator();
-        entries.next();
-        entries.remove();
-      }
+      recent = new RecentPlan<>(pagination, new CachedPlan<>(compiled.plan(), compiled.ast()));
       return new QueryCompilation<>(compiled.plan(), argument, compiled.ast());
     }
+
+    private record RecentPlan<T>(QueryPaginationShape pagination, CachedPlan<T> plan) {}
   }
 }

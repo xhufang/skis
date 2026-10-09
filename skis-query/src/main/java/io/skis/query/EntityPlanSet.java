@@ -62,7 +62,9 @@ final class EntityPlanSet<E> {
       QueryTable<E> table, CompiledQueryStructure structure) {
     Objects.requireNonNull(structure, "structure");
     if (structure.where() == null) {
-      return table.alias().isEmpty() ? cachedSelectAll() : compiler.compile(model, table, null);
+      return table.alias().isEmpty()
+          ? cachedSelectAll()
+          : compiler.compileQuery(model, table, structure);
     }
     PropertyMeta<E, ?> property = simpleEqualityProperty(table, structure);
     if (property == null || !supportsCachedEquality(structure, property)) {

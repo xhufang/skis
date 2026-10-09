@@ -114,7 +114,7 @@ class EntityPlanSetTest {
         };
     EntityRuntimeModel<Pet> runtimeModel = model();
     QueryPlanCompiler compiler =
-        new QueryPlanCompiler(
+        QueryTestSupport.compiler(
             EntityRuntimeRegistry.of(List.of(runtimeModel)), nonValidatingDialect);
     CompiledQueryStructure structure =
         new CompiledQueryStructure(
@@ -294,7 +294,7 @@ class EntityPlanSetTest {
   void nullableQueryParametersBindNullThroughTheResolvedColumnCodec() throws Exception {
     EntityRuntimeModel<Pet> runtimeModel = model();
     QueryPlanCompiler compiler =
-        new QueryPlanCompiler(
+        QueryTestSupport.compiler(
             EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
     QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
     StatementParameterLayout layout = new StatementParameterLayout();
@@ -345,7 +345,7 @@ class EntityPlanSetTest {
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(
             runtimeModel,
-            new QueryPlanCompiler(
+            QueryTestSupport.compiler(
                 EntityRuntimeRegistry.of(List.of(runtimeModel)),
                 ReorderedParameterDialect.INSTANCE));
     QueryCondition predicate = TABLE.name().like("Mi%").and(TABLE.id().ge(1L));
@@ -526,7 +526,7 @@ class EntityPlanSetTest {
     EntityRuntimeModel<Pet> runtimeModel = model();
     return new EntityPlanSet<>(
         runtimeModel,
-        new QueryPlanCompiler(
+        QueryTestSupport.compiler(
             EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE));
   }
 
