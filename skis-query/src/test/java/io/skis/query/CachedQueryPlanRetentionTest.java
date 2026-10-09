@@ -2,17 +2,16 @@ package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.Dialect;
 import io.skis.dialect.DialectCapabilities;
 import io.skis.dialect.DialectFeature;
 import io.skis.dialect.IdentifierRules;
-import io.skis.dialect.RenderedSql;
 import io.skis.dialect.SqlRenderer;
 import io.skis.dialect.StandardIdentifierRules;
 import io.skis.dialect.StandardSqlRenderer;
-import io.skis.jdbc.CompiledQueryPlan;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcCodecs;
@@ -26,18 +25,15 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
-import io.skis.sql.ast.ResolvedStructureKey;
-import io.skis.sql.ast.SelectStatement;
-import io.skis.sql.ast.SemanticValidator;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Proxy;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.Test;
@@ -60,7 +56,7 @@ class CachedQueryPlanRetentionTest {
   private static final RetentionTable KEY_TABLE = new RetentionTable(null);
 
   @Test
-  void cachedValueContainsOnlyTheCompiledPlanAndDoesNotRetainInvocationGraph() {
+  void liveCatalogAndCachedPlanDoNotRetainMissOrHitInvocationGraphs() {
     assertEquals(
         List.of("plan"),
         Arrays.stream(CachedQueryPlan.class.getRecordComponents())
@@ -70,6 +66,9 @@ class CachedQueryPlanRetentionTest {
 
     assertCollected(fixture.references());
 
+    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
+        fixture.catalog().projectionPlanCacheStatistics());
+    Reference.reachabilityFence(fixture.catalog());
     Reference.reachabilityFence(fixture.cachedPlan());
   }
 
@@ -89,42 +88,42 @@ class CachedQueryPlanRetentionTest {
   }
 
   private static InvocationFixture compileInvocationFixture() {
+    QueryPlanCatalog catalog =
+        new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
+    List<TrackedReference> references = new ArrayList<>();
+    CachedQueryPlan<RetentionView> first = compileInvocation(catalog, "first", references);
+    CachedQueryPlan<RetentionView> second = compileInvocation(catalog, "second", references);
+    assertSame(first.plan(), second.plan());
+    return new InvocationFixture(catalog, first, List.copyOf(references));
+  }
+
+  private static CachedQueryPlan<RetentionView> compileInvocation(
+      QueryPlanCatalog catalog, String label, List<TrackedReference> references) {
     Object tableMarker = new Object();
     RetentionTable table = new RetentionTable(tableMarker);
-    String conditionValue = new String("invocation-only-value");
+    String conditionValue = new String("invocation-only-value-" + label);
     QueryCondition condition = table.name().eq(conditionValue);
     ProjectionMapping<RetentionView> mapping = projectionMapping();
     ProjectionSelection<RetentionView> selection = mapping.bind(table.id(), table.name());
-    CompiledQueryStructure structure =
-        QueryTestSupport.compile(SelectedResult.projection(selection), table, List.of(), condition);
-    QueryPlanCatalog catalog =
-        new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
+    DefaultSelectQuery<RetentionEntity, RetentionView> query =
+        (DefaultSelectQuery<RetentionEntity, RetentionView>) QueryTestSupport.operations(catalog)
+            .select(selection).from(table).where(condition);
     QueryCompilation<RetentionView> compilation =
-        catalog
-            .compiler()
-            .compileSelection(
-                SelectedResult.projection(selection),
-                structure,
-                List.of(),
-                false,
-                QueryPagination.None.INSTANCE,
-                List.of(),
-                QueryTestSupport.arguments(structure));
-    CachedQueryPlan<RetentionView> cached = CachedQueryPlan.from(compilation);
-    List<TrackedReference> references =
-        List.of(
+        query.compilation(QueryPagination.None.INSTANCE);
+    references.addAll(List.of(
+            tracked("query " + label, query),
+            tracked("compilation " + label, compilation),
             tracked("AST", compilation.ast()),
             tracked("argument container", compilation.argument()),
             tracked("argument value", conditionValue),
-            tracked("compiled structure", structure),
             tracked("condition", condition),
             tracked("table", table),
             tracked("table marker", tableMarker),
             tracked("selected column", table.id()),
             tracked("column expression", table.id().expression()),
             tracked("projection mapping", mapping),
-            tracked("projection selection", selection));
-    return new InvocationFixture(cached, references);
+            tracked("projection selection", selection)));
+    return CachedQueryPlan.from(compilation);
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -161,38 +160,26 @@ class CachedQueryPlanRetentionTest {
     ProjectionSelection<Object> selection = mapping.bind(KEY_TABLE.id());
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
-    QueryPlanDependencies dependencies = QueryTestSupport.dependencies(ENTITY);
-    QueryPlanKey key =
-        new QueryPlanKey(
-            baseStructure(),
-            QueryPlanKey.Dependencies.from(dependencies),
-            SelectedResult.projection(selection)
-                .planKeyResultShape(catalog.planIdentities())
-                .orElseThrow(),
-            QueryPlanKey.PlanVariant.content(QueryPaginationShape.none()),
-            List.of(),
-            catalog.dialectIdentity().orElseThrow(),
-            Map.of());
-    CompiledQueryPlan<Object, Object> plan =
-        new CompiledQueryPlan<>(
-            TestDialect.INSTANCE.id(),
-            new RenderedSql("SELECT 1", List.of()),
-            (statement, firstIndex, argument, context) -> firstIndex,
-            decoder);
-    catalog.sharedPlan(key, dependencies, () -> new CachedQueryPlan<>(plan));
+    QueryOperations operations = QueryTestSupport.operations(catalog);
+    DefaultSelectQuery<RetentionEntity, Object> first =
+        (DefaultSelectQuery<RetentionEntity, Object>) operations.select(selection).from(KEY_TABLE);
+    DefaultSelectQuery<RetentionEntity, Object> second =
+        (DefaultSelectQuery<RetentionEntity, Object>) operations.select(selection).from(KEY_TABLE);
+    assertSame(first.compilation(QueryPagination.None.INSTANCE).plan(),
+        second.compilation(QueryPagination.None.INSTANCE).plan());
+    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
+        catalog.projectionPlanCacheStatistics());
+    // Only catalog and weak references leave this method: no query L0 survives the clear barrier.
     List<TrackedReference> references =
         List.of(
+            tracked("first query", first),
+            tracked("second query", second),
             tracked("loader", loader),
             tracked("result class", loadedResultType),
             tracked("row decoder", decoder),
             tracked("projection mapping", mapping),
             tracked("projection selection", selection));
     return new LoaderFixture(catalog, references);
-  }
-
-  private static ResolvedStructureKey baseStructure() {
-    SelectStatement statement = new SelectStatement(KEY_TABLE.selections(), KEY_TABLE);
-    return SemanticValidator.analyzeComplete(statement).structureKey();
   }
 
   private static ProjectionMapping<RetentionView> projectionMapping() {
@@ -265,7 +252,8 @@ class CachedQueryPlanRetentionTest {
   }
 
   private record InvocationFixture(
-      CachedQueryPlan<RetentionView> cachedPlan, List<TrackedReference> references) {}
+      QueryPlanCatalog catalog, CachedQueryPlan<RetentionView> cachedPlan,
+      List<TrackedReference> references) {}
 
   private record LoaderFixture(QueryPlanCatalog catalog, List<TrackedReference> references) {
 

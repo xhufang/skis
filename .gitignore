@@ -36,7 +36,6 @@ build/
 /docs/task/
 /docs/report/
 /docs/guide/
-/docs/.obsidian
 
 ### Local development tool ###
 /.codegraph

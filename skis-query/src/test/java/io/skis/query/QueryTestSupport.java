@@ -1,6 +1,11 @@
 package io.skis.query;
 
+import io.skis.core.ExecutionContext;
+import io.skis.dialect.Dialect;
 import io.skis.jdbc.CompiledQueryPlan;
+import io.skis.jdbc.ConnectionProvider;
+import io.skis.jdbc.JdbcExecutor;
+import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
@@ -8,6 +13,8 @@ import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
+import java.sql.Connection;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
@@ -16,6 +23,29 @@ import org.jspecify.annotations.Nullable;
 final class QueryTestSupport {
 
   private QueryTestSupport() {}
+
+  static QueryOperations operations(QueryPlanCatalog catalog) {
+    return catalog.bind(new JdbcExecutor(new ConnectionProvider() {
+      @Override
+      public Connection acquire(ExecutionContext context) {
+        throw new AssertionError("compilation must not acquire JDBC");
+      }
+
+      @Override
+      public void release(Connection connection, ExecutionContext context) {}
+    }));
+  }
+
+  static QueryPlanCompiler compiler(EntityRuntimeRegistry registry, Dialect dialect) {
+    return new QueryPlanCompiler(
+        registry,
+        dialect,
+        new QueryPlanResolver(
+            new ProjectionPlanCache(0, Duration.ofMinutes(30), System::nanoTime),
+            new QueryPlanKeyAssembler(
+                registry, new QueryPlanKey.IdentityScope(registry),
+                QueryPlanKey.DialectIdentity.from(dialect), false)));
+  }
 
   static CompiledQueryStructure compile(
       QueryTable<?> root, List<QueryJoin> joins, @Nullable QueryCondition condition) {

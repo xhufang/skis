@@ -113,19 +113,10 @@ class ProjectionPlanCacheTest {
   void catalogOwnsStatisticsClearAndEntityInvalidation() {
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(RUNTIME_REGISTRY, testDialect(), 2, Duration.ofMinutes(1));
-    QueryPlanKey key = key("catalog-owned");
-    QueryPlanDependencies dependencies = dependencies(PET);
-    CachedQueryPlan<Pet> compiled = plan("SELECT catalog_owned");
-
-    assertSame(compiled, catalog.sharedPlan(key, dependencies, () -> compiled));
-    assertSame(
-        compiled,
-        catalog.sharedPlan(
-            key,
-            dependencies,
-            () -> {
-              throw new AssertionError("catalog cache hit must not compile");
-            }));
+    QueryOperations operations = QueryTestSupport.operations(catalog);
+    // The alias routes these fresh queries through the ordinary assembler/resolver path.
+    CompiledQueryPlan<Pet, Object> compiled = catalogQuery(operations);
+    assertSame(compiled, catalogQuery(operations));
     assertEquals(
         new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 2),
         catalog.projectionPlanCacheStatistics());
@@ -133,23 +124,20 @@ class ProjectionPlanCacheTest {
     assertEquals(
         new QueryPlanCacheStatistics(1, 1, 0, 1, 0, 2),
         catalog.projectionPlanCacheStatistics());
+    assertNotSame(compiled, catalogQuery(operations));
     catalog.clearProjectionPlans();
     assertEquals(
-        new QueryPlanCacheStatistics(1, 1, 0, 1, 0, 2),
+        new QueryPlanCacheStatistics(1, 2, 0, 2, 0, 2),
         catalog.projectionPlanCacheStatistics());
     assertEquals(0, catalog.invalidateProjectionPlans(OWNER));
     assertEquals(
-        new QueryPlanCacheStatistics(1, 1, 0, 1, 0, 2),
+        new QueryPlanCacheStatistics(1, 2, 0, 2, 0, 2),
         catalog.projectionPlanCacheStatistics());
-    assertThrows(
-        QueryValidationException.class,
-        () ->
-            catalog.sharedPlan(
-                key("foreign", OWNER),
-                dependencies(OWNER),
-                () -> {
-                  throw new AssertionError("unregistered dependency must fail before compilation");
-                }));
+  }
+
+  private static CompiledQueryPlan<Pet, Object> catalogQuery(QueryOperations operations) {
+    return ((DefaultSelectQuery<Pet, Pet>) operations.selectFrom(new PetTable().as("p")))
+        .compilation(QueryPagination.None.INSTANCE).plan();
   }
 
   @Test

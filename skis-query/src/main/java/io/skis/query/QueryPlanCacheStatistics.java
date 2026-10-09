@@ -7,6 +7,9 @@ package io.skis.query;
  * not run expiration maintenance. A {@code maximumSize} of zero means that L1 is disabled; that
  * snapshot has a zero size and no hit, miss, eviction, or invalidation activity.
  *
+ * <p>Query-object L0 hits, entity Fast Path slots, and explicit unsafe-identity bypasses do not access
+ * L1 and do not contribute to these counters. Clearing L1 does not clear an existing query's L0.
+ *
  * @param hitCount requests whose L1 lookup found a live cached plan
  * @param missCount requests whose L1 lookup did not find a live plan and then either registered or
  *     joined a flight, including callers that reused a plan published in the hand-off window

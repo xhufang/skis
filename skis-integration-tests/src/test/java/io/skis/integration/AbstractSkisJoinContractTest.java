@@ -117,6 +117,28 @@ abstract class AbstractSkisJoinContractTest {
   }
 
   @Test
+  void freshJoinQueriesSharePlansAcrossValuesAndTransactionBindings() {
+    var before = executor.queryPlanCacheStatistics();
+    for (long id : List.of(petAdaOneId, petGraceId)) {
+      JoinPetTable p = pet.as("cached_pet");
+      OwnerTable o = owner.as("cached_owner");
+      String expected = id == petAdaOneId ? "Ada" : "Grace";
+      assertEquals(expected, executor.select(o.name()).from(p)
+          .join(o).on(p.ownerId().eq(o.id())).where(p.id().eq(id))
+          .fetchOne().orElseThrow());
+    }
+    assertEquals(before.missCount() + 1, executor.queryPlanCacheStatistics().missCount());
+    assertEquals(before.hitCount() + 1, executor.queryPlanCacheStatistics().hitCount());
+    assertEquals("Grace", executor.inTransaction(session -> {
+      JoinPetTable p = pet.as("cached_pet");
+      OwnerTable o = owner.as("cached_owner");
+      return session.select(o.name()).from(p).join(o).on(p.ownerId().eq(o.id()))
+          .where(p.id().eq(petGraceId)).fetchOne().orElseThrow();
+    }));
+    assertEquals(before.hitCount() + 2, executor.queryPlanCacheStatistics().hitCount());
+  }
+
+  @Test
   void executesEveryJoinKindSharedByPostgreSqlAndH2() {
     List<Long> inner =
         executor
