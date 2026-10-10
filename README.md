@@ -32,30 +32,30 @@ so the same API covers single-table and joined results without reflection or sta
 The `0.2.5` milestone has established reusable execution-free SELECT descriptions and implemented
 the non-correlated/correlated `EXISTS`/`NOT EXISTS`, one-column `IN`/`NOT IN`, and nullable scalar
 subquery vertical slices, plus typed derived relations for `FROM` and Join sources.
-The active `0.2.6` milestone removes the obsolete benchmark suite and develops the plan-cache
-architecture without expanding the SQL feature surface. Benchmark implementation and execution stay
-frozen until every `0.2.x` development milestone is complete; a newly reviewed performance suite will
-then run during `0.3.0` release preparation. Aggregate/HAVING interoperability remains assigned to `0.2.9`.
-The bounded shared plan-cache container (T05) and T06 routing have passed CI. Ordinary queries now connect
-through per-query recent plans (L0), catalog-owned shared plans (L1), and compilation (L2), with explicit
-bypass reasons and invocation-local AST/argument binding. Zero capacity disables L1 while preserving
-L0 and entity Fast Path slots; L0 hits, Fast Path operations, and bypasses do not count as L1 activity.
-T06 review cleanup removes unused test-only catalog accessors and strengthens routing, concurrent
-pagination, per-terminal cache statistics, decoding, and lifecycle tests. T07 source now hands one
-immutable query-block analysis from semantic validation to opted-in dialect validation and rendering,
-while preserving legacy third-party validation/renderer fallbacks. Review follow-up removes COUNT's
-discarded constructor-time analysis and analysis-only temporary SELECT, adds count-stage hand-off and
-runtime-scope fallback contracts, and fixes empty-membership lowering so original and final structures
-are both validated even when the removed operand allocates no parameters. The final resolved-SPI
-provenance decision remains assigned to `0.2.7`;
-these contract tests await CI. This remains an internal snapshot change.
-These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
+The completed `0.2.6` milestone removes the obsolete benchmark suite and establishes the shared plan-cache,
+compilation, and parameter-ownership architecture without expanding the SQL feature surface. T03 through
+T09 have passed CI; T10 completes documentation synchronization and milestone closure. The next internal
+milestone is `0.2.7`, focused on API/SPI and dialect pipeline boundaries. Benchmark implementation and
+execution stay frozen until every `0.2.x` development milestone is complete; a newly reviewed performance
+suite will run during `0.3.0` release preparation. Aggregate/HAVING interoperability remains assigned to `0.2.9`.
+
+Ordinary queries now use per-query recent plans (L0), catalog-owned bounded shared plans (L1), and full
+compilation (L2), with explicit bypass reasons and invocation-local AST/argument binding. Zero capacity
+disables L1 while preserving L0 and entity Fast Path slots. Cache statistics, clear/invalidate behavior,
+concurrent miss handling, decoder identity, and ClassLoader cleanup have deterministic contract coverage.
+T07 passes one immutable query-block analysis from semantic validation to opted-in dialect validation and
+rendering while retaining legacy third-party fallbacks. T08 keeps captured values in an invocation-scoped
+final-slot carrier, validates pagination provenance, and prevents shared plans or JDBC resources from
+retaining invocation values. T09 completes the correctness, concurrency, API/ABI, database, and JDBC
+resource-ownership matrix. The final resolved-SPI provenance and lowering boundaries remain assigned to
+`0.2.7`. These changes are not published as a standalone patch release; they accumulate toward `0.3.0`. See
 [SQL expressions and semantic validation](docs/sql-expressions-and-semantic-validation.md),
 [EXISTS, IN, scalar, derived, and correlated SELECT descriptions](docs/subqueries.md),
 [explicit joins and generated result rows](docs/joins.md),
 [page and slice pagination](docs/pagination.md),
 [cursor and stream ownership](docs/cursor-and-stream.md), and
-[execution options and exception translation](docs/execution-options-and-exception-translation.md).
+[execution options and exception translation](docs/execution-options-and-exception-translation.md). The
+[architecture decision index](docs/adr/README.md) records each ADR's current implementation status.
 
 ## Requirements
 
