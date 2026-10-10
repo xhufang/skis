@@ -370,6 +370,7 @@ class JdbcExecutorTest {
     assertSame(statementCloseFailure, executionFailure.getSuppressed()[0]);
     assertEquals(1, thrown.getSuppressed().length);
     assertSame(releaseFailure, thrown.getSuppressed()[0]);
+    assertEquals(List.of("statement", "connection"), scenario.resourceCloseEvents);
   }
 
   @Test
@@ -455,6 +456,7 @@ class JdbcExecutorTest {
     assertEquals(0, scenario.resultSetCloses.get());
     assertEquals(0, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
+    assertEquals(List.of("connection"), scenario.resourceCloseEvents);
   }
 
   @Test
@@ -481,6 +483,7 @@ class JdbcExecutorTest {
     assertEquals(0, scenario.resultSetCloses.get());
     assertEquals(1, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
+    assertEquals(List.of("statement", "connection"), scenario.resourceCloseEvents);
   }
 
   @Test
@@ -510,6 +513,8 @@ class JdbcExecutorTest {
     assertEquals(1, scenario.resultSetCloses.get());
     assertEquals(1, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
+    assertEquals(
+        List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
   }
 
   @Test
@@ -582,6 +587,8 @@ class JdbcExecutorTest {
     assertEquals(1, scenario.resultSetCloses.get());
     assertEquals(1, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
+    assertEquals(
+        List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
   }
 
   @Test
@@ -617,6 +624,8 @@ class JdbcExecutorTest {
         "connection-release",
         ((QueryExecutionException) thrown.getSuppressed()[2]).phase());
     assertTrue(cursor.isClosed());
+    assertEquals(
+        List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
   }
 
   @Test
@@ -641,6 +650,8 @@ class JdbcExecutorTest {
         "connection-release",
         ((QueryExecutionException) thrown.getSuppressed()[1]).phase());
     assertTrue(cursor.isClosed());
+    assertEquals(
+        List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
   }
 
   @Test
