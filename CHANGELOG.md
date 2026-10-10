@@ -6,6 +6,11 @@
 
 ### Changed
 
+- T09 完成 0.2.6 键、缓存、编译、参数、并发、资源、公共入口、API/生成 ABI 和 ClassLoader 生命周期测试矩阵总复核。
+  既有合同已经覆盖相等/隔离、容量/过期/失效、并发 miss/clear、不同值并发、快照和分页追加；本轮进一步为
+  `JdbcExecutorTest` 的 prepare、Binder、execute、Decoder 及 cursor 读取/关闭失败补充实际资源关闭事件顺序，确保
+  ResultSet → Statement → Connection 的所有权顺序与 primary/suppressed 顺序同时受约束。没有修改生产 API、生成 ABI
+  或缓存实现；源码和静态复核完成、待 CI/真实数据库/API compatibility 验证，本地未编译运行且未执行 benchmark。
 - T08 将查询参数路径收敛为包内最终槽位载体：`QueryParameters` 在 ADR-0005 捕获边界完成一次快照后直接投影到
   `QueryArguments`，content、ordered、count 各自只携带最终语句保留的值；limit/offset/keyset 使用独立尾段，
   不再复制普通参数整表，null keyset anchor 不占逻辑槽。载体同时保存值无关 `QueryPaginationShape`，
