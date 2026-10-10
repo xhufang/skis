@@ -33,6 +33,7 @@ import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.SelectStatement;
 import java.sql.Connection;
+import java.util.Arrays;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -82,6 +83,90 @@ class QueryPaginationCompilationTest {
   }
 
   @Test
+  void rejectsValuesThatDoNotMatchTheFinalPaginationLayout() {
+    CompilerFixture fixture = compilerFixture();
+    QueryCondition predicate = TABLE.id().ge(10L);
+    CompiledQueryStructure structure = QueryTestSupport.compile(TABLE, List.of(), predicate);
+    QueryPagination pagination = new QueryPagination.Offset(20, 40);
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                fixture
+                    .compiler()
+                    .compileSelection(
+                        SelectedResult.entity(TABLE),
+                        structure,
+                        List.of(TABLE.id().asc()),
+                        false,
+                        pagination,
+                        List.of(),
+                        QueryTestSupport.arguments(structure)));
+
+    assertEquals(
+        "final statement requires 3 logical parameter values but received 1",
+        failure.getMessage());
+
+    QueryArguments wrongSegments =
+        QueryParameters.empty()
+            .valuesFor(List.of())
+            .withPagination(new QueryPagination.Keyset(1, List.of("wrong", 10L)));
+    QueryValidationException segmentFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                fixture
+                    .compiler()
+                    .compileSelection(
+                        SelectedResult.entity(TABLE),
+                        structure,
+                        List.of(TABLE.id().asc()),
+                        false,
+                        pagination,
+                        List.of(),
+                        wrongSegments));
+    assertEquals(
+        "final statement ordinary parameter value count must be 1 but was 0",
+        segmentFailure.getMessage());
+  }
+
+  @Test
+  void rejectsKeysetArgumentsWithDifferentNullMarkerPositions() {
+    CompilerFixture fixture = compilerFixture();
+    CompiledQueryStructure structure = QueryTestSupport.compile(TABLE, List.of(), null);
+    QueryPagination pagination =
+        new QueryPagination.Keyset(20, Arrays.asList(null, "tail"));
+    QueryArguments wrongShape =
+        QueryParameters.empty()
+            .valuesFor(List.of())
+            .withPagination(new QueryPagination.Keyset(20, Arrays.asList("head", null)));
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                fixture
+                    .compiler()
+                    .compileSelection(
+                        SelectedResult.entity(TABLE),
+                        structure,
+                        List.of(
+                            TABLE.nickname().asc().nullsFirst(),
+                            TABLE.name().asc()),
+                        false,
+                        pagination,
+                        List.of(),
+                        wrongShape));
+
+    assertEquals(
+        "final statement pagination shape must be "
+            + "QueryPaginationShape[mode=KEYSET, keysetNullMarkers=[true, false]] but was "
+            + "QueryPaginationShape[mode=KEYSET, keysetNullMarkers=[false, true]]",
+        failure.getMessage());
+  }
+
+  @Test
   void compilesNullableLexicographicKeysetWithTypedRepeatedBindings() {
     CompilerFixture fixture = compilerFixture();
     QueryCompilation<Pet> query =
@@ -110,6 +195,7 @@ class QueryPaginationCompilationTest {
     CompilerFixture fixture = compilerFixture();
     CompiledQueryStructure structure =
         QueryTestSupport.compile(SelectedResult.requiredScalar(TABLE.id()), TABLE, List.of(), null);
+    QueryPagination pagination = new QueryPagination.LimitOnly(11);
     QueryCompilation<OrderedRow<Long>> query =
         fixture
             .compiler()
@@ -118,8 +204,8 @@ class QueryPaginationCompilationTest {
                 structure,
                 List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
                 false,
-                new QueryPagination.LimitOnly(11),
-                QueryTestSupport.arguments(structure));
+                pagination,
+                QueryTestSupport.arguments(structure).withPagination(pagination));
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"nickname\" AS \"__skis_order_0\" "
@@ -234,6 +320,7 @@ class QueryPaginationCompilationTest {
     assertSame(countFirst.plan(), countSecond.plan());
     assertSame(countFirst.ast(), countSecond.ast());
     assertSame(countFirst.argument(), countSecond.argument());
+    assertSame(unpagedFirst.argument(), countFirst.argument());
   }
 
   @Test
@@ -294,7 +381,7 @@ class QueryPaginationCompilationTest {
   }
 
   private static List<@Nullable Object> arguments(QueryCompilation<?> compilation) {
-    return ((QueryArguments) compilation.argument()).values();
+    return (QueryArguments) compilation.argument();
   }
 
   private static <R> QueryCompilation<Long> compileCount(
@@ -325,7 +412,7 @@ class QueryPaginationCompilationTest {
             distinct,
             pagination,
             List.of(),
-            QueryTestSupport.arguments(structure));
+            QueryTestSupport.arguments(structure).withPagination(pagination));
   }
 
   private static CompilerFixture compilerFixture() {

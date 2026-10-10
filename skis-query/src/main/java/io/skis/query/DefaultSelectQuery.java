@@ -330,6 +330,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
     SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
+    QueryArguments statementArguments = queryAnalysis.arguments().withPagination(pagination);
     return plansByPagination.getOrCompile(
         finalState.sqlPagination(),
         () ->
@@ -340,8 +341,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                 finalState.distinct(),
                 pagination,
                 List.of(),
-                queryAnalysis.arguments()),
-        paginationArgument(queryAnalysis, pagination));
+                statementArguments),
+        statementArguments.planArgument());
   }
 
   ExecutionContext executionContext() {
@@ -352,6 +353,7 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     state.validateDistinctOrdering();
     SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
+    QueryArguments statementArguments = queryAnalysis.arguments().withPagination(pagination);
     return orderedPlansByPagination.getOrCompile(
         finalState.sqlPagination(),
         () ->
@@ -361,8 +363,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
                 finalState.orderBy(),
                 finalState.distinct(),
                 pagination,
-                queryAnalysis.arguments()),
-        paginationArgument(queryAnalysis, pagination));
+                statementArguments),
+        statementArguments.planArgument());
   }
 
   private boolean isFastPathShape(QueryPagination pagination) {
@@ -383,7 +385,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   private QueryCompilation<R> unpaginatedCompilation() {
     QueryAnalysis queryAnalysis = analysis();
     CachedPlan<R> cached = fastPlan();
-    return new QueryCompilation<>(cached.plan(), queryAnalysis.argument(), cached.ast());
+    return new QueryCompilation<>(
+        cached.plan(), queryAnalysis.arguments().planArgument(), cached.ast());
   }
 
   private CachedPlan<R> fastPlan() {
@@ -408,8 +411,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   QueryCompilation<Long> countCompilation() {
     QueryAnalysis queryAnalysis = countAnalysis();
     CompiledQueryStructure countStructure = queryAnalysis.structure();
-    List<@Nullable Object> countArguments = queryAnalysis.arguments();
-    Object countArgument = queryAnalysis.argument();
+    QueryArguments countArguments = queryAnalysis.arguments();
+    Object countArgument = countArguments.planArgument();
     CachedPlan<Long> existing = countPlan.get();
     if (existing != null) {
       return new QueryCompilation<>(existing.plan(), countArgument, existing.ast());
@@ -418,28 +421,10 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         compiler.compileCount(state.selected(), countStructure, state.distinct(), countArguments);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
-    CachedPlan<Long> effective = published == null ? cached : published;
-    return new QueryCompilation<>(effective.plan(), countArgument, effective.ast());
-  }
-
-  private Object paginationArgument(QueryAnalysis queryAnalysis, QueryPagination pagination) {
-    if (pagination == QueryPagination.None.INSTANCE) {
-      return queryAnalysis.argument();
+    if (published == null) {
+      return compiled;
     }
-    List<@Nullable Object> arguments = new ArrayList<>(queryAnalysis.arguments());
-    switch (pagination) {
-      case QueryPagination.None ignored -> {}
-      case QueryPagination.LimitOnly limit -> arguments.add(limit.limit());
-      case QueryPagination.Offset offset -> {
-        arguments.add(offset.limit());
-        arguments.add(offset.offset());
-      }
-      case QueryPagination.Keyset keyset -> {
-        keyset.values().stream().filter(Objects::nonNull).forEach(arguments::add);
-        arguments.add(keyset.limit());
-      }
-    }
-    return arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
+    return new QueryCompilation<>(published.plan(), countArgument, published.ast());
   }
 
   private QueryCompilation<Long> requireExplicitCount(CountQuery explicitCountQuery) {
@@ -462,10 +447,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private Slice<@Nullable R> resumeSlice(SliceContinuation continuation, int pageSize) {
-    validateContinuation(continuation);
+    List<@Nullable Object> keysetValues =
+        continuation.mode() == SliceContinuation.Mode.KEYSET
+            ? continuation.keysetValues()
+            : List.of();
+    validateContinuation(continuation, keysetValues);
     return switch (continuation.mode()) {
       case OFFSET -> fetchOffsetSlice(continuation.nextOffset(), pageSize);
-      case KEYSET -> fetchKeysetSlice(continuation, pageSize);
+      case KEYSET -> fetchKeysetSlice(keysetValues, pageSize);
     };
   }
 
@@ -488,9 +477,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
   }
 
   private Slice<@Nullable R> fetchKeysetSlice(
-      @Nullable SliceContinuation continuation, int pageSize) {
+      @Nullable List<@Nullable Object> anchors, int pageSize) {
     validatePaginationOrder(true);
-    List<@Nullable Object> anchors = continuation == null ? null : continuation.keysetValues();
     QueryPagination pagination =
         anchors == null
             ? new QueryPagination.LimitOnly(sizePlusOne(pageSize))
@@ -633,7 +621,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     }
   }
 
-  private void validateContinuation(SliceContinuation continuation) {
+  private void validateContinuation(
+      SliceContinuation continuation, List<@Nullable Object> keysetValues) {
     if (continuation.formatVersion() != SliceContinuation.FORMAT_VERSION) {
       throw new QueryValidationException("unsupported continuation format version");
     }
@@ -647,14 +636,13 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
           "continuation does not belong to this query structure, ordering, or parameter set");
     }
     if (continuation.mode() == SliceContinuation.Mode.KEYSET) {
-      List<@Nullable Object> values = continuation.keysetValues();
-      if (values.size() != state.orderBy().size()
+      if (keysetValues.size() != state.orderBy().size()
           || continuation.sqlTypes().size() != state.orderBy().size()) {
         throw new QueryValidationException("continuation ordering value count does not match");
       }
       for (int index = 0; index < state.orderBy().size(); index++) {
         SortSpecification sort = state.orderBy().get(index);
-        Object value = values.get(index);
+        Object value = keysetValues.get(index);
         if (continuation.sqlTypes().get(index) != sort.selectable().sqlType()
             || continuation.nullMarkers().get(index) != (value == null)
             || (value != null && !sort.selectable().javaType().isInstance(value))) {
@@ -848,12 +836,12 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
         state.appendJoin(type, joinedRelation, structure), appendedParameters, executionContext);
   }
 
-  private List<@Nullable Object> conditionArguments() {
+  private QueryArguments conditionArguments() {
     return analysis().arguments();
   }
 
   private Object fastArgument() {
-    return analysis().argument();
+    return analysis().arguments().planArgument();
   }
 
   private QueryAnalysis analysis() {
@@ -865,10 +853,8 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
       existing = analysis;
       if (existing == null) {
         CompiledQueryStructure structure = state.structure();
-        List<@Nullable Object> arguments = structure.arguments(parameters);
-        Object argument =
-            arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
-        existing = new QueryAnalysis(structure, argument);
+        QueryArguments arguments = structure.arguments(parameters);
+        existing = new QueryAnalysis(structure, arguments);
         analysis = existing;
       }
       return existing;
@@ -883,12 +869,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     synchronized (this) {
       existing = countAnalysis;
       if (existing == null) {
-        analysis();
+        QueryAnalysis contentAnalysis = analysis();
         CompiledQueryStructure structure = state.countStructure();
-        List<@Nullable Object> arguments = structure.projectedArguments(parameters);
-        Object argument =
-            arguments.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(arguments);
-        existing = new QueryAnalysis(structure, argument);
+        List<QueryParameter<?>> references = structure.parameterReferences();
+        QueryArguments arguments =
+            references.equals(contentAnalysis.structure().parameterReferences())
+                ? contentAnalysis.arguments()
+                : structure.projectedArguments(parameters);
+        existing = new QueryAnalysis(structure, arguments);
         countAnalysis = existing;
       }
       return existing;
@@ -951,15 +939,11 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     return (List<T>) (List<?>) values;
   }
 
-  private record QueryAnalysis(CompiledQueryStructure structure, Object argument) {
+  private record QueryAnalysis(CompiledQueryStructure structure, QueryArguments arguments) {
 
     private QueryAnalysis {
       Objects.requireNonNull(structure, "structure");
-      Objects.requireNonNull(argument, "argument");
-    }
-
-    private List<@Nullable Object> arguments() {
-      return argument instanceof QueryArguments(List<@Nullable Object> values) ? values : List.of();
+      Objects.requireNonNull(arguments, "arguments");
     }
   }
 
@@ -976,16 +960,14 @@ final class DefaultSelectQuery<E, R> implements SelectQuery<E, R> {
     private volatile @Nullable RecentPlan<T> recent;
 
     private QueryCompilation<T> getOrCompile(
-        QueryPaginationShape pagination,
-        Supplier<QueryCompilation<T>> compiler,
-        Object argument) {
+        QueryPaginationShape pagination, Supplier<QueryCompilation<T>> compiler, Object argument) {
       RecentPlan<T> existing = recent;
       if (existing != null && existing.pagination().equals(pagination)) {
         return new QueryCompilation<>(existing.plan().plan(), argument, existing.plan().ast());
       }
       QueryCompilation<T> compiled = Objects.requireNonNull(compiler.get(), "compiled query");
       recent = new RecentPlan<>(pagination, new CachedPlan<>(compiled.plan(), compiled.ast()));
-      return new QueryCompilation<>(compiled.plan(), argument, compiled.ast());
+      return compiled;
     }
 
     private record RecentPlan<T>(QueryPaginationShape pagination, CachedPlan<T> plan) {}

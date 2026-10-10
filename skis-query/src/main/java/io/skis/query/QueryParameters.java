@@ -1,6 +1,5 @@
 package io.skis.query;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -16,7 +15,7 @@ public final class QueryParameters {
   private final Map<QueryParameter<?>, Binding> bindings;
 
   private QueryParameters(IdentityHashMap<QueryParameter<?>, Binding> bindings) {
-    this.bindings = Collections.unmodifiableMap(new IdentityHashMap<>(bindings));
+    this.bindings = Collections.unmodifiableMap(bindings);
   }
 
   /** Returns the empty parameter environment. */
@@ -26,7 +25,10 @@ public final class QueryParameters {
 
   /** Creates an environment containing one captured binding. */
   public static <V> QueryParameters of(QueryParameter<V> parameter, @Nullable V value) {
-    return QueryParameters.builder().bind(parameter, value).build();
+    Objects.requireNonNull(parameter, "parameter");
+    IdentityHashMap<QueryParameter<?>, Binding> bindings = new IdentityHashMap<>(1);
+    bindings.put(parameter, capture(parameter, value));
+    return new QueryParameters(bindings);
   }
 
   /** Returns a builder that rejects repeated bindings of the same reference. */
@@ -36,9 +38,14 @@ public final class QueryParameters {
 
   /** Returns a new environment with one binding added. */
   public <V> QueryParameters bind(QueryParameter<V> parameter, @Nullable V value) {
-    Builder builder = new Builder(bindings);
-    builder.bind(parameter, value);
-    return builder.build();
+    Objects.requireNonNull(parameter, "parameter");
+    if (bindings.containsKey(parameter)) {
+      throw duplicate(parameter);
+    }
+    Binding captured = capture(parameter, value);
+    IdentityHashMap<QueryParameter<?>, Binding> appended = new IdentityHashMap<>(bindings);
+    appended.put(parameter, captured);
+    return new QueryParameters(appended);
   }
 
   /** Returns the number of parameter references bound by this environment. */
@@ -103,27 +110,27 @@ public final class QueryParameters {
     }
   }
 
-  /** Returns captured values for the logical slots retained by one final statement. */
-  List<@Nullable Object> valuesFor(List<QueryParameter<?>> parameters) {
+  /** Projects captured values directly into the logical slots retained by one final statement. */
+  QueryArguments valuesFor(List<QueryParameter<?>> parameters) {
     Objects.requireNonNull(parameters, "parameters");
-    List<@Nullable Object> values = new ArrayList<>(parameters.size());
-    for (QueryParameter<?> parameter : parameters) {
+    @Nullable Object[] values = new @Nullable Object[parameters.size()];
+    for (int index = 0; index < parameters.size(); index++) {
+      QueryParameter<?> parameter = parameters.get(index);
       Objects.requireNonNull(parameter, "parameter");
       Binding binding = bindings.get(parameter);
       if (binding == null) {
         throw new QueryValidationException("missing binding for " + describe(parameter));
       }
-      values.add(binding.value());
+      values[index] = binding.value();
     }
-    return Collections.unmodifiableList(values);
+    return QueryArguments.fromProjectedValues(values);
   }
 
   private static <V> Binding capture(QueryParameter<V> parameter, @Nullable V value) {
     Objects.requireNonNull(parameter, "parameter");
     if (value == null) {
       if (!parameter.nullability().isNullable()) {
-        throw new QueryValidationException(
-            "null is not allowed for " + describe(parameter));
+        throw new QueryValidationException("null is not allowed for " + describe(parameter));
       }
       return new Binding(null);
     }
@@ -160,10 +167,6 @@ public final class QueryParameters {
       this.bindings = new IdentityHashMap<>();
     }
 
-    private Builder(Map<QueryParameter<?>, Binding> existing) {
-      this.bindings = new IdentityHashMap<>(existing);
-    }
-
     /** Captures one value immediately and associates it with the reference by object identity. */
     public <V> Builder bind(QueryParameter<V> parameter, @Nullable V value) {
       Objects.requireNonNull(parameter, "parameter");
@@ -176,7 +179,7 @@ public final class QueryParameters {
 
     /** Builds an immutable parameter environment. */
     public QueryParameters build() {
-      return bindings.isEmpty() ? EMPTY : new QueryParameters(bindings);
+      return bindings.isEmpty() ? EMPTY : new QueryParameters(new IdentityHashMap<>(bindings));
     }
   }
 }

@@ -177,7 +177,7 @@ class JoinQueryDslTest {
     QueryCompilation<Long> legacyCompilation = legacy.compilation(QueryPagination.None.INSTANCE);
 
     assertEquals(legacyCompilation.plan().sql(), describedCompilation.plan().sql());
-    assertEquals(List.of("Mimi"), ((QueryArguments) describedCompilation.argument()).values());
+    assertEquals(List.of("Mimi"), (QueryArguments) describedCompilation.argument());
 
     QueryParameter<Long> firstId = Sql.parameter(Long.class, "firstId");
     QueryParameter<Long> secondId = Sql.parameter(Long.class, "secondId");
@@ -193,7 +193,7 @@ class JoinQueryDslTest {
     QueryCompilation<Long> membershipCompilation =
         membershipQuery.compilation(QueryPagination.None.INSTANCE);
     assertEquals(
-        List.of(1L, 2L), ((QueryArguments) membershipCompilation.argument()).values());
+        List.of(1L, 2L), (QueryArguments) membershipCompilation.argument());
   }
 
   @Test
@@ -703,7 +703,7 @@ class JoinQueryDslTest {
             + "ON \"pet\".\"owner_id\" = \"owner\".\"id\" AND \"owner\".\"owner_name\" = ? "
             + "WHERE \"pet\".\"id\" > ?",
         compilation.plan().sql());
-    assertEquals(List.of("Ada", 10L), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of("Ada", 10L), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1),
         compilation.plan().renderedSql().parameters().stream()
@@ -771,7 +771,7 @@ class JoinQueryDslTest {
             .map(io.skis.sql.ast.TableOccurrence::occurrenceOrdinal)
             .toList());
     assertSame(scope.require(OWNER_TABLE).model(), scope.require(reviewer).model());
-    assertEquals(List.of("Ada", "Grace", "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of("Ada", "Grace", "Mimi"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1, 2),
         compilation.plan().renderedSql().parameters().stream()
@@ -1000,7 +1000,7 @@ class JoinQueryDslTest {
     assertSame(first.plan(), second.plan());
     assertSame(first.ast(), second.ast());
     assertSame(first.argument(), second.argument());
-    assertEquals(List.of("Ada", "Mimi"), ((QueryArguments) first.argument()).values());
+    assertEquals(List.of("Ada", "Mimi"), (QueryArguments) first.argument());
     assertSame(firstCount.plan(), secondCount.plan());
     assertSame(firstCount.ast(), secondCount.ast());
     assertSame(firstCount.argument(), secondCount.argument());
@@ -1051,7 +1051,7 @@ class JoinQueryDslTest {
             + "WHERE \"exists_pet\".\"owner_id\" = \"pet\".\"id\" "
             + "AND \"exists_pet\".\"pet_name\" = ?)",
         compilation.plan().sql());
-    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of(7L, "Mimi"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1),
         compilation.plan().renderedSql().parameters().stream()
@@ -1059,7 +1059,7 @@ class JoinQueryDslTest {
             .toList());
     assertTrue(count.plan().sql().startsWith("SELECT COUNT(*)"));
     assertTrue(count.plan().sql().contains("EXISTS ("));
-    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) count.argument()).values());
+    assertEquals(List.of(7L, "Mimi"), (QueryArguments) count.argument());
   }
 
   @Test
@@ -1103,7 +1103,7 @@ class JoinQueryDslTest {
             + "\"membership_pet\".\"pet_name\" = ? "
             + "ORDER BY \"membership_pet\".\"id\" ASC)",
         compilation.plan().sql());
-    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of(7L, "Mimi"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1),
         compilation.plan().renderedSql().parameters().stream()
@@ -1115,7 +1115,7 @@ class JoinQueryDslTest {
         analysis.nestedBlocks().getFirst().kind());
     assertTrue(analysis.nestedBlocks().getFirst().analysis().correlated());
     assertTrue(count.plan().sql().contains(" IN (SELECT "));
-    assertEquals(List.of(7L, "Mimi"), ((QueryArguments) count.argument()).values());
+    assertEquals(List.of(7L, "Mimi"), (QueryArguments) count.argument());
   }
 
   @Test
@@ -1161,7 +1161,7 @@ class JoinQueryDslTest {
             + "\"scalar_owner\" WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" "
             + "AND \"scalar_owner\".\"owner_name\" = ?) DESC NULLS LAST",
         compilation.plan().sql());
-    assertEquals(List.of("Ada", "Ada", "Ada"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of("Ada", "Ada", "Ada"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1, 2),
         compilation.plan().renderedSql().parameters().stream()
@@ -1180,7 +1180,7 @@ class JoinQueryDslTest {
             + "WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" AND "
             + "\"scalar_owner\".\"owner_name\" = ?) IS NOT NULL",
         count.plan().sql());
-    assertEquals(List.of("Ada"), ((QueryArguments) count.argument()).values());
+    assertEquals(List.of("Ada"), (QueryArguments) count.argument());
     assertEquals(
         9L,
         compilation
@@ -1271,8 +1271,8 @@ class JoinQueryDslTest {
       assertEquals(
           "SELECT COUNT(*) FROM \"shelter\".\"pet\" WHERE " + predicate,
           count.plan().sql());
-      assertEquals(List.of(7L), ((QueryArguments) content.argument()).values());
-      assertEquals(List.of(7L), ((QueryArguments) count.argument()).values());
+      assertEquals(List.of(7L), (QueryArguments) content.argument());
+      assertEquals(List.of(7L), (QueryArguments) count.argument());
       assertEquals(
           List.of(0),
           content.plan().renderedSql().parameters().stream()
@@ -1345,7 +1345,7 @@ class JoinQueryDslTest {
 
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
 
-    assertEquals(List.of("Ada", "Grace"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of("Ada", "Grace"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1),
         compilation.plan().renderedSql().parameters().stream()
@@ -1398,7 +1398,7 @@ class JoinQueryDslTest {
             + "\"scalar_owner\".\"owner_name\" = ?) FROM \"shelter\".\"pet\" WHERE "
             + "\"pet\".\"id\" = ? ORDER BY 1 DESC NULLS FIRST",
         content.plan().sql());
-    assertEquals(List.of("Ada", 7L), ((QueryArguments) content.argument()).values());
+    assertEquals(List.of("Ada", 7L), (QueryArguments) content.argument());
     assertEquals(
         List.of(0, 1),
         content.plan().renderedSql().parameters().stream()
@@ -1408,9 +1408,9 @@ class JoinQueryDslTest {
 
     QueryCompilation<Long> page = query.compilation(new QueryPagination.Offset(2, 0));
     assertTrue(page.plan().sql().endsWith("ORDER BY 1 DESC NULLS FIRST LIMIT ? OFFSET ?"));
-    assertEquals(List.of("Ada", 7L, 2, 0L), ((QueryArguments) page.argument()).values());
+    assertEquals(List.of("Ada", 7L, 2, 0L), (QueryArguments) page.argument());
     QueryCompilation<Long> count = query.countCompilation();
-    assertEquals(List.of("Ada", 7L), ((QueryArguments) count.argument()).values());
+    assertEquals(List.of("Ada", 7L), (QueryArguments) count.argument());
     assertEquals(
         List.of(0, 0, 1),
         count.plan().renderedSql().parameters().stream()
@@ -1631,7 +1631,7 @@ class JoinQueryDslTest {
             .allMatch(
                 nested ->
                     nested.kind() == QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY));
-    assertEquals(List.of("Ada", "Ada"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of("Ada", "Ada"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1),
         compilation.plan().renderedSql().parameters().stream()
@@ -1661,7 +1661,7 @@ class JoinQueryDslTest {
     assertEquals(2, analysis.nestedBlocks().size());
     assertEquals("$/WHERE[0]#0", analysis.nestedBlocks().get(0).analysis().path().toString());
     assertEquals("$/WHERE[0]#1", analysis.nestedBlocks().get(1).analysis().path().toString());
-    assertEquals(List.of("Mimi", "Mimi"), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of("Mimi", "Mimi"), (QueryArguments) compilation.argument());
     assertEquals(
         List.of(0, 1),
         compilation.plan().renderedSql().parameters().stream()

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.sql.Timestamp;
+import java.util.Arrays;
 import java.util.List;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,35 @@ class QueryParametersTest {
   }
 
   @Test
+  void appendsOnlyFinalPaginationSlotsWithoutResnapshottingBaseValues() {
+    QueryParameter<byte[]> bytes = Sql.parameter(byte[].class, "bytes");
+    byte[] source = {1, 2, 3};
+    QueryArguments base = QueryParameters.of(bytes, source).valuesFor(List.of(bytes));
+    source[0] = 9;
+
+    QueryArguments offset = base.withPagination(new QueryPagination.Offset(12, 34));
+    QueryArguments keyset =
+        base.withPagination(
+            new QueryPagination.Keyset(9, Arrays.asList(null, "anchor", 4L)));
+
+    assertSame(base, base.withPagination(QueryPagination.None.INSTANCE));
+    assertEquals(QueryPaginationShape.none(), base.paginationShape());
+    assertArrayEquals(new byte[] {1, 2, 3}, (byte[]) base.getFirst());
+    assertSame(base.getFirst(), offset.getFirst());
+    assertEquals(List.of(12, 34L), offset.subList(1, offset.size()));
+    assertEquals(
+        QueryPaginationShape.from(new QueryPagination.Offset(99, 100)),
+        offset.paginationShape());
+    assertSame(base.getFirst(), keyset.getFirst());
+    assertEquals(List.of("anchor", 4L, 9), keyset.subList(1, keyset.size()));
+    assertEquals(
+        QueryPaginationShape.keyset(List.of(true, false, false)),
+        keyset.paginationShape());
+    assertThrows(UnsupportedOperationException.class, () -> offset.add("unexpected"));
+    assertEquals("QueryArguments[size=3, values=<redacted>]", offset.toString());
+  }
+
+  @Test
   void validatesDuplicateMissingExtraAndRuntimeJavaTypeBindings() {
     QueryParameter<Long> used = Sql.parameter(Long.class, "used");
     QueryParameter<Long> extra = Sql.parameter(Long.class, "extra");
@@ -100,6 +130,20 @@ class QueryParametersTest {
     assertTrue(empty.isEmpty());
     assertEquals(1, bound.size());
     assertNull(bound.valuesFor(List.of(parameter)).getFirst());
+  }
+
+  @Test
+  void builderResultsRemainIndependentWhenTheBuilderIsReused() {
+    QueryParameter<Long> first = Sql.parameter(Long.class, "first");
+    QueryParameter<Long> second = Sql.parameter(Long.class, "second");
+    QueryParameters.Builder builder = QueryParameters.builder().bind(first, 1L);
+
+    QueryParameters firstResult = builder.build();
+    QueryParameters secondResult = builder.bind(second, 2L).build();
+
+    assertEquals(1, firstResult.size());
+    assertEquals(List.of(1L), firstResult.valuesFor(List.of(first)));
+    assertEquals(List.of(1L, 2L), secondResult.valuesFor(List.of(first, second)));
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})

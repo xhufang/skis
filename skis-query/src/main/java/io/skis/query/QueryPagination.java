@@ -1,8 +1,7 @@
 package io.skis.query;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Internal value-bearing request used while compiling one terminal operation. */
@@ -34,7 +33,9 @@ sealed interface QueryPagination
   record Keyset(int limit, List<@Nullable Object> values) implements QueryPagination {
     public Keyset {
       requireLimit(limit);
-      values = Collections.unmodifiableList(new ArrayList<>(values));
+      // This request is invocation-local and consumed synchronously. The final-slot carrier takes
+      // the retained values it needs, while persistent continuations keep their own deep snapshot.
+      Objects.requireNonNull(values, "values");
     }
   }
 

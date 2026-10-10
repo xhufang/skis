@@ -165,8 +165,8 @@ class EntityPlanSetTest {
     QueryCondition fifi = TABLE.name().eq("Fifi");
 
     assertSame(selectPlan(plans, TABLE, mimi), selectPlan(plans, TABLE, fifi));
-    assertEquals(List.of("Mimi"), ((QueryArguments) argument(TABLE, mimi)).values());
-    assertEquals(List.of("Fifi"), ((QueryArguments) argument(TABLE, fifi)).values());
+    assertEquals(List.of("Mimi"), (QueryArguments) argument(TABLE, mimi));
+    assertEquals(List.of("Fifi"), (QueryArguments) argument(TABLE, fifi));
     QueryCondition firstComplex = TABLE.name().like("Mi%").and(TABLE.id().between(1L, 9L));
     QueryCondition secondComplex = TABLE.name().like("Mo%").and(TABLE.id().between(2L, 10L));
     CompiledQueryStructure firstCompiled =
@@ -195,7 +195,7 @@ class EntityPlanSetTest {
             + "WHERE (\"pet\".\"pet_name\" IS NULL OR \"pet\".\"pet_name\" LIKE ?) "
             + "AND \"pet\".\"id\" >= ?",
         plan.sql());
-    assertEquals(List.of("Mi%", 1L), ((QueryArguments) argument(TABLE, predicate)).values());
+    assertEquals(List.of("Mi%", 1L), (QueryArguments) argument(TABLE, predicate));
   }
 
   @Test
@@ -332,7 +332,7 @@ class EntityPlanSetTest {
             .bind(
                 statement,
                 1,
-                new QueryArguments(arguments(structure)),
+                arguments(structure).planArgument(),
                 JdbcWriteContext.EMPTY);
 
     assertEquals(2, nextIndex);

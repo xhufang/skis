@@ -380,7 +380,13 @@ class QueryPlanKeyTest {
               .appendJoin(JoinType.CROSS, b, null)
               .orderBy(order);
       QueryCompilation<OrderedRow<Pet>> query =
-          compiler.compileOrdered(selected, state.structure(), order, false, pagination, List.of());
+          compiler.compileOrdered(
+              selected,
+              state.structure(),
+              order,
+              false,
+              pagination,
+              QueryTestSupport.arguments(state.structure()).withPagination(pagination));
       QueryBlockAnalysis analysis =
           SemanticValidator.analyzeComplete((SelectStatement) query.ast());
       QueryPlanDependencies sources = QueryPlanDependencies.from(analysis);
