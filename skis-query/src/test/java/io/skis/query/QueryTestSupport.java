@@ -64,7 +64,7 @@ final class QueryTestSupport {
     return (condition == null ? state : state.where(condition)).structure();
   }
 
-  static List<@Nullable Object> arguments(CompiledQueryStructure structure) {
+  static QueryArguments arguments(CompiledQueryStructure structure) {
     return structure.arguments(structure.validationStructure().parameters());
   }
 
@@ -74,8 +74,7 @@ final class QueryTestSupport {
   }
 
   static Object argument(QueryTable<?> table, @Nullable QueryCondition condition) {
-    List<@Nullable Object> values = arguments(compile(table, List.of(), condition));
-    return values.isEmpty() ? NoParameters.INSTANCE : new QueryArguments(values);
+    return arguments(compile(table, List.of(), condition)).planArgument();
   }
 
   static QueryPlanDependencies dependencies(EntityMeta<?>... entities) {

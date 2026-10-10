@@ -247,13 +247,13 @@ record CompiledQueryStructure(
     return validationSource == null ? this : validationSource;
   }
 
-  List<@Nullable Object> arguments(QueryParameters suppliedParameters) {
+  QueryArguments arguments(QueryParameters suppliedParameters) {
     Objects.requireNonNull(suppliedParameters, "suppliedParameters");
     suppliedParameters.validateFor(validationStructure().parameterReferences());
     return suppliedParameters.valuesFor(parameterReferences);
   }
 
-  List<@Nullable Object> projectedArguments(QueryParameters validatedParameters) {
+  QueryArguments projectedArguments(QueryParameters validatedParameters) {
     return Objects.requireNonNull(validatedParameters, "validatedParameters")
         .valuesFor(parameterReferences);
   }

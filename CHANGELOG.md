@@ -6,6 +6,18 @@
 
 ### Changed
 
+- T08 将查询参数路径收敛为包内最终槽位载体：`QueryParameters` 在 ADR-0005 捕获边界完成一次快照后直接投影到
+  `QueryArguments`，content、ordered、count 各自只携带最终语句保留的值；limit/offset/keyset 使用独立尾段，
+  不再复制普通参数整表，null keyset anchor 不占逻辑槽。载体同时保存值无关 `QueryPaginationShape`，
+  `QueryPlanCompiler` 在 resolver 前校验普通段、最终总数及分页 mode/null-marker provenance，拒绝同长度但 marker 位置
+  错配的 keyset 载体；编译器只构造结构布局，不再维护第二份值 List；content/count 最终引用顺序一致时复用基础载体，
+  恢复 continuation 时只读取一次防御性
+  anchor 快照，首次 L0/count 编译也不再重包参数。
+  有序 Decoder 新建的 row-local anchor List 直接移交不可变包装，不再为每一行二次复制。
+  当前未引入共享或可复用对象缓冲，`ParameterBinder` 文档明确调用期所有权和异常清理要求；删除仅供测试调用的
+  `QueryArguments.empty()/values()`，测试改走真实参数投影或只读 List 合同。新增 ADR-0008 独立记录最终载体、分页
+  provenance 与 Binder 所有权；公共参数 API/生成 ABI 未扩大。对应快照、最终槽位、分页顺序、同长度 marker 错配和
+  并发值隔离合同测试源码及静态复核已完成、待 CI；按项目约定未在本地编译运行，也未执行 benchmark 或报告性能数字。
 - T07 以不可变 `QueryCompilationContext` 收敛 SELECT/COUNT 编译阶段：同一最终语句只产生一次完整查询块分析，
   resolved 方言能力校验与标准 Renderer 直接消费该结果，H2/PostgreSQL Renderer 委托层同步转发，计划编译不再重复解析。
   PostgreSQL/H2 显式 opt-in；旧第三方

@@ -2,6 +2,7 @@ package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.skis.dialect.Dialect;
 import io.skis.dialect.DialectCapabilities;
@@ -167,6 +168,9 @@ class CompiledQueryPlanConcurrencyTest {
       orderBuffers.put(observed.decoded().orderValues(), Boolean.TRUE);
     }
     assertEquals(INVOCATIONS, orderBuffers.size());
+    assertThrows(
+        UnsupportedOperationException.class,
+        () -> observations.getFirst().decoded().orderValues().clear());
   }
 
   @Test
@@ -242,8 +246,15 @@ class CompiledQueryPlanConcurrencyTest {
       CompiledQueryPlan<R, Object> plan,
       IntFunction<Object> parameter,
       IntFunction<Map<Integer, Object>> row) throws Exception {
+    QueryParameter<Object> reference = Sql.parameter(Object.class, "concurrentValue");
     return invokeConcurrently(
-        index -> new Invocation<>(plan, new QueryArguments(List.of(parameter.apply(index)))), row);
+        index ->
+            new Invocation<>(
+                plan,
+                QueryParameters.of(reference, parameter.apply(index))
+                    .valuesFor(List.of(reference))
+                    .planArgument()),
+        row);
   }
 
   private static <R> List<Observation<R>> invokeConcurrently(

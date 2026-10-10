@@ -372,14 +372,47 @@ class SharedQueryPlanRoutingTest {
     SelectedResult<Long> selected = SelectedResult.requiredScalar(table.id);
     CompiledQueryStructure structure = QueryTestSupport.compile(selected, table, List.of(), null);
     List<SortSpecification> order = List.of(table.id.asc());
-    QueryCompilation<Long> content = fixture.catalog().compiler().compileSelection(
-        selected, structure, order, false, new QueryPagination.LimitOnly(3), List.of(), List.of());
-    QueryCompilation<OrderedRow<Long>> ordered = fixture.catalog().compiler().compileOrdered(
-        selected, structure, order, false, new QueryPagination.LimitOnly(3), List.of());
-    QueryCompilation<OrderedRow<Long>> repeated = fixture.catalog().compiler().compileOrdered(
-        selected, structure, order, false, new QueryPagination.LimitOnly(9), List.of());
-    QueryCompilation<Long> count = fixture.catalog().compiler().compileCount(
-        selected, structure, false, List.of());
+    QueryPagination firstPage = new QueryPagination.LimitOnly(3);
+    QueryPagination laterPage = new QueryPagination.LimitOnly(9);
+    QueryCompilation<Long> content =
+        fixture
+            .catalog()
+            .compiler()
+            .compileSelection(
+                selected,
+                structure,
+                order,
+                false,
+                firstPage,
+                List.of(),
+                QueryTestSupport.arguments(structure).withPagination(firstPage));
+    QueryCompilation<OrderedRow<Long>> ordered =
+        fixture
+            .catalog()
+            .compiler()
+            .compileOrdered(
+                selected,
+                structure,
+                order,
+                false,
+                firstPage,
+                QueryTestSupport.arguments(structure).withPagination(firstPage));
+    QueryCompilation<OrderedRow<Long>> repeated =
+        fixture
+            .catalog()
+            .compiler()
+            .compileOrdered(
+                selected,
+                structure,
+                order,
+                false,
+                laterPage,
+                QueryTestSupport.arguments(structure).withPagination(laterPage));
+    QueryCompilation<Long> count =
+        fixture
+            .catalog()
+            .compiler()
+            .compileCount(selected, structure, false, QueryTestSupport.arguments(structure));
     assertEquals(content.plan().sql(), ordered.plan().sql());
     assertNotSame(content.plan(), ordered.plan());
     assertSame(ordered.plan(), repeated.plan());

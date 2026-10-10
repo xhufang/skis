@@ -242,7 +242,7 @@ class DerivedRelationDslTest {
             + "WHERE \"inner_pet\".\"id\" > ?) AS \"filtered_pets\" "
             + "WHERE \"filtered_pets\".\"pet_id\" < ?",
         compilation.plan().sql());
-    assertEquals(List.of(10L, 50L), ((QueryArguments) compilation.argument()).values());
+    assertEquals(List.of(10L, 50L), (QueryArguments) compilation.argument());
     assertEquals(
         42L,
         compilation
