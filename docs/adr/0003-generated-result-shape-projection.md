@@ -104,7 +104,7 @@ APT 生成语义等价于：
 ```java
 public final class PetOwnerViewProjection {
 
-  private static final ProjectionMapping<PetOwnerView> MAPPING = /* generated */;
+  private static final ProjectionMapping<PetOwnerView> MAPPING = generatedMapping();
 
   public static ProjectionSelection<PetOwnerView> of(
       NonNullSelectable<Long> petId,
@@ -127,12 +127,14 @@ public final class PetOwnerViewProjection {
 ### 3. 查询入口统一为结果形状
 
 ```java
-executor
-    .select(PetOwnerViewProjection.of(pet.id(), owner.name()))
-    .from(pet)
-    .leftJoin(owner)
-    .on(pet.ownerId().eq(owner.id()))
-    .fetchList();
+void queryExample() {
+  executor
+      .select(PetOwnerViewProjection.of(pet.id(), owner.name()))
+      .from(pet)
+      .leftJoin(owner)
+      .on(pet.ownerId().eq(owner.id()))
+      .fetchList();
+}
 ```
 
 - 删除 `selectProjection(QueryTable<E>, Class<R>)`。
@@ -228,7 +230,9 @@ Decoder 逐行阶段只进行按下标的 Codec 读取、非空防御检查和�
 @SkisProjection(entity = Pet.class)
 public record PetSummary(Long id, String name) {}
 
-executor.selectProjection(pet, PetSummary.class).fetchList();
+void oldQueryExample() {
+  executor.selectProjection(pet, PetSummary.class).fetchList();
+}
 ```
 
 迁移为：
@@ -237,10 +241,12 @@ executor.selectProjection(pet, PetSummary.class).fetchList();
 @SkisProjection
 public record PetSummary(Long id, String name) {}
 
-executor
-    .select(PetSummaryProjection.of(pet.id(), pet.name()))
-    .from(pet)
-    .fetchList();
+void migratedQueryExample() {
+  executor
+      .select(PetSummaryProjection.of(pet.id(), pet.name()))
+      .from(pet)
+      .fetchList();
+}
 ```
 
 - 提升生成 ABI，并在旧生成代码与新 runtime 混用时 fail-fast。

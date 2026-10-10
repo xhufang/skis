@@ -4,7 +4,7 @@
 
 SKIS is a Java 21 JDBC micro-ORM focused on generated, reflection-free metadata and predictable
 single-table operations. Version 0.2 is suitable for evaluation and small controlled services;
-its API may still change before 1.0 and it is not yet a production-support release.
+its API may still change before 1.0, and it is not yet a production-support release.
 
 ## Implemented scope
 
@@ -121,11 +121,13 @@ Compilation generates `PetMeta`, `PetTable`, binders, decoders, and runtime inde
 executor then discovers them without classpath scanning:
 
 ```java
-SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
-executor.insert(PetMeta.ENTITY, new Pet(1L, "Mimi", null));
-Pet stored = executor.findById(PetMeta.ENTITY, 1L).orElseThrow();
-executor.updateById(PetMeta.ENTITY, new Pet(1L, "Momo", stored.version()));
-executor.deleteById(PetMeta.ENTITY, 1L);
+void crudExample() {
+    SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
+    executor.insert(PetMeta.ENTITY, new Pet(1L, "Mimi", null));
+    Pet stored = executor.findById(PetMeta.ENTITY, 1L).orElseThrow();
+    executor.updateById(PetMeta.ENTITY, new Pet(1L, "Momo", stored.version()));
+    executor.deleteById(PetMeta.ENTITY, 1L);
+}
 ```
 
 For a generated result row, declare only its constructor contract and bind columns explicitly:
@@ -134,11 +136,13 @@ For a generated result row, declare only its constructor contract and bind colum
 @SkisProjection
 public record PetSummary(Long id, String name) {}
 
-List<PetSummary> rows =
-    executor
-        .select(PetSummaryProjection.of(pet.id(), pet.name()))
-        .from(pet)
-        .fetchList();
+void projectionExample() {
+    List<PetSummary> rows =
+        executor
+            .select(PetSummaryProjection.of(pet.id(), pet.name()))
+            .from(pet)
+            .fetchList();
+}
 ```
 
 The generated `of(...)` method has fixed, typed parameters. Joined projections use the same entry
@@ -147,13 +151,15 @@ point; final Join scope and effective nullability are validated before SQL execu
 Explicit joins use generated table expressions and a mandatory ON stage for every non-CROSS form:
 
 ```java
-List<PetOwnerView> rows =
-    executor
-        .select(PetOwnerViewProjection.of(pet.id(), pet.name(), owner.name()))
-        .from(pet)
-        .leftJoin(owner)
-        .on(pet.ownerId().eq(owner.id()))
-        .fetchList();
+void joinedProjectionExample() {
+    List<PetOwnerView> rows =
+        executor
+            .select(PetOwnerViewProjection.of(pet.id(), pet.name(), owner.name()))
+            .from(pet)
+            .leftJoin(owner)
+            .on(pet.ownerId().eq(owner.id()))
+            .fetchList();
+}
 ```
 
 Join rows are not deduplicated by entity ID. Outer-join selections must explicitly accept effective
@@ -161,16 +167,18 @@ SQL NULL, and paginated joins must order by enough occurrence keys to identify e
 the [Join guide](docs/joins.md) for aliases, ON scope, nullable entities, distinct, count, and
 continuation rules.
 
-A SELECT can also be constructed independently from an executor and bound only when it is adapted
+A SELECT can also be constructed independently of an executor and bound only when it is adapted
 for top-level execution:
 
 ```java
-QueryParameter<String> petName = Sql.parameter(String.class, "petName");
-NonNullSingleColumnSelect<Long> petIds =
-    Sql.select(pet.id()).from(pet).where(pet.name().eq(petName));
+void reusableQueryExample() {
+    QueryParameter<String> petName = Sql.parameter(String.class, "petName");
+    NonNullSingleColumnSelect<Long> petIds =
+        Sql.select(pet.id()).from(pet).where(pet.name().eq(petName));
 
-List<Long> ids =
-    executor.query(petIds, QueryParameters.of(petName, "Mimi")).fetchList();
+    List<Long> ids =
+        executor.query(petIds, QueryParameters.of(petName, "Mimi")).fetchList();
+}
 ```
 
 The description has no terminal operations and captures no ordinary values. One-column shape says
@@ -192,11 +200,11 @@ semantics.
 
 ## Supported databases
 
-| Database | 0.2 status |
-| --- | --- |
-| PostgreSQL 16 / pgJDBC 42.7.11 | Query, all five explicit Join forms, correlated EXISTS/IN/scalar subqueries, derived tables, sorting/pagination, mutation, transaction, projection, and JDBC type contract |
-| H2 2.4.240 | Query, INNER/LEFT/RIGHT/CROSS Join, correlated EXISTS/IN/scalar subqueries, derived tables, pagination, consumer smoke, example, and integration tests; FULL JOIN fails before JDBC |
-| MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.2 |
+| Database                                        | 0.2 status                                                                                                                                                                          |
+|-------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| PostgreSQL 16 / pgJDBC 42.7.11                  | Query, all five explicit Join forms, correlated EXISTS/IN/scalar subqueries, derived tables, sorting/pagination, mutation, transaction, projection, and JDBC type contract          |
+| H2 2.4.240                                      | Query, INNER/LEFT/RIGHT/CROSS Join, correlated EXISTS/IN/scalar subqueries, derived tables, pagination, consumer smoke, example, and integration tests; FULL JOIN fails before JDBC |
+| MySQL, MariaDB, SQL Server, Oracle, Db2, SQLite | Planned; not published in 0.2                                                                                                                                                       |
 
 JDBC drivers are deliberately supplied and versioned by the application.
 
@@ -205,7 +213,7 @@ JDBC drivers are deliberately supplied and versioned by the application.
 Version 0.2 intentionally does not provide implicit joins or association navigation, generated-key
 retrieval, composite ID lookup, reverse keyset traversal, native SQL entry points, schema migration,
 batch writes, upsert, graph writes, second-level caching, multitenancy, or Spring Boot
-auto-configuration. Aggregates and large-`IN` strategies are deferred. Enum, LOB,
+automatic configuration. Aggregates and strategies for large `IN` predicates are deferred. Enum, LOB,
 custom converter, database array, and structured JSON object mappings are also deferred.
 Applications own DDL and assign identifiers before insert.
 
