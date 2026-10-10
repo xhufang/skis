@@ -103,7 +103,7 @@
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <maven.deploy.skip>false</maven.deploy.skip>
 
-    <spring-boot.version>4.1.0</spring-boot.version>
+    <spring-boot.version>4.1.1</spring-boot.version>
     <jspecify.version>1.0.0</jspecify.version>
 
     <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
