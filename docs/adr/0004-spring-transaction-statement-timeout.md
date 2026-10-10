@@ -1,6 +1,6 @@
 # ADR-0004：Spring 事务时限与 JDBC Statement 配置边界
 
-- 状态：已接受
+- 状态：Implemented（已实现）
 - 日期：2026-09-06
 - 影响版本：0.2.4-SNAPSHOT
 

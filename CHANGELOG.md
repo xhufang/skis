@@ -6,23 +6,27 @@
 
 ### Changed
 
+- T10 完成文档同步与 0.2.6 内部里程碑收口：T01—T10 全部完成，T07、T08、T09 已分别随 PR #55、#57、#58 通过 CI 并合入 `main`；
+  README、开发指南、路线图、任务表、评审报告和 ADR 状态已统一，新增 ADR 索引并复核计划缓存公共 Javadoc。
+  架构、正确性、文档与兼容退出标准均已满足，可进入 `0.2.7-SNAPSHOT` 的 API/SPI 与方言管线收口；
+  本次收口版本仍为 `0.2.6-SNAPSHOT`，后续单独切换版本。T02 已完成，benchmark 开发期冻结守卫继续跨里程碑生效。
 - T09 完成 0.2.6 键、缓存、编译、参数、并发、资源、公共入口、API/生成 ABI 和 ClassLoader 生命周期测试矩阵总复核。
   既有合同已经覆盖相等/隔离、容量/过期/失效、并发 miss/clear、不同值并发、快照和分页追加；本轮进一步为
   `JdbcExecutorTest` 的 prepare、Binder、execute、Decoder 及 cursor 读取/关闭失败补充实际资源关闭事件顺序，确保
   ResultSet → Statement → Connection 的所有权顺序与 primary/suppressed 顺序同时受约束。没有修改生产 API、生成 ABI
-  或缓存实现；源码和静态复核完成、待 CI/真实数据库/API compatibility 验证，本地未编译运行且未执行 benchmark。
+  或缓存实现；CI、真实数据库合同和 API compatibility 已通过（PR #58 已合入 `main`）。本地开发过程未编译运行，
+  也未执行 benchmark。
 - T08 将查询参数路径收敛为包内最终槽位载体：`QueryParameters` 在 ADR-0005 捕获边界完成一次快照后直接投影到
   `QueryArguments`，content、ordered、count 各自只携带最终语句保留的值；limit/offset/keyset 使用独立尾段，
   不再复制普通参数整表，null keyset anchor 不占逻辑槽。载体同时保存值无关 `QueryPaginationShape`，
   `QueryPlanCompiler` 在 resolver 前校验普通段、最终总数及分页 mode/null-marker provenance，拒绝同长度但 marker 位置
   错配的 keyset 载体；编译器只构造结构布局，不再维护第二份值 List；content/count 最终引用顺序一致时复用基础载体，
-  恢复 continuation 时只读取一次防御性
-  anchor 快照，首次 L0/count 编译也不再重包参数。
+  恢复 continuation 时只读取一次防御性 anchor 快照，首次 L0/count 编译也不再重包参数。
   有序 Decoder 新建的 row-local anchor List 直接移交不可变包装，不再为每一行二次复制。
   当前未引入共享或可复用对象缓冲，`ParameterBinder` 文档明确调用期所有权和异常清理要求；删除仅供测试调用的
   `QueryArguments.empty()/values()`，测试改走真实参数投影或只读 List 合同。新增 ADR-0008 独立记录最终载体、分页
   provenance 与 Binder 所有权；公共参数 API/生成 ABI 未扩大。对应快照、最终槽位、分页顺序、同长度 marker 错配和
-  并发值隔离合同测试源码及静态复核已完成、待 CI；按项目约定未在本地编译运行，也未执行 benchmark 或报告性能数字。
+  并发值隔离合同已通过 CI（PR #57 已合入 `main`）；按项目约定未在本地编译运行，也未执行 benchmark 或报告性能数字。
 - T07 以不可变 `QueryCompilationContext` 收敛 SELECT/COUNT 编译阶段：同一最终语句只产生一次完整查询块分析，
   resolved 方言能力校验与标准 Renderer 直接消费该结果，H2/PostgreSQL Renderer 委托层同步转发，计划编译不再重复解析。
   PostgreSQL/H2 显式 opt-in；旧第三方
@@ -35,8 +39,8 @@
   来源身份、ordinal、数量和派生引用不一致时的回退合同。首轮测试反馈进一步修复普通列空集合 membership 未触发二次
   lowering 的缺口，所有空集合 membership 现在都保留原始校验结构并生成独立的最终常量谓词结构。当前裸
   `StatementAst + QueryBlockAnalysis` 公共 SPI 的 provenance
-  决策登记到 0.2.7，不能通过 Renderer 重分析规避；
-  源码及静态复核已完成、待 CI，按项目约定未在本地编译运行，也未执行 benchmark。
+  决策登记到 0.2.7，不能通过 Renderer 重分析规避。编译阶段、COUNT、runtime scope 和空集合 membership 合同已通过 CI
+  （PR #55 已合入 `main`）；按项目约定未在本地编译运行，也未执行 benchmark。
 - T06 已接入普通查询 L0/L1/L2：统一键组装显式返回可缓存键或旁路原因，content/ordered/count、分页、Join、子查询和
   派生表按完整身份共享；命中后使用当前 AST/参数，别名单表与复杂谓词回退进入 L1，实体 Fast Path 槽保持独立。
   分页 L0 改为每种结果模式的最近计划引用，删除 `synchronized LinkedHashMap`。接线及单元/H2/PostgreSQL 合同测试
