@@ -18,7 +18,7 @@ its API may still change before 1.0, and it is not yet a production-support rele
 - local JDBC transactions and Spring transaction-bound `DataSource` connections;
 - PostgreSQL and H2 dialects with a documented JDBC type-mapping contract.
 
-The repository currently uses the internal `0.2.6-SNAPSHOT` version. The completed `0.2.1`
+The repository currently uses the internal `0.2.7-SNAPSHOT` version. The completed `0.2.1`
 milestone added immutable JDBC execution options and dialect-aware Spring exception translation.
 The `0.2.2` development milestone adds explicit SQL type/nullability metadata, immutable complex
 single-table predicates, query-level `where(...).and(...).or(...)` chaining, portable standard
@@ -54,8 +54,8 @@ resource-ownership matrix. The final resolved-SPI provenance and lowering bounda
 [explicit joins and generated result rows](docs/joins.md),
 [page and slice pagination](docs/pagination.md),
 [cursor and stream ownership](docs/cursor-and-stream.md), and
-[execution options and exception translation](docs/execution-options-and-exception-translation.md). The
-[architecture decision index](docs/adr/README.md) records each ADR's current implementation status.
+[execution options and exception translation](docs/execution-options-and-exception-translation.md).
+Architecture decision records are maintained outside this public repository.
 
 ## Requirements
 

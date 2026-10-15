@@ -31,7 +31,8 @@ build/
 ### VS Code ###
 .vscode/
 
-### Local development plans ###
+### Local development plans and architecture records ###
+/docs/adr/
 /docs/plan/
 /docs/task/
 /docs/report/
