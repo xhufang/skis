@@ -32,7 +32,7 @@ public final class PetService {
 
   /** Execute one equality predicate and require at most one matching row. */
   public Optional<Pet> findOneByName(String name) {
-    return skisExecutor.selectFrom(PET).where(PET.name().eq(name)).fetchOne();
+    return skisExecutor.selectFrom(PET).where(PET.name().eq(name)).fetchOne().toOptional();
   }
 
   /** Query a primitive-backed Boolean column; boxing is handled by the generated DSL type. */
@@ -52,7 +52,12 @@ public final class PetService {
 
   /** Add a predicate to a scalar projection and require at most one matching row. */
   public Optional<String> findNameById(long id) {
-    return skisExecutor.select(PET.name()).from(PET).where(PET.id().eq(id)).fetchOne();
+    return skisExecutor
+        .select(PET.name())
+        .from(PET)
+        .where(PET.id().eq(id))
+        .fetchOne()
+        .toOptional();
   }
 
   /** Map several selected columns to a user-owned record through generated projection metadata. */
@@ -69,7 +74,8 @@ public final class PetService {
         .select(PetSummaryProjection.of(PET.id(), PET.name(), PET.weight()))
         .from(PET)
         .where(PET.id().eq(id))
-        .fetchOne();
+        .fetchOne()
+        .toOptional();
   }
 
   /**

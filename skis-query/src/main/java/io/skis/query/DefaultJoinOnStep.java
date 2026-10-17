@@ -2,15 +2,16 @@ package io.skis.query;
 
 import io.skis.sql.ast.JoinType;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Built-in immutable required-ON stage. */
-final class DefaultJoinOnStep<F, R> implements JoinOnStep<F, R> {
+final class DefaultJoinOnStep<R extends @Nullable Object> implements JoinOnStep<SelectQuery<R>> {
 
-  private final DefaultSelectQuery<F, R> query;
+  private final DefaultSelectQuery<R> query;
   private final JoinType type;
   private final QueryRelation right;
 
-  DefaultJoinOnStep(DefaultSelectQuery<F, R> query, JoinType type, QueryRelation right) {
+  DefaultJoinOnStep(DefaultSelectQuery<R> query, JoinType type, QueryRelation right) {
     this.query = Objects.requireNonNull(query, "query");
     this.type = Objects.requireNonNull(type, "type");
     if (type == JoinType.CROSS) {
@@ -20,7 +21,7 @@ final class DefaultJoinOnStep<F, R> implements JoinOnStep<F, R> {
   }
 
   @Override
-  public SelectQuery<F, R> on(QueryCondition condition) {
+  public SelectQuery<R> on(QueryCondition condition) {
     return query.appendJoin(type, right, Objects.requireNonNull(condition, "condition"));
   }
 }

@@ -4,9 +4,10 @@ import io.skis.dialect.RenderedSql;
 import io.skis.mapping.ParameterBinder;
 import io.skis.mapping.RowDecoder;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Immutable JDBC query plan with a value-independent SQL template and generated mapping code. */
-public record CompiledQueryPlan<R, P>(
+public record CompiledQueryPlan<R extends @Nullable Object, P>(
     String dialectId,
     RenderedSql renderedSql,
     ParameterBinder<P> parameterBinder,

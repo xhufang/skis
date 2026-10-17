@@ -6,8 +6,8 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InSubqueryPredicate;
-import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LikePredicate;
+import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NotPredicate;
@@ -367,7 +367,7 @@ final class QueryConditions {
       throw new QueryValidationException(
           "a reusable SELECT description cannot capture ordinary values; use Sql.parameter(...) "
               + "in the condition and bind it through "
-              + "executor.query(description, QueryParameters)");
+              + "executor.query(description).bind(parameter, value)");
     }
     return framework.structureOnly();
   }
@@ -415,7 +415,7 @@ final class QueryConditionCompiler {
     if (selectable instanceof ScalarSubquerySelectable<?> scalar) {
       return compileScalar(scalar);
     }
-    return selectable.expression();
+    return SelectableSupport.expression(selectable);
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -425,22 +425,6 @@ final class QueryConditionCompiler {
 
   void include(QueryParameters included) {
     bindings.include(included);
-  }
-
-  List<Selectable<?>> parameterSources() {
-    return layout.parameterSources();
-  }
-
-  List<QueryParameter<?>> parameterReferences() {
-    return layout.parameterReferences();
-  }
-
-  List<ParameterSlot<?>> parameterSlots() {
-    return layout.parameterSlots();
-  }
-
-  QueryParameters parameters() {
-    return bindings.parameters();
   }
 
   SelectStatement subquery(SelectQueryState<?> state) {

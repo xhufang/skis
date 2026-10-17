@@ -137,7 +137,7 @@ var departmentId = Sql.scalar(
             .and(department.name().like(pattern))));
 var description = Sql.select(departmentId).from(employee)
     .distinct().orderBy(departmentId.asc().nullsLast());
-var departmentIds = executor.query(description, QueryParameters.of(pattern, "%部")).fetchList();
+var departmentIds = executor.query(description).bind(pattern, "%部").fetchList();
 ```
 
 The SQL contains the department lookup once and ends with `ORDER BY 1 ASC NULLS LAST`. Employees
@@ -184,8 +184,8 @@ outer result must use `selectNullable(...)` or a nullable projection parameter.
 Columns are resolved by concrete derived-source identity and output ordinal. There is no string
 lookup and no synthetic entity, property, primary key, runtime model, or child decoder. Result and
 parameter Codecs recursively come from the selectable bound to the output handle. A derived root
-therefore returns a root-neutral `SelectQuery<?, R>`/`NullableSelectQuery<?, R>` view; entity roots
-retain their existing concrete root generic. `owners.as("other_owner")` creates an independent
+therefore returns the same result-only `SelectQuery<R>` view as an entity root; the concrete source
+identity remains in immutable query state. `owners.as("other_owner")` creates an independent
 occurrence over the same inner description and output handles.
 
 A normal derived source is a non-correlated boundary. Its child cannot capture an outer or sibling
@@ -213,8 +213,7 @@ back to that description.
 
 ## Parameters and JDBC ownership
 
-Reusable descriptions continue to use `QueryParameter<V>` plus a separate `QueryParameters`
-environment:
+Reusable descriptions use `QueryParameter<V>` identities and immutable query binding:
 
 ```java
 QueryParameter<String> name = Sql.parameter(String.class, "name");
@@ -224,8 +223,7 @@ var namedPets =
         .where(pet.ownerId().eq(owner.id()).and(pet.name().eq(name)));
 var owners = Sql.selectFrom(owner).where(Sql.exists(namedPets));
 
-List<Owner> result =
-    executor.query(owners, QueryParameters.of(name, "Mimi")).fetchList();
+List<Owner> result = executor.query(owners).bind(name, "Mimi").fetchList();
 ```
 
 The outer compiler traverses nested blocks in final SQL clause order and assigns one dense

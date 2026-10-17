@@ -6,8 +6,7 @@ import io.skis.sql.ast.SqlType;
 import java.util.Objects;
 
 /** Package-owned wrapper used by later standard expression factories. */
-sealed class ExpressionSelectable<V> implements Selectable<V>
-    permits NonNullExpressionSelectable {
+sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExpressionSelectable {
 
   private final SqlExpression<V> expression;
 
@@ -30,8 +29,7 @@ sealed class ExpressionSelectable<V> implements Selectable<V>
     return expression.nullability();
   }
 
-  @Override
-  public final SqlExpression<V> expression() {
+  final SqlExpression<V> expression() {
     return expression;
   }
 }

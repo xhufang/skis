@@ -33,8 +33,9 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.FromClause;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.StatementAst;
 import java.lang.reflect.Proxy;
@@ -73,6 +74,14 @@ class EntityPlanSetTest {
           false);
   private static final PetTable TABLE = new PetTable();
   private static final OtherPetTable OTHER_TABLE = new OtherPetTable();
+
+  @Test
+  void queryTableCachesCanonicalColumnWrappers() {
+    assertSame(TABLE.id(), TABLE.internalColumn(ID));
+    assertSame(TABLE.name(), TABLE.internalColumn(NAME));
+    assertSame(SelectableSupport.expression(TABLE.id()), TABLE.selections().get(0));
+    assertSame(SelectableSupport.expression(TABLE.name()), TABLE.selections().get(1));
+  }
 
   @Test
   void queryCompilerValidatesCompleteSemanticsBeforeDialectOrRenderer() {
@@ -117,18 +126,7 @@ class EntityPlanSetTest {
         QueryTestSupport.compiler(
             EntityRuntimeRegistry.of(List.of(runtimeModel)), nonValidatingDialect);
     CompiledQueryStructure structure =
-        new CompiledQueryStructure(
-            FromClause.of(TABLE),
-            List.of(),
-            TABLE.id().expression().eq(OTHER_TABLE.id().expression()),
-            List.of(),
-            null,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            QueryParameters.empty(),
-            null);
+        QueryTestSupport.compile(TABLE, List.of(), TABLE.id().eq(OTHER_TABLE.id()));
 
     QueryValidationException failure =
         assertThrows(
@@ -287,7 +285,7 @@ class EntityPlanSetTest {
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static void registerWithWrongJavaType(
       StatementParameterLayout.QueryBlock block, QueryParameter<?> parameter) {
-    block.parameter((QueryColumn) TABLE.name(), (QueryParameter) parameter);
+    block.parameter((Selectable) TABLE.name(), (QueryParameter) parameter);
   }
 
   @Test
@@ -302,9 +300,10 @@ class EntityPlanSetTest {
     QueryParameters parameters = QueryParameters.of(parameter, null);
     CompiledQueryStructure structure =
         new CompiledQueryStructure(
-            FromClause.of(TABLE),
+            FromClause.of(TABLE.tableExpression()),
             List.of(),
-            TABLE.id().expression().eq(slot),
+            new ComparisonPredicate<>(
+                SelectableSupport.expression(TABLE.id()), ComparisonOperator.EQUAL, slot),
             List.of(),
             null,
             List.of(),
@@ -436,8 +435,8 @@ class EntityPlanSetTest {
                       @Override
                       public void release(Connection connection, ExecutionContext context) {}
                     }));
-    SelectQuery<Pet, Pet> base = operations.selectFrom(TABLE);
-    SelectQuery<Pet, Pet> filtered =
+    SelectQuery<Pet> base = operations.selectFrom(TABLE);
+    SelectQuery<Pet> filtered =
         base.where(TABLE.name().isNull())
             .and(TABLE.id().ge(1L))
             .and(TABLE.name().like("Mi%").or(TABLE.name().like("Mo%")));
@@ -515,8 +514,8 @@ class EntityPlanSetTest {
     assertSame(options, observed.get());
 
     observed.set(null);
-    SelectQuery<Pet, Pet> baseQuery = operations.selectFrom(TABLE);
-    SelectQuery<Pet, Pet> configuredQuery = baseQuery.withOptions(options);
+    SelectQuery<Pet> baseQuery = operations.selectFrom(TABLE);
+    SelectQuery<Pet> configuredQuery = baseQuery.withOptions(options);
     assertThrows(QueryExecutionException.class, configuredQuery::fetchList);
     assertSame(options, observed.get());
     assertSame(baseQuery, baseQuery.withOptions(ExecutionOptions.NONE));
@@ -545,59 +544,49 @@ class EntityPlanSetTest {
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(ID);
-    private final NullableQueryColumn<Pet, String> name = nullableQueryColumn(NAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
+    private final Selectable<String> name = nullableQueryColumn(NAME);
 
     private PetTable() {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
 
-    private NonNullQueryColumn<Pet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NullableQueryColumn<Pet, String> name() {
+    private Selectable<String> name() {
       return name;
     }
 
     @Override
     public PetTable as(String alias) {
-      return new PetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
   }
 
   private static final class OtherPetTable extends QueryTable<OtherPet> {
 
-    private final NonNullQueryColumn<OtherPet, Long> id = nonNullQueryColumn(OTHER_ID);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(OTHER_ID);
 
     private OtherPetTable() {
       super(OTHER_PET);
     }
 
-    private OtherPetTable(Identifier alias) {
+    private OtherPetTable(String alias) {
       super(OTHER_PET, alias);
     }
 
-    private NonNullQueryColumn<OtherPet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
     @Override
     public OtherPetTable as(String alias) {
-      return new OtherPetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public OtherPetTable as(Identifier alias) {
       return new OtherPetTable(alias);
     }
   }

@@ -32,9 +32,10 @@ final class DefaultQueryOperations implements QueryOperations {
   @Override
   public <E> Optional<E> findById(
       EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
-    ExecutionContext executionContext =
-        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions"));
-    return findById(entity, id, executionContext);
+    return findById(
+        entity,
+        id,
+        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
   }
 
   private <E> Optional<E> findById(
@@ -47,96 +48,67 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
-  public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
+  public <E> SelectQuery<E> selectFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     EntityPlanSet<E> plans = requirePlanSet(table.entity());
     return DefaultSelectQuery.create(this, plans, table, SelectedResult.entity(table));
   }
 
   @Override
-  public <R> SelectFromStep<R> select(QueryTable<R> table) {
+  public <E> SelectFromStep<SelectQuery<E>> select(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     requirePlanSet(table.entity());
     return new DefaultSelectFromStep<>(this, SelectedResult.entity(table));
   }
 
   @Override
-  public <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table) {
+  public <E> SelectFromStep<SelectQuery<@Nullable E>> selectNullable(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     requirePlanSet(table.entity());
-    return new DefaultNullableSelectFromStep<>(this, SelectedResult.nullableEntity(table));
+    return new DefaultSelectFromStep<@Nullable E>(this, SelectedResult.nullableEntity(table));
   }
 
   @Override
-  public <V> SelectFromStep<V> select(NonNullSelectable<V> selectable) {
+  public <V> SelectFromStep<SelectQuery<V>> select(NonNullSelectable<V> selectable) {
     return new DefaultSelectFromStep<>(
         this, SelectedResult.requiredScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <V> NullableSelectFromStep<V> select(Selectable<V> selectable) {
-    return new DefaultNullableSelectFromStep<>(
+  public <V> SelectFromStep<SelectQuery<@Nullable V>> select(Selectable<V> selectable) {
+    return new DefaultSelectFromStep<@Nullable V>(
         this, SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <V> NullableSelectFromStep<V> selectNullable(NonNullSelectable<V> selectable) {
-    return new DefaultNullableSelectFromStep<>(
+  public <V> SelectFromStep<SelectQuery<@Nullable V>> selectNullable(
+      NonNullSelectable<V> selectable) {
+    return new DefaultSelectFromStep<@Nullable V>(
         this, SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
+  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
     return new DefaultSelectFromStep<>(
         this, SelectedResult.projection(Objects.requireNonNull(projection, "projection")));
   }
 
   @Override
-  public <R> NullableSelectQuery<?, R> query(SelectDescription<R> description) {
-    return query(description, QueryParameters.empty());
-  }
-
-  @Override
-  public <R> SelectQuery<?, R> query(NonNullSelectDescription<R> description) {
-    return query(description, QueryParameters.empty());
-  }
-
-  @Override
-  public <V> SelectQuery<?, V> query(NonNullSingleColumnSelect<V> description) {
-    return query(description, QueryParameters.empty());
-  }
-
-  @Override
-  public <R> NullableSelectQuery<?, R> query(
-      SelectDescription<R> description, QueryParameters parameters) {
-    return nullableExecutable(
-        Objects.requireNonNull(description, "description").state(),
-        Objects.requireNonNull(parameters, "parameters"));
-  }
-
-  @Override
-  public <R> SelectQuery<?, R> query(
-      NonNullSelectDescription<R> description, QueryParameters parameters) {
+  public <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description) {
     return executable(
-        Objects.requireNonNull(description, "description").state(),
-        Objects.requireNonNull(parameters, "parameters"));
+        Objects.requireNonNull(description, "description").state(), QueryParameters.empty());
   }
 
-  @Override
-  public <V> SelectQuery<?, V> query(
-      NonNullSingleColumnSelect<V> description, QueryParameters parameters) {
-    return executable(
-        Objects.requireNonNull(description, "description").state(),
-        Objects.requireNonNull(parameters, "parameters"));
-  }
-
-  <F, R> DefaultSelectQuery<F, R> selectFrom(SelectedResult<R> selected, QueryTable<F> table) {
+  <R extends @Nullable Object> DefaultSelectQuery<R> selectFrom(
+      SelectedResult<R> selected, QueryTable<?> table) {
     Objects.requireNonNull(selected, "selected");
-    EntityPlanSet<F> plans = requirePlanSet(table.entity());
+    Objects.requireNonNull(table, "table");
+    EntityPlanSet<?> plans = requirePlanSet(table.entity());
     return DefaultSelectQuery.create(this, plans, table, selected);
   }
 
-  <R> DefaultSelectQuery<?, R> selectFrom(SelectedResult<R> selected, DerivedRelation relation) {
+  <R extends @Nullable Object> DefaultSelectQuery<R> selectFrom(
+      SelectedResult<R> selected, DerivedRelation relation) {
     Objects.requireNonNull(selected, "selected");
     Objects.requireNonNull(relation, "relation");
     return DefaultSelectQuery.create(
@@ -146,58 +118,31 @@ final class DefaultQueryOperations implements QueryOperations {
         QueryParameters.empty());
   }
 
-  private <R> DefaultSelectQuery<?, R> executable(
+  private <R extends @Nullable Object> DefaultSelectQuery<R> executable(
       SelectQueryState<R> state, QueryParameters parameters) {
     QueryTable<?> entityRoot = state.entityRootOrNull();
     if (entityRoot == null) {
       return DefaultSelectQuery.create(this, planCatalog.compiler(), state, parameters);
     }
-    return executableEntityCaptured(state, parameters, entityRoot);
+    return DefaultSelectQuery.create(this, requirePlanSet(entityRoot.entity()), state, parameters);
   }
 
-  @SuppressWarnings("unchecked")
-  private <F, R> DefaultSelectQuery<F, R> executableEntityCaptured(
-      SelectQueryState<R> state, QueryParameters parameters, QueryTable<?> entityRoot) {
-    QueryTable<F> root = (QueryTable<F>) entityRoot;
-    EntityPlanSet<F> plans = requirePlanSet(root.entity());
-    return DefaultSelectQuery.create(this, plans, state, parameters);
-  }
-
-  private <R> NullableSelectQuery<?, R> nullableExecutable(
-      SelectQueryState<R> state, QueryParameters parameters) {
-    return nullable(executable(state, parameters));
-  }
-
-  private <F, R> NullableSelectQuery<F, R> nullable(DefaultSelectQuery<F, R> query) {
-    return new DefaultNullableSelectQuery<>(this, query);
-  }
-
-  <R> Optional<R> fetchOne(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return jdbcExecutor.fetchOne(plan, argument, executionContext);
-  }
-
-  <R> List<@Nullable R> fetchList(
+  <R extends @Nullable Object> List<R> fetchList(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
     return jdbcExecutor.fetchList(plan, argument, executionContext);
   }
 
-  <R> Optional<R> fetchFirst(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return jdbcExecutor.fetchFirst(plan, argument, executionContext);
-  }
-
-  <R> JdbcRow<R> fetchNullableOne(
+  <R extends @Nullable Object> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
     return jdbcExecutor.fetchNullableOne(plan, argument, executionContext);
   }
 
-  <R> JdbcRow<R> fetchNullableFirst(
+  <R extends @Nullable Object> JdbcRow<R> fetchNullableFirst(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
     return jdbcExecutor.fetchNullableFirst(plan, argument, executionContext);
   }
 
-  <R> JdbcPageResult<R> fetchPage(
+  <R extends @Nullable Object> JdbcPageResult<R> fetchPage(
       QueryCompilation<R> content,
       QueryCompilation<Long> count,
       ExecutionContext executionContext) {
@@ -205,7 +150,7 @@ final class DefaultQueryOperations implements QueryOperations {
         content.plan(), content.argument(), count.plan(), count.argument(), executionContext);
   }
 
-  <R> List<@Nullable R> fetchSliceList(
+  <R extends @Nullable Object> List<R> fetchSliceList(
       CompiledQueryPlan<R, Object> plan,
       Object argument,
       ExecutionContext executionContext,
@@ -213,14 +158,13 @@ final class DefaultQueryOperations implements QueryOperations {
     return jdbcExecutor.fetchSliceList(plan, argument, executionContext, pageSize);
   }
 
-  <R> QueryCursor<R> cursor(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return new DefaultQueryCursor<>(jdbcExecutor.openCursor(plan, argument, executionContext));
-  }
-
-  <R> QueryCursor<@Nullable R> nullableCursor(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return DefaultQueryCursor.nullable(jdbcExecutor.openCursor(plan, argument, executionContext));
+  <R extends @Nullable Object> QueryCursor<R> cursor(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      boolean nullableResult) {
+    return new DefaultQueryCursor<>(
+        jdbcExecutor.openCursor(plan, argument, executionContext), nullableResult);
   }
 
   void validateRequestedRows(int requestedRows, ExecutionContext executionContext) {
@@ -239,8 +183,7 @@ final class DefaultQueryOperations implements QueryOperations {
     if (!property.javaType().isInstance(value)) {
       String receivedType = value == null ? "null" : value.getClass().getTypeName();
       throw new QueryValidationException(
-          "findById id"
-              + " for property '"
+          "findById id for property '"
               + property.name()
               + "' requires "
               + property.javaType().getTypeName()

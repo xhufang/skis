@@ -7,7 +7,7 @@ import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Content and exact count returned only after both JDBC statements succeed. */
-public record JdbcPageResult<R>(List<@Nullable R> items, long totalElements) {
+public record JdbcPageResult<R extends @Nullable Object>(List<R> items, long totalElements) {
 
   public JdbcPageResult {
     items = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(items, "items")));

@@ -90,7 +90,7 @@ public final class EntityRuntimeModel<E> {
    * present key delegates to the generated entity decoder, while a partially {@code NULL} composite
    * key is reported as a mapping-contract failure before entity construction.
    */
-  public RowDecoder<E> nullableRowDecoder(RowLayout layout) {
+  public RowDecoder<@Nullable E> nullableRowDecoder(RowLayout layout) {
     Objects.requireNonNull(layout, "layout");
     PrimaryKeyMeta<E> primaryKey =
         entity
@@ -125,13 +125,16 @@ public final class EntityRuntimeModel<E> {
                 + entity.entityName()
                 + "' has a partially null primary key in the result row");
       }
-      E decoded = entityDecoder.decode(resultSet, context);
-      if (decoded == null) {
-        throw new SQLException(
-            "generated decoder returned null for present entity '" + entity.entityName() + "'");
-      }
-      return decoded;
+      return requireDecodedEntity(entityDecoder.decode(resultSet, context));
     };
+  }
+
+  private E requireDecodedEntity(@Nullable E decoded) throws SQLException {
+    if (decoded == null) {
+      throw new SQLException(
+          "generated decoder returned null for present entity '" + entity.entityName() + "'");
+    }
+    return decoded;
   }
 
   /** Returns the shared generated decoder for every persistent property in ordinal order. */

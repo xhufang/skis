@@ -26,7 +26,6 @@ import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.CountAst;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.Nullability;
@@ -80,7 +79,7 @@ class SharedQueryPlanRoutingTest {
   @Test
   void freshQueriesSharePlansButKeepTheirOwnAstAndArgumentsAndL0SkipsL1() throws Exception {
     Fixture fixture = fixture(16, true);
-    DefaultSelectQuery<Pet, Long> first = scalar(fixture, 1L);
+    DefaultSelectQuery<Long> first = scalar(fixture, 1L);
     QueryCompilation<Long> a = first.compilation(QueryPagination.None.INSTANCE);
     QueryCompilation<Long> local = first.compilation(QueryPagination.None.INSTANCE);
     QueryCompilation<Long> b = scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
@@ -118,8 +117,8 @@ class SharedQueryPlanRoutingTest {
     Fixture fixture = fixture(16, true);
     PetTable pet = new PetTable().as("p");
     OwnerTable owner = new OwnerTable().as("o");
-    DefaultSelectQuery<?, Long> query =
-        (DefaultSelectQuery<?, Long>)
+    DefaultSelectQuery<Long> query =
+        (DefaultSelectQuery<Long>)
             fixture
                 .operations()
                 .select(pet.id)
@@ -156,18 +155,24 @@ class SharedQueryPlanRoutingTest {
     QueryCondition on = pet.id.eq(owner.id);
     CompiledQueryStructure innerStructure =
         QueryTestSupport.compile(
-            pet, List.of(new QueryJoin(JoinType.INNER, owner, on)), null);
+            pet,
+            List.of(new QueryJoin(JoinType.INNER, QueryRelations.of(owner), on)),
+            null);
     CompiledQueryStructure leftStructure =
         QueryTestSupport.compile(
-            pet, List.of(new QueryJoin(JoinType.LEFT, owner, on)), null);
+            pet,
+            List.of(new QueryJoin(JoinType.LEFT, QueryRelations.of(owner), on)),
+            null);
 
     TableRuntimeScope innerScope =
         TableRuntimeScope.resolve(REGISTRY, innerStructure.fromClause());
     TableRuntimeScope leftScope = innerScope.forFromClause(leftStructure.fromClause());
 
     assertSame(innerScope.require(owner).model(), leftScope.require(owner).model());
-    assertEquals(Nullability.NON_NULL, innerScope.effectiveNullability(owner.id));
-    assertEquals(Nullability.NULLABLE, leftScope.effectiveNullability(owner.id));
+    assertEquals(
+        Nullability.NON_NULL, innerScope.effectiveNullability(owner.internalColumn(OWNER_ID)));
+    assertEquals(
+        Nullability.NULLABLE, leftScope.effectiveNullability(owner.internalColumn(OWNER_ID)));
   }
 
   @Test
@@ -176,20 +181,26 @@ class SharedQueryPlanRoutingTest {
     OwnerTable owner = new OwnerTable().as("o");
     CompiledQueryStructure original =
         QueryTestSupport.compile(
-            pet, List.of(new QueryJoin(JoinType.CROSS, owner, null)), null);
+            pet,
+            List.of(new QueryJoin(JoinType.CROSS, QueryRelations.of(owner), null)),
+            null);
     TableRuntimeScope scope = TableRuntimeScope.resolve(REGISTRY, original.fromClause());
 
     PetTable replacementPet = new PetTable().as("p");
     CompiledQueryStructure changedIdentity =
         QueryTestSupport.compile(
-            replacementPet, List.of(new QueryJoin(JoinType.CROSS, owner, null)), null);
+            replacementPet,
+            List.of(new QueryJoin(JoinType.CROSS, QueryRelations.of(owner), null)),
+            null);
     TableRuntimeScope identityScope = scope.forFromClause(changedIdentity.fromClause());
     assertEquals(0, identityScope.require(replacementPet).occurrenceOrdinal());
     assertThrows(QueryValidationException.class, () -> identityScope.require(pet));
 
     CompiledQueryStructure changedOrdinals =
         QueryTestSupport.compile(
-            owner, List.of(new QueryJoin(JoinType.CROSS, pet, null)), null);
+            owner,
+            List.of(new QueryJoin(JoinType.CROSS, QueryRelations.of(pet), null)),
+            null);
     TableRuntimeScope ordinalScope = scope.forFromClause(changedOrdinals.fromClause());
     assertEquals(0, ordinalScope.require(owner).occurrenceOrdinal());
     assertEquals(1, ordinalScope.require(pet).occurrenceOrdinal());
@@ -228,8 +239,8 @@ class SharedQueryPlanRoutingTest {
   void rewrittenMembershipValidatesOriginalAndFinalStructuresWithoutLegacyReanalysis() {
     Fixture fixture = fixture(16, true);
     PetTable pet = new PetTable().as("p");
-    DefaultSelectQuery<?, Long> query =
-        (DefaultSelectQuery<?, Long>)
+    DefaultSelectQuery<Long> query =
+        (DefaultSelectQuery<Long>)
             fixture.operations().select(pet.id).from(pet).where(pet.id.in(List.of()));
 
     QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
@@ -267,8 +278,8 @@ class SharedQueryPlanRoutingTest {
     Fixture fixture = fixture(16, true);
     PetTable first = new PetTable();
     PetTable second = new PetTable();
-    DefaultSelectQuery<Pet, Long> a = orderedScalar(fixture, first, 1L);
-    DefaultSelectQuery<Pet, Long> b = orderedScalar(fixture, second, 2L);
+    DefaultSelectQuery<Long> a = orderedScalar(fixture, first, 1L);
+    DefaultSelectQuery<Long> b = orderedScalar(fixture, second, 2L);
     List<QueryPagination> firstPages = List.of(
         QueryPagination.None.INSTANCE,
         new QueryPagination.LimitOnly(3),
@@ -319,7 +330,7 @@ class SharedQueryPlanRoutingTest {
     // Stable L1, disabled L1 and an unstable dialect all use the same query-local publication path.
     for (int mode = 0; mode < 3; mode++) {
       Fixture fixture = fixture(mode == 1 ? 0 : 16, mode != 2);
-      DefaultSelectQuery<Pet, Long> query = orderedScalar(fixture, new PetTable(), 1L);
+      DefaultSelectQuery<Long> query = orderedScalar(fixture, new PetTable(), 1L);
       RenderSequence sequence = new RenderSequence();
       fixture.dialect().sequence = sequence;
       List<Future<QueryCompilation<Long>>> futures = new ArrayList<>();
@@ -435,13 +446,13 @@ class SharedQueryPlanRoutingTest {
     for (int shape = 0; shape < 4; shape++) {
       Fixture fixture = fixture(16, true);
       PetTable table = new PetTable().as("p");
-      DefaultSelectQuery<?, Long> query =
+      DefaultSelectQuery<Long> query =
           switch (shape) {
             case 0 -> scalar(fixture, table, 7L);
             case 1 -> scalar(fixture, table, 7L).distinct();
             case 2 -> nested(fixture, 3, 7L);
             case 3 ->
-                (DefaultSelectQuery<?, Long>)
+                (DefaultSelectQuery<Long>)
                     fixture
                         .operations()
                         .select(table.id)
@@ -485,8 +496,8 @@ class SharedQueryPlanRoutingTest {
     for (int shape = 0; shape < 6; shape++) {
       Fixture fixture = fixture(32, true);
       QueryCompilation<Long> rootOnly = scalar(fixture, 1L).compilation(QueryPagination.None.INSTANCE);
-      DefaultSelectQuery<?, Long> first = nested(fixture, shape, 11L);
-      DefaultSelectQuery<?, Long> second = nested(fixture, shape, 22L);
+      DefaultSelectQuery<Long> first = nested(fixture, shape, 11L);
+      DefaultSelectQuery<Long> second = nested(fixture, shape, 22L);
       QueryCompilation<Long> a = first.compilation(QueryPagination.None.INSTANCE);
       QueryCompilation<Long> b = second.compilation(QueryPagination.None.INSTANCE);
       assertSame(a.plan(), b.plan());
@@ -506,7 +517,7 @@ class SharedQueryPlanRoutingTest {
       assertEquals(2, fixture.catalog().invalidateProjectionPlans(OWNER));
       assertEquals(1, fixture.stats().size());
       assertSame(rootOnly.plan(), scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE).plan());
-      DefaultSelectQuery<?, Long> rebuilt = nested(fixture, shape, 33L);
+      DefaultSelectQuery<Long> rebuilt = nested(fixture, shape, 33L);
       assertNotSame(a.plan(), rebuilt.compilation(QueryPagination.None.INSTANCE).plan());
       assertNotSame(countA.plan(), rebuilt.countCompilation().plan());
       assertEquals(new QueryPlanCacheStatistics(3, 5, 0, 2, 3, 32), fixture.stats());
@@ -546,9 +557,9 @@ class SharedQueryPlanRoutingTest {
     QueryParameter<Long> parameter = Sql.parameter(Long.class);
     var description = Sql.select(table.id).from(table).where(table.id.eq(parameter));
     QueryCompilation<Long> nullValue = compile(
-        fixture.operations().query(description, QueryParameters.of(parameter, null)));
+        fixture.operations().query(description).bind(parameter, null));
     QueryCompilation<Long> nonNullValue = compile(
-        fixture.operations().query(description, QueryParameters.of(parameter, 6L)));
+        fixture.operations().query(description).bind(parameter, 6L));
     QueryCompilation<Long> required = compile(
         fixture.operations().select(table.id).from(table).where(table.id.eq(6L)));
     assertSame(nullValue.plan(), nonNullValue.plan());
@@ -556,15 +567,15 @@ class SharedQueryPlanRoutingTest {
     assertEquals(java.util.Collections.singletonList(null), bindings(nullValue));
     assertEquals(List.of(6L), bindings(nonNullValue));
 
-    DefaultSelectQuery<Pet, Long> plain =
-        (DefaultSelectQuery<Pet, Long>) fixture.operations().select(table.id).from(table);
+    DefaultSelectQuery<Long> plain =
+        (DefaultSelectQuery<Long>) fixture.operations().select(table.id).from(table);
     assertNotSame(plain.countCompilation().plan(), plain.distinct().countCompilation().plan());
   }
 
   @Test
   void disabledAndUnstableDialectBypassL1ButKeepL0AndWorkingL2() throws Exception {
     for (Fixture fixture : List.of(fixture(0, true), fixture(16, false))) {
-      DefaultSelectQuery<Pet, Long> query = scalar(fixture, 1L);
+      DefaultSelectQuery<Long> query = scalar(fixture, 1L);
       QueryCompilation<Long> first = query.compilation(QueryPagination.None.INSTANCE);
       assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
       QueryCompilation<Long> second = scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
@@ -593,8 +604,8 @@ class SharedQueryPlanRoutingTest {
     Object previous = null;
     for (long value : List.of(1L, 2L)) {
       PetTable table = new PetTable();
-      DefaultSelectQuery<Pet, Long> query =
-          (DefaultSelectQuery<Pet, Long>) fixture.operations().select(table.id).from(table)
+      DefaultSelectQuery<Long> query =
+          (DefaultSelectQuery<Long>) fixture.operations().select(table.id).from(table)
               .where(table.id.ge(value).and(Sql.exists(Sql.selectFrom(external))));
       QueryCompilation<Long> compiled = query.compilation(QueryPagination.None.INSTANCE);
       assertNotSame(previous, compiled.plan());
@@ -610,7 +621,7 @@ class SharedQueryPlanRoutingTest {
   @Test
   void capacityOneClearAndInvalidationPreserveExistingL0ButForceFreshCompilation() {
     Fixture fixture = fixture(1, true);
-    DefaultSelectQuery<Pet, Long> original = scalar(fixture, 1L);
+    DefaultSelectQuery<Long> original = scalar(fixture, 1L);
     QueryCompilation<Long> a = original.compilation(QueryPagination.None.INSTANCE);
     scalar(fixture, 2L).countCompilation();
     QueryCompilation<Long> b = scalar(fixture, 3L).compilation(QueryPagination.None.INSTANCE);
@@ -688,7 +699,8 @@ class SharedQueryPlanRoutingTest {
         QueryPlanKey.DialectIdentity.from(new CountingDialect(true)), true);
     var variant = QueryPlanKey.PlanVariant.content(QueryPaginationShape.none());
     var resultAnalysis = SemanticValidator.analyzeComplete(
-        new SelectStatement(List.of(literal.expression()), table));
+        new SelectStatement(
+            List.of(SelectableSupport.expression(literal)), table.tableExpression()));
     assertEquals(QueryPlanKeyAssembler.Bypass.UNSAFE_RESULT_IDENTITY,
         assembler.assemble(resultAnalysis, SelectedResult.requiredScalar(literal), variant,
             List.of(), List.of()));
@@ -716,7 +728,9 @@ class SharedQueryPlanRoutingTest {
   @Test
   void assemblerReturnsExplicitDisabledUnstableAndForeignMetadataReasons() {
     PetTable table = new PetTable();
-    var analysis = SemanticValidator.analyzeComplete(new SelectStatement(table.selections(), table));
+    var analysis =
+        SemanticValidator.analyzeComplete(
+            new SelectStatement(table.selections(), table.tableExpression()));
     var identities = new QueryPlanKey.IdentityScope(REGISTRY);
     var dialect = QueryPlanKey.DialectIdentity.from(new CountingDialect(true));
     var variant = QueryPlanKey.PlanVariant.content(QueryPaginationShape.none());
@@ -731,64 +745,72 @@ class SharedQueryPlanRoutingTest {
             .assemble(analysis, SelectedResult.entity(table), variant, List.of(), List.of()));
   }
 
-  private static DefaultSelectQuery<?, Long> nested(Fixture fixture, int shape, long value) {
+  private static DefaultSelectQuery<Long> nested(Fixture fixture, int shape, long value) {
     PetTable outer = new PetTable().as("p");
     OwnerTable inner = new OwnerTable().as("q");
     QueryParameter<Long> parameter = Sql.parameter(Long.class);
     QueryParameters parameters = QueryParameters.of(parameter, value);
     var lookup = Sql.select(inner.id).from(inner).where(inner.id.ge(parameter));
     return switch (shape) {
-      case 0 -> (DefaultSelectQuery<?, Long>) fixture.operations().select(outer.id).from(outer)
+      case 0 -> (DefaultSelectQuery<Long>) fixture.operations().select(outer.id).from(outer)
           .join(inner).on(outer.id.eq(inner.id).and(inner.id.ge(value)));
-      case 1 -> (DefaultSelectQuery<?, Long>) fixture.operations().query(
-          Sql.select(outer.id).from(outer).where(Sql.exists(lookup.and(inner.id.eq(outer.id)))),
-          parameters);
-      case 2 -> (DefaultSelectQuery<?, Long>) fixture.operations().query(
-          Sql.select(outer.id).from(outer).where(outer.id.in(lookup)), parameters);
+      case 1 -> (DefaultSelectQuery<Long>) fixture.operations().query(
+              Sql.select(outer.id)
+                  .from(outer)
+                  .where(Sql.exists(lookup.and(inner.id.eq(outer.id)))))
+          .bind(parameter, value);
+      case 2 -> (DefaultSelectQuery<Long>) fixture.operations().query(
+              Sql.select(outer.id).from(outer).where(outer.id.in(lookup)))
+          .bind(parameter, value);
       case 3 -> query(fixture,
           SelectQueryState.create(SelectedResult.nullableScalar(Sql.scalar(lookup)), outer), parameters);
       case 4, 5 -> {
         var output = Sql.output(inner.id, "id");
         DerivedRelation derived = Sql.derived(lookup, "d", output);
         yield shape == 4
-            ? (DefaultSelectQuery<?, Long>) fixture.operations().query(
-                Sql.select(outer.id).from(outer).join(derived).on(outer.id.eq(derived.column(output))),
-                parameters)
-            : (DefaultSelectQuery<?, Long>) fixture.operations().query(
-                Sql.select(derived.column(output)).from(derived), parameters);
+            ? (DefaultSelectQuery<Long>) fixture.operations().query(
+                Sql.select(outer.id)
+                    .from(outer)
+                    .join(derived)
+                    .on(outer.id.eq(derived.column(output))))
+                .bind(parameter, value)
+            : (DefaultSelectQuery<Long>) fixture.operations().query(
+                Sql.select(derived.column(output)).from(derived))
+                .bind(parameter, value);
       }
       default -> throw new AssertionError(shape);
     };
   }
 
-  private static DefaultSelectQuery<Pet, Long> scalar(Fixture fixture, long value) {
+  private static DefaultSelectQuery<Long> scalar(Fixture fixture, long value) {
     return scalar(fixture, new PetTable(), value);
   }
 
-  private static DefaultSelectQuery<Pet, Long> scalar(
+  private static DefaultSelectQuery<Long> scalar(
       Fixture fixture, PetTable table, long value) {
-    return (DefaultSelectQuery<Pet, Long>)
+    return (DefaultSelectQuery<Long>)
         fixture.operations().select(table.id).from(table).where(table.id.ge(value));
   }
 
-  private static DefaultSelectQuery<Pet, Long> orderedScalar(Fixture fixture, PetTable table, long value) {
-    return (DefaultSelectQuery<Pet, Long>) fixture.operations().select(table.id).from(table)
+  private static DefaultSelectQuery<Long> orderedScalar(
+      Fixture fixture, PetTable table, long value) {
+    return (DefaultSelectQuery<Long>) fixture.operations().select(table.id).from(table)
         .where(table.id.ge(value)).orderBy(table.name.asc().nullsFirst(), table.id.asc());
   }
 
-  private static <R> QueryCompilation<R> compile(SelectQuery<?, R> query) {
-    return ((DefaultSelectQuery<?, R>) query).compilation(QueryPagination.None.INSTANCE);
+  private static <R> QueryCompilation<R> compile(SelectQuery<R> query) {
+    return ((DefaultSelectQuery<R>) query).compilation(QueryPagination.None.INSTANCE);
   }
 
   private static <R> QueryCompilation<R> compileSelected(Fixture fixture, PetTable table, SelectedResult<R> selected) {
     return query(fixture, SelectQueryState.create(selected, table)).compilation(QueryPagination.None.INSTANCE);
   }
 
-  private static <R> DefaultSelectQuery<?, R> query(Fixture fixture, SelectQueryState<R> state) {
+  private static <R> DefaultSelectQuery<R> query(Fixture fixture, SelectQueryState<R> state) {
     return query(fixture, state, state.structure().validationStructure().parameters());
   }
 
-  private static <R> DefaultSelectQuery<?, R> query(
+  private static <R> DefaultSelectQuery<R> query(
       Fixture fixture, SelectQueryState<R> state, QueryParameters parameters) {
     return DefaultSelectQuery.create(
         (DefaultQueryOperations) fixture.operations(), fixture.catalog().compiler(), state, parameters);
@@ -848,46 +870,36 @@ class SharedQueryPlanRoutingTest {
   private record IdView(Long id) {}
 
   private static final class PetTable extends QueryTable<Pet> {
-    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(ID);
-    private final QueryColumn<Pet, String> name = queryColumn(NAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
+    private final Selectable<String> name = queryColumn(NAME);
 
     private PetTable() {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
 
     @Override
     public PetTable as(String alias) {
-      return new PetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
   }
 
   private static final class OwnerTable extends QueryTable<Owner> {
-    private final NonNullQueryColumn<Owner, Long> id = nonNullQueryColumn(OWNER_ID);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(OWNER_ID);
 
     private OwnerTable() {
       super(OWNER);
     }
 
-    private OwnerTable(Identifier alias) {
+    private OwnerTable(String alias) {
       super(OWNER, alias);
     }
 
     @Override
     public OwnerTable as(String alias) {
-      return new OwnerTable(Identifier.of(alias));
-    }
-
-    @Override
-    public OwnerTable as(Identifier alias) {
       return new OwnerTable(alias);
     }
   }

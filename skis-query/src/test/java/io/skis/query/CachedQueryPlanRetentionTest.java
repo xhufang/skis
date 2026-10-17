@@ -23,7 +23,6 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
 import java.io.IOException;
 import java.io.InputStream;
@@ -105,8 +104,8 @@ class CachedQueryPlanRetentionTest {
     QueryCondition condition = table.name().eq(conditionValue);
     ProjectionMapping<RetentionView> mapping = projectionMapping();
     ProjectionSelection<RetentionView> selection = mapping.bind(table.id(), table.name());
-    DefaultSelectQuery<RetentionEntity, RetentionView> query =
-        (DefaultSelectQuery<RetentionEntity, RetentionView>) QueryTestSupport.operations(catalog)
+    DefaultSelectQuery<RetentionView> query =
+        (DefaultSelectQuery<RetentionView>) QueryTestSupport.operations(catalog)
             .select(selection).from(table).where(condition);
     QueryCompilation<RetentionView> compilation =
         query.compilation(QueryPagination.None.INSTANCE);
@@ -120,7 +119,7 @@ class CachedQueryPlanRetentionTest {
             tracked("table", table),
             tracked("table marker", tableMarker),
             tracked("selected column", table.id()),
-            tracked("column expression", table.id().expression()),
+            tracked("column expression", SelectableSupport.expression(table.id())),
             tracked("projection mapping", mapping),
             tracked("projection selection", selection)));
     return CachedQueryPlan.from(compilation);
@@ -161,10 +160,10 @@ class CachedQueryPlanRetentionTest {
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
     QueryOperations operations = QueryTestSupport.operations(catalog);
-    DefaultSelectQuery<RetentionEntity, Object> first =
-        (DefaultSelectQuery<RetentionEntity, Object>) operations.select(selection).from(KEY_TABLE);
-    DefaultSelectQuery<RetentionEntity, Object> second =
-        (DefaultSelectQuery<RetentionEntity, Object>) operations.select(selection).from(KEY_TABLE);
+    DefaultSelectQuery<Object> first =
+        (DefaultSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
+    DefaultSelectQuery<Object> second =
+        (DefaultSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
     assertSame(first.compilation(QueryPagination.None.INSTANCE).plan(),
         second.compilation(QueryPagination.None.INSTANCE).plan());
     assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
@@ -275,29 +274,27 @@ class CachedQueryPlanRetentionTest {
 
     @SuppressWarnings("unused")
     private final Object marker;
-    private final NonNullQueryColumn<RetentionEntity, Long> id = nonNullQueryColumn(ID);
-    private final NonNullQueryColumn<RetentionEntity, String> name = nonNullQueryColumn(NAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
+    private final NonNullSelectable<String> name = nonNullQueryColumn(NAME);
 
     private RetentionTable(Object marker) {
       super(ENTITY);
       this.marker = marker;
     }
 
-    private RetentionTable(Object marker, Identifier alias) {
+    private RetentionTable(Object marker, String alias) {
       super(ENTITY, alias);
       this.marker = marker;
     }
 
-    private NonNullQueryColumn<RetentionEntity, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NonNullQueryColumn<RetentionEntity, String> name() {
+    private NonNullSelectable<String> name() {
       return name;
     }
-
-    @Override
-    public RetentionTable as(Identifier alias) {
+    public RetentionTable as(String alias) {
       return new RetentionTable(marker, alias);
     }
   }

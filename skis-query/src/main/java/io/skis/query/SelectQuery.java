@@ -2,92 +2,76 @@ package io.skis.query;
 
 import io.skis.core.ExecutionOptions;
 import java.util.List;
-import java.util.Optional;
+import java.util.stream.Stream;
+import org.jspecify.annotations.Nullable;
 
-/** Unified immutable query for entities, non-null scalars, and generated projections. */
-public interface SelectQuery<E, R> {
+/** Unified immutable query for entities, scalar values, and generated projections. */
+public interface SelectQuery<R extends @Nullable Object> {
 
-  SelectQuery<E, R> where(QueryCondition condition);
+  SelectQuery<R> where(QueryCondition condition);
 
-  SelectQuery<E, R> and(QueryCondition condition);
+  SelectQuery<R> and(QueryCondition condition);
 
-  SelectQuery<E, R> or(QueryCondition condition);
+  SelectQuery<R> or(QueryCondition condition);
 
-  /** Starts an INNER JOIN whose ON condition is required before query execution is available. */
-  JoinOnStep<E, R> join(QueryTable<?> table);
+  /** Starts an INNER JOIN whose ON condition is required before execution is available. */
+  JoinOnStep<SelectQuery<R>> join(QueryTable<?> table);
 
   /** Starts an INNER JOIN against a derived relation. */
-  JoinOnStep<E, R> join(DerivedRelation relation);
+  JoinOnStep<SelectQuery<R>> join(DerivedRelation relation);
 
   /** Starts an explicit INNER JOIN whose ON condition is required. */
-  JoinOnStep<E, R> innerJoin(QueryTable<?> table);
+  JoinOnStep<SelectQuery<R>> innerJoin(QueryTable<?> table);
 
   /** Starts an explicit INNER JOIN against a derived relation. */
-  JoinOnStep<E, R> innerJoin(DerivedRelation relation);
+  JoinOnStep<SelectQuery<R>> innerJoin(DerivedRelation relation);
 
   /** Starts a LEFT JOIN whose ON condition is required. */
-  JoinOnStep<E, R> leftJoin(QueryTable<?> table);
+  JoinOnStep<SelectQuery<R>> leftJoin(QueryTable<?> table);
 
   /** Starts a LEFT JOIN against a derived relation. */
-  JoinOnStep<E, R> leftJoin(DerivedRelation relation);
+  JoinOnStep<SelectQuery<R>> leftJoin(DerivedRelation relation);
 
   /** Starts a RIGHT JOIN whose ON condition is required. */
-  JoinOnStep<E, R> rightJoin(QueryTable<?> table);
+  JoinOnStep<SelectQuery<R>> rightJoin(QueryTable<?> table);
 
   /** Starts a RIGHT JOIN against a derived relation. */
-  JoinOnStep<E, R> rightJoin(DerivedRelation relation);
+  JoinOnStep<SelectQuery<R>> rightJoin(DerivedRelation relation);
 
   /** Starts a FULL JOIN whose ON condition is required. */
-  JoinOnStep<E, R> fullJoin(QueryTable<?> table);
+  JoinOnStep<SelectQuery<R>> fullJoin(QueryTable<?> table);
 
   /** Starts a FULL JOIN against a derived relation. */
-  JoinOnStep<E, R> fullJoin(DerivedRelation relation);
+  JoinOnStep<SelectQuery<R>> fullJoin(DerivedRelation relation);
 
   /** Appends a CROSS JOIN directly; CROSS JOIN never accepts an ON condition. */
-  SelectQuery<E, R> crossJoin(QueryTable<?> table);
+  SelectQuery<R> crossJoin(QueryTable<?> table);
 
   /** Appends a derived CROSS JOIN directly. */
-  SelectQuery<E, R> crossJoin(DerivedRelation relation);
+  SelectQuery<R> crossJoin(DerivedRelation relation);
 
-  SelectQuery<E, R> withOptions(ExecutionOptions executionOptions);
+  SelectQuery<R> withOptions(ExecutionOptions executionOptions);
 
-  /**
-   * Replaces the ordering with selectable expressions from the final query scope.
-   *
-   * <p>An ordering expression need not belong to the FROM root. Its dependencies are validated
-   * against the completed FROM/JOIN structure before SQL execution.
-   */
-  SelectQuery<E, R> orderBy(SortSpecification... specifications);
+  /** Replaces the ordering with selectable expressions from the final query scope. */
+  SelectQuery<R> orderBy(SortSpecification... specifications);
 
-  /**
-   * Appends the FROM root's complete primary key to the ordering.
-   *
-   * <p>For paginated Joins, the caller must still order by the required keys of other participating
-   * table occurrences.
-   */
-  SelectQuery<E, R> thenByPrimaryKey(SortDirection direction);
+  /** Appends the actual FROM root's complete primary key to the ordering. */
+  SelectQuery<R> thenByPrimaryKey(SortDirection direction);
 
   /** Applies SQL DISTINCT to the complete visible result tuple. */
-  SelectQuery<E, R> distinct();
+  SelectQuery<R> distinct();
 
-  /**
-   * Creates an independent count descriptor from this query's FROM/JOIN/ON/WHERE and distinct
-   * shape.
-   *
-   * <p>The count is validated and compiled when it is supplied to a page operation. A distinct
-   * result with no portable equivalent count is rejected at that point.
-   */
+  /** Captures one parameter value now and returns an independently executable query. */
+  <V> SelectQuery<R> bind(QueryParameter<V> parameter, @Nullable V value);
+
+  /** Creates an independent count descriptor from this query's structural clauses. */
   CountQuery countQuery();
 
-  Optional<R> fetchOne();
+  SingleRow<R> fetchOne();
 
-  Optional<R> fetchFirst();
+  SingleRow<R> fetchFirst();
 
   List<R> fetchList();
-
-  default List<R> fetch() {
-    return fetchList();
-  }
 
   Page<R> fetchPage(PageRequest request);
 
@@ -98,5 +82,6 @@ public interface SelectQuery<E, R> {
 
   QueryCursor<R> cursor();
 
-  CloseableQueryStream<R> stream();
+  /** Opens a sequential JDBC-backed stream that the caller must close. */
+  Stream<R> stream();
 }

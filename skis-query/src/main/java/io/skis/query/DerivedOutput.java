@@ -23,8 +23,8 @@ public sealed class DerivedOutput<V> permits NonNullDerivedOutput {
   }
 
   /** Explicit SQL column alias exposed by the derived relation. */
-  public final Identifier alias() {
-    return alias;
+  public final String alias() {
+    return alias.value();
   }
 
   /** Boxed Java value type of this output. */
@@ -44,5 +44,9 @@ public sealed class DerivedOutput<V> permits NonNullDerivedOutput {
 
   final Selectable<V> selectable() {
     return selectable;
+  }
+
+  final Identifier aliasIdentifier() {
+    return alias;
   }
 }

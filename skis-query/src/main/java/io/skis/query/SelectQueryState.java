@@ -11,7 +11,7 @@ import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /** Immutable, execution-free SELECT construction state shared by descriptions and queries. */
-final class SelectQueryState<R> {
+final class SelectQueryState<R extends @Nullable Object> {
 
   private final SelectedResult<R> selected;
   private final QueryRelation root;
@@ -25,7 +25,18 @@ final class SelectQueryState<R> {
   private volatile @Nullable CompiledQueryStructure structure;
   private volatile @Nullable CompiledQueryStructure countStructure;
 
-  static <R> SelectQueryState<R> create(SelectedResult<R> selected, QueryRelation root) {
+  static <R extends @Nullable Object> SelectQueryState<R> create(
+      SelectedResult<R> selected, QueryTable<?> root) {
+    return create(selected, QueryRelations.of(root));
+  }
+
+  static <R extends @Nullable Object> SelectQueryState<R> create(
+      SelectedResult<R> selected, DerivedRelation root) {
+    return create(selected, QueryRelations.of(root));
+  }
+
+  static <R extends @Nullable Object> SelectQueryState<R> create(
+      SelectedResult<R> selected, QueryRelation root) {
     return new SelectQueryState<>(
         selected,
         root,
@@ -68,7 +79,7 @@ final class SelectQueryState<R> {
   }
 
   @Nullable QueryTable<?> entityRootOrNull() {
-    return root instanceof QueryTable<?> table ? table : null;
+    return root.entityTable();
   }
 
   List<QueryJoin> joins() {
@@ -160,7 +171,12 @@ final class SelectQueryState<R> {
       throw new QueryValidationException(
           "thenByPrimaryKey requires an entity-table root; this query root is derived");
     }
-    PrimaryKeyMeta<?> primaryKey =
+    return thenByPrimaryKey(entityRoot, direction);
+  }
+
+  private <E> SelectQueryState<R> thenByPrimaryKey(
+      QueryTable<E> entityRoot, SortDirection direction) {
+    PrimaryKeyMeta<E> primaryKey =
         entityRoot
             .entity()
             .primaryKey()
@@ -171,10 +187,11 @@ final class SelectQueryState<R> {
                             + entityRoot.entity().entityName()
                             + "'"));
     List<SortSpecification> items = new ArrayList<>(orderBy);
-    for (PropertyMeta<?, ?> property : primaryKey.properties()) {
-      if (!containsRootProperty(items, property)) {
+    for (PropertyMeta<E, ?> property : primaryKey.properties()) {
+      if (!containsRootProperty(items, entityRoot, property)) {
         items.add(
-            new SortSpecification(rootColumn(property), direction, NullPlacement.DIALECT_DEFAULT));
+            new SortSpecification(
+                entityRoot.internalColumn(property), direction, NullPlacement.DIALECT_DEFAULT));
       }
     }
     return items.equals(orderBy) ? this : orderBy(items);
@@ -241,23 +258,14 @@ final class SelectQueryState<R> {
         sqlPagination);
   }
 
-  private boolean containsRootProperty(List<SortSpecification> items, PropertyMeta<?, ?> property) {
+  private static boolean containsRootProperty(
+      List<SortSpecification> items, QueryTable<?> entityRoot, PropertyMeta<?, ?> property) {
     return items.stream()
         .anyMatch(
             item ->
                 item.selectable() instanceof QueryColumn<?, ?> column
-                    && column.table() == entityRootOrNull()
+                    && column.table() == entityRoot
                     && column.property() == property);
-  }
-
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  private QueryColumn<?, ?> rootColumn(PropertyMeta<?, ?> property) {
-    QueryTable<?> entityRoot = entityRootOrNull();
-    if (entityRoot == null) {
-      throw new QueryValidationException(
-          "root property access requires an entity-table query root");
-    }
-    return ((QueryTable) entityRoot).queryColumn((PropertyMeta) property);
   }
 
   private static void validateOrderItems(List<SortSpecification> items) {

@@ -66,7 +66,7 @@ final class ProjectionPlanCache {
     this.compilationAdmissions = new Semaphore(maximumSize, true);
   }
 
-  <R> CachedQueryPlan<R> getOrCompile(
+  <R extends @Nullable Object> CachedQueryPlan<R> getOrCompile(
       QueryPlanKey key,
       QueryPlanDependencies dependencies,
       Supplier<? extends CachedQueryPlan<R>> compiler) {
@@ -140,7 +140,7 @@ final class ProjectionPlanCache {
     }
   }
 
-  private @Nullable <R> CachedQueryPlan<R> findLive(
+  private @Nullable <R extends @Nullable Object> CachedQueryPlan<R> findLive(
       QueryPlanKey key, QueryPlanDependencies dependencies, boolean recordHit) {
     while (true) {
       CacheEntry entry = entries.get(key);
@@ -164,7 +164,7 @@ final class ProjectionPlanCache {
     }
   }
 
-  private <R> CachedQueryPlan<R> compileOrAwait(
+  private <R extends @Nullable Object> CachedQueryPlan<R> compileOrAwait(
       QueryPlanKey key,
       QueryPlanDependencies dependencies,
       Supplier<? extends CachedQueryPlan<R>> compiler) {
@@ -266,7 +266,7 @@ final class ProjectionPlanCache {
     }
   }
 
-  private <R> CachedQueryPlan<R> compileAndPublish(
+  private <R extends @Nullable Object> CachedQueryPlan<R> compileAndPublish(
       QueryPlanKey key, InFlight compiling, Supplier<? extends CachedQueryPlan<R>> compiler) {
     try {
       CachedQueryPlan<R> compiled;
@@ -293,7 +293,8 @@ final class ProjectionPlanCache {
       try {
         while (true) {
           // A published plan needs no compilation permit, even if another key took the last one.
-          // Recheck liveness outside this lock so expiration and dependency checks stay centralized.
+          // Recheck liveness outside this lock so expiration and dependency checks stay
+          // centralized.
           if (entries.containsKey(key)) {
             return AdmissionAction.RETRY_LOOKUP;
           }
@@ -348,7 +349,7 @@ final class ProjectionPlanCache {
     flight.result().complete(outcome);
   }
 
-  private <R> CachedQueryPlan<R> publish(
+  private <R extends @Nullable Object> CachedQueryPlan<R> publish(
       QueryPlanKey key, InFlight compiling, CachedQueryPlan<R> compiled) {
     maintenanceLock.lock();
     try {
@@ -464,18 +465,18 @@ final class ProjectionPlanCache {
     }
   }
 
-  private static <R> CachedQueryPlan<R> requireCompiled(
+  private static <R extends @Nullable Object> CachedQueryPlan<R> requireCompiled(
       Supplier<? extends CachedQueryPlan<R>> compiler) {
     return Objects.requireNonNull(compiler.get(), "compiled query plan");
   }
 
   @SuppressWarnings("unchecked")
-  private static <R> CachedQueryPlan<R> await(InFlight compiling) {
+  private static <R extends @Nullable Object> CachedQueryPlan<R> await(InFlight compiling) {
     return (CachedQueryPlan<R>) compiling.result().join().valueOrThrow();
   }
 
   @SuppressWarnings("unchecked")
-  private static <R> CachedQueryPlan<R> cast(CachedQueryPlan<?> plan) {
+  private static <R extends @Nullable Object> CachedQueryPlan<R> cast(CachedQueryPlan<?> plan) {
     return (CachedQueryPlan<R>) plan;
   }
 
@@ -528,8 +529,7 @@ final class ProjectionPlanCache {
     }
   }
 
-  private record FlightOutcome(
-      @Nullable CachedQueryPlan<?> value, @Nullable Throwable failure) {
+  private record FlightOutcome(@Nullable CachedQueryPlan<?> value, @Nullable Throwable failure) {
 
     private FlightOutcome {
       if ((value == null) == (failure == null)) {
@@ -573,7 +573,7 @@ final class ProjectionPlanCache {
       this.lastAccessNanos = new AtomicLong(lastAccessNanos);
     }
 
-    private <R> CachedQueryPlan<R> plan() {
+    private <R extends @Nullable Object> CachedQueryPlan<R> plan() {
       return cast(plan);
     }
 

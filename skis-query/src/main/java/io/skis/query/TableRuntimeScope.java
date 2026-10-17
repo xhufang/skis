@@ -3,7 +3,6 @@ package io.skis.query;
 import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.PropertyRuntime;
-import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Nullability;
@@ -39,14 +38,15 @@ final class TableRuntimeScope {
     for (TableOccurrence occurrence : fromClause.occurrences()) {
       TableExpression<?> sourceTable = occurrence.entityTable().orElse(null);
       if (sourceTable != null) {
-        if (!(sourceTable instanceof QueryTable<?> table)) {
+        QueryTable<?> table = QueryTable.ownerOf(sourceTable);
+        if (table == null) {
           throw new QueryValidationException(
               "table occurrence #"
                   + occurrence.occurrenceOrdinal()
                   + " is not backed by a query table");
         }
         Occurrence<?> resolved = resolveOccurrence(registry, occurrence.occurrenceOrdinal(), table);
-        entities.put(table, resolved);
+        entities.put(sourceTable, resolved);
         continue;
       }
       DerivedRelationReference reference = occurrence.derivedReference().orElse(null);
@@ -97,13 +97,13 @@ final class TableRuntimeScope {
 
   <E> Occurrence<E> require(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
-    Occurrence<?> occurrence = occurrencesByTable.get(table);
+    Occurrence<?> occurrence = occurrencesByTable.get(table.tableExpression());
     if (occurrence == null) {
       throw new QueryValidationException(
           "table entity '"
               + table.entity().entityName()
               + "'"
-              + table.alias().map(alias -> " with alias '" + alias.value() + "'").orElse("")
+              + table.alias().map(alias -> " with alias '" + alias + "'").orElse("")
               + " is not visible in the final query scope");
     }
     return castOccurrence(occurrence);
@@ -133,7 +133,7 @@ final class TableRuntimeScope {
     if (ordinal == null) {
       throw new QueryValidationException(
           "derived relation alias '"
-              + relation.alias().value()
+              + relation.alias()
               + "' is not visible in the final query scope");
     }
     return ordinal;
@@ -142,12 +142,12 @@ final class TableRuntimeScope {
   Nullability effectiveNullability(DerivedColumnSelectable<?> column) {
     Objects.requireNonNull(column, "column");
     require(column.relation());
-    return fromClause.effectiveNullability((DerivedColumnExpression<?>) column.expression());
+    return fromClause.effectiveNullability(column.expression());
   }
 
   boolean isNullExtended(QueryTable<?> table) {
     require(table);
-    return fromClause.isNullExtended(table);
+    return fromClause.isNullExtended(table.tableExpression());
   }
 
   private static <E> Occurrence<E> resolveOccurrence(
@@ -161,7 +161,7 @@ final class TableRuntimeScope {
               + " entity '"
               + table.entity().entityName()
               + "'"
-              + table.alias().map(alias -> " with alias '" + alias.value() + "'").orElse(""),
+              + table.alias().map(alias -> " with alias '" + alias + "'").orElse(""),
           failure);
     }
   }
@@ -191,7 +191,7 @@ final class TableRuntimeScope {
           + " entity '"
           + table.entity().entityName()
           + "'"
-          + table.alias().map(alias -> " with alias '" + alias.value() + "'").orElse("");
+          + table.alias().map(alias -> " with alias '" + alias + "'").orElse("");
     }
   }
 }

@@ -18,13 +18,19 @@ final class ScalarSubquerySelectable<V> implements Selectable<V> {
   ScalarSubquerySelectable(SingleColumnSelect<V> subquery) {
     SingleColumnSelect<V> description = Objects.requireNonNull(subquery, "subquery");
     this.subquery = description.state();
-    this.output = description.valueSelectable();
+    this.output = typedOutput(description);
     StatementParameterLayout layout = new StatementParameterLayout();
     this.expression =
         new ScalarSubqueryExpression<>(
             QueryStructureCompiler.compileSubquery(
                 this.subquery, layout, new QueryParameterBindings()));
     this.parameterReferences = layout.parameterReferences();
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <V> Selectable<V> typedOutput(SingleColumnSelect<V> description) {
+    // The description is created from one scalar SelectedResult<V>; only its storage is erased.
+    return (Selectable<V>) description.valueSelectable();
   }
 
   @Override
@@ -42,13 +48,8 @@ final class ScalarSubquerySelectable<V> implements Selectable<V> {
     return Nullability.NULLABLE;
   }
 
-  @Override
-  public SqlExpression<V> expression() {
+  SqlExpression<V> expression() {
     return expression;
-  }
-
-  SelectQueryState<V> subquery() {
-    return subquery;
   }
 
   Selectable<V> output() {

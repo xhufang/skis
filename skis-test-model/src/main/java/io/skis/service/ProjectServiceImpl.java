@@ -65,7 +65,11 @@ public class ProjectServiceImpl implements ProjectService {
 
   @Override
   public Optional<Project> findOneByCode(String code) {
-    return skisExecutor.selectFrom(PROJECT).where(PROJECT.code().eq(code)).fetchOne();
+    return skisExecutor
+        .selectFrom(PROJECT)
+        .where(PROJECT.code().eq(code))
+        .fetchOne()
+        .toOptional();
   }
 
   @Override
@@ -114,7 +118,7 @@ public class ProjectServiceImpl implements ProjectService {
 
   @Override
   public Optional<ProjectPrincipalView> findPrincipalView(long projectId) {
-    return principalQuery().where(PROJECT.id().eq(projectId)).fetchOne();
+    return principalQuery().where(PROJECT.id().eq(projectId)).fetchOne().toOptional();
   }
 
   @Override
@@ -135,10 +139,10 @@ public class ProjectServiceImpl implements ProjectService {
         .on(LINK.employeeId().eq(EMPLOYEE.id()))
         .where(PROJECT.id().eq(projectId))
         .orderBy(EMPLOYEE.modifyStamp().desc())
-        .fetch();
+        .fetchList();
   }
 
-  private SelectQuery<Project, ProjectPrincipalView> principalQuery() {
+  private SelectQuery<ProjectPrincipalView> principalQuery() {
     return skisExecutor
         .select(
             ProjectPrincipalViewProjection.of(

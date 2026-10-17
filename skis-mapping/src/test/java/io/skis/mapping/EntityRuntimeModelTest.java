@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class EntityRuntimeModelTest {
@@ -103,7 +104,8 @@ class EntityRuntimeModelTest {
             List.of(
                 new PropertyRuntime<>(ID, JdbcCodecs.LONG),
                 new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
-    RowDecoder<Pet> decoder = model.nullableRowDecoder(RowLayout.contiguous(2, 1));
+    RowDecoder<@Nullable Pet> decoder =
+        model.nullableRowDecoder(RowLayout.contiguous(2, 1));
 
     assertNull(decoder.decode(resultSet(Map.of(2, "orphan")), RowReadContext.EMPTY));
     assertEquals(0, decodedRows.get());
@@ -134,7 +136,7 @@ class EntityRuntimeModelTest {
             List.of(
                 new PropertyRuntime<>(tenantId, JdbcCodecs.LONG),
                 new PropertyRuntime<>(petId, JdbcCodecs.LONG)));
-    RowDecoder<CompositePet> decoder =
+    RowDecoder<@Nullable CompositePet> decoder =
         model.nullableRowDecoder(RowLayout.contiguous(2, 1));
 
     assertNull(decoder.decode(resultSet(Map.of()), RowReadContext.EMPTY));

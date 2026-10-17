@@ -17,12 +17,14 @@ import java.util.List;
 import java.util.Objects;
 
 /** Framework-owned reusable SELECT source with an explicit, typed public output shape. */
-public final class DerivedRelation implements QueryRelation {
+public final class DerivedRelation {
 
   private final SelectQueryState<?> state;
   private final List<DerivedOutput<?>> outputs;
   private final IdentityHashMap<DerivedOutput<?>, Integer> ordinals;
   private final DerivedRelationReference reference;
+  private final List<Selectable<?>> columns;
+  private final QueryRelation queryRelation;
 
   DerivedRelation(
       SelectDescription<?> description, Identifier alias, List<DerivedOutput<?>> outputs) {
@@ -31,12 +33,14 @@ public final class DerivedRelation implements QueryRelation {
     this.outputs = copyAndValidateOutputs(state, outputs);
     this.ordinals = indexOutputs(this.outputs);
     this.reference = createReference(alias, this.outputs);
+    this.columns = createColumns(this.outputs);
+    this.queryRelation = new DerivedQueryRelation(this);
     validateCompletedShape(compilePreview());
   }
 
   /** Explicit relation alias used to qualify every output column. */
-  public Identifier alias() {
-    return reference.alias();
+  public String alias() {
+    return reference.alias().value();
   }
 
   /** Ordered immutable output shape. */
@@ -50,7 +54,7 @@ public final class DerivedRelation implements QueryRelation {
   }
 
   /** Creates another occurrence over the same SELECT and handles with a different alias. */
-  public DerivedRelation as(Identifier alias) {
+  DerivedRelation as(Identifier alias) {
     return new DerivedRelation(
         new SelectDescription<>(state), Objects.requireNonNull(alias, "alias"), outputs);
   }
@@ -58,21 +62,21 @@ public final class DerivedRelation implements QueryRelation {
   /** Resolves one nullable output handle that belongs to this relation shape. */
   public <V> Selectable<V> column(DerivedOutput<V> output) {
     int ordinal = requireOrdinal(output);
-    return new DerivedColumnSelectable<>(this, output, ordinal);
+    return columnAt(ordinal);
   }
 
   /** Resolves one non-null output handle that belongs to this relation shape. */
   public <V> NonNullSelectable<V> column(NonNullDerivedOutput<V> output) {
     int ordinal = requireOrdinal(output);
-    return new NonNullDerivedColumnSelectable<>(this, output, ordinal);
+    return nonNullColumnAt(ordinal);
   }
 
   DerivedRelationReference reference() {
     return reference;
   }
 
-  SelectQueryState<?> state() {
-    return state;
+  QueryRelation queryRelation() {
+    return queryRelation;
   }
 
   DerivedRelationSource compile(QueryConditionCompiler compiler) {
@@ -101,7 +105,7 @@ public final class DerivedRelation implements QueryRelation {
       if (!output.nullability().isNullable() && effective.isNullable()) {
         throw new QueryValidationException(
             "derived output '"
-                + output.alias().value()
+                + output.alias()
                 + "' is effectively nullable after the inner query's complete join chain; "
                 + "declare it with Sql.outputNullable(...)");
       }
@@ -127,9 +131,9 @@ public final class DerivedRelation implements QueryRelation {
     if (ordinal == null) {
       throw new QueryValidationException(
           "derived output handle '"
-              + output.alias().value()
+              + output.alias()
               + "' does not belong to relation alias '"
-              + alias().value()
+              + alias()
               + "'; output membership is matched by handle identity");
     }
     return ordinal;
@@ -158,7 +162,7 @@ public final class DerivedRelation implements QueryRelation {
             "derived output handle #"
                 + index
                 + " ('"
-                + output.alias().value()
+                + output.alias()
                 + "') is not bound to SELECT expression #"
                 + index);
       }
@@ -180,12 +184,42 @@ public final class DerivedRelation implements QueryRelation {
     return indexed;
   }
 
+  private List<Selectable<?>> createColumns(List<DerivedOutput<?>> outputs) {
+    List<Selectable<?>> created = new ArrayList<>(outputs.size());
+    for (int ordinal = 0; ordinal < outputs.size(); ordinal++) {
+      created.add(createColumn(outputs.get(ordinal), ordinal));
+    }
+    return List.copyOf(created);
+  }
+
+  private <V> Selectable<V> createColumn(DerivedOutput<V> output, int ordinal) {
+    if (output instanceof NonNullDerivedOutput<?> nonNullOutput) {
+      @SuppressWarnings("unchecked")
+      NonNullDerivedOutput<V> typedOutput = (NonNullDerivedOutput<V>) nonNullOutput;
+      return new NonNullDerivedColumnSelectable<>(this, typedOutput, ordinal);
+    }
+    return new DerivedColumnSelectable<>(this, output, ordinal);
+  }
+
+  @SuppressWarnings("unchecked")
+  private <V> Selectable<V> columnAt(int ordinal) {
+    return (Selectable<V>) columns.get(ordinal);
+  }
+
+  @SuppressWarnings("unchecked")
+  private <V> NonNullSelectable<V> nonNullColumnAt(int ordinal) {
+    return (NonNullSelectable<V>) columns.get(ordinal);
+  }
+
   private static List<DerivedOutputColumn> descriptors(List<DerivedOutput<?>> outputs) {
     return outputs.stream()
         .map(
             output ->
                 new DerivedOutputColumn(
-                    output.alias(), output.javaType(), output.sqlType(), output.nullability()))
+                    output.aliasIdentifier(),
+                    output.javaType(),
+                    output.sqlType(),
+                    output.nullability()))
         .toList();
   }
 

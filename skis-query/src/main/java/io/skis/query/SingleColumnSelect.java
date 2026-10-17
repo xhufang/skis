@@ -3,135 +3,147 @@ package io.skis.query;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SqlExpression;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
-/**
- * Reusable SELECT description whose final visible SQL shape contains exactly one value column.
- *
- * <p>This contract says nothing about result row count. The selected value is conservatively
- * nullable unless the factory returns {@link NonNullSingleColumnSelect}. Every fluent operation
- * preserves this subtype; an embedding adapter also rechecks the compiled physical output so a
- * hidden selection cannot turn the child into a multi-column SQL result.
- */
-public class SingleColumnSelect<V> extends SelectDescription<V> {
+/** Reusable SELECT description whose final visible SQL shape contains exactly one value. */
+public final class SingleColumnSelect<R extends @Nullable Object> extends SelectDescription<R> {
 
-  SingleColumnSelect(SelectQueryState<V> state) {
+  SingleColumnSelect(SelectQueryState<R> state) {
     super(state);
     if (state.selected().expressions().size() != 1) {
       throw new IllegalArgumentException("SingleColumnSelect requires exactly one selected value");
     }
   }
 
-  @SuppressWarnings("unchecked")
-  final SqlExpression<V> valueExpression() {
-    SqlExpression<?> expression = state().selected().expressions().getFirst();
-    return (SqlExpression<V>) expression;
+  SqlExpression<?> valueExpression() {
+    return state().selected().expressions().getFirst();
   }
 
-  final Selectable<V> valueSelectable() {
+  Selectable<?> valueSelectable() {
     return state().selected().singleSelectable();
   }
 
   @Override
-  public SingleColumnSelect<V> where(QueryCondition condition) {
-    return require(super.where(condition));
+  public SingleColumnSelect<R> where(QueryCondition condition) {
+    return (SingleColumnSelect<R>) super.where(condition);
   }
 
   @Override
-  public SingleColumnSelect<V> and(QueryCondition condition) {
-    return require(super.and(condition));
+  public SingleColumnSelect<R> and(QueryCondition condition) {
+    return (SingleColumnSelect<R>) super.and(condition);
   }
 
   @Override
-  public SingleColumnSelect<V> or(QueryCondition condition) {
-    return require(super.or(condition));
+  public SingleColumnSelect<R> or(QueryCondition condition) {
+    return (SingleColumnSelect<R>) super.or(condition);
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> join(QueryTable<?> table) {
+  public JoinOnStep<SingleColumnSelect<R>> join(QueryTable<?> table) {
     return innerJoin(table);
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> join(DerivedRelation relation) {
+  public JoinOnStep<SingleColumnSelect<R>> join(DerivedRelation relation) {
     return innerJoin(relation);
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> innerJoin(QueryTable<?> table) {
-    return joinOn(JoinType.INNER, table);
+  public JoinOnStep<SingleColumnSelect<R>> innerJoin(QueryTable<?> table) {
+    return joinOn(JoinType.INNER, QueryRelations.of(table));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> innerJoin(DerivedRelation relation) {
-    return joinOn(JoinType.INNER, relation);
+  public JoinOnStep<SingleColumnSelect<R>> innerJoin(DerivedRelation relation) {
+    return joinOn(JoinType.INNER, QueryRelations.of(relation));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> leftJoin(QueryTable<?> table) {
-    return joinOn(JoinType.LEFT, table);
+  public JoinOnStep<SingleColumnSelect<R>> leftJoin(QueryTable<?> table) {
+    return joinOn(JoinType.LEFT, QueryRelations.of(table));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> leftJoin(DerivedRelation relation) {
-    return joinOn(JoinType.LEFT, relation);
+  public JoinOnStep<SingleColumnSelect<R>> leftJoin(DerivedRelation relation) {
+    return joinOn(JoinType.LEFT, QueryRelations.of(relation));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> rightJoin(QueryTable<?> table) {
-    return joinOn(JoinType.RIGHT, table);
+  public JoinOnStep<SingleColumnSelect<R>> rightJoin(QueryTable<?> table) {
+    return joinOn(JoinType.RIGHT, QueryRelations.of(table));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> rightJoin(DerivedRelation relation) {
-    return joinOn(JoinType.RIGHT, relation);
+  public JoinOnStep<SingleColumnSelect<R>> rightJoin(DerivedRelation relation) {
+    return joinOn(JoinType.RIGHT, QueryRelations.of(relation));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> fullJoin(QueryTable<?> table) {
-    return joinOn(JoinType.FULL, table);
+  public JoinOnStep<SingleColumnSelect<R>> fullJoin(QueryTable<?> table) {
+    return joinOn(JoinType.FULL, QueryRelations.of(table));
   }
 
   @Override
-  public SingleColumnSelectJoinOnStep<V> fullJoin(DerivedRelation relation) {
-    return joinOn(JoinType.FULL, relation);
+  public JoinOnStep<SingleColumnSelect<R>> fullJoin(DerivedRelation relation) {
+    return joinOn(JoinType.FULL, QueryRelations.of(relation));
   }
 
   @Override
-  public SingleColumnSelect<V> crossJoin(QueryTable<?> table) {
-    return require(super.crossJoin(table));
+  public SingleColumnSelect<R> crossJoin(QueryTable<?> table) {
+    return (SingleColumnSelect<R>) super.crossJoin(table);
   }
 
   @Override
-  public SingleColumnSelect<V> crossJoin(DerivedRelation relation) {
-    return require(super.crossJoin(relation));
+  public SingleColumnSelect<R> crossJoin(DerivedRelation relation) {
+    return (SingleColumnSelect<R>) super.crossJoin(relation);
   }
 
   @Override
-  public SingleColumnSelect<V> orderBy(SortSpecification... specifications) {
-    return require(super.orderBy(specifications));
+  public SingleColumnSelect<R> orderBy(SortSpecification... specifications) {
+    return (SingleColumnSelect<R>) super.orderBy(specifications);
   }
 
   @Override
-  public SingleColumnSelect<V> thenByPrimaryKey(SortDirection direction) {
-    return require(super.thenByPrimaryKey(direction));
+  public SingleColumnSelect<R> thenByPrimaryKey(SortDirection direction) {
+    return (SingleColumnSelect<R>) super.thenByPrimaryKey(direction);
   }
 
   @Override
-  public SingleColumnSelect<V> distinct() {
-    return require(super.distinct());
+  public SingleColumnSelect<R> distinct() {
+    return (SingleColumnSelect<R>) super.distinct();
   }
 
   @Override
-  SingleColumnSelect<V> recreate(SelectQueryState<V> replacement) {
+  SingleColumnSelect<R> recreate(SelectQueryState<R> replacement) {
     return replacement == state() ? this : new SingleColumnSelect<>(replacement);
   }
 
-  private SingleColumnSelectJoinOnStep<V> joinOn(JoinType type, QueryRelation relation) {
-    return new SingleColumnSelectJoinOnStep<>(
+  private JoinOnStep<SingleColumnSelect<R>> joinOn(JoinType type, QueryRelation relation) {
+    return new SingleColumnJoinOnStep<>(
         state(), type, Objects.requireNonNull(relation, "relation"));
   }
+}
 
-  private SingleColumnSelect<V> require(SelectDescription<V> description) {
-    return (SingleColumnSelect<V>) description;
+/** Internal ON stage preserving the one-column description type. */
+final class SingleColumnJoinOnStep<R extends @Nullable Object>
+    implements JoinOnStep<SingleColumnSelect<R>> {
+
+  private final SelectQueryState<R> state;
+  private final JoinType type;
+  private final QueryRelation relation;
+
+  SingleColumnJoinOnStep(SelectQueryState<R> state, JoinType type, QueryRelation relation) {
+    this.state = Objects.requireNonNull(state, "state");
+    this.type = Objects.requireNonNull(type, "type");
+    if (type == JoinType.CROSS) {
+      throw new IllegalArgumentException("CROSS JOIN does not use an ON stage");
+    }
+    this.relation = Objects.requireNonNull(relation, "relation");
+  }
+
+  @Override
+  public SingleColumnSelect<R> on(QueryCondition condition) {
+    QueryCondition reusable = QueryConditions.reusableStructure(condition);
+    return new SingleColumnSelect<>(state.appendJoin(type, relation, reusable));
   }
 }

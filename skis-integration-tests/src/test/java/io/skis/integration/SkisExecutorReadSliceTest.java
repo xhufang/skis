@@ -25,6 +25,22 @@ import org.junit.jupiter.api.Test;
 class SkisExecutorReadSliceTest {
 
   @Test
+  void fetchFirstPushesOneRowLimitIntoTheFinalJdbcSql() {
+    JdbcCapture capture = new JdbcCapture();
+    SkisExecutor executor = SkisExecutorFactory.create(capture.dataSource(), H2Dialect.INSTANCE);
+    PetTable pet = PetTable.PET;
+
+    assertTrue(executor.selectFrom(pet).orderBy(pet.id().asc()).fetchFirst().hasRow());
+
+    assertEquals(1, capture.sql.size());
+    assertTrue(capture.sql.getFirst().endsWith("ORDER BY \"pet\".\"id\" ASC LIMIT ?"));
+    assertEquals(List.of(1), capture.boundValues);
+    assertEquals(1, capture.resultSetCloses.get());
+    assertEquals(1, capture.statementCloses.get());
+    assertEquals(1, capture.connectionCloses.get());
+  }
+
+  @Test
   void executesGeneratedFindByIdAndDslMappingsThroughOneInjectedFacade() {
     JdbcCapture capture = new JdbcCapture();
     SkisExecutor executor = SkisExecutorFactory.create(capture.dataSource(), H2Dialect.INSTANCE);

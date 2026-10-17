@@ -10,9 +10,10 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Query-compiler-local result shape with resolved value mappings and JDBC indexes. */
-record ResolvedResultShape<R>(
+record ResolvedResultShape<R extends @Nullable Object>(
     List<SqlExpression<?>> expressions, RowDecoder<R> decoder, List<ResolvedSelection> selections) {
 
   ResolvedResultShape {
@@ -38,55 +39,66 @@ record ResolvedResultShape<R>(
     }
   }
 
-  static <E> ResolvedResultShape<E> entity(
-      QueryTable<E> table, TableRuntimeScope scope, boolean nullableResult) {
+  static <E> ResolvedResultShape<E> entity(QueryTable<E> table, TableRuntimeScope scope) {
     TableRuntimeScope.Occurrence<E> occurrence = scope.require(table);
     var model = occurrence.model();
-    if (nullableResult && model.entity().primaryKey().isEmpty()) {
-      throw new QueryValidationException(
-          "selectNullable(table) requires complete non-null primary-key metadata for "
-              + occurrence.description());
-    }
-    if (!nullableResult && scope.isNullExtended(table)) {
+    if (scope.isNullExtended(table)) {
       throw new QueryValidationException(
           "non-null entity selection references null-extended "
               + occurrence.description()
               + "; use selectNullable(table)");
     }
-    List<ResolvedSelection> resolved = new ArrayList<>(model.entity().properties().size());
-    for (PropertyMeta<E, ?> property : model.entity().properties()) {
-      QueryColumn<E, ?> column = table.queryColumn(property);
+    return entityShape(table, scope, model.fullRowDecoder());
+  }
+
+  static <E> ResolvedResultShape<@Nullable E> nullableEntity(
+      QueryTable<E> table, TableRuntimeScope scope) {
+    TableRuntimeScope.Occurrence<E> occurrence = scope.require(table);
+    var model = occurrence.model();
+    if (model.entity().primaryKey().isEmpty()) {
+      throw new QueryValidationException(
+          "selectNullable(table) requires complete non-null primary-key metadata for "
+              + occurrence.description());
+    }
+    RowLayout layout = RowLayout.contiguous(model.properties().size(), 1);
+    return entityShape(table, scope, model.nullableRowDecoder(layout));
+  }
+
+  private static <E, R extends @Nullable Object> ResolvedResultShape<R> entityShape(
+      QueryTable<E> table, TableRuntimeScope scope, RowDecoder<R> decoder) {
+    List<ResolvedSelection> resolved = new ArrayList<>(table.entity().properties().size());
+    for (PropertyMeta<E, ?> property : table.entity().properties()) {
+      QueryColumn<E, ?> column = table.internalColumn(property);
       resolved.add(
           new ResolvedSelection(
               ResolvedValueMapping.resolve(column, scope), property.ordinal() + 1));
     }
-    RowLayout layout = RowLayout.contiguous(model.properties().size(), 1);
-    RowDecoder<E> decoder =
-        nullableResult ? model.nullableRowDecoder(layout) : model.fullRowDecoder();
     return new ResolvedResultShape<>(List.copyOf(table.selections()), decoder, resolved);
   }
 
   static <R> ResolvedResultShape<R> scalar(
-      Selectable<R> selectable,
-      SqlExpression<R> expression,
-      TableRuntimeScope scope,
-      boolean nullableResult) {
+      Selectable<R> selectable, SqlExpression<R> expression, TableRuntimeScope scope) {
     ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
-    if (!nullableResult && mapping.effectiveNullability().isNullable()) {
+    if (mapping.effectiveNullability().isNullable()) {
       throw new QueryValidationException(
           "non-null scalar selection '"
               + SelectableSupport.summary(selectable)
               + "' is effectively nullable; use selectNullable(selectable)");
     }
-    ProjectionMapping.ValueReader<R> reader = mapping.reader(1, !nullableResult);
+    ProjectionMapping.ValueReader<R> reader = mapping.reader(1, true);
     RowDecoder<R> decoder =
-        (resultSet, context) -> {
-          R value = reader.read(resultSet, context);
-          if (value == null && !nullableResult) {
-            throw new SQLException("required scalar result is null at JDBC index 1");
-          }
-          return value;
-        };
+        (resultSet, context) ->
+            requireDecodedValue(
+                reader.read(resultSet, context), "required scalar result is null at JDBC index 1");
+    return new ResolvedResultShape<>(
+        List.of(expression), decoder, List.of(new ResolvedSelection(mapping, 1)));
+  }
+
+  static <R> ResolvedResultShape<@Nullable R> nullableScalar(
+      Selectable<R> selectable, SqlExpression<R> expression, TableRuntimeScope scope) {
+    ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
+    ProjectionMapping.ValueReader<R> reader = mapping.reader(1, false);
+    RowDecoder<@Nullable R> decoder = reader::read;
     return new ResolvedResultShape<>(
         List.of(expression), decoder, List.of(new ResolvedSelection(mapping, 1)));
   }
@@ -170,17 +182,22 @@ record ResolvedResultShape<R>(
     ProjectionMapping.Readers readers = new CompiledReaders(parameters, detachedReaders);
     RowDecoder<R> generated =
         Objects.requireNonNull(mapping.decoderFactory().create(readers), "projection row decoder");
-    String resultTypeName = mapping.resultType().getTypeName();
+    String nullResultMessage =
+        "generated projection decoder returned null for '"
+            + mapping.resultType().getTypeName()
+            + "'";
     RowDecoder<R> decoder =
-        (resultSet, context) -> {
-          R value = generated.decode(resultSet, context);
-          if (value == null) {
-            throw new SQLException(
-                "generated projection decoder returned null for '" + resultTypeName + "'");
-          }
-          return value;
-        };
+        (resultSet, context) ->
+            requireDecodedValue(generated.decode(resultSet, context), nullResultMessage);
     return new ResolvedResultShape<>(expressions, decoder, resolved);
+  }
+
+  private static <R> R requireDecodedValue(@Nullable R value, String nullMessage)
+      throws SQLException {
+    if (value == null) {
+      throw new SQLException(nullMessage);
+    }
+    return value;
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -202,7 +219,7 @@ record ResolvedResultShape<R>(
         return "derived relation occurrence #"
             + scope.require(column.relation())
             + " with alias '"
-            + column.relation().alias().value()
+            + column.relation().alias()
             + "'";
       } catch (QueryValidationException ignored) {
         return "an unresolved derived relation occurrence";
@@ -282,8 +299,7 @@ record ResolvedResultShape<R>(
                 + " but its mapping contract requires "
                 + parameter.javaType().getTypeName());
       }
-      return (ProjectionMapping.ValueReader<V>)
-          detachedReaders.get(parameterOrdinal);
+      return (ProjectionMapping.ValueReader<V>) detachedReaders.get(parameterOrdinal);
     }
   }
 

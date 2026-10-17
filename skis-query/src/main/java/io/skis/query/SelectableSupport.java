@@ -1,7 +1,6 @@
 package io.skis.query;
 
 import io.skis.sql.ast.ComparisonOperator;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
@@ -15,6 +14,19 @@ import org.jspecify.annotations.Nullable;
 final class SelectableSupport {
 
   private SelectableSupport() {}
+
+  @SuppressWarnings("unchecked")
+  static <V> SqlExpression<V> expression(Selectable<V> selectable) {
+    Selectable<?> source = Objects.requireNonNull(selectable, "selectable");
+    SqlExpression<?> expression =
+        switch (source) {
+          case QueryColumn<?, ?> column -> column.expression();
+          case DerivedColumnSelectable<?> column -> column.expression();
+          case ExpressionSelectable<?> standard -> standard.expression();
+          case ScalarSubquerySelectable<?> scalar -> scalar.expression();
+        };
+    return (SqlExpression<V>) expression;
+  }
 
   static <V> QueryCondition valueComparison(
       Selectable<V> selectable, ComparisonOperator operator, @Nullable V value) {
@@ -142,18 +154,13 @@ final class SelectableSupport {
   static String summary(Selectable<?> selectable) {
     Objects.requireNonNull(selectable, "selectable");
     if (selectable instanceof QueryColumn<?, ?> column) {
-      String qualifier =
-          column
-              .table()
-              .alias()
-              .map(Identifier::value)
-              .orElse(column.table().entity().table().name());
+      String qualifier = column.table().alias().orElse(column.table().entity().table().name());
       return qualifier + '.' + column.property().name();
     }
     if (selectable instanceof DerivedColumnSelectable<?> column) {
-      return column.relation().alias().value() + '.' + column.output().alias().value();
+      return column.relation().alias() + '.' + column.output().alias();
     }
-    return selectable.expression().getClass().getSimpleName();
+    return expression(selectable).getClass().getSimpleName();
   }
 
   static boolean sameOccurrence(Selectable<?> left, Selectable<?> right) {
@@ -165,16 +172,16 @@ final class SelectableSupport {
           when right instanceof DerivedColumnSelectable<?> rightColumn ->
           leftColumn.relation().reference() == rightColumn.relation().reference()
               && leftColumn.output() == rightColumn.output();
-      case ScalarSubquerySelectable<?> scalarSubquerySelectable
-          when right instanceof ScalarSubquerySelectable<?> ->
-          expressionIdentity(left).equals(expressionIdentity(right));
+      case ScalarSubquerySelectable<?> leftScalar
+          when right instanceof ScalarSubquerySelectable<?> rightScalar ->
+          expressionIdentity(leftScalar).equals(expressionIdentity(rightScalar));
       default -> left == right;
     };
   }
 
   static ExpressionIdentity expressionIdentity(Selectable<?> selectable) {
     return new ExpressionIdentity(
-        selectable.expression(),
+        expression(selectable),
         selectable instanceof ScalarSubquerySelectable<?> scalar
             ? scalar.parameterReferences()
             : List.of());
