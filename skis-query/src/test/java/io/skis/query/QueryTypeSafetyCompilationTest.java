@@ -1009,6 +1009,55 @@ class QueryTypeSafetyCompilationTest {
             temporaryDirectory.resolve("query-table-ast-leak")));
   }
 
+  @Test
+  void entityFastPathRequiresAQueryTableAtCompilationTime() throws Exception {
+    String valid =
+        """
+        package samples;
+
+        import io.skis.query.QueryOperations;
+        import io.skis.query.QueryTable;
+        import io.skis.query.SelectQuery;
+        import java.util.Optional;
+
+        final class ValidEntityFastPath {
+          static final class Pet {}
+
+          static SelectQuery<Pet> select(QueryOperations operations, QueryTable<Pet> pet) {
+            return operations.selectFrom(pet);
+          }
+
+          static Optional<Pet> load(QueryOperations operations, QueryTable<Pet> pet) {
+            return operations.findById(pet, 1L);
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+
+        import io.skis.query.DerivedRelation;
+        import io.skis.query.QueryOperations;
+
+        final class InvalidDerivedFastPath {
+          static void load(QueryOperations operations, DerivedRelation derived) {
+            operations.findById(derived, 1L);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidEntityFastPath",
+            valid,
+            temporaryDirectory.resolve("valid-entity-fast-path")));
+    assertFalse(
+        compile(
+            "samples.InvalidDerivedFastPath",
+            invalid,
+            temporaryDirectory.resolve("invalid-derived-fast-path")));
+  }
+
   private static boolean compile(String className, String source, Path output) throws IOException {
     Files.createDirectories(output);
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();

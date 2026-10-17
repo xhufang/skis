@@ -3,10 +3,10 @@ package io.skis.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.skis.dialect.h2.H2Dialect;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.types.JdbcTypes;
-import io.skis.testmodel.types.skis.JdbcTypesMeta;
+import io.skis.testmodel.types.skis.JdbcTypesTable;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.UUID;
@@ -19,21 +19,21 @@ class SkisJdbcTypeH2ContractTest {
   @Test
   void roundTripsEveryDeclaredH2MappingThroughGeneratedCode() throws Exception {
     DataSource dataSource = database();
-    SkisExecutor executor = SkisExecutorFactory.create(dataSource, H2Dialect.INSTANCE);
+    SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     JdbcTypes expected = JdbcTypeContractSupport.nonNullValues(1L);
     JdbcTypes nulls = JdbcTypeContractSupport.nullValues(2L);
     JdbcTypes emptyBytes = JdbcTypeContractSupport.emptyBytesValue(3L);
 
-    assertEquals(1, executor.insert(JdbcTypesMeta.ENTITY, expected));
-    assertEquals(1, executor.insert(JdbcTypesMeta.ENTITY, nulls));
-    assertEquals(1, executor.insert(JdbcTypesMeta.ENTITY, emptyBytes));
+    assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, expected));
+    assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, nulls));
+    assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, emptyBytes));
 
     JdbcTypeContractSupport.assertNonNullValues(
-        expected, executor.findById(JdbcTypesMeta.ENTITY, expected.id()).orElseThrow());
+        expected, executor.findById(JdbcTypesTable.JDBC_TYPES, expected.id()).orElseThrow());
     JdbcTypeContractSupport.assertNullValues(
-        executor.findById(JdbcTypesMeta.ENTITY, nulls.id()).orElseThrow());
+        executor.findById(JdbcTypesTable.JDBC_TYPES, nulls.id()).orElseThrow());
     JdbcTypeContractSupport.assertNonNullValues(
-        emptyBytes, executor.findById(JdbcTypesMeta.ENTITY, emptyBytes.id()).orElseThrow());
+        emptyBytes, executor.findById(JdbcTypesTable.JDBC_TYPES, emptyBytes.id()).orElseThrow());
     JdbcTypeContractSupport.assertInvalidReadsFail(dataSource);
   }
 

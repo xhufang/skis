@@ -6,6 +6,7 @@ import io.skis.jdbc.JdbcExecutionException;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
+import io.skis.query.QueryTable;
 import java.util.Objects;
 
 /** Default immutable entity mutation facade. */
@@ -20,19 +21,20 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   @Override
-  public <E> int insert(EntityMeta<E> entity, E value) {
-    return insert(entity, value, ExecutionContext.EMPTY);
+  public <E> int insert(QueryTable<E> table, E value) {
+    return insert(table, value, ExecutionContext.EMPTY);
   }
 
   @Override
-  public <E> int insert(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+  public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
     return insert(
-        entity,
+        table,
         value,
         ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
   }
 
-  private <E> int insert(EntityMeta<E> entity, E value, ExecutionContext context) {
+  private <E> int insert(QueryTable<E> table, E value, ExecutionContext context) {
+    EntityMeta<E> entity = requireEntity(table);
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     requireEntityValue(entity, value);
     int affected =
@@ -44,19 +46,20 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   @Override
-  public <E> int updateById(EntityMeta<E> entity, E value) {
-    return updateById(entity, value, ExecutionContext.EMPTY);
+  public <E> int updateById(QueryTable<E> table, E value) {
+    return updateById(table, value, ExecutionContext.EMPTY);
   }
 
   @Override
-  public <E> int updateById(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+  public <E> int updateById(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
     return updateById(
-        entity,
+        table,
         value,
         ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
   }
 
-  private <E> int updateById(EntityMeta<E> entity, E value, ExecutionContext context) {
+  private <E> int updateById(QueryTable<E> table, E value, ExecutionContext context) {
+    EntityMeta<E> entity = requireEntity(table);
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     requireEntityValue(entity, value);
     EntityMutationPlanSet.UpdateExecution<E> execution = plans.update(value);
@@ -76,22 +79,23 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   @Override
-  public <E> int deleteById(EntityMeta<E> entity, Object id) {
-    return deleteById(entity, id, ExecutionContext.EMPTY);
+  public <E> int deleteById(QueryTable<E> table, Object id) {
+    return deleteById(table, id, ExecutionContext.EMPTY);
   }
 
   @Override
-  public <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+  public <E> int deleteById(QueryTable<E> table, Object id, ExecutionOptions executionOptions) {
     return deleteById(
-        entity,
+        table,
         id,
         ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
   }
 
-  private <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionContext context) {
+  private <E> int deleteById(QueryTable<E> table, Object id, ExecutionContext context) {
+    EntityMeta<E> entity = requireEntity(table);
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     PropertyMeta<E, ?> idProperty = entity.primaryKey().orElseThrow().properties().getFirst();
-    requireValueType(idProperty, id, "deleteById id");
+    requireValueType(idProperty, id);
     int affected =
         execute(
             entity, "deleteById", () -> jdbcExecutor.executeUpdate(plans.delete(), id, context));
@@ -105,6 +109,10 @@ final class DefaultMutationOperations implements MutationOperations {
     return planCatalog.require(entity);
   }
 
+  private static <E> EntityMeta<E> requireEntity(QueryTable<E> table) {
+    return Objects.requireNonNull(table, "table").entity();
+  }
+
   private static <E> void requireEntityValue(EntityMeta<E> entity, E value) {
     Objects.requireNonNull(value, "value");
     if (!entity.javaType().isInstance(value)) {
@@ -116,11 +124,10 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  private static void requireValueType(
-      PropertyMeta<?, ?> property, Object value, String description) {
+  private static void requireValueType(PropertyMeta<?, ?> property, Object value) {
     if (!property.javaType().isInstance(value)) {
       throw new MutationException(
-          description
+          "deleteById id"
               + " for property '"
               + property.name()
               + "' requires "

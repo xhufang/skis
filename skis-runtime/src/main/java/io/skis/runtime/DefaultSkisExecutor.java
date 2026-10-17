@@ -4,7 +4,6 @@ import io.skis.core.ExecutionContext;
 import io.skis.core.ExecutionOptions;
 import io.skis.jdbc.JdbcExecutor;
 import io.skis.jdbc.JdbcTransaction;
-import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
 import io.skis.query.NonNullSelectable;
@@ -21,7 +20,7 @@ import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
-/** Default immutable executor assembled by {@link SkisExecutorFactory}. */
+/** Default immutable executor assembled by {@link Skis}. */
 final class DefaultSkisExecutor implements SkisExecutor {
 
   private final QueryOperations queries;
@@ -44,14 +43,14 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E> Optional<E> findById(EntityMeta<E> entity, Object id) {
-    return queries.findById(entity, id);
+  public <E> Optional<E> findById(QueryTable<E> table, Object id) {
+    return queries.findById(table, id);
   }
 
   @Override
   public <E> Optional<E> findById(
-      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
-    return queries.findById(entity, id, executionOptions);
+      QueryTable<E> table, Object id, ExecutionOptions executionOptions) {
+    return queries.findById(table, id, executionOptions);
   }
 
   @Override
@@ -96,33 +95,33 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E> int insert(EntityMeta<E> entity, E value) {
-    return mutations.insert(entity, value);
+  public <E> int insert(QueryTable<E> table, E value) {
+    return mutations.insert(table, value);
   }
 
   @Override
-  public <E> int insert(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
-    return mutations.insert(entity, value, executionOptions);
+  public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
+    return mutations.insert(table, value, executionOptions);
   }
 
   @Override
-  public <E> int updateById(EntityMeta<E> entity, E value) {
-    return mutations.updateById(entity, value);
+  public <E> int updateById(QueryTable<E> table, E value) {
+    return mutations.updateById(table, value);
   }
 
   @Override
-  public <E> int updateById(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
-    return mutations.updateById(entity, value, executionOptions);
+  public <E> int updateById(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
+    return mutations.updateById(table, value, executionOptions);
   }
 
   @Override
-  public <E> int deleteById(EntityMeta<E> entity, Object id) {
-    return mutations.deleteById(entity, id);
+  public <E> int deleteById(QueryTable<E> table, Object id) {
+    return mutations.deleteById(table, id);
   }
 
   @Override
-  public <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
-    return mutations.deleteById(entity, id, executionOptions);
+  public <E> int deleteById(QueryTable<E> table, Object id, ExecutionOptions executionOptions) {
+    return mutations.deleteById(table, id, executionOptions);
   }
 
   @Override

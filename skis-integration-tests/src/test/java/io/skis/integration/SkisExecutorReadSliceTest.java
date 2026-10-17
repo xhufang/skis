@@ -5,10 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.h2.H2Dialect;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
-import io.skis.testmodel.pet.skis.PetMeta;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
@@ -27,7 +26,7 @@ class SkisExecutorReadSliceTest {
   @Test
   void fetchFirstPushesOneRowLimitIntoTheFinalJdbcSql() {
     JdbcCapture capture = new JdbcCapture();
-    SkisExecutor executor = SkisExecutorFactory.create(capture.dataSource(), H2Dialect.INSTANCE);
+    SkisExecutor executor = Skis.create(capture.dataSource(), H2Dialect.INSTANCE);
     PetTable pet = PetTable.PET;
 
     assertTrue(executor.selectFrom(pet).orderBy(pet.id().asc()).fetchFirst().hasRow());
@@ -43,9 +42,9 @@ class SkisExecutorReadSliceTest {
   @Test
   void executesGeneratedFindByIdAndDslMappingsThroughOneInjectedFacade() {
     JdbcCapture capture = new JdbcCapture();
-    SkisExecutor executor = SkisExecutorFactory.create(capture.dataSource(), H2Dialect.INSTANCE);
+    SkisExecutor executor = Skis.create(capture.dataSource(), H2Dialect.INSTANCE);
 
-    Pet fastPath = executor.findById(PetMeta.ENTITY, 7L).orElseThrow();
+    Pet fastPath = executor.findById(PetTable.PET, 7L).orElseThrow();
     PetTable pet = PetTable.PET;
     List<Pet> dsl = executor.selectFrom(pet).where(pet.name().eq("Mimi")).fetchList();
     String maliciousName = "Mimi' OR 1=1 --";

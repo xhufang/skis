@@ -9,10 +9,10 @@ import io.skis.dialect.postgresql.PostgreSqlCodecs;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
 import io.skis.mapping.JdbcReadContext;
 import io.skis.mapping.JdbcWriteContext;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.types.JdbcTypes;
-import io.skis.testmodel.types.skis.JdbcTypesMeta;
+import io.skis.testmodel.types.skis.JdbcTypesTable;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -34,19 +34,19 @@ class SkisJdbcTypePostgreSqlContractTest {
     JdbcTypes expected = JdbcTypeContractSupport.nonNullValues(id);
     JdbcTypes nulls = JdbcTypeContractSupport.nullValues(nullId);
     JdbcTypes emptyBytes = JdbcTypeContractSupport.emptyBytesValue(emptyBytesId);
-    SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
+    SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
-      assertEquals(1, executor.insert(JdbcTypesMeta.ENTITY, expected));
-      assertEquals(1, executor.insert(JdbcTypesMeta.ENTITY, nulls));
-      assertEquals(1, executor.insert(JdbcTypesMeta.ENTITY, emptyBytes));
+      assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, expected));
+      assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, nulls));
+      assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, emptyBytes));
 
       JdbcTypeContractSupport.assertNonNullValues(
-          expected, executor.findById(JdbcTypesMeta.ENTITY, id).orElseThrow());
+          expected, executor.findById(JdbcTypesTable.JDBC_TYPES, id).orElseThrow());
       JdbcTypeContractSupport.assertNullValues(
-          executor.findById(JdbcTypesMeta.ENTITY, nullId).orElseThrow());
+          executor.findById(JdbcTypesTable.JDBC_TYPES, nullId).orElseThrow());
       JdbcTypeContractSupport.assertNonNullValues(
-          emptyBytes, executor.findById(JdbcTypesMeta.ENTITY, emptyBytesId).orElseThrow());
+          emptyBytes, executor.findById(JdbcTypesTable.JDBC_TYPES, emptyBytesId).orElseThrow());
       JdbcTypeContractSupport.assertInvalidReadsFail(dataSource);
     } finally {
       deleteRows(dataSource, "jdbc_types", id, nullId, emptyBytesId);

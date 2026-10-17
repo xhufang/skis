@@ -4,8 +4,6 @@ import io.skis.core.id.IdWorker;
 import io.skis.entity.Employee;
 import io.skis.entity.EmployeeProjectLink;
 import io.skis.entity.skis.DepartmentTable;
-import io.skis.entity.skis.EmployeeMeta;
-import io.skis.entity.skis.EmployeeProjectLinkMeta;
 import io.skis.entity.skis.EmployeeProjectLinkTable;
 import io.skis.entity.skis.EmployeeTable;
 import io.skis.entity.skis.ProjectTable;
@@ -45,7 +43,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   @Override
   public Employee createEmployee(Employee employee) {
     prepareForInsert(employee);
-    skisExecutor.insert(EmployeeMeta.ENTITY, employee);
+    skisExecutor.insert(EMPLOYEE, employee);
     return employee;
   }
 
@@ -57,9 +55,9 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(EmployeeMeta.ENTITY, employee);
+          session.insert(EMPLOYEE, employee);
           for (Long projectId : distinctProjectIds) {
-            session.insert(EmployeeProjectLinkMeta.ENTITY, newLink(employee.getId(), projectId));
+            session.insert(LINK, newLink(employee.getId(), projectId));
           }
           return employee;
         });
@@ -69,17 +67,17 @@ public class EmployeeServiceImpl implements EmployeeService {
   public int updateEmployee(Employee employee) {
     Objects.requireNonNull(employee, "employee");
     employee.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(EmployeeMeta.ENTITY, employee);
+    return skisExecutor.updateById(EMPLOYEE, employee);
   }
 
   @Override
   public int deleteEmployee(long id) {
-    return skisExecutor.deleteById(EmployeeMeta.ENTITY, id);
+    return skisExecutor.deleteById(EMPLOYEE, id);
   }
 
   @Override
   public Optional<Employee> findById(long id) {
-    return skisExecutor.findById(EmployeeMeta.ENTITY, id);
+    return skisExecutor.findById(EMPLOYEE, id);
   }
 
   @Override

@@ -488,7 +488,7 @@ class EntityPlanSetTest {
                       public void release(Connection connection, ExecutionContext context) {}
                     }));
 
-    assertThrows(QueryValidationException.class, () -> operations.findById(PET, null));
+    assertThrows(QueryValidationException.class, () -> operations.findById(TABLE, null));
   }
 
   @Test
@@ -510,7 +510,7 @@ class EntityPlanSetTest {
                     }));
     ExecutionOptions options = ExecutionOptions.builder().fetchSize(64).build();
 
-    assertThrows(QueryExecutionException.class, () -> operations.findById(PET, 1L, options));
+    assertThrows(QueryExecutionException.class, () -> operations.findById(TABLE, 1L, options));
     assertSame(options, observed.get());
 
     observed.set(null);

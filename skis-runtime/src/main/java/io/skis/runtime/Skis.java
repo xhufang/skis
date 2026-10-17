@@ -19,32 +19,26 @@ import java.util.Objects;
 import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable assembly entry point used by non-Spring applications and future auto-configuration. */
-public final class SkisExecutorFactory {
+/** Assembly entry point for non-Spring applications and framework integrations. */
+public final class Skis {
 
-  private SkisExecutorFactory() {}
+  private Skis() {}
 
-  /**
-   * Creates an executor and automatically loads generated entities from the context class loader.
-   */
-  public static SkisExecutor create(ConnectionProvider connectionProvider, Dialect dialect) {
-    return builder().connectionProvider(connectionProvider).dialect(dialect).build();
-  }
-
-  /** Creates an executor backed by a DataSource and the selected database dialect. */
+  /** Creates an executor backed by a DataSource and an explicitly selected database dialect. */
   public static SkisExecutor create(DataSource dataSource, Dialect dialect) {
-    return create(new DataSourceConnectionProvider(dataSource), dialect);
+    return builder(dataSource).dialect(dialect).build();
   }
 
-  /** Starts explicit assembly of an executor and its immutable runtime registries. */
-  public static Builder builder() {
-    return new Builder();
+  /** Starts explicit assembly with the supplied DataSource as the connection owner. */
+  public static Builder builder(DataSource dataSource) {
+    return new Builder(
+        new DataSourceConnectionProvider(Objects.requireNonNull(dataSource, "dataSource")));
   }
 
   /** Mutable one-time builder; the resulting executor is thread-safe and owns its runtime state. */
   public static final class Builder {
 
-    private @Nullable ConnectionProvider connectionProvider;
+    private ConnectionProvider connectionProvider;
     private @Nullable Dialect dialect;
     private @Nullable ClassLoader classLoader;
     private @Nullable EntityRuntimeRegistry runtimeRegistry;
@@ -52,20 +46,17 @@ public final class SkisExecutorFactory {
     private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
     private ExecutionOptions executionOptions = ExecutionOptions.NONE;
 
-    private Builder() {}
+    private Builder(ConnectionProvider connectionProvider) {
+      this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
+    }
 
-    /** Uses the supplied connection ownership strategy for every operation. */
+    /** Replaces the DataSource-backed strategy with an explicit connection ownership strategy. */
     public Builder connectionProvider(ConnectionProvider connectionProvider) {
       this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
       return this;
     }
 
-    /** Uses a plain DataSource whose connections are acquired and released by SKIS. */
-    public Builder dataSource(DataSource dataSource) {
-      return connectionProvider(new DataSourceConnectionProvider(dataSource));
-    }
-
-    /** Selects the dialect used to compile and render all plans in this executor. */
+    /** Selects the required dialect used to compile and render all plans in this executor. */
     public Builder dialect(Dialect dialect) {
       this.dialect = Objects.requireNonNull(dialect, "dialect");
       return this;
@@ -120,8 +111,6 @@ public final class SkisExecutorFactory {
 
     /** Loads any unspecified generated registries and creates the thread-safe executor. */
     public SkisExecutor build() {
-      ConnectionProvider provider =
-          Objects.requireNonNull(connectionProvider, "connectionProvider must be configured");
       Dialect selectedDialect = Objects.requireNonNull(dialect, "dialect must be configured");
       EntityRuntimeRegistry selectedRegistry = runtimeRegistry;
       if (selectedRegistry == null) {
@@ -129,7 +118,7 @@ public final class SkisExecutorFactory {
       }
       JdbcExecutor jdbcExecutor =
           new JdbcExecutor(
-              provider,
+              connectionProvider,
               JdbcWriteContext.EMPTY,
               RowReadContext.EMPTY,
               executionOptions,
@@ -150,6 +139,6 @@ public final class SkisExecutorFactory {
       return configured;
     }
     ClassLoader context = Thread.currentThread().getContextClassLoader();
-    return context != null ? context : SkisExecutorFactory.class.getClassLoader();
+    return context != null ? context : Skis.class.getClassLoader();
   }
 }

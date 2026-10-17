@@ -2,7 +2,6 @@ package io.skis.service;
 
 import io.skis.core.id.IdWorker;
 import io.skis.entity.EmployeeProjectLink;
-import io.skis.entity.skis.EmployeeProjectLinkMeta;
 import io.skis.entity.skis.EmployeeProjectLinkTable;
 import io.skis.runtime.SkisExecutor;
 import java.time.Instant;
@@ -25,7 +24,7 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
   @Override
   public EmployeeProjectLink createLink(EmployeeProjectLink link) {
     prepareForInsert(link);
-    skisExecutor.insert(EmployeeProjectLinkMeta.ENTITY, link);
+    skisExecutor.insert(LINK, link);
     return link;
   }
 
@@ -41,12 +40,12 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
   public int updateLink(EmployeeProjectLink link) {
     Objects.requireNonNull(link, "link");
     link.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(EmployeeProjectLinkMeta.ENTITY, link);
+    return skisExecutor.updateById(LINK, link);
   }
 
   @Override
   public int deleteLink(long id) {
-    return skisExecutor.deleteById(EmployeeProjectLinkMeta.ENTITY, id);
+    return skisExecutor.deleteById(LINK, id);
   }
 
   @Override
@@ -61,14 +60,14 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
                   .fetchOne()
                   .toOptional();
           return link
-              .map(value -> session.deleteById(EmployeeProjectLinkMeta.ENTITY, value.getId()))
+              .map(value -> session.deleteById(LINK, value.getId()))
               .orElse(0);
         });
   }
 
   @Override
   public Optional<EmployeeProjectLink> findById(long id) {
-    return skisExecutor.findById(EmployeeProjectLinkMeta.ENTITY, id);
+    return skisExecutor.findById(LINK, id);
   }
 
   @Override

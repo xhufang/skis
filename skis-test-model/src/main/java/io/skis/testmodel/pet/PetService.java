@@ -2,7 +2,6 @@ package io.skis.testmodel.pet;
 
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisSession;
-import io.skis.testmodel.pet.skis.PetMeta;
 import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
@@ -22,7 +21,7 @@ public final class PetService {
 
   /** Simplest and fastest query: use the prewarmed single-primary-key Fast Path. */
   public Optional<Pet> findById(long id) {
-    return skisExecutor.findById(PetMeta.ENTITY, id);
+    return skisExecutor.findById(PET, id);
   }
 
   /** Select every persistent Pet column without a where predicate. */
@@ -101,7 +100,7 @@ public final class PetService {
 
   /** Insert one complete entity through its generated Binder. */
   public int insert(Pet pet) {
-    return skisExecutor.insert(PetMeta.ENTITY, pet);
+    return skisExecutor.insert(PET, pet);
   }
 
   /**
@@ -109,12 +108,12 @@ public final class PetService {
    * advances the database version without performing a hidden read.
    */
   public int updateById(Pet pet) {
-    return skisExecutor.updateById(PetMeta.ENTITY, pet);
+    return skisExecutor.updateById(PET, pet);
   }
 
   /** Delete by the generated single-primary-key Fast Path. */
   public int deleteById(long id) {
-    return skisExecutor.deleteById(PetMeta.ENTITY, id);
+    return skisExecutor.deleteById(PET, id);
   }
 
   /**
@@ -123,8 +122,8 @@ public final class PetService {
   public Pet insertAndReload(Pet pet) {
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(PetMeta.ENTITY, pet);
-          return session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+          session.insert(PET, pet);
+          return session.findById(PET, pet.id()).orElseThrow();
         });
   }
 
@@ -132,7 +131,7 @@ public final class PetService {
   public PetSummary insertAndLoadSummary(Pet pet) {
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(PetMeta.ENTITY, pet);
+          session.insert(PET, pet);
           return session
               .select(PetSummaryProjection.of(PET.id(), PET.name(), PET.weight()))
               .from(PET)
@@ -148,8 +147,8 @@ public final class PetService {
    */
   public Pet insertWithExplicitTransaction(Pet pet) {
     try (SkisSession session = skisExecutor.beginTransaction()) {
-      session.insert(PetMeta.ENTITY, pet);
-      Pet stored = session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+      session.insert(PET, pet);
+      Pet stored = session.findById(PET, pet.id()).orElseThrow();
       session.commit();
       return stored;
     }
@@ -161,9 +160,9 @@ public final class PetService {
   public Pet updateAndReload(Pet pet, Runnable afterCommit) {
     return skisExecutor.inTransaction(
         session -> {
-          session.updateById(PetMeta.ENTITY, pet);
+          session.updateById(PET, pet);
           session.afterCommit(afterCommit);
-          return session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+          return session.findById(PET, pet.id()).orElseThrow();
         });
   }
 
@@ -177,11 +176,11 @@ public final class PetService {
     return skisExecutor.inTransaction(
         session -> {
           for (Pet pet : values) {
-            session.insert(PetMeta.ENTITY, pet);
+            session.insert(PET, pet);
           }
           List<Pet> stored =
               values.stream()
-                  .map(pet -> session.findById(PetMeta.ENTITY, pet.id()).orElseThrow())
+                  .map(pet -> session.findById(PET, pet.id()).orElseThrow())
                   .toList();
           session.afterCommit(afterCommit);
           return stored;
@@ -195,10 +194,10 @@ public final class PetService {
   public List<Pet> insertAndUpdateAtomically(Pet newPet, Pet changedPet, Runnable afterCommit) {
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(PetMeta.ENTITY, newPet);
-          session.updateById(PetMeta.ENTITY, changedPet);
-          Pet inserted = session.findById(PetMeta.ENTITY, newPet.id()).orElseThrow();
-          Pet updated = session.findById(PetMeta.ENTITY, changedPet.id()).orElseThrow();
+          session.insert(PET, newPet);
+          session.updateById(PET, changedPet);
+          Pet inserted = session.findById(PET, newPet.id()).orElseThrow();
+          Pet updated = session.findById(PET, changedPet.id()).orElseThrow();
           session.afterCommit(afterCommit);
           return List.of(inserted, updated);
         });

@@ -49,8 +49,7 @@ class SkisPlanReuseTest {
   void openingTransactionsOnlyRebindsThePrecompiledPlanCatalogs() {
     CountingDialect dialect = new CountingDialect();
     SkisExecutor executor =
-        SkisExecutorFactory.builder()
-            .dataSource(dataSource())
+        Skis.builder(dataSource())
             .dialect(dialect)
             .runtimeRegistry(EntityRuntimeRegistry.of(List.of(runtimeModel())))
             .build();
@@ -69,8 +68,7 @@ class SkisPlanReuseTest {
   @Test
   void supportsDisabledDynamicPlanCacheAndRejectsInvalidConfiguration() {
     SkisExecutor disabled =
-        SkisExecutorFactory.builder()
-            .dataSource(dataSource())
+        Skis.builder(dataSource())
             .dialect(new CountingDialect())
             .runtimeRegistry(EntityRuntimeRegistry.of(List.of(runtimeModel())))
             .planCacheMaximumSize(0)
@@ -85,10 +83,19 @@ class SkisPlanReuseTest {
         disabled.queryPlanCacheStatistics());
     assertThrows(
         IllegalArgumentException.class,
-        () -> SkisExecutorFactory.builder().planCacheMaximumSize(-1));
+        () -> Skis.builder(dataSource()).planCacheMaximumSize(-1));
     assertThrows(
         IllegalArgumentException.class,
-        () -> SkisExecutorFactory.builder().planCacheExpireAfterAccess(Duration.ZERO));
+        () -> Skis.builder(dataSource()).planCacheExpireAfterAccess(Duration.ZERO));
+  }
+
+  @Test
+  void requiresADataSourceAndExplicitDialect() {
+    assertThrows(NullPointerException.class, () -> Skis.builder(null));
+    assertThrows(NullPointerException.class, () -> Skis.builder(dataSource()).build());
+    assertThrows(
+        NullPointerException.class,
+        () -> Skis.create(dataSource(), null));
   }
 
   private static EntityRuntimeModel<Pet> runtimeModel() {

@@ -104,7 +104,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in LICENSE NOTICE README.md CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md; do
+          for file in LICENSE NOTICE CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md; do
             test -s "${file}" || {
               echo "Required project file is missing or empty: ${file}"
               exit 1

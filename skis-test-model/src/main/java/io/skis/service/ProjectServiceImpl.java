@@ -4,7 +4,6 @@ import io.skis.core.id.IdWorker;
 import io.skis.entity.Project;
 import io.skis.entity.skis.EmployeeProjectLinkTable;
 import io.skis.entity.skis.EmployeeTable;
-import io.skis.entity.skis.ProjectMeta;
 import io.skis.entity.skis.ProjectTable;
 import io.skis.projection.EmployeeProjectView;
 import io.skis.projection.ProjectPrincipalView;
@@ -42,7 +41,7 @@ public class ProjectServiceImpl implements ProjectService {
     project.setCreateStamp(now);
     project.setModifyStamp(now);
     project.setVersion(0L);
-    skisExecutor.insert(ProjectMeta.ENTITY, project);
+    skisExecutor.insert(PROJECT, project);
     return project;
   }
 
@@ -50,17 +49,17 @@ public class ProjectServiceImpl implements ProjectService {
   public int updateProject(Project project) {
     Objects.requireNonNull(project, "project");
     project.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(ProjectMeta.ENTITY, project);
+    return skisExecutor.updateById(PROJECT, project);
   }
 
   @Override
   public int deleteProject(long id) {
-    return skisExecutor.deleteById(ProjectMeta.ENTITY, id);
+    return skisExecutor.deleteById(PROJECT, id);
   }
 
   @Override
   public Optional<Project> findById(long id) {
-    return skisExecutor.findById(ProjectMeta.ENTITY, id);
+    return skisExecutor.findById(PROJECT, id);
   }
 
   @Override

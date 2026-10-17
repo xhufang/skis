@@ -558,7 +558,7 @@ meanings stable; those milestones are not separately published versions.
 
 ## Runtime index failures
 
-Generated indexes are validated when `SkisExecutorFactory` assembles the runtime. Runtime failures
+Generated indexes are validated when `Skis` assembles the runtime. Runtime failures
 use `SkisConfigurationException` rather than a compile-time `SKISxxx` code because the conflict can
 span already-built modules. Messages include the index URL and, when a line exists, its number, and
 reject:
