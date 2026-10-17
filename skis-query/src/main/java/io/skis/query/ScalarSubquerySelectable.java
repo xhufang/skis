@@ -11,14 +11,14 @@ import java.util.Objects;
 final class ScalarSubquerySelectable<V> implements Selectable<V> {
 
   private final SelectQueryState<V> subquery;
-  private final Selectable<?> output;
+  private final Selectable<V> output;
   private final ScalarSubqueryExpression<V> expression;
   private final List<QueryParameter<?>> parameterReferences;
 
   ScalarSubquerySelectable(SingleColumnSelect<V> subquery) {
     SingleColumnSelect<V> description = Objects.requireNonNull(subquery, "subquery");
     this.subquery = description.state();
-    this.output = description.valueSelectable();
+    this.output = typedOutput(description);
     StatementParameterLayout layout = new StatementParameterLayout();
     this.expression =
         new ScalarSubqueryExpression<>(
@@ -27,10 +27,15 @@ final class ScalarSubquerySelectable<V> implements Selectable<V> {
     this.parameterReferences = layout.parameterReferences();
   }
 
-  @Override
   @SuppressWarnings("unchecked")
+  private static <V> Selectable<V> typedOutput(SingleColumnSelect<V> description) {
+    // The description is created from one scalar SelectedResult<V>; only its storage is erased.
+    return (Selectable<V>) description.valueSelectable();
+  }
+
+  @Override
   public Class<V> javaType() {
-    return (Class<V>) output.javaType();
+    return output.javaType();
   }
 
   @Override
