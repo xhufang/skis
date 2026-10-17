@@ -380,8 +380,8 @@ class QueryPlanKeyTest {
       List<SortSpecification> order = List.of(KEY_TABLE.id().asc(), a.id().asc(), b.id().asc());
       SelectQueryState<Pet> state =
           SelectQueryState.create(selected, KEY_TABLE)
-              .appendJoin(JoinType.CROSS, a, null)
-              .appendJoin(JoinType.CROSS, b, null)
+              .appendJoin(JoinType.CROSS, QueryRelations.of(a), null)
+              .appendJoin(JoinType.CROSS, QueryRelations.of(b), null)
               .orderBy(order);
       QueryCompilation<OrderedRow<Pet>> query =
           compiler.compileOrdered(

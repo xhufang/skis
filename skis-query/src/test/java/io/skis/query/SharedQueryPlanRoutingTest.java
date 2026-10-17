@@ -169,8 +169,10 @@ class SharedQueryPlanRoutingTest {
     TableRuntimeScope leftScope = innerScope.forFromClause(leftStructure.fromClause());
 
     assertSame(innerScope.require(owner).model(), leftScope.require(owner).model());
-    assertEquals(Nullability.NON_NULL, innerScope.effectiveNullability(owner.id));
-    assertEquals(Nullability.NULLABLE, leftScope.effectiveNullability(owner.id));
+    assertEquals(
+        Nullability.NON_NULL, innerScope.effectiveNullability(owner.internalColumn(OWNER_ID)));
+    assertEquals(
+        Nullability.NULLABLE, leftScope.effectiveNullability(owner.internalColumn(OWNER_ID)));
   }
 
   @Test
@@ -697,7 +699,8 @@ class SharedQueryPlanRoutingTest {
         QueryPlanKey.DialectIdentity.from(new CountingDialect(true)), true);
     var variant = QueryPlanKey.PlanVariant.content(QueryPaginationShape.none());
     var resultAnalysis = SemanticValidator.analyzeComplete(
-        new SelectStatement(List.of(literal.expression()), table.tableExpression()));
+        new SelectStatement(
+            List.of(SelectableSupport.expression(literal)), table.tableExpression()));
     assertEquals(QueryPlanKeyAssembler.Bypass.UNSAFE_RESULT_IDENTITY,
         assembler.assemble(resultAnalysis, SelectedResult.requiredScalar(literal), variant,
             List.of(), List.of()));

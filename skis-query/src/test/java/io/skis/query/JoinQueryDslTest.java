@@ -1732,17 +1732,13 @@ class JoinQueryDslTest {
         .compilation(QueryPagination.None.INSTANCE);
   }
 
-  private static void assertJoinSql(SelectQuery<Pet> query, String keyword) {
+  private static void assertJoinSql(
+      SelectQuery<? extends @Nullable Pet> query, String keyword) {
     String sql =
-        ((DefaultSelectQuery<Pet>) query)
+        ((DefaultSelectQuery<?>) query)
             .compilation(QueryPagination.None.INSTANCE)
             .plan()
             .sql();
-    assertJoinSql(sql, keyword);
-  }
-
-  private static void assertJoinSql(SelectQuery<@Nullable Pet> query, String keyword) {
-    String sql = ((DefaultCountQuery) query.countQuery()).compilation().plan().sql();
     assertJoinSql(sql, keyword);
   }
 
@@ -1752,12 +1748,14 @@ class JoinQueryDslTest {
   }
 
   private static ConditionCompilation compileCondition(QueryCondition condition) {
-    QueryConditionCompiler compiler = new QueryConditionCompiler();
+    StatementParameterLayout layout = new StatementParameterLayout();
+    QueryParameterBindings bindings = new QueryParameterBindings();
+    QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
     SqlPredicate ast = QueryConditions.compile(condition, compiler);
     return new ConditionCompilation(
         ast,
-        compiler.parameterSources(),
-        compiler.parameters().valuesFor(compiler.parameterReferences()));
+        layout.parameterSources(),
+        bindings.parameters().valuesFor(layout.parameterReferences()));
   }
 
   private static QueryOperations operations() {

@@ -33,6 +33,8 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.StatementAst;
@@ -124,19 +126,7 @@ class EntityPlanSetTest {
         QueryTestSupport.compiler(
             EntityRuntimeRegistry.of(List.of(runtimeModel)), nonValidatingDialect);
     CompiledQueryStructure structure =
-        new CompiledQueryStructure(
-            FromClause.of(TABLE.tableExpression()),
-            List.of(),
-            SelectableSupport.expression(TABLE.id())
-                .eq(SelectableSupport.expression(OTHER_TABLE.id())),
-            List.of(),
-            null,
-            List.of(),
-            List.of(),
-            List.of(),
-            List.of(),
-            QueryParameters.empty(),
-            null);
+        QueryTestSupport.compile(TABLE, List.of(), TABLE.id().eq(OTHER_TABLE.id()));
 
     QueryValidationException failure =
         assertThrows(
@@ -312,7 +302,8 @@ class EntityPlanSetTest {
         new CompiledQueryStructure(
             FromClause.of(TABLE.tableExpression()),
             List.of(),
-            SelectableSupport.expression(TABLE.id()).eq(slot),
+            new ComparisonPredicate<>(
+                SelectableSupport.expression(TABLE.id()), ComparisonOperator.EQUAL, slot),
             List.of(),
             null,
             List.of(),
