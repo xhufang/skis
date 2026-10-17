@@ -17,11 +17,10 @@ import io.skis.query.QueryCursor;
 import io.skis.query.SelectQuery;
 import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
-import io.skis.testmodel.pet.skis.PetMeta;
 import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
@@ -43,11 +42,11 @@ class SkisProjectionPostgreSqlContractTest {
     prepareSchema(dataSource);
     long id = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
     String name = "Mimi'; DROP TABLE \"shelter\".\"pet\"; --";
-    SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
+    SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
       executor.insert(
-          PetMeta.ENTITY,
+          PetTable.PET,
           new Pet(id, name, new BigDecimal("12.50"), false, null, "ignored"));
       PetTable pet = PetTable.PET;
       List<String> names =
@@ -62,7 +61,7 @@ class SkisProjectionPostgreSqlContractTest {
 
       assertEquals(List.of(name), names);
       assertEquals(new PetSummary(id, name, new BigDecimal("12.50")), projected);
-      assertTrue(executor.findById(PetMeta.ENTITY, id).isPresent());
+      assertTrue(executor.findById(PetTable.PET, id).isPresent());
     } finally {
       deletePet(dataSource, id);
     }
@@ -74,24 +73,24 @@ class SkisProjectionPostgreSqlContractTest {
     prepareSchema(dataSource);
     long id = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
     long rolledBackId = id == Long.MAX_VALUE ? id - 1 : id + 1;
-    SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
+    SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
       executor.insert(
-          PetMeta.ENTITY,
+          PetTable.PET,
           new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
-      Pet stored = executor.findById(PetMeta.ENTITY, id).orElseThrow();
+      Pet stored = executor.findById(PetTable.PET, id).orElseThrow();
       assertEquals(Long.valueOf(0L), stored.version());
 
       Pet update =
           new Pet(id, "Mimi", new BigDecimal("13.25"), true, stored.version(), "ignored");
-      assertEquals(1, executor.updateById(PetMeta.ENTITY, update));
-      Pet updated = executor.findById(PetMeta.ENTITY, id).orElseThrow();
+      assertEquals(1, executor.updateById(PetTable.PET, update));
+      Pet updated = executor.findById(PetTable.PET, id).orElseThrow();
       assertEquals(new BigDecimal("13.25"), updated.weight());
       assertTrue(updated.adopted());
       assertEquals(Long.valueOf(1L), updated.version());
       assertThrows(
-          OptimisticLockException.class, () -> executor.updateById(PetMeta.ENTITY, update));
+          OptimisticLockException.class, () -> executor.updateById(PetTable.PET, update));
 
       assertThrows(
           IllegalStateException.class,
@@ -99,7 +98,7 @@ class SkisProjectionPostgreSqlContractTest {
               executor.inTransaction(
                   session -> {
                     session.insert(
-                        PetMeta.ENTITY,
+                        PetTable.PET,
                         new Pet(
                             rolledBackId,
                             "Rollback",
@@ -109,10 +108,10 @@ class SkisProjectionPostgreSqlContractTest {
                             "ignored"));
                     throw new IllegalStateException("force rollback");
                   }));
-      assertFalse(executor.findById(PetMeta.ENTITY, rolledBackId).isPresent());
+      assertFalse(executor.findById(PetTable.PET, rolledBackId).isPresent());
 
-      assertEquals(1, executor.deleteById(PetMeta.ENTITY, id));
-      assertTrue(executor.findById(PetMeta.ENTITY, id).isEmpty());
+      assertEquals(1, executor.deleteById(PetTable.PET, id));
+      assertTrue(executor.findById(PetTable.PET, id).isEmpty());
     } finally {
       deletePet(dataSource, id);
       deletePet(dataSource, rolledBackId);
@@ -132,17 +131,16 @@ class SkisProjectionPostgreSqlContractTest {
             .queryTag("postgresql.contract")
             .build();
     SkisExecutor executor =
-        SkisExecutorFactory.builder()
-            .dataSource(dataSource)
+        Skis.builder(dataSource)
             .dialect(PostgreSqlDialect.INSTANCE)
             .executionOptions(defaults)
             .build();
     Pet pet = new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
 
     try {
-      executor.insert(PetMeta.ENTITY, pet);
+      executor.insert(PetTable.PET, pet);
       MutationException failure =
-          assertThrows(MutationException.class, () -> executor.insert(PetMeta.ENTITY, pet));
+          assertThrows(MutationException.class, () -> executor.insert(PetTable.PET, pet));
 
       SQLException sqlFailure = (SQLException) failure.getCause();
       assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());
@@ -165,12 +163,12 @@ class SkisProjectionPostgreSqlContractTest {
             .limit(5)
             .sorted()
             .toList();
-    SkisExecutor executor = SkisExecutorFactory.create(dataSource, PostgreSqlDialect.INSTANCE);
+    SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
       for (int index = 0; index < ids.size(); index++) {
         executor.insert(
-            PetMeta.ENTITY,
+            PetTable.PET,
             new Pet(
                 ids.get(index),
                 "page-" + index,

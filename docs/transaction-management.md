@@ -17,9 +17,9 @@ unchecked application or SKIS failure requests a rollback.
 Pet stored =
     executor.inTransaction(
         session -> {
-          session.insert(PetMeta.ENTITY, pet);
+          session.insert(PetTable.PET, pet);
           session.afterCommit(() -> publishPetCreated(pet.id()));
-          return session.findById(PetMeta.ENTITY, pet.id()).orElseThrow();
+          return session.findById(PetTable.PET, pet.id()).orElseThrow();
         });
 ```
 
@@ -34,7 +34,7 @@ Use an explicit session only when the application needs a visible completion bou
 
 ```java
 try (SkisSession session = executor.beginTransaction()) {
-  session.insert(PetMeta.ENTITY, pet);
+  session.insert(PetTable.PET, pet);
   session.commit();
 }
 ```
@@ -88,8 +88,10 @@ class SkisConfiguration {
 
   @Bean
   SkisExecutor skisExecutor(DataSource dataSource) {
-    return SkisExecutorFactory.create(
-        new SpringConnectionProvider(dataSource), PostgreSqlDialect.INSTANCE);
+    return Skis.builder(dataSource)
+        .connectionProvider(new SpringConnectionProvider(dataSource))
+        .dialect(PostgreSqlDialect.INSTANCE)
+        .build();
   }
 }
 ```
@@ -99,7 +101,7 @@ Application services use the normal Spring boundary:
 ```java
 @Transactional
 public void renamePet(Pet changedPet) {
-  skisExecutor.updateById(PetMeta.ENTITY, changedPet);
+  skisExecutor.updateById(PetTable.PET, changedPet);
 }
 ```
 

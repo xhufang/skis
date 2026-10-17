@@ -3,7 +3,6 @@ package io.skis.runtime;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
 import io.skis.jdbc.JdbcTransaction;
-import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
@@ -35,16 +34,16 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <E> Optional<E> findById(EntityMeta<E> entity, Object id) {
+  public <E> Optional<E> findById(QueryTable<E> table, Object id) {
     requireActive();
-    return queries.findById(entity, id);
+    return queries.findById(table, id);
   }
 
   @Override
   public <E> Optional<E> findById(
-      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+      QueryTable<E> table, Object id, ExecutionOptions executionOptions) {
     requireActive();
-    return queries.findById(entity, id, executionOptions);
+    return queries.findById(table, id, executionOptions);
   }
 
   @Override
@@ -96,39 +95,39 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <E> int insert(EntityMeta<E> entity, E value) {
+  public <E> int insert(QueryTable<E> table, E value) {
     requireActive();
-    return mutations.insert(entity, value);
+    return mutations.insert(table, value);
   }
 
   @Override
-  public <E> int insert(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+  public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
     requireActive();
-    return mutations.insert(entity, value, executionOptions);
+    return mutations.insert(table, value, executionOptions);
   }
 
   @Override
-  public <E> int updateById(EntityMeta<E> entity, E value) {
+  public <E> int updateById(QueryTable<E> table, E value) {
     requireActive();
-    return mutations.updateById(entity, value);
+    return mutations.updateById(table, value);
   }
 
   @Override
-  public <E> int updateById(EntityMeta<E> entity, E value, ExecutionOptions executionOptions) {
+  public <E> int updateById(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
     requireActive();
-    return mutations.updateById(entity, value, executionOptions);
+    return mutations.updateById(table, value, executionOptions);
   }
 
   @Override
-  public <E> int deleteById(EntityMeta<E> entity, Object id) {
+  public <E> int deleteById(QueryTable<E> table, Object id) {
     requireActive();
-    return mutations.deleteById(entity, id);
+    return mutations.deleteById(table, id);
   }
 
   @Override
-  public <E> int deleteById(EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+  public <E> int deleteById(QueryTable<E> table, Object id, ExecutionOptions executionOptions) {
     requireActive();
-    return mutations.deleteById(entity, id, executionOptions);
+    return mutations.deleteById(table, id, executionOptions);
   }
 
   @Override

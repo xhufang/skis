@@ -9,7 +9,7 @@ plan cache key.
 
 ## Configure executor defaults
 
-Use `SkisExecutorFactory.Builder.executionOptions` to set defaults once during application
+Use `Skis.Builder.executionOptions` to set defaults once during application
 assembly:
 
 ```java
@@ -22,8 +22,7 @@ ExecutionOptions defaults =
         .build();
 
 SkisExecutor executor =
-    SkisExecutorFactory.builder()
-        .dataSource(dataSource)
+    Skis.builder(dataSource)
         .dialect(PostgreSqlDialect.INSTANCE)
         .executionOptions(defaults)
         .build();
@@ -59,10 +58,10 @@ List<Pet> pets =
 The primary-key Fast Path and single-entity mutations use overloads:
 
 ```java
-executor.findById(PetMeta.ENTITY, id, firstPage);
-executor.insert(PetMeta.ENTITY, pet, firstPage);
-executor.updateById(PetMeta.ENTITY, pet, firstPage);
-executor.deleteById(PetMeta.ENTITY, id, firstPage);
+executor.findById(PetTable.PET, id, firstPage);
+executor.insert(PetTable.PET, pet, firstPage);
+executor.updateById(PetTable.PET, pet, firstPage);
+executor.deleteById(PetTable.PET, id, firstPage);
 ```
 
 Options are resolved independently in this order:

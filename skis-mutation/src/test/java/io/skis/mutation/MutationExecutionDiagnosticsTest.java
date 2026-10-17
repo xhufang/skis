@@ -27,6 +27,7 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.query.QueryTable;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -52,6 +53,7 @@ class MutationExecutionDiagnosticsTest {
           List.of(ID, NAME),
           new PrimaryKeyMeta<>(List.of(ID)),
           false);
+  private static final PetTable PET_TABLE = new PetTable();
 
   @Test
   void exposesSafeJdbcDiagnosticsAndOriginalFailuresFromMutationFacade() {
@@ -100,7 +102,7 @@ class MutationExecutionDiagnosticsTest {
     MutationException thrown =
         assertThrows(
             MutationException.class,
-            () -> operations.insert(PET, new Pet(1L, SENSITIVE_NAME)));
+            () -> operations.insert(PET_TABLE, new Pet(1L, SENSITIVE_NAME)));
 
     String message = Objects.requireNonNull(thrown.getMessage(), "failure message");
     assertTrue(message.startsWith("failed to insert entity 'Pet'; JDBC insert failed"));
@@ -141,7 +143,7 @@ class MutationExecutionDiagnosticsTest {
 
     assertThrows(
         MutationException.class,
-        () -> operations.insert(PET, new Pet(1L, SENSITIVE_NAME), options));
+        () -> operations.insert(PET_TABLE, new Pet(1L, SENSITIVE_NAME), options));
 
     assertSame(options, observed.get());
   }
@@ -199,6 +201,22 @@ class MutationExecutionDiagnosticsTest {
   }
 
   private record Pet(Long id, String name) {}
+
+  private static final class PetTable extends QueryTable<Pet> {
+
+    private PetTable() {
+      super(PET);
+    }
+
+    private PetTable(String alias) {
+      super(PET, alias);
+    }
+
+    @Override
+    public PetTable as(String alias) {
+      return new PetTable(alias);
+    }
+  }
 
   private enum TestDialect implements Dialect {
     INSTANCE;

@@ -12,7 +12,7 @@
 
 1. 从 `main` 创建功能分支。
 2. 在对应模块修改代码，并为成功、失败和边界情况补测试。
-3. 涉及公共 API、配置键或行为时，同步 README/Javadoc/CHANGELOG。
+3. 涉及公共 API、配置键或行为时，同步 Javadoc/相关文档/CHANGELOG。
 4. 涉及 SQL 时补确定性的 SQL golden test；涉及数据库时补真实驱动集成测试。
 5. 提交 Pull Request，说明动机、行为变化、风险和验证范围。
 

@@ -3,7 +3,6 @@ package io.skis.service;
 import io.skis.core.id.IdWorker;
 import io.skis.entity.Department;
 import io.skis.entity.Employee;
-import io.skis.entity.skis.DepartmentMeta;
 import io.skis.entity.skis.DepartmentTable;
 import io.skis.entity.skis.EmployeeTable;
 import io.skis.query.Page;
@@ -34,7 +33,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     department.setCreateStamp(now);
     department.setModifyStamp(now);
     department.setVersion(0L);
-    skisExecutor.insert(DepartmentMeta.ENTITY, department);
+    skisExecutor.insert(DEPARTMENT, department);
     return department;
   }
 
@@ -42,17 +41,17 @@ public class DepartmentServiceImpl implements DepartmentService {
   public int updateDepartment(Department department) {
     Objects.requireNonNull(department, "department");
     department.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(DepartmentMeta.ENTITY, department);
+    return skisExecutor.updateById(DEPARTMENT, department);
   }
 
   @Override
   public int deleteDepartment(long id) {
-    return skisExecutor.deleteById(DepartmentMeta.ENTITY, id);
+    return skisExecutor.deleteById(DEPARTMENT, id);
   }
 
   @Override
   public Optional<Department> findById(long id) {
-    return skisExecutor.findById(DepartmentMeta.ENTITY, id);
+    return skisExecutor.findById(DEPARTMENT, id);
   }
 
   @Override

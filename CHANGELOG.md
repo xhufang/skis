@@ -6,6 +6,13 @@
 
 ### Changed
 
+- 0.2.7 T03 完成调用入口收口：新增 `Skis.create(DataSource, Dialect)` 与 `Skis.builder(DataSource)`，删除
+  `SkisExecutorFactory`、无参数 builder 及同义 DataSource setter；Builder 保留显式 ConnectionProvider、方言、
+  ClassLoader、运行时注册表、执行选项和有界计划缓存配置，缺少方言时拒绝构建。查询与写入 Fast Path 全部改用
+  `QueryTable<E>` 表参数，别名仍解析到规范实体元数据，执行器与 Session 保持一致；执行选项和事务选项入口改为必实现合同，
+  不再保留默认抛 `UnsupportedOperationException` 的虚假能力。现有 `Sql` 静态构造职责、当前消费者、示例、合同测试和
+  现存专题文档已同步；根目录 README 收敛为 `Developing...` 占位说明，删除无法准确表达当前能力的 Getting Started，
+  并同步调整相关规范引用。按项目约定未在本地编译运行，待 CI、独立消费者与真实数据库验证。
 - 0.2.7 T02 完成查询 API 收敛：`SelectQuery` 只保留结果泛型，以统一的 `SelectFromStep`/`JoinOnStep` 承接构建阶段；
   可空与非空查询描述合并，具体列类和 `QueryParameters` 内部化，参数改由不可变 `SelectQuery.bind` 捕获并在 JDBC 前完整校验。
   单行终止操作统一返回保留“无行/有行且 null/有行且有值”三态的 `SingleRow`；查询流直接返回同线程、不可拆分的 JDK
@@ -15,7 +22,7 @@
   真实数据库验证。
 - 0.2.7 T02 已先取消 `1.0.0` 前的跨版本 API/ABI 兼容门禁：根 POM 删除 japicmp 版本、插件管理、旧工件比较 profile
   及兼容排除清单，删除仅承担目标分支基线构建、模块删除阻断和差异报告上传的 `API Compatibility` workflow；贡献指南、
-  发布清单和 README 改为验证当前版本源码、功能、APT 生成装配、独立消费者与发布边界。远端 `main` 的 required
+  发布清单改为验证当前版本源码、功能、APT 生成装配、独立消费者与发布边界。远端 `main` 的 required
   status checks 当前关闭且为空，启用的 `Protect main` ruleset 不包含 required status checks，因此无需远端配置变更。
 - T10 完成文档同步与 0.2.6 内部里程碑收口：T01—T10 全部完成，T07、T08、T09 已分别随 PR #55、#57、#58 通过 CI 并合入 `main`；
   README、开发指南、路线图、任务表、评审报告和 ADR 状态已统一，新增 ADR 索引并复核计划缓存公共 Javadoc。

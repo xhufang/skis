@@ -9,11 +9,10 @@ import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.SelectQuery;
 import io.skis.query.SingleRow;
 import io.skis.query.SliceRequest;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
-import io.skis.testmodel.pet.skis.PetMeta;
 import io.skis.testmodel.pet.skis.PetSummaryProjection;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
@@ -34,15 +33,15 @@ class SkisProjectionIntegrationTest {
   void selectsScalarsAndUserRecordsWithoutReadingTheFullEntity() throws Exception {
     DataSource dataSource = database();
     SkisExecutor executor =
-        SkisExecutorFactory.builder()
-            .dataSource(dataSource)
+        Skis.builder(dataSource)
             .dialect(H2Dialect.INSTANCE)
             .planCacheMaximumSize(2)
             .planCacheExpireAfterAccess(Duration.ofMinutes(5))
             .build();
     Pet pet = new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
-    executor.insert(PetMeta.ENTITY, pet);
-    executor.insert(PetMeta.ENTITY,
+    executor.insert(PetTable.PET, pet);
+    executor.insert(
+        PetTable.PET,
         new Pet(8L, "Nina", new BigDecimal("10.25"), false, null, "ignored"));
 
     List<String> names =
@@ -88,9 +87,10 @@ class SkisProjectionIntegrationTest {
 
   @Test
   void freshTerminalOperationsSharePlansAndBindCurrentValues() throws Exception {
-    SkisExecutor executor = SkisExecutorFactory.create(database(), H2Dialect.INSTANCE);
+    SkisExecutor executor = Skis.create(database(), H2Dialect.INSTANCE);
     for (long id : List.of(7L, 8L, 9L)) {
-      executor.insert(PetMeta.ENTITY,
+      executor.insert(
+          PetTable.PET,
           new Pet(id, "pet-" + id, new BigDecimal("1.00"), false, null, "ignored"));
     }
     for (long threshold : List.of(7L, 8L)) {
@@ -172,15 +172,14 @@ class SkisProjectionIntegrationTest {
   void executesDistinctOrderingWithH2NativeNullPlacement() throws Exception {
     DataSource dataSource = database();
     SkisExecutor executor =
-        SkisExecutorFactory.builder()
-            .dataSource(dataSource)
+        Skis.builder(dataSource)
             .dialect(H2Dialect.INSTANCE)
             .build();
     executor.insert(
-        PetMeta.ENTITY,
+        PetTable.PET,
         new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
     executor.insert(
-        PetMeta.ENTITY,
+        PetTable.PET,
         new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored"));
 
     List<String> names =

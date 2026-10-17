@@ -1,8 +1,6 @@
 package io.skis.query;
 
 import io.skis.core.ExecutionOptions;
-import io.skis.metadata.EntityMeta;
-import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
@@ -10,17 +8,10 @@ import org.jspecify.annotations.Nullable;
 public interface QueryOperations {
 
   /** Executes the prewarmed, single-primary-key read Fast Path. */
-  <E> Optional<E> findById(EntityMeta<E> entity, Object id);
+  <E> Optional<E> findById(QueryTable<E> table, Object id);
 
-  default <E> Optional<E> findById(
-      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
-    ExecutionOptions options = Objects.requireNonNull(executionOptions, "executionOptions");
-    if (!options.isEmpty()) {
-      throw new UnsupportedOperationException(
-          "this QueryOperations implementation does not support execution options");
-    }
-    return findById(entity, id);
-  }
+  /** Executes the read Fast Path with immutable statement overrides. */
+  <E> Optional<E> findById(QueryTable<E> table, Object id, ExecutionOptions executionOptions);
 
   /** Starts an immutable full-entity query rooted at the supplied table. */
   <E> SelectQuery<E> selectFrom(QueryTable<E> table);

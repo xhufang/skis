@@ -19,8 +19,8 @@ import io.skis.query.SingleColumnSelect;
 import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
 import io.skis.query.Sql;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Arrays;
@@ -74,7 +74,7 @@ class SkisEmployeeDepartmentScalarContractTest {
                 + "VALUES (1, 10), (2, 10), (3, 20), (4, 30)");
       }
       SkisExecutor executor =
-          SkisExecutorFactory.builder()
+          Skis.builder(dataSource)
               .connectionProvider(
                   new ConnectionProvider() {
                     @Override

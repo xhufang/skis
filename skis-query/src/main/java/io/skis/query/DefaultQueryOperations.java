@@ -25,22 +25,22 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
-  public <E> Optional<E> findById(EntityMeta<E> entity, Object id) {
-    return findById(entity, id, ExecutionContext.EMPTY);
+  public <E> Optional<E> findById(QueryTable<E> table, Object id) {
+    return findById(table, id, ExecutionContext.EMPTY);
   }
 
   @Override
   public <E> Optional<E> findById(
-      EntityMeta<E> entity, Object id, ExecutionOptions executionOptions) {
+      QueryTable<E> table, Object id, ExecutionOptions executionOptions) {
     return findById(
-        entity,
+        table,
         id,
         ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
   }
 
   private <E> Optional<E> findById(
-      EntityMeta<E> entity, Object id, ExecutionContext executionContext) {
-    Objects.requireNonNull(entity, "entity");
+      QueryTable<E> table, Object id, ExecutionContext executionContext) {
+    EntityMeta<E> entity = Objects.requireNonNull(table, "table").entity();
     EntityPlanSet<E> plans = requirePlanSet(entity);
     PropertyMeta<E, ?> idProperty = plans.findByIdProperty();
     requireValueType(idProperty, id);

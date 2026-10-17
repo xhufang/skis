@@ -16,15 +16,13 @@ import io.skis.query.SingleRow;
 import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
 import io.skis.query.Sql;
+import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
-import io.skis.runtime.SkisExecutorFactory;
 import io.skis.testmodel.join.JoinPet;
 import io.skis.testmodel.join.Owner;
 import io.skis.testmodel.join.PetOwnerPairView;
 import io.skis.testmodel.join.PetOwnerView;
-import io.skis.testmodel.join.skis.JoinPetMeta;
 import io.skis.testmodel.join.skis.JoinPetTable;
-import io.skis.testmodel.join.skis.OwnerMeta;
 import io.skis.testmodel.join.skis.OwnerTable;
 import io.skis.testmodel.join.skis.PetOwnerPairViewProjection;
 import io.skis.testmodel.join.skis.PetOwnerViewProjection;
@@ -65,7 +63,7 @@ abstract class AbstractSkisJoinContractTest {
   void setUpJoinContract() throws Exception {
     dataSource = createDataSource();
     prepareSchema(dataSource);
-    executor = SkisExecutorFactory.create(dataSource, dialect());
+    executor = Skis.create(dataSource, dialect());
 
     long base = 10_000L + (UUID.randomUUID().getMostSignificantBits() & 0x1ffffffffffff000L);
     ownerAdaId = base;
@@ -77,17 +75,17 @@ abstract class AbstractSkisJoinContractTest {
     petOrphanId = base + 103;
     petOrphanTwoId = base + 104;
 
-    executor.insert(OwnerMeta.ENTITY, new Owner(ownerAdaId, "Ada"));
-    executor.insert(OwnerMeta.ENTITY, new Owner(ownerGraceId, "Grace"));
-    executor.insert(OwnerMeta.ENTITY, new Owner(ownerWithoutPetId, "Lin"));
+    executor.insert(owner, new Owner(ownerAdaId, "Ada"));
+    executor.insert(owner, new Owner(ownerGraceId, "Grace"));
+    executor.insert(owner, new Owner(ownerWithoutPetId, "Lin"));
     executor.insert(
-        JoinPetMeta.ENTITY, new JoinPet(petAdaOneId, ownerAdaId, "Alpha"));
+        pet, new JoinPet(petAdaOneId, ownerAdaId, "Alpha"));
     executor.insert(
-        JoinPetMeta.ENTITY, new JoinPet(petAdaTwoId, ownerAdaId, "Beta"));
+        pet, new JoinPet(petAdaTwoId, ownerAdaId, "Beta"));
     executor.insert(
-        JoinPetMeta.ENTITY, new JoinPet(petGraceId, ownerGraceId, "Gamma"));
-    executor.insert(JoinPetMeta.ENTITY, new JoinPet(petOrphanId, null, "Orphan"));
-    executor.insert(JoinPetMeta.ENTITY, new JoinPet(petOrphanTwoId, null, "Orphan Two"));
+        pet, new JoinPet(petGraceId, ownerGraceId, "Gamma"));
+    executor.insert(pet, new JoinPet(petOrphanId, null, "Orphan"));
+    executor.insert(pet, new JoinPet(petOrphanTwoId, null, "Orphan Two"));
   }
 
   @AfterEach
