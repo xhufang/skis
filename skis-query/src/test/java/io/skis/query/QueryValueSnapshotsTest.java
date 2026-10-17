@@ -9,7 +9,6 @@ import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
-import io.skis.sql.ast.Identifier;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -106,43 +105,38 @@ class QueryValueSnapshotsTest {
 
   private static final class SnapshotTable extends QueryTable<SnapshotRow> {
 
-    private final NonNullQueryColumn<SnapshotRow, byte[]> bytes = nonNullQueryColumn(BYTES);
-    private final NonNullQueryColumn<SnapshotRow, Timestamp> timestamp =
+    private final NonNullSelectable<byte[]> bytes = nonNullQueryColumn(BYTES);
+    private final NonNullSelectable<Timestamp> timestamp =
         nonNullQueryColumn(TIMESTAMP);
-    private final NonNullQueryColumn<SnapshotRow, Date> date = nonNullQueryColumn(DATE);
-    private final NonNullQueryColumn<SnapshotRow, Time> time = nonNullQueryColumn(TIME);
+    private final NonNullSelectable<Date> date = nonNullQueryColumn(DATE);
+    private final NonNullSelectable<Time> time = nonNullQueryColumn(TIME);
 
     private SnapshotTable() {
       super(SNAPSHOT_ROW);
     }
 
-    private SnapshotTable(Identifier alias) {
+    private SnapshotTable(String alias) {
       super(SNAPSHOT_ROW, alias);
     }
 
-    private NonNullQueryColumn<SnapshotRow, byte[]> bytes() {
+    private NonNullSelectable<byte[]> bytes() {
       return bytes;
     }
 
-    private NonNullQueryColumn<SnapshotRow, Timestamp> timestamp() {
+    private NonNullSelectable<Timestamp> timestamp() {
       return timestamp;
     }
 
-    private NonNullQueryColumn<SnapshotRow, Date> date() {
+    private NonNullSelectable<Date> date() {
       return date;
     }
 
-    private NonNullQueryColumn<SnapshotRow, Time> time() {
+    private NonNullSelectable<Time> time() {
       return time;
     }
 
     @Override
     public SnapshotTable as(String alias) {
-      return new SnapshotTable(Identifier.of(alias));
-    }
-
-    @Override
-    public SnapshotTable as(Identifier alias) {
       return new SnapshotTable(alias);
     }
   }

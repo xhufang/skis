@@ -84,7 +84,11 @@ public class EmployeeServiceImpl implements EmployeeService {
 
   @Override
   public Optional<Employee> findOneByCode(String code) {
-    return skisExecutor.selectFrom(EMPLOYEE).where(EMPLOYEE.code().eq(code)).fetchOne();
+    return skisExecutor
+        .selectFrom(EMPLOYEE)
+        .where(EMPLOYEE.code().eq(code))
+        .fetchOne()
+        .toOptional();
   }
 
   @Override
@@ -141,7 +145,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         .innerJoin(DEPARTMENT)
         .on(EMPLOYEE.departmentId().eq(DEPARTMENT.id()))
         .where(EMPLOYEE.id().eq(employeeId))
-        .fetchOne();
+        .fetchOne()
+        .toOptional();
   }
 
   @Override

@@ -39,7 +39,8 @@ class QueryPlanDependenciesTest {
     TestTable<Joined> joined = new TestTable<>(JOINED);
     TestTable<Nested> nested = new TestTable<>(NESTED);
     TestTable<Derived> derived = new TestTable<>(DERIVED);
-    SelectStatement derivedStatement = new SelectStatement(derived.selections(), derived);
+    SelectStatement derivedStatement =
+        new SelectStatement(derived.selections(), derived.tableExpression());
     DerivedRelationReference derivedReference =
         new DerivedRelationReference(
             Identifier.of("derived_source"),
@@ -53,11 +54,12 @@ class QueryPlanDependenciesTest {
         new DerivedRelationSource(derivedStatement, derivedReference);
     FromClause outerSources =
         new FromClause(
-            root,
+            root.tableExpression(),
             List.of(
-                new JoinClause(JoinType.CROSS, joined, null),
+                new JoinClause(JoinType.CROSS, joined.tableExpression(), null),
                 new JoinClause(JoinType.CROSS, derivedSource, null)));
-    SelectStatement nestedStatement = new SelectStatement(nested.selections(), nested);
+    SelectStatement nestedStatement =
+        new SelectStatement(nested.selections(), nested.tableExpression());
     SelectStatement statement =
         new SelectStatement(
             root.selections(), outerSources, new ExistsPredicate(nestedStatement, false));
@@ -76,12 +78,13 @@ class QueryPlanDependenciesTest {
   @Test
   void deduplicatesRepeatedCanonicalMetadataByIdentity() {
     TestTable<Root> outer = new TestTable<>(ROOT);
-    TestTable<Root> nested = new TestTable<>(ROOT, Identifier.of("nested_root"));
+    TestTable<Root> nested = new TestTable<>(ROOT, "nested_root");
     SelectStatement statement =
         new SelectStatement(
             outer.selections(),
-            outer,
-            new ExistsPredicate(new SelectStatement(nested.selections(), nested), false));
+            outer.tableExpression(),
+            new ExistsPredicate(
+                new SelectStatement(nested.selections(), nested.tableExpression()), false));
 
     QueryPlanDependencies dependencies =
         QueryPlanDependencies.from(SemanticValidator.analyzeComplete(statement));
@@ -131,12 +134,10 @@ class QueryPlanDependenciesTest {
       super(entity);
     }
 
-    private TestTable(EntityMeta<E> entity, Identifier alias) {
+    private TestTable(EntityMeta<E> entity, String alias) {
       super(entity, alias);
     }
-
-    @Override
-    public TestTable<E> as(Identifier alias) {
+    public TestTable<E> as(String alias) {
       return new TestTable<>(entity(), alias);
     }
   }

@@ -1,7 +1,6 @@
 package io.skis.query;
 
 import io.skis.sql.ast.Nullability;
-import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import java.util.Collection;
 import org.jspecify.annotations.Nullable;
@@ -28,9 +27,6 @@ public sealed interface Selectable<V>
 
   /** Returns the expression's declared nullability before query-local Join propagation. */
   Nullability nullability();
-
-  /** Returns the immutable SQL AST represented by this selection. */
-  SqlExpression<V> expression();
 
   /** Compares this expression with one captured non-null value. */
   default QueryCondition eq(@Nullable V value) {

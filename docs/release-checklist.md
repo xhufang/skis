@@ -5,15 +5,17 @@ next public `0.3.0` release. `0.2.0` packages the stabilization work completed i
 through `0.1.6` snapshot milestones; those internal versions have no release tag, Maven Central
 deployment, or GitHub Release. New public capabilities start in `0.2.1-SNAPSHOT` and later internal
 `0.2.x-SNAPSHOT` milestones, then ship in `0.3.0`.
-The Central 0.0.4 publication contains only an empty `skis-parent` POM and is not an API
-compatibility baseline; `0.1.0` is the first complete public baseline.
+The Central 0.0.4 publication contains only an empty `skis-parent` POM; `0.1.0` is the first
+complete public release. Releases before `1.0.0` validate the current candidate and do not use
+either publication as a cross-version API/ABI baseline.
 
 ## Before tagging
 
 - Confirm every project POM uses the intended non-snapshot release version and contains no SKIS
   `-SNAPSHOT` dependency.
 - Confirm `CHANGELOG.md` has a dated section matching that version.
-- Confirm the exact tag commit passes CI, PostgreSQL integration, API compatibility, and compliance.
+- Confirm the exact tag commit passes CI, PostgreSQL integration, release-boundary metadata,
+  and compliance.
 - Confirm the independent H2 consumer passes with the release version and no reactor parent.
 - Confirm every `0.2.x` development milestone is complete and the `0.3.0` candidate is under feature
   freeze before recreating or executing any benchmark.

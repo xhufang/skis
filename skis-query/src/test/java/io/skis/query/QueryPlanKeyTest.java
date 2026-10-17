@@ -324,26 +324,30 @@ class QueryPlanKeyTest {
         new SelectStatement(
             KEY_TABLE.selections(),
             new FromClause(
-                KEY_TABLE, List.of(new JoinClause(JoinType.CROSS, first, null))),
+                KEY_TABLE.tableExpression(),
+                List.of(new JoinClause(JoinType.CROSS, first.tableExpression(), null))),
             null);
     SelectStatement secondJoin =
         new SelectStatement(
             KEY_TABLE.selections(),
             new FromClause(
-                KEY_TABLE, List.of(new JoinClause(JoinType.CROSS, second, null))),
+                KEY_TABLE.tableExpression(),
+                List.of(new JoinClause(JoinType.CROSS, second.tableExpression(), null))),
             null);
     assertDependencyOnlyLoaderIsolation(firstJoin, secondJoin);
 
     SelectStatement firstExists =
         new SelectStatement(
             KEY_TABLE.selections(),
-            KEY_TABLE,
-            new ExistsPredicate(new SelectStatement(first.selections(), first), false));
+            KEY_TABLE.tableExpression(),
+            new ExistsPredicate(
+                new SelectStatement(first.selections(), first.tableExpression()), false));
     SelectStatement secondExists =
         new SelectStatement(
             KEY_TABLE.selections(),
-            KEY_TABLE,
-            new ExistsPredicate(new SelectStatement(second.selections(), second), false));
+            KEY_TABLE.tableExpression(),
+            new ExistsPredicate(
+                new SelectStatement(second.selections(), second.tableExpression()), false));
     assertDependencyOnlyLoaderIsolation(firstExists, secondExists);
 
     assertDependencyOnlyLoaderIsolation(
@@ -827,7 +831,8 @@ class QueryPlanKeyTest {
 
   private static SelectStatement derivedStatement(
       LoaderEntityTable source, String derivedAlias) {
-    SelectStatement nested = new SelectStatement(source.selections(), source);
+    SelectStatement nested =
+        new SelectStatement(source.selections(), source.tableExpression());
     DerivedRelationReference reference =
         new DerivedRelationReference(
             Identifier.of(derivedAlias),
@@ -839,7 +844,7 @@ class QueryPlanKeyTest {
                     Nullability.NON_NULL)));
     FromClause from =
         new FromClause(
-            KEY_TABLE,
+            KEY_TABLE.tableExpression(),
             List.of(
                 new JoinClause(
                     JoinType.CROSS, new DerivedRelationSource(nested, reference), null)));
@@ -1137,7 +1142,7 @@ class QueryPlanKeyTest {
   private static final class LoaderEntityTable extends QueryTable<Object> {
 
     private final LoaderEntityFixture fixture;
-    private final NonNullQueryColumn<Object, Long> id;
+    private final NonNullSelectable<Long> id;
 
     private LoaderEntityTable(LoaderEntityFixture fixture) {
       super(fixture.entity());
@@ -1145,38 +1150,33 @@ class QueryPlanKeyTest {
       this.id = nonNullQueryColumn(fixture.id());
     }
 
-    private LoaderEntityTable(LoaderEntityFixture fixture, Identifier alias) {
+    private LoaderEntityTable(LoaderEntityFixture fixture, String alias) {
       super(fixture.entity(), alias);
       this.fixture = fixture;
       this.id = nonNullQueryColumn(fixture.id());
     }
 
-    private NonNullQueryColumn<Object, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
     @Override
     public LoaderEntityTable as(String alias) {
-      return new LoaderEntityTable(fixture, Identifier.of(alias));
-    }
-
-    @Override
-    public LoaderEntityTable as(Identifier alias) {
       return new LoaderEntityTable(fixture, alias);
     }
   }
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final NonNullQueryColumn<Pet, Long> id;
-    private final NonNullQueryColumn<Pet, Long> alternateId;
-    private final NonNullQueryColumn<Pet, String> name;
+    private final NonNullSelectable<Long> id;
+    private final NonNullSelectable<Long> alternateId;
+    private final NonNullSelectable<String> name;
 
     private PetTable() {
       this(PET, ID, ALTERNATE_ID, NAME);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       this(PET, ID, ALTERNATE_ID, NAME, alias);
     }
 
@@ -1196,32 +1196,27 @@ class QueryPlanKeyTest {
         PropertyMeta<Pet, Long> id,
         PropertyMeta<Pet, Long> alternateId,
         PropertyMeta<Pet, String> name,
-        Identifier alias) {
+        String alias) {
       super(entity, alias);
       this.id = nonNullQueryColumn(id);
       this.alternateId = nonNullQueryColumn(alternateId);
       this.name = nonNullQueryColumn(name);
     }
 
-    private NonNullQueryColumn<Pet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NonNullQueryColumn<Pet, Long> alternateId() {
+    private NonNullSelectable<Long> alternateId() {
       return alternateId;
     }
 
-    private NonNullQueryColumn<Pet, String> name() {
+    private NonNullSelectable<String> name() {
       return name;
     }
 
     @Override
     public PetTable as(String alias) {
-      return new PetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
   }

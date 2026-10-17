@@ -50,7 +50,7 @@ class SkisProjectionIntegrationTest {
             .select(PetTable.PET.name())
             .from(PetTable.PET)
             .where(PetTable.PET.id().eq(7L))
-            .fetch();
+            .fetchList();
     PetSummary projected =
         executor
             .select(
@@ -95,7 +95,7 @@ class SkisProjectionIntegrationTest {
     }
     for (long threshold : List.of(7L, 8L)) {
       boolean warmed = threshold == 8L;
-      Supplier<SelectQuery<Pet, Long>> query = () -> {
+      Supplier<SelectQuery<Long>> query = () -> {
         PetTable table = PetTable.PET.as("p");
         return executor.select(table.id()).from(table)
             .where(table.id().ge(threshold)).orderBy(table.id().asc());
@@ -131,11 +131,18 @@ class SkisProjectionIntegrationTest {
         return values;
       });
       assertEquals(expected, cursorValues);
-      assertEquals(expected, sharedTerminal(executor, warmed, 1, "stream", () -> {
-        try (var stream = query.get().stream()) {
-          return stream.stream().toList();
-        }
-      }));
+      assertEquals(
+          expected,
+          sharedTerminal(
+              executor,
+              warmed,
+              1,
+              "stream",
+              () -> {
+                try (var stream = query.get().stream()) {
+                  return stream.toList();
+                }
+              }));
       PetTable single = PetTable.PET.as("single");
       assertEquals(threshold, sharedTerminal(executor, warmed, 1, "fetchOne",
           () -> executor.select(single.id()).from(single)

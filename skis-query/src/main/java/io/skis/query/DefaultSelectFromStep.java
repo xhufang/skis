@@ -1,9 +1,11 @@
 package io.skis.query;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
-/** Immutable FROM stage returned after selecting an entity, scalar, or user projection. */
-final class DefaultSelectFromStep<R> implements SelectFromStep<R> {
+/** Immutable FROM stage shared by every executable result shape. */
+final class DefaultSelectFromStep<R extends @Nullable Object>
+    implements SelectFromStep<SelectQuery<R>> {
 
   private final DefaultQueryOperations operations;
   private final SelectedResult<R> selected;
@@ -14,12 +16,12 @@ final class DefaultSelectFromStep<R> implements SelectFromStep<R> {
   }
 
   @Override
-  public <F> SelectQuery<F, R> from(QueryTable<F> table) {
+  public SelectQuery<R> from(QueryTable<?> table) {
     return operations.selectFrom(selected, Objects.requireNonNull(table, "table"));
   }
 
   @Override
-  public SelectQuery<?, R> from(DerivedRelation relation) {
+  public SelectQuery<R> from(DerivedRelation relation) {
     return operations.selectFrom(selected, Objects.requireNonNull(relation, "relation"));
   }
 }

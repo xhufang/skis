@@ -24,7 +24,6 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.Nullability;
 import java.lang.reflect.Proxy;
@@ -71,7 +70,7 @@ class ProjectionQueryTest {
             List.of(
                 new QueryJoin(
                     JoinType.LEFT,
-                    OWNER_TABLE,
+                    QueryRelations.of(OWNER_TABLE),
                     PET_TABLE.ownerId().eq(OWNER_TABLE.id()))),
             null);
     TableRuntimeScope scope = TableRuntimeScope.resolve(registry, structure.fromClause());
@@ -113,7 +112,7 @@ class ProjectionQueryTest {
             List.of(
                 new QueryJoin(
                     JoinType.INNER,
-                    OWNER_TABLE,
+                    QueryRelations.of(OWNER_TABLE),
                     PET_TABLE.ownerId().eq(OWNER_TABLE.id()))));
 
     assertEquals(
@@ -140,10 +139,12 @@ class ProjectionQueryTest {
             List.of(
                 new QueryJoin(
                     JoinType.INNER,
-                    OWNER_TABLE,
+                    QueryRelations.of(OWNER_TABLE),
                     PET_TABLE.ownerId().eq(OWNER_TABLE.id())),
                 new QueryJoin(
-                    JoinType.INNER, reviewer, OWNER_TABLE.id().eq(reviewer.id()))));
+                    JoinType.INNER,
+                    QueryRelations.of(reviewer),
+                    OWNER_TABLE.id().eq(reviewer.id()))));
 
     assertTrue(compilation.plan().sql().contains("\"owner\".\"owner_name\""));
     assertTrue(compilation.plan().sql().contains("\"reviewer\".\"owner_name\""));
@@ -163,7 +164,7 @@ class ProjectionQueryTest {
                     List.of(
                         new QueryJoin(
                             JoinType.LEFT,
-                            OWNER_TABLE,
+                            QueryRelations.of(OWNER_TABLE),
                             PET_TABLE.ownerId().eq(OWNER_TABLE.id())))));
 
     assertTrue(failure.getMessage().contains("parameter #2 'ownerName'"));
@@ -182,7 +183,7 @@ class ProjectionQueryTest {
             List.of(
                 new QueryJoin(
                     JoinType.LEFT,
-                    OWNER_TABLE,
+                    QueryRelations.of(OWNER_TABLE),
                     PET_TABLE.ownerId().eq(OWNER_TABLE.id()))));
 
     assertEquals(
@@ -244,7 +245,9 @@ class ProjectionQueryTest {
     NonNullSelectable<String> derivedName = derived.column(nameOutput);
     QueryJoin leftJoin =
         new QueryJoin(
-            JoinType.LEFT, derived, PET_TABLE.ownerId().eq(derivedId));
+            JoinType.LEFT,
+            QueryRelations.of(derived),
+            PET_TABLE.ownerId().eq(derivedId));
     ProjectionSelection<PetOwnerView> selected =
         nullableOwnerMapping().bind(PET_TABLE.id(), derivedName);
 
@@ -464,64 +467,54 @@ class ProjectionQueryTest {
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(PET_ID);
-    private final NonNullQueryColumn<Pet, Long> ownerId = nonNullQueryColumn(PET_OWNER_ID);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(PET_ID);
+    private final NonNullSelectable<Long> ownerId = nonNullQueryColumn(PET_OWNER_ID);
 
     private PetTable() {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
 
-    private NonNullQueryColumn<Pet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NonNullQueryColumn<Pet, Long> ownerId() {
+    private NonNullSelectable<Long> ownerId() {
       return ownerId;
     }
 
     @Override
     public PetTable as(String alias) {
-      return new PetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
   }
 
   private static final class OwnerTable extends QueryTable<Owner> {
 
-    private final NonNullQueryColumn<Owner, Long> id = nonNullQueryColumn(OWNER_ID);
-    private final NonNullQueryColumn<Owner, String> name = nonNullQueryColumn(OWNER_NAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(OWNER_ID);
+    private final NonNullSelectable<String> name = nonNullQueryColumn(OWNER_NAME);
 
     private OwnerTable() {
       super(OWNER);
     }
 
-    private OwnerTable(Identifier alias) {
+    private OwnerTable(String alias) {
       super(OWNER, alias);
     }
 
-    private NonNullQueryColumn<Owner, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NonNullQueryColumn<Owner, String> name() {
+    private NonNullSelectable<String> name() {
       return name;
     }
 
     @Override
     public OwnerTable as(String alias) {
-      return new OwnerTable(Identifier.of(alias));
-    }
-
-    @Override
-    public OwnerTable as(Identifier alias) {
       return new OwnerTable(alias);
     }
   }

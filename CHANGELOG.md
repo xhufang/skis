@@ -6,6 +6,17 @@
 
 ### Changed
 
+- 0.2.7 T02 完成查询 API 收敛：`SelectQuery` 只保留结果泛型，以统一的 `SelectFromStep`/`JoinOnStep` 承接构建阶段；
+  可空与非空查询描述合并，具体列类和 `QueryParameters` 内部化，参数改由不可变 `SelectQuery.bind` 捕获并在 JDBC 前完整校验。
+  单行终止操作统一返回保留“无行/有行且 null/有行且有值”三态的 `SingleRow`；查询流直接返回同线程、不可拆分的 JDK
+  `Stream`，保留游标所有权并删除 `fetch` 同义入口与公共流包装类型。`QueryTable` 不再继承 AST，公开/protected 签名和
+  APT 生成 getter 只使用公共查询接口；内部表节点复用、派生关系仅在构造时创建一次内部关系节点，逐行解码和计划命中路径
+  未增加反射、动态查找或包装分配。源码、当前消费者、静态类型契约和文档已同步，按项目约定未在本地编译运行，待 CI 与
+  真实数据库验证。
+- 0.2.7 T02 已先取消 `1.0.0` 前的跨版本 API/ABI 兼容门禁：根 POM 删除 japicmp 版本、插件管理、旧工件比较 profile
+  及兼容排除清单，删除仅承担目标分支基线构建、模块删除阻断和差异报告上传的 `API Compatibility` workflow；贡献指南、
+  发布清单和 README 改为验证当前版本源码、功能、APT 生成装配、独立消费者与发布边界。远端 `main` 的 required
+  status checks 当前关闭且为空，启用的 `Protect main` ruleset 不包含 required status checks，因此无需远端配置变更。
 - T10 完成文档同步与 0.2.6 内部里程碑收口：T01—T10 全部完成，T07、T08、T09 已分别随 PR #55、#57、#58 通过 CI 并合入 `main`；
   README、开发指南、路线图、任务表、评审报告和 ADR 状态已统一，新增 ADR 索引并复核计划缓存公共 Javadoc。
   架构、正确性、文档与兼容退出标准均已满足。Reactor、全部子模块 parent、示例和独立消费者现已统一切换到

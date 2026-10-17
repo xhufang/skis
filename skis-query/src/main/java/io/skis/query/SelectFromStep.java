@@ -1,11 +1,11 @@
 package io.skis.query;
 
-/** FROM stage for a selected non-null scalar or complete entity. */
-public interface SelectFromStep<R> {
+/** Required FROM stage that exposes no terminal query operation. */
+public interface SelectFromStep<Q> {
 
-  /** Chooses an independent root; selected expressions are validated in the final query scope. */
-  <F> SelectQuery<F, R> from(QueryTable<F> table);
+  /** Chooses an independent entity-table root. */
+  Q from(QueryTable<?> table);
 
-  /** Chooses a derived root and returns a root-type-neutral query view. */
-  SelectQuery<?, R> from(DerivedRelation relation);
+  /** Chooses a derived root. */
+  Q from(DerivedRelation relation);
 }

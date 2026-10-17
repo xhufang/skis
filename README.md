@@ -173,11 +173,10 @@ for top-level execution:
 ```java
 void reusableQueryExample() {
     QueryParameter<String> petName = Sql.parameter(String.class, "petName");
-    NonNullSingleColumnSelect<Long> petIds =
+    SingleColumnSelect<Long> petIds =
         Sql.select(pet.id()).from(pet).where(pet.name().eq(petName));
 
-    List<Long> ids =
-        executor.query(petIds, QueryParameters.of(petName, "Mimi")).fetchList();
+    List<Long> ids = executor.query(petIds).bind(petName, "Mimi").fetchList();
 }
 ```
 
@@ -229,8 +228,6 @@ Applications own DDL and assign identifiers before insert.
 - [Cursor and stream resource ownership](docs/cursor-and-stream.md)
 - [PostgreSQL and H2 JDBC type mappings](docs/jdbc-type-mappings.md)
 - [Annotation-processing error guide](docs/apt-error-codes.md)
-- [0.2.4 projection API compatibility ledger](docs/api-compatibility-0.2.4.md)
-- [0.2.5 AST API compatibility ledger](docs/api-compatibility-0.2.5.md)
 - [Formal release checklist and component boundary](docs/release-checklist.md)
 - [0.0.5 JDBC and dialect foundation](docs/0.0.5-foundation.md)
 - [0.0.6 injected executor and reflection-free read slice](docs/0.0.6-read-slice.md)

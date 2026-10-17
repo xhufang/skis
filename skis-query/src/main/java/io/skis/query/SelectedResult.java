@@ -9,17 +9,17 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /** Query result target kept independent of the FROM root until final scope validation. */
-final class SelectedResult<R> {
+final class SelectedResult<R extends @Nullable Object> {
 
   private final @Nullable QueryTable<?> table;
-  private final @Nullable Selectable<R> scalar;
-  private final @Nullable ProjectionSelection<R> projection;
+  private final @Nullable Selectable<?> scalar;
+  private final @Nullable ProjectionSelection<?> projection;
   private final Kind kind;
 
   private SelectedResult(
       @Nullable QueryTable<?> table,
-      @Nullable Selectable<R> scalar,
-      @Nullable ProjectionSelection<R> projection,
+      @Nullable Selectable<?> scalar,
+      @Nullable ProjectionSelection<?> projection,
       Kind kind) {
     this.table = table;
     this.scalar = scalar;
@@ -49,7 +49,7 @@ final class SelectedResult<R> {
     return new SelectedResult<>(table, null, null, Kind.REQUIRED_ENTITY);
   }
 
-  static <E> SelectedResult<E> nullableEntity(QueryTable<E> table) {
+  static <E> SelectedResult<@Nullable E> nullableEntity(QueryTable<E> table) {
     return new SelectedResult<>(table, null, null, Kind.NULLABLE_ENTITY);
   }
 
@@ -58,7 +58,7 @@ final class SelectedResult<R> {
         null, Objects.requireNonNull(selectable, "selectable"), null, Kind.REQUIRED_SCALAR);
   }
 
-  static <R> SelectedResult<R> nullableScalar(Selectable<R> selectable) {
+  static <R> SelectedResult<@Nullable R> nullableScalar(Selectable<R> selectable) {
     return new SelectedResult<>(
         null, Objects.requireNonNull(selectable, "selectable"), null, Kind.NULLABLE_SCALAR);
   }
@@ -74,10 +74,8 @@ final class SelectedResult<R> {
     return switch (kind) {
       case REQUIRED_ENTITY -> QueryPlanKey.ResultShape.requiredEntity(identities, requireTable());
       case NULLABLE_ENTITY -> QueryPlanKey.ResultShape.nullableEntity(identities, requireTable());
-      case REQUIRED_SCALAR ->
-          QueryPlanKey.ResultShape.requiredScalar(identities, requireScalar());
-      case NULLABLE_SCALAR ->
-          QueryPlanKey.ResultShape.nullableScalar(identities, requireScalar());
+      case REQUIRED_SCALAR -> QueryPlanKey.ResultShape.requiredScalar(identities, requireScalar());
+      case NULLABLE_SCALAR -> QueryPlanKey.ResultShape.nullableScalar(identities, requireScalar());
       case GENERATED_PROJECTION ->
           QueryPlanKey.ResultShape.projection(identities, requireProjection());
     };
@@ -90,24 +88,20 @@ final class SelectedResult<R> {
     return switch (kind) {
       case REQUIRED_ENTITY -> entityShape(scope, compiledExpressions, false);
       case NULLABLE_ENTITY -> entityShape(scope, compiledExpressions, true);
-      case REQUIRED_SCALAR ->
-          ResolvedResultShape.scalar(
-              requireScalar(), singleExpression(compiledExpressions), scope, false);
-      case NULLABLE_SCALAR ->
-          ResolvedResultShape.scalar(
-              requireScalar(), singleExpression(compiledExpressions), scope, true);
-      case GENERATED_PROJECTION ->
-          ResolvedResultShape.projection(requireProjection(), compiledExpressions, scope);
+      case REQUIRED_SCALAR -> scalarShape(scope, compiledExpressions, false);
+      case NULLABLE_SCALAR -> scalarShape(scope, compiledExpressions, true);
+      case GENERATED_PROJECTION -> projectionShape(scope, compiledExpressions);
     };
   }
 
   List<SqlExpression<?>> expressions() {
     return switch (kind) {
       case REQUIRED_ENTITY, NULLABLE_ENTITY -> List.copyOf(requireTable().selections());
-      case REQUIRED_SCALAR, NULLABLE_SCALAR -> List.of(requireScalar().expression());
+      case REQUIRED_SCALAR, NULLABLE_SCALAR ->
+          List.of(SelectableSupport.expression(requireScalar()));
       case GENERATED_PROJECTION ->
           requireProjection().selections().stream()
-              .<SqlExpression<?>>map(Selectable::expression)
+              .<SqlExpression<?>>map(SelectableSupport::expression)
               .toList();
     };
   }
@@ -166,7 +160,7 @@ final class SelectedResult<R> {
     };
   }
 
-  Selectable<R> singleSelectable() {
+  Selectable<?> singleSelectable() {
     if (kind != Kind.REQUIRED_SCALAR && kind != Kind.NULLABLE_SCALAR) {
       throw new IllegalStateException("selected result is not a single SQL value");
     }
@@ -236,6 +230,10 @@ final class SelectedResult<R> {
     return kind == Kind.REQUIRED_ENTITY;
   }
 
+  boolean nullableResult() {
+    return kind == Kind.NULLABLE_ENTITY || kind == Kind.NULLABLE_SCALAR;
+  }
+
   @SuppressWarnings({"rawtypes", "unchecked"})
   private ResolvedResultShape<R> entityShape(
       TableRuntimeScope scope, List<SqlExpression<?>> compiledExpressions, boolean nullable) {
@@ -244,20 +242,44 @@ final class SelectedResult<R> {
           "compiled complete-entity selection does not match its table mapping");
     }
     return (ResolvedResultShape)
-        ResolvedResultShape.entity((QueryTable) requireTable(), scope, nullable);
+        (nullable
+            ? ResolvedResultShape.nullableEntity((QueryTable) requireTable(), scope)
+            : ResolvedResultShape.entity((QueryTable) requireTable(), scope));
   }
 
-  @SuppressWarnings("unchecked")
-  private SqlExpression<R> singleExpression(List<SqlExpression<?>> compiledExpressions) {
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private ResolvedResultShape<R> scalarShape(
+      TableRuntimeScope scope, List<SqlExpression<?>> compiledExpressions, boolean nullable) {
+    return (ResolvedResultShape)
+        (nullable
+            ? ResolvedResultShape.nullableScalar(
+                (Selectable) requireScalar(),
+                (SqlExpression) singleExpression(compiledExpressions),
+                scope)
+            : ResolvedResultShape.scalar(
+                (Selectable) requireScalar(),
+                (SqlExpression) singleExpression(compiledExpressions),
+                scope));
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private ResolvedResultShape<R> projectionShape(
+      TableRuntimeScope scope, List<SqlExpression<?>> compiledExpressions) {
+    return (ResolvedResultShape)
+        ResolvedResultShape.projection(
+            (ProjectionSelection) requireProjection(), compiledExpressions, scope);
+  }
+
+  private SqlExpression<?> singleExpression(List<SqlExpression<?>> compiledExpressions) {
     if (compiledExpressions.size() != 1) {
       throw new QueryValidationException(
           "compiled scalar selection requires exactly one SQL expression");
     }
-    return (SqlExpression<R>) compiledExpressions.getFirst();
+    return compiledExpressions.getFirst();
   }
 
   private String scalarIdentity(String prefix) {
-    Selectable<R> selected = requireScalar();
+    Selectable<?> selected = requireScalar();
     if (selected instanceof QueryColumn<?, ?> column) {
       return prefix
           + column.table().entity().javaType().getName()
@@ -265,24 +287,24 @@ final class SelectedResult<R> {
           + column.property().ordinal();
     }
     return prefix
-        + selected.expression().getClass().getName()
+        + SelectableSupport.expression(selected).getClass().getName()
         + ':'
         + selected.javaType().getName()
         + ':'
         + selected.sqlType()
         + ':'
-        + selected.expression().hashCode();
+        + SelectableSupport.expression(selected).hashCode();
   }
 
   private QueryTable<?> requireTable() {
     return Objects.requireNonNull(table, "selected table");
   }
 
-  private Selectable<R> requireScalar() {
+  private Selectable<?> requireScalar() {
     return Objects.requireNonNull(scalar, "selected scalar");
   }
 
-  private ProjectionSelection<R> requireProjection() {
+  private ProjectionSelection<?> requireProjection() {
     return Objects.requireNonNull(projection, "projection selection");
   }
 

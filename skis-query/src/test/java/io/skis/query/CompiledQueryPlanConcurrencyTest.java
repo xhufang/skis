@@ -24,7 +24,6 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
 import java.lang.reflect.Proxy;
 import java.sql.PreparedStatement;
@@ -225,8 +224,8 @@ class CompiledQueryPlanConcurrencyTest {
 
   private static QueryCompilation<PetView> projectionQuery(QueryPlanCatalog catalog, long value) {
     PetTable table = new PetTable();
-    DefaultSelectQuery<Pet, PetView> query =
-        (DefaultSelectQuery<Pet, PetView>) QueryTestSupport.operations(catalog)
+    DefaultSelectQuery<PetView> query =
+        (DefaultSelectQuery<PetView>) QueryTestSupport.operations(catalog)
             .select(projectionMapping().bind(table.id(), table.name())).from(table)
             .where(table.id().eq(value));
     return query.compilation(QueryPagination.None.INSTANCE);
@@ -398,27 +397,25 @@ class CompiledQueryPlanConcurrencyTest {
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(ID);
-    private final NonNullQueryColumn<Pet, String> name = nonNullQueryColumn(NAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
+    private final NonNullSelectable<String> name = nonNullQueryColumn(NAME);
 
     private PetTable() {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
 
-    private NonNullQueryColumn<Pet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NonNullQueryColumn<Pet, String> name() {
+    private NonNullSelectable<String> name() {
       return name;
     }
-
-    @Override
-    public PetTable as(Identifier alias) {
+    public PetTable as(String alias) {
       return new PetTable(alias);
     }
   }

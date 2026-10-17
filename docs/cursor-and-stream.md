@@ -1,7 +1,7 @@
 # Cursor and stream resource ownership
 
-`QueryCursor<R>` and `CloseableQueryStream<R>` provide incremental JDBC-backed reading in
-`0.2.3-SNAPSHOT`. They are resource owners, not pagination continuations, and they are not
+`QueryCursor<R>` and the JDK `Stream<R>` returned by `SelectQuery.stream()` provide incremental
+JDBC-backed reading. They are resource owners, not pagination continuations, and they are not
 thread-safe.
 
 ## Query cursor
@@ -37,23 +37,26 @@ closing starts without an earlier failure, the first close failure is primary an
 are suppressed. SQL failures identify result-set close, statement close and connection release as
 separate lifecycle phases without including SQL parameter values.
 
-## Closeable stream
+## JDK stream
 
-`stream()` returns a wrapper rather than a bare `Stream<R>`:
+`stream()` returns a sequential JDK stream whose close handler owns the query cursor:
 
 ```java
-try (CloseableQueryStream<Pet> rows = query.stream()) {
-  Optional<Pet> first = rows.stream().filter(Pet::active).findFirst();
+try (Stream<Pet> rows = query.stream()) {
+  Optional<Pet> first = rows.filter(Pet::active).findFirst();
 }
 ```
 
 The stream advances the same cursor lazily. Reaching normal exhaustion closes it automatically.
-Its spliterator cannot split, so requesting a parallel stream never performs concurrent cursor
-access; callers should still treat it as a sequential resource stream.
+Its spliterator cannot split or prefetch rows. Database resource streams do not support parallel
+consumption even if application code calls `parallel()`.
 Short-circuit operations such as `findFirst`, `limit` or an exception from user code do not imply
-full exhaustion, so the wrapper must remain in try-with-resources. Closing the Java stream also
-closes the wrapper, but owning the wrapper explicitly makes the lifecycle unambiguous.
+full exhaustion, so the stream must remain in try-with-resources.
 
-Nullable scalar queries expose `QueryCursor<@Nullable V>` and
-`CloseableQueryStream<@Nullable V>`; a row whose selected SQL value is `NULL` is still a present
-cursor row.
+The thread that creates the cursor or stream owns it. Reading, decoding and closing must occur on
+that thread; a cross-thread read or close is rejected before JDBC is touched and does not transfer
+cleanup responsibility. Materialize and close the database resource before processing results in
+parallel.
+
+Nullable scalar queries expose `QueryCursor<@Nullable V>` and `Stream<@Nullable V>`; a row whose
+selected SQL value is `NULL` is still a present cursor row.

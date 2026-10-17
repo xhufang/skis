@@ -180,7 +180,7 @@ class SkisProjectionPostgreSqlContractTest {
                 "ignored"));
       }
       PetTable pet = PetTable.PET;
-      SelectQuery<Pet, Pet> query =
+      SelectQuery<Pet> query =
           executor
               .selectFrom(pet)
               .where(pet.id().in(ids))

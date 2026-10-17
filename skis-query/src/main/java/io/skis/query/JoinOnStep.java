@@ -1,16 +1,8 @@
 package io.skis.query;
 
-/**
- * Required ON stage for a non-CROSS join.
- *
- * <p>This type intentionally exposes no query terminal operation. Calling {@link #on} completes the
- * join and returns a new immutable query.
- */
-public interface JoinOnStep<F, R> {
+/** Required ON stage for a non-CROSS join; it exposes no terminal query operation. */
+public interface JoinOnStep<Q> {
 
-  /**
-   * Completes the pending join with a condition visible to its accumulated left scope and current
-   * right table; later tables are not visible.
-   */
-  SelectQuery<F, R> on(QueryCondition condition);
+  /** Completes the pending join and returns a new immutable query or description. */
+  Q on(QueryCondition condition);
 }

@@ -7,8 +7,8 @@ import java.util.Map;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable runtime values keyed by opaque {@link QueryParameter} identity. */
-public final class QueryParameters {
+/** Internal immutable runtime values keyed by opaque {@link QueryParameter} identity. */
+final class QueryParameters {
 
   private static final QueryParameters EMPTY = new QueryParameters(new IdentityHashMap<>());
 
@@ -18,26 +18,22 @@ public final class QueryParameters {
     this.bindings = Collections.unmodifiableMap(bindings);
   }
 
-  /** Returns the empty parameter environment. */
-  public static QueryParameters empty() {
+  static QueryParameters empty() {
     return EMPTY;
   }
 
-  /** Creates an environment containing one captured binding. */
-  public static <V> QueryParameters of(QueryParameter<V> parameter, @Nullable V value) {
+  static <V> QueryParameters of(QueryParameter<V> parameter, @Nullable V value) {
     Objects.requireNonNull(parameter, "parameter");
     IdentityHashMap<QueryParameter<?>, Binding> bindings = new IdentityHashMap<>(1);
     bindings.put(parameter, capture(parameter, value));
     return new QueryParameters(bindings);
   }
 
-  /** Returns a builder that rejects repeated bindings of the same reference. */
-  public static Builder builder() {
+  static Builder builder() {
     return new Builder();
   }
 
-  /** Returns a new environment with one binding added. */
-  public <V> QueryParameters bind(QueryParameter<V> parameter, @Nullable V value) {
+  <V> QueryParameters bind(QueryParameter<V> parameter, @Nullable V value) {
     Objects.requireNonNull(parameter, "parameter");
     if (bindings.containsKey(parameter)) {
       throw duplicate(parameter);
@@ -48,13 +44,11 @@ public final class QueryParameters {
     return new QueryParameters(appended);
   }
 
-  /** Returns the number of parameter references bound by this environment. */
-  public int size() {
+  int size() {
     return bindings.size();
   }
 
-  /** Returns whether this environment has no bindings. */
-  public boolean isEmpty() {
+  boolean isEmpty() {
     return bindings.isEmpty();
   }
 
@@ -158,8 +152,8 @@ public final class QueryParameters {
 
   private record Binding(@Nullable Object value) {}
 
-  /** Mutable capture helper whose {@link #build()} result is independent and immutable. */
-  public static final class Builder {
+  /** Package-owned capture helper used while constructing ordinary value predicates. */
+  static final class Builder {
 
     private final IdentityHashMap<QueryParameter<?>, Binding> bindings;
 
@@ -168,7 +162,7 @@ public final class QueryParameters {
     }
 
     /** Captures one value immediately and associates it with the reference by object identity. */
-    public <V> Builder bind(QueryParameter<V> parameter, @Nullable V value) {
+    <V> Builder bind(QueryParameter<V> parameter, @Nullable V value) {
       Objects.requireNonNull(parameter, "parameter");
       if (bindings.containsKey(parameter)) {
         throw duplicate(parameter);
@@ -178,7 +172,7 @@ public final class QueryParameters {
     }
 
     /** Builds an immutable parameter environment. */
-    public QueryParameters build() {
+    QueryParameters build() {
       return bindings.isEmpty() ? EMPTY : new QueryParameters(new IdentityHashMap<>(bindings));
     }
   }

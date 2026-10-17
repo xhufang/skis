@@ -11,7 +11,7 @@ navigate entity properties, or issue hidden SQL.
 returns the next immutable query directly and never accepts an ON condition.
 
 ```java
-SelectQuery<Pet, Pet> query =
+SelectQuery<Pet> query =
     executor
         .selectFrom(pet)
         .leftJoin(owner)
@@ -82,7 +82,7 @@ on the right side of a LEFT JOIN is effectively nullable after that Join. Select
 required result API fails before JDBC:
 
 ```java
-NullableSelectQuery<Pet, String> ownerNames =
+SelectQuery<@Nullable String> ownerNames =
     executor
         .selectNullable(owner.name())
         .from(pet)

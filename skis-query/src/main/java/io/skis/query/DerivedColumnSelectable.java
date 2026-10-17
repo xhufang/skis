@@ -35,8 +35,7 @@ sealed class DerivedColumnSelectable<V> implements Selectable<V>
     return output.nullability();
   }
 
-  @Override
-  public final SqlExpression<V> expression() {
+  final SqlExpression<V> expression() {
     return expression;
   }
 

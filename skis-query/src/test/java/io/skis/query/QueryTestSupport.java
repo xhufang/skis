@@ -8,7 +8,6 @@ import io.skis.jdbc.JdbcExecutor;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import io.skis.sql.ast.FromClause;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
@@ -78,15 +77,16 @@ final class QueryTestSupport {
   }
 
   static QueryPlanDependencies dependencies(EntityMeta<?>... entities) {
-    QueryTable<?> root = new RuntimeQueryTable<>(entities[0]).as(Identifier.of("source_0"));
+    QueryTable<?> root = new RuntimeQueryTable<>(entities[0]).as("source_0");
     List<JoinClause> joins = new ArrayList<>();
     for (int index = 1; index < entities.length; index++) {
       QueryTable<?> joined =
-          new RuntimeQueryTable<>(entities[index]).as(Identifier.of("source_" + index));
-      joins.add(new JoinClause(JoinType.CROSS, joined, null));
+          new RuntimeQueryTable<>(entities[index]).as("source_" + index);
+      joins.add(new JoinClause(JoinType.CROSS, joined.tableExpression(), null));
     }
     return QueryPlanDependencies.from(
         SemanticValidator.analyzeComplete(
-            new SelectStatement(root.selections(), new FromClause(root, joins), null)));
+            new SelectStatement(
+                root.selections(), new FromClause(root.tableExpression(), joins), null)));
   }
 }

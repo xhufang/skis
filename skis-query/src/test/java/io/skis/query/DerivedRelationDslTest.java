@@ -31,7 +31,6 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationSource;
-import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
@@ -62,7 +61,7 @@ class DerivedRelationDslTest {
   @Test
   void validatesExplicitOrderedShapeHandleMembershipAndAliasReuse() {
     PetTable inner = new PetTable().as("inner_pet");
-    NonNullSelectDescription<Pet> description = Sql.selectFrom(inner);
+    SelectDescription<Pet> description = Sql.selectFrom(inner);
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "pet_id");
     DerivedOutput<String> name = Sql.output(inner.name(), "display_name");
     DerivedRelation first = Sql.derived(description, "first_pet", id, name);
@@ -76,7 +75,9 @@ class DerivedRelationDslTest {
 
     NonNullSelectable<Long> firstId = first.column(id);
     NonNullSelectable<Long> secondId = second.column(id);
-    NonNullSingleColumnSelect<Long> combined =
+    assertSame(firstId, first.column(id));
+    assertNotSame(firstId, secondId);
+    SingleColumnSelect<Long> combined =
         Sql.select(firstId).from(first).crossJoin(second);
     CompiledQueryStructure structure = combined.state().structure();
     DerivedRelationSource root =
@@ -93,7 +94,8 @@ class DerivedRelationDslTest {
             .relation());
     SemanticValidator.validateComplete(
         new SelectStatement(structure.selections(), structure.fromClause()));
-    assertNotSame(firstId.expression(), secondId.expression());
+    assertNotSame(
+        SelectableSupport.expression(firstId), SelectableSupport.expression(secondId));
 
     NonNullDerivedOutput<Long> copiedHandle = Sql.output(inner.id(), "pet_id");
     QueryValidationException membershipFailure =
@@ -112,7 +114,7 @@ class DerivedRelationDslTest {
         () -> Sql.derived(description, "duplicate_output", id, duplicateAlias));
     assertThrows(IllegalArgumentException.class, () -> Sql.output(inner.id(), ""));
 
-    NonNullSingleColumnSelect<Long> duplicateRelationAlias =
+    SingleColumnSelect<Long> duplicateRelationAlias =
         Sql.select(firstId).from(first).crossJoin(first.as("first_pet"));
     assertThrows(QueryValidationException.class, duplicateRelationAlias.state()::structure);
   }
@@ -122,7 +124,7 @@ class DerivedRelationDslTest {
     PetTable scalarSource = new PetTable().as("scalar_pet");
     PetTable outer = new PetTable().as("outer_pet");
     QueryParameter<Long> shared = Sql.parameter(Long.class, "shared");
-    NonNullSingleColumnSelect<Long> child =
+    SingleColumnSelect<Long> child =
         Sql.select(scalarSource.id())
             .from(scalarSource)
             .where(scalarSource.id().eq(shared));
@@ -137,7 +139,7 @@ class DerivedRelationDslTest {
     assertEquals(Nullability.NULLABLE, accepted.column(output).nullability());
 
     QueryParameter<Long> independent = Sql.parameter(Long.class, "shared");
-    NonNullSingleColumnSelect<Long> independentChild =
+    SingleColumnSelect<Long> independentChild =
         Sql.select(scalarSource.id())
             .from(scalarSource)
             .where(scalarSource.id().eq(independent));
@@ -154,7 +156,7 @@ class DerivedRelationDslTest {
   void freezesEffectiveInnerJoinNullabilityBeforePublishingTheShape() {
     PetTable root = new PetTable().as("inner_root");
     PetTable optional = new PetTable().as("inner_optional");
-    NonNullSingleColumnSelect<Long> leftJoined =
+    SingleColumnSelect<Long> leftJoined =
         Sql.select(optional.id())
             .from(root)
             .leftJoin(optional)
@@ -178,7 +180,7 @@ class DerivedRelationDslTest {
   void rejectsAChildThatCapturesAnOuterPhysicalTable() {
     PetTable outer = new PetTable().as("outer_pet");
     PetTable inner = new PetTable().as("inner_pet");
-    NonNullSingleColumnSelect<Long> invalid = Sql.select(outer.id()).from(inner);
+    SingleColumnSelect<Long> invalid = Sql.select(outer.id()).from(inner);
     NonNullDerivedOutput<Long> exposed = Sql.output(outer.id(), "pet_id");
 
     QueryValidationException failure =
@@ -220,13 +222,13 @@ class DerivedRelationDslTest {
   void propagatesNestedParametersAndPhysicalCodecThroughADerivedRoot() throws Exception {
     PetTable inner = new PetTable().as("inner_pet");
     QueryParameter<Long> minimum = Sql.parameter(Long.class, "minimum");
-    NonNullSingleColumnSelect<Long> child =
+    SingleColumnSelect<Long> child =
         Sql.select(inner.id()).from(inner).where(inner.id().gt(minimum));
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "pet_id");
     DerivedRelation relation = Sql.derived(child, "filtered_pets", id);
     NonNullSelectable<Long> derivedId = relation.column(id);
     QueryParameter<Long> maximum = Sql.parameter(Long.class, "maximum");
-    NonNullSingleColumnSelect<Long> description =
+    SingleColumnSelect<Long> description =
         Sql.select(derivedId).from(relation).where(derivedId.lt(maximum));
     QueryParameters parameters =
         QueryParameters.builder().bind(minimum, 10L).bind(maximum, 50L).build();
@@ -322,7 +324,7 @@ class DerivedRelationDslTest {
             "first_level",
             firstOutput);
     NonNullSelectable<Long> firstColumn = first.column(firstOutput);
-    NonNullSingleColumnSelect<Long> oneLevel = Sql.select(firstColumn).from(first);
+    SingleColumnSelect<Long> oneLevel = Sql.select(firstColumn).from(first);
     CompiledQueryStructure oneLevelStructure = oneLevel.state().structure();
     TableRuntimeScope oneLevelScope =
         TableRuntimeScope.resolve(customRegistry, oneLevelStructure.fromClause());
@@ -332,7 +334,7 @@ class DerivedRelationDslTest {
     NonNullDerivedOutput<Long> secondOutput = Sql.output(firstColumn, "pet_id");
     DerivedRelation second = Sql.derived(oneLevel, "second_level", secondOutput);
     NonNullSelectable<Long> secondColumn = second.column(secondOutput);
-    NonNullSingleColumnSelect<Long> twoLevels = Sql.select(secondColumn).from(second);
+    SingleColumnSelect<Long> twoLevels = Sql.select(secondColumn).from(second);
     CompiledQueryStructure twoLevelStructure = twoLevels.state().structure();
     TableRuntimeScope twoLevelScope =
         TableRuntimeScope.resolve(customRegistry, twoLevelStructure.fromClause());
@@ -355,7 +357,7 @@ class DerivedRelationDslTest {
   @Test
   void outerJoinNullExtendsANonNullDerivedOutputAndPreservesItsCodec() throws Exception {
     PetTable inner = new PetTable().as("inner_pet");
-    NonNullSingleColumnSelect<Long> child = Sql.select(inner.id()).from(inner);
+    SingleColumnSelect<Long> child = Sql.select(inner.id()).from(inner);
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "row_count");
     DerivedRelation relation = Sql.derived(child, "derived_counts", id);
     NonNullSelectable<Long> derivedValue = relation.column(id);
@@ -380,7 +382,7 @@ class DerivedRelationDslTest {
             .rowDecoder()
             .decode(resultSet(Map.of()), RowReadContext.EMPTY));
 
-    NonNullSingleColumnSelect<Long> incorrectlyRequired =
+    SingleColumnSelect<Long> incorrectlyRequired =
         Sql.select(derivedValue)
             .from(outer)
             .leftJoin(relation)
@@ -476,32 +478,27 @@ class DerivedRelationDslTest {
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(ID);
-    private final NullableQueryColumn<Pet, String> name = nullableQueryColumn(NAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
+    private final Selectable<String> name = nullableQueryColumn(NAME);
 
     private PetTable() {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
 
-    private NonNullQueryColumn<Pet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NullableQueryColumn<Pet, String> name() {
+    private Selectable<String> name() {
       return name;
     }
 
     @Override
     public PetTable as(String alias) {
-      return new PetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
   }

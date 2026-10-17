@@ -43,7 +43,7 @@ public final class SortSpecification {
   }
 
   SqlExpression<?> expression() {
-    return selectable.expression();
+    return SelectableSupport.expression(selectable);
   }
 
   OrderByItem ast() {
@@ -80,8 +80,7 @@ public final class SortSpecification {
 
   @Override
   public int hashCode() {
-    return Objects.hash(
-        SelectableSupport.expressionIdentity(selectable), direction, nullPlacement);
+    return Objects.hash(SelectableSupport.expressionIdentity(selectable), direction, nullPlacement);
   }
 
   @Override

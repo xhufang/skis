@@ -8,7 +8,9 @@ import java.util.Objects;
 import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
-/** Catalog-owned L1/L2 routing; invocation ASTs, arguments and compiler suppliers are never cached. */
+/**
+ * Catalog-owned L1/L2 routing; invocation ASTs, arguments and compiler suppliers are never cached.
+ */
 final class QueryPlanResolver {
 
   private final ProjectionPlanCache cache;
@@ -19,7 +21,7 @@ final class QueryPlanResolver {
     this.keys = Objects.requireNonNull(keys, "keys");
   }
 
-  <R> QueryCompilation<R> resolve(
+  <R extends @Nullable Object> QueryCompilation<R> resolve(
       QueryBlockAnalysis analysis,
       SelectedResult<?> selected,
       QueryPlanKey.PlanVariant variant,

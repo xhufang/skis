@@ -48,7 +48,7 @@ record ResolvedValueMapping<V>(
   }
 
   static <V> ResolvedValueMapping<V> resolve(Selectable<V> selectable, TableRuntimeScope scope) {
-    return resolve(selectable, selectable.expression(), scope);
+    return resolve(selectable, SelectableSupport.expression(selectable), scope);
   }
 
   static <V> ResolvedValueMapping<V> resolve(

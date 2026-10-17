@@ -42,7 +42,7 @@ class JdbcExecutorTest {
     Scenario scenario = new Scenario(List.of("Mimi", "Fifi"));
     JdbcExecutor executor = new JdbcExecutor(scenario.provider());
 
-    List<@Nullable String> result = executor.fetchList(plan(), 17L);
+    List<String> result = executor.fetchList(plan(), 17L);
 
     assertEquals(List.of("Mimi", "Fifi"), result);
     assertEquals(1, scenario.boundIndex.get());
@@ -54,6 +54,16 @@ class JdbcExecutorTest {
         List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
     assertEquals(QUERY_SQL, scenario.preparedSql.get());
     assertEquals(List.of("bind-long", "execute-query"), scenario.executionEvents);
+  }
+
+  @Test
+  void nullableResultTypePreservesNullRowsInMaterializedLists() {
+    Scenario scenario = new Scenario(java.util.Collections.singletonList(null));
+
+    List<@Nullable String> result =
+        new JdbcExecutor(scenario.provider()).fetchList(nullablePlan(), 17L);
+
+    assertEquals(java.util.Collections.singletonList(null), result);
   }
 
   @Test
@@ -592,6 +602,20 @@ class JdbcExecutorTest {
   }
 
   @Test
+  void nullableCursorDistinguishesAPositionedNullFromAnUnpositionedCursor() {
+    Scenario scenario = new Scenario(java.util.Collections.singletonList(null));
+    JdbcCursor<@Nullable String> cursor =
+        new JdbcExecutor(scenario.provider())
+            .openCursor(nullablePlan(), 17L, ExecutionContext.EMPTY);
+
+    assertThrows(IllegalStateException.class, cursor::current);
+    assertTrue(cursor.advance());
+    assertEquals(null, cursor.current());
+    assertFalse(cursor.advance());
+    assertTrue(cursor.isClosed());
+  }
+
+  @Test
   void cursorPreservesReadFailureAndSuppressesEveryCloseFailure() {
     SQLException decodeFailure = new SQLException("decode", "22000", 91);
     SQLException resultSetCloseFailure = new SQLException("result", "HY000", 92);
@@ -662,9 +686,9 @@ class JdbcExecutorTest {
     JdbcRow<String> absent =
         new JdbcExecutor(noRow.provider())
             .fetchNullableOne(plan(), 17L, ExecutionContext.EMPTY);
-    JdbcRow<String> presentNull =
+    JdbcRow<@Nullable String> presentNull =
         new JdbcExecutor(nullRow.provider())
-            .fetchNullableOne(plan(), 17L, ExecutionContext.EMPTY);
+            .fetchNullableOne(nullablePlan(), 17L, ExecutionContext.EMPTY);
 
     assertFalse(absent.present());
     assertTrue(presentNull.present());
@@ -691,7 +715,7 @@ class JdbcExecutorTest {
     ExecutionContext context =
         ExecutionContext.of(ExecutionOptions.builder().maxRows(2).build());
 
-    List<@Nullable String> rows =
+    List<String> rows =
         new JdbcExecutor(scenario.provider()).fetchSliceList(plan(), 17L, context, 2);
 
     assertEquals(List.of("one", "two", "extra"), rows);
@@ -845,6 +869,24 @@ class JdbcExecutorTest {
   }
 
   private static CompiledQueryPlan<String, Long> plan() {
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+    return new CompiledQueryPlan<>(
+        "test",
+        new RenderedSql(QUERY_SQL, List.of(id)),
+        (statement, firstIndex, value, context) -> {
+          statement.setLong(firstIndex, value);
+          return firstIndex + 1;
+        },
+        (resultSet, context) -> {
+          String value = resultSet.getString(1);
+          if (value == null) {
+            throw new SQLException("non-null query decoder returned null");
+          }
+          return value;
+        });
+  }
+
+  private static CompiledQueryPlan<@Nullable String, Long> nullablePlan() {
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
     return new CompiledQueryPlan<>(
         "test",

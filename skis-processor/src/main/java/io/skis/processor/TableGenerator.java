@@ -15,10 +15,9 @@ final class TableGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(3072);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.query.NonNullQueryColumn;\n");
-    source.append("import io.skis.query.NullableQueryColumn;\n");
+    source.append("import io.skis.query.NonNullSelectable;\n");
     source.append("import io.skis.query.QueryTable;\n");
-    source.append("import io.skis.sql.ast.Identifier;\n");
+    source.append("import io.skis.query.Selectable;\n");
     source.append("import org.jspecify.annotations.NonNull;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);
     source
@@ -37,13 +36,11 @@ final class TableGenerator implements EntitySourceGenerator {
         .append("();\n\n");
     for (PropertyModel property : model.properties()) {
       String columnType =
-          property.column().nullable() ? "NullableQueryColumn" : "NonNullQueryColumn";
+          property.column().nullable() ? "Selectable" : "NonNullSelectable";
       source
           .append("  private final ")
           .append(columnType)
           .append("<")
-          .append(entityType)
-          .append(", ")
           .append(property.typeName())
           .append("> ")
           .append(property.name())
@@ -64,20 +61,18 @@ final class TableGenerator implements EntitySourceGenerator {
         .append("  }\n\n")
         .append("  private ")
         .append(className)
-        .append("(@NonNull Identifier alias) {\n")
+        .append("(@NonNull String alias) {\n")
         .append("    super(")
         .append(metaName)
         .append(".ENTITY, alias);\n")
         .append("  }\n\n");
     for (PropertyModel property : model.properties()) {
       String columnType =
-          property.column().nullable() ? "NullableQueryColumn" : "NonNullQueryColumn";
+          property.column().nullable() ? "Selectable" : "NonNullSelectable";
       source
           .append("  public ")
           .append(columnType)
           .append("<")
-          .append(entityType)
-          .append(", ")
           .append(property.typeName())
           .append("> ")
           .append(property.tableMethodName())
@@ -92,14 +87,6 @@ final class TableGenerator implements EntitySourceGenerator {
         .append("  public ")
         .append(className)
         .append(" as(@NonNull String alias) {\n")
-        .append("    return new ")
-        .append(className)
-        .append("(Identifier.of(alias));\n")
-        .append("  }\n\n")
-        .append("  @Override\n")
-        .append("  public ")
-        .append(className)
-        .append(" as(@NonNull Identifier alias) {\n")
         .append("    return new ")
         .append(className)
         .append("(alias);\n")

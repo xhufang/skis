@@ -136,8 +136,8 @@ class ProjectionPlanCacheTest {
   }
 
   private static CompiledQueryPlan<Pet, Object> catalogQuery(QueryOperations operations) {
-    PetTable table = new PetTable(Identifier.of("p"));
-    return ((DefaultSelectQuery<Pet, Pet>) operations.selectFrom(table))
+    PetTable table = new PetTable("p");
+    return ((DefaultSelectQuery<Pet>) operations.selectFrom(table))
         .compilation(QueryPagination.None.INSTANCE).plan();
   }
 
@@ -1029,9 +1029,11 @@ class ProjectionPlanCacheTest {
     Object firstArgument = new Object();
     Object secondArgument = new Object();
     CachedQueryPlan<Pet> cached = plan("SELECT value_safe");
-    SelectStatement firstAst = new SelectStatement(PET_TABLE.selections(), PET_TABLE);
-    PetTable secondTable = new PetTable(Identifier.of("second_pet"));
-    SelectStatement secondAst = new SelectStatement(secondTable.selections(), secondTable);
+    SelectStatement firstAst =
+        new SelectStatement(PET_TABLE.selections(), PET_TABLE.tableExpression());
+    PetTable secondTable = new PetTable("second_pet");
+    SelectStatement secondAst =
+        new SelectStatement(secondTable.selections(), secondTable.tableExpression());
 
     QueryCompilation<Pet> first = cached.bind(firstArgument, firstAst);
     QueryCompilation<Pet> second = cached.bind(secondArgument, secondAst);
@@ -1196,12 +1198,10 @@ class ProjectionPlanCacheTest {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
-
-    @Override
-    public PetTable as(Identifier alias) {
+    public PetTable as(String alias) {
       return new PetTable(alias);
     }
   }

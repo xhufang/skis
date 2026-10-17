@@ -30,6 +30,7 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         import java.util.function.Function;
         final class ValidQuery {
           static <V> QueryCondition equal(Selectable<V> left, Selectable<V> right) {
@@ -38,28 +39,30 @@ class QueryTypeSafetyCompilationTest {
           static <V> SortSpecification order(Selectable<V> selectable) {
             return selectable.asc();
           }
-          static <V> NullableSelectFromStep<V> select(
+          static <V> SelectFromStep<SelectQuery<@Nullable V>> select(
               QueryOperations operations, Selectable<V> selectable) {
             return operations.select(selectable);
           }
-          static <V> SelectFromStep<V> selectNonNull(
+          static <V> SelectFromStep<SelectQuery<V>> selectNonNull(
               QueryOperations operations, NonNullSelectable<V> selectable) {
             return operations.select(selectable);
           }
           static <E> void query(
               QueryOperations operations,
-              NonNullQueryColumn<E, String> concrete,
-              NullableQueryColumn<E, String> nullableConcrete,
+              NonNullSelectable<String> concrete,
+              Selectable<String> nullableConcrete,
               QueryTable<E> table) {
             NonNullSelectable<String> nonNull = concrete;
             Selectable<String> selectable = concrete;
             Selectable<String> nullable = nullableConcrete;
-            SelectFromStep<String> concreteStep = operations.select(concrete);
-            SelectFromStep<String> interfaceStep = operations.select(nonNull);
-            NullableSelectFromStep<String> generalStep = operations.select(selectable);
-            NullableSelectFromStep<String> nullableStep = select(operations, nullable);
-            SelectFromStep<String> helperStep = selectNonNull(operations, nonNull);
-            Function<NonNullSelectable<String>, SelectFromStep<String>> selector =
+            SelectFromStep<SelectQuery<String>> concreteStep = operations.select(concrete);
+            SelectFromStep<SelectQuery<String>> interfaceStep = operations.select(nonNull);
+            SelectFromStep<SelectQuery<@Nullable String>> generalStep =
+                operations.select(selectable);
+            SelectFromStep<SelectQuery<@Nullable String>> nullableStep =
+                select(operations, nullable);
+            SelectFromStep<SelectQuery<String>> helperStep = selectNonNull(operations, nonNull);
+            Function<NonNullSelectable<String>, SelectFromStep<SelectQuery<String>>> selector =
                 operations::select;
             Function<String, QueryCondition> equality = concrete::eq;
             Function<Selectable<String>, QueryCondition> expressionEquality = concrete::eq;
@@ -80,22 +83,23 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class JoinedTargetQuery {
           static final class Pet {}
           static final class Owner {}
           static void query(
               QueryOperations operations,
-              NonNullQueryColumn<Owner, String> ownerName,
-              NullableQueryColumn<Owner, String> ownerNickname,
+              NonNullSelectable<String> ownerName,
+              Selectable<String> ownerNickname,
               QueryTable<Pet> pet,
               QueryTable<Owner> owner,
               QueryCondition on) {
-            SelectQuery<Pet, String> query = operations.select(ownerName).from(pet);
-            NullableSelectQuery<Pet, String> nullable =
+            SelectQuery<String> query = operations.select(ownerName).from(pet);
+            SelectQuery<@Nullable String> nullable =
                 operations.select(ownerNickname).from(pet).leftJoin(owner).on(on);
-            NullableSelectQuery<Pet, String> explicitNullable =
+            SelectQuery<@Nullable String> explicitNullable =
                 operations.selectNullable(ownerName).from(pet).leftJoin(owner).on(on);
-            NullableSelectQuery<Pet, Owner> nullableEntity =
+            SelectQuery<@Nullable Owner> nullableEntity =
                 operations.selectNullable(owner).from(pet).leftJoin(owner).on(on);
             query.join(owner).on(on);
             nullable.where(ownerNickname.isNull());
@@ -108,24 +112,26 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class NullableFromDecoupling {
           static final class Pet {}
           static final class Owner {}
           static void query(
               QueryOperations operations,
-              NullableQueryColumn<Owner, String> ownerNickname,
+              Selectable<String> ownerNickname,
               QueryTable<Pet> pet) {
             operations.select(ownerNickname).from(pet);
           }
         }
         """;
-    String invalidInterfaceNullness =
+    String annotationOnlyNullableAssignment =
         """
         package samples;
         import io.skis.query.*;
-        final class InvalidInterfaceNullness {
+        import org.jspecify.annotations.Nullable;
+        final class AnnotationOnlyNullableAssignment {
           static void query(QueryOperations operations, Selectable<String> selectable) {
-            SelectFromStep<String> step = operations.select(selectable);
+            SelectFromStep<SelectQuery<String>> step = operations.select(selectable);
           }
         }
         """;
@@ -141,11 +147,11 @@ class QueryTypeSafetyCompilationTest {
             "samples.NullableFromDecoupling",
             nullableFromDecoupling,
             temporaryDirectory.resolve("nullable-from-decoupling")));
-    assertFalse(
+    assertTrue(
         compile(
-            "samples.InvalidInterfaceNullness",
-            invalidInterfaceNullness,
-            temporaryDirectory.resolve("invalid-interface-nullness")));
+            "samples.AnnotationOnlyNullableAssignment",
+            annotationOnlyNullableAssignment,
+            temporaryDirectory.resolve("annotation-only-nullable-assignment")));
   }
 
   @Test
@@ -155,6 +161,7 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidProjectionQuery {
           static final class Pet {}
           static final class Summary {}
@@ -171,6 +178,7 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class InvalidProjectionQuery {
           static final class Pet {}
           static final class Owner {}
@@ -201,13 +209,14 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidGeneratedProjectionCall {
           static final class Pet {}
           static final class Summary {}
           static ProjectionSelection<Summary> of(
               NonNullSelectable<Long> id, Selectable<String> name) { return null; }
           static void query(
-              NonNullQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+              NonNullSelectable<Long> id, Selectable<String> name) {
             ProjectionSelection<Summary> selection = of(id, name);
           }
         }
@@ -216,13 +225,14 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class WrongProjectionOrder {
           static final class Pet {}
           static final class Summary {}
           static ProjectionSelection<Summary> of(
               NonNullSelectable<Long> id, Selectable<String> name) { return null; }
           static void query(
-              NonNullQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+              NonNullSelectable<Long> id, Selectable<String> name) {
             of(name, id);
           }
         }
@@ -231,13 +241,14 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class WrongProjectionNullness {
           static final class Pet {}
           static final class Summary {}
           static ProjectionSelection<Summary> of(
               NonNullSelectable<Long> id, Selectable<String> name) { return null; }
           static void query(
-              NullableQueryColumn<Pet, Long> id, NullableQueryColumn<Pet, String> name) {
+              Selectable<Long> id, Selectable<String> name) {
             of(id, name);
           }
         }
@@ -246,12 +257,13 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class WrongProjectionArity {
           static final class Pet {}
           static final class Summary {}
           static ProjectionSelection<Summary> of(
               NonNullSelectable<Long> id, Selectable<String> name) { return null; }
-          static void query(NonNullQueryColumn<Pet, Long> id) {
+          static void query(NonNullSelectable<Long> id) {
             of(id);
           }
         }
@@ -285,9 +297,10 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidChain {
           static <E> void query(
-              SelectQuery<E, E> query,
+              SelectQuery<E> query,
               QueryCondition first,
               QueryCondition second) {
             query.where(first).and(second).or(first);
@@ -298,11 +311,12 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class WideChain {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet, Pet> query,
+              SelectQuery<Pet> query,
               QueryCondition pet,
               QueryCondition owner) {
             query.where(pet).and(owner);
@@ -321,6 +335,7 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         import java.util.List;
         final class ValidInSubquery {
           static <V> QueryCondition membership(
@@ -328,10 +343,10 @@ class QueryTypeSafetyCompilationTest {
             return left.in(right).and(left.notIn(right));
           }
           static <E> void query(
-              NonNullQueryColumn<E, Long> id,
-              NullableQueryColumn<E, Long> parentId,
+              NonNullSelectable<Long> id,
+              Selectable<Long> parentId,
               QueryTable<E> table) {
-            NonNullSingleColumnSelect<Long> ids =
+            SingleColumnSelect<Long> ids =
                 Sql.select(id).from(table).where(id.isNotNull()).orderBy(id.asc()).distinct();
             SingleColumnSelect<Long> parentIds =
                 Sql.select(parentId).from(table).orderBy(parentId.asc());
@@ -345,10 +360,11 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class WrongInSubqueryType {
           static <E> void query(
-              NonNullQueryColumn<E, Long> id,
-              NonNullQueryColumn<E, Integer> number,
+              NonNullSelectable<Long> id,
+              NonNullSelectable<Integer> number,
               QueryTable<E> table) {
             SingleColumnSelect<Integer> numbers = Sql.select(number).from(table);
             id.in(numbers);
@@ -359,13 +375,14 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ProjectionIsNotSingleColumn {
           static final class Summary {}
           static <E> void query(
-              NonNullQueryColumn<E, Long> id,
+              NonNullSelectable<Long> id,
               QueryTable<E> table,
               ProjectionSelection<Long> projection) {
-            NonNullSelectDescription<Long> description = Sql.select(projection).from(table);
+            SelectDescription<Long> description = Sql.select(projection).from(table);
             id.in(description);
           }
         }
@@ -394,14 +411,15 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidScalarSubquery {
           static <E> void query(
               QueryOperations operations,
-              NonNullQueryColumn<E, Long> id,
+              NonNullSelectable<Long> id,
               QueryTable<E> table) {
             SingleColumnSelect<Long> ids = Sql.select(id).from(table);
             Selectable<Long> scalar = Sql.scalar(ids);
-            NullableSelectFromStep<Long> selected = operations.select(scalar);
+            SelectFromStep<SelectQuery<@Nullable Long>> selected = operations.select(scalar);
             QueryCondition comparison = scalar.eq(id);
             QueryCondition nullCheck = scalar.isNull();
             SortSpecification ordering = scalar.asc().nullsLast();
@@ -413,9 +431,10 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class InvalidNonNullScalarSubquery {
           static <E> void query(
-              NonNullQueryColumn<E, Long> id,
+              NonNullSelectable<Long> id,
               QueryTable<E> table) {
             NonNullSelectable<Long> scalar = Sql.scalar(Sql.select(id).from(table));
           }
@@ -425,10 +444,11 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class InvalidScalarSubqueryType {
           static <E> void query(
-              NonNullQueryColumn<E, Long> id,
-              NonNullQueryColumn<E, String> name,
+              NonNullSelectable<Long> id,
+              NonNullSelectable<String> name,
               QueryTable<E> table) {
             Selectable<Long> scalar = Sql.scalar(Sql.select(id).from(table));
             scalar.eq(name);
@@ -459,11 +479,12 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidJoin {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet, Pet> query,
+              SelectQuery<Pet> query,
               QueryTable<Owner> owner,
               QueryCondition condition) {
             query.join(owner).on(condition).fetchList();
@@ -474,10 +495,11 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class IncompleteJoin {
           static final class Pet {}
           static final class Owner {}
-          static void query(SelectQuery<Pet, Pet> query, QueryTable<Owner> owner) {
+          static void query(SelectQuery<Pet> query, QueryTable<Owner> owner) {
             query.join(owner).fetchList();
           }
         }
@@ -490,70 +512,202 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
+  void requiresFromBeforeASelectionCanReachTerminalOperations() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class CompletedFrom {
+          static final class Pet {}
+          static void query(
+              QueryOperations operations,
+              QueryTable<Pet> pet,
+              NonNullSelectable<Long> id) {
+            operations.select(id).from(pet).fetchList();
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class IncompleteFrom {
+          static void query(QueryOperations operations, NonNullSelectable<Long> id) {
+            operations.select(id).fetchList();
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.CompletedFrom", valid, temporaryDirectory.resolve("completed-from")));
+    assertFalse(
+        compile(
+            "samples.IncompleteFrom", invalid, temporaryDirectory.resolve("incomplete-from")));
+  }
+
+  @Test
+  void crossJoinReturnsACompletedQueryAndDoesNotExposeOn() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class CompletedCrossJoin {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(SelectQuery<Pet> query, QueryTable<Owner> owner) {
+            query.crossJoin(owner).fetchList();
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class CrossJoinWithOn {
+          static final class Pet {}
+          static final class Owner {}
+          static void query(
+              SelectQuery<Pet> query,
+              QueryTable<Owner> owner,
+              QueryCondition condition) {
+            query.crossJoin(owner).on(condition);
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.CompletedCrossJoin",
+            valid,
+            temporaryDirectory.resolve("completed-cross-join")));
+    assertFalse(
+        compile(
+            "samples.CrossJoinWithOn",
+            invalid,
+            temporaryDirectory.resolve("cross-join-with-on")));
+  }
+
+  @Test
+  void consecutiveJoinsPreserveTheResultTypeAndRequireEveryOn() throws Exception {
+    String valid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class ConsecutiveJoins {
+          static final class Pet {}
+          static final class Owner {}
+          static final class Department {}
+          static void query(
+              SelectQuery<Pet> query,
+              QueryTable<Owner> owner,
+              QueryTable<Department> department,
+              QueryCondition ownerOn,
+              QueryCondition departmentOn) {
+            SelectQuery<Pet> completed =
+                query.join(owner).on(ownerOn).join(department).on(departmentOn);
+            completed.fetchList();
+          }
+        }
+        """;
+    String invalid =
+        """
+        package samples;
+        import io.skis.query.*;
+        final class IncompleteConsecutiveJoin {
+          static final class Pet {}
+          static final class Owner {}
+          static final class Department {}
+          static void query(
+              SelectQuery<Pet> query,
+              QueryTable<Owner> owner,
+              QueryTable<Department> department,
+              QueryCondition ownerOn) {
+            query.join(owner).on(ownerOn).join(department).fetchList();
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ConsecutiveJoins",
+            valid,
+            temporaryDirectory.resolve("consecutive-joins")));
+    assertFalse(
+        compile(
+            "samples.IncompleteConsecutiveJoin",
+            invalid,
+            temporaryDirectory.resolve("incomplete-consecutive-join")));
+  }
+
+  @Test
   void entityAndDerivedJoinsShareOnStepTypesWithoutARightEntityPhantom() throws Exception {
     String valid =
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class UnifiedJoinOnSteps {
           static final class Root {}
           static final class Joined {}
 
           static void queries(
-              SelectQuery<Root, String> query,
-              NullableSelectQuery<Root, String> nullableQuery,
+              SelectQuery<String> query,
+              SelectQuery<@Nullable String> nullableQuery,
               QueryTable<Joined> table,
               DerivedRelation derived,
               QueryCondition condition) {
-            JoinOnStep<Root, String> tableStep = query.join(table);
-            JoinOnStep<Root, String> derivedStep = query.join(derived);
-            SelectQuery<Root, String> tableQuery = tableStep.on(condition);
-            SelectQuery<Root, String> derivedQuery = derivedStep.on(condition);
+            JoinOnStep<SelectQuery<String>> tableStep = query.join(table);
+            JoinOnStep<SelectQuery<String>> derivedStep = query.join(derived);
+            SelectQuery<String> tableQuery = tableStep.on(condition);
+            SelectQuery<String> derivedQuery = derivedStep.on(condition);
 
-            NullableJoinOnStep<Root, String> nullableTableStep = nullableQuery.join(table);
-            NullableJoinOnStep<Root, String> nullableDerivedStep = nullableQuery.join(derived);
-            NullableSelectQuery<Root, String> nullableTableQuery =
+            JoinOnStep<SelectQuery<@Nullable String>> nullableTableStep =
+                nullableQuery.join(table);
+            JoinOnStep<SelectQuery<@Nullable String>> nullableDerivedStep =
+                nullableQuery.join(derived);
+            SelectQuery<@Nullable String> nullableTableQuery =
                 nullableTableStep.on(condition);
-            NullableSelectQuery<Root, String> nullableDerivedQuery =
+            SelectQuery<@Nullable String> nullableDerivedQuery =
                 nullableDerivedStep.on(condition);
           }
 
           static void descriptions(
               SelectDescription<String> description,
-              NonNullSelectDescription<String> nonNullDescription,
+              SelectDescription<String> nonNullDescription,
               SingleColumnSelect<String> singleColumn,
-              NonNullSingleColumnSelect<String> nonNullSingleColumn,
+              SingleColumnSelect<String> nonNullSingleColumn,
               QueryTable<Joined> table,
               DerivedRelation derived,
               QueryCondition condition) {
-            SelectDescriptionJoinOnStep<String> descriptionTableStep =
+            JoinOnStep<? extends SelectDescription<String>> descriptionTableStep =
                 description.join(table);
-            SelectDescriptionJoinOnStep<String> descriptionDerivedStep =
+            JoinOnStep<? extends SelectDescription<String>> descriptionDerivedStep =
                 description.join(derived);
             SelectDescription<String> tableDescription = descriptionTableStep.on(condition);
             SelectDescription<String> derivedDescription = descriptionDerivedStep.on(condition);
 
-            NonNullSelectDescriptionJoinOnStep<String> nonNullTableStep =
+            JoinOnStep<? extends SelectDescription<String>> nonNullTableStep =
                 nonNullDescription.join(table);
-            NonNullSelectDescriptionJoinOnStep<String> nonNullDerivedStep =
+            JoinOnStep<? extends SelectDescription<String>> nonNullDerivedStep =
                 nonNullDescription.join(derived);
-            NonNullSelectDescription<String> nonNullTableDescription =
+            SelectDescription<String> nonNullTableDescription =
                 nonNullTableStep.on(condition);
-            NonNullSelectDescription<String> nonNullDerivedDescription =
+            SelectDescription<String> nonNullDerivedDescription =
                 nonNullDerivedStep.on(condition);
 
-            SingleColumnSelectJoinOnStep<String> singleTableStep = singleColumn.join(table);
-            SingleColumnSelectJoinOnStep<String> singleDerivedStep = singleColumn.join(derived);
+            JoinOnStep<SingleColumnSelect<String>> singleTableStep = singleColumn.join(table);
+            JoinOnStep<SingleColumnSelect<String>> singleDerivedStep = singleColumn.join(derived);
             SingleColumnSelect<String> singleTableDescription = singleTableStep.on(condition);
             SingleColumnSelect<String> singleDerivedDescription = singleDerivedStep.on(condition);
 
-            NonNullSingleColumnSelectJoinOnStep<String> nonNullSingleTableStep =
+            JoinOnStep<SingleColumnSelect<String>> nonNullSingleTableStep =
                 nonNullSingleColumn.join(table);
-            NonNullSingleColumnSelectJoinOnStep<String> nonNullSingleDerivedStep =
+            JoinOnStep<SingleColumnSelect<String>> nonNullSingleDerivedStep =
                 nonNullSingleColumn.join(derived);
-            NonNullSingleColumnSelect<String> nonNullSingleTableDescription =
+            SingleColumnSelect<String> nonNullSingleTableDescription =
                 nonNullSingleTableStep.on(condition);
-            NonNullSingleColumnSelect<String> nonNullSingleDerivedDescription =
+            SingleColumnSelect<String> nonNullSingleDerivedDescription =
                 nonNullSingleDerivedStep.on(condition);
           }
         }
@@ -572,14 +726,15 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class JoinedOrdering {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet, Pet> query,
+              SelectQuery<Pet> query,
               QueryTable<Owner> owner,
-              NonNullQueryColumn<Pet, Long> petId,
-              NonNullQueryColumn<Owner, Long> ownerId,
+              NonNullSelectable<Long> petId,
+              NonNullSelectable<Long> ownerId,
               QueryCondition on) {
             query.join(owner).on(on).orderBy(ownerId.asc(), petId.asc());
           }
@@ -599,12 +754,13 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidColumnComparison {
           static final class Pet {}
           static final class Owner {}
           static QueryCondition condition(
-              NonNullQueryColumn<Pet, Long> ownerId,
-              NonNullQueryColumn<Owner, Long> id) {
+              NonNullSelectable<Long> ownerId,
+              NonNullSelectable<Long> id) {
             return ownerId.eq(id).and(ownerId.ge(id));
           }
         }
@@ -613,12 +769,13 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class InvalidColumnComparison {
           static final class Pet {}
           static final class Owner {}
           static QueryCondition condition(
-              NonNullQueryColumn<Pet, Long> ownerId,
-              NonNullQueryColumn<Owner, String> id) {
+              NonNullSelectable<Long> ownerId,
+              NonNullSelectable<String> id) {
             return ownerId.eq(id);
           }
         }
@@ -642,29 +799,31 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidNullableScalar {
           static <E> void query(
               QueryOperations operations,
-              NonNullQueryColumn<E, Long> id,
-              NullableQueryColumn<E, String> nickname,
+              NonNullSelectable<Long> id,
+              Selectable<String> nickname,
               QueryTable<E> table) {
-            SelectQuery<E, Long> ids = operations.select(id).from(table);
-            NullableSelectQuery<E, String> names = operations.select(nickname).from(table);
-            SingleRow<String> row = names.fetchOne();
+            SelectQuery<Long> ids = operations.select(id).from(table);
+            SelectQuery<@Nullable String> names = operations.select(nickname).from(table);
+            SingleRow<@Nullable String> row = names.fetchOne();
             names.orderBy(nickname.asc().nullsLast(), id.asc());
           }
         }
         """;
-    String invalid =
+    String annotationOnlyNullableAssignment =
         """
         package samples;
         import io.skis.query.*;
-        final class InvalidNullableScalar {
+        import org.jspecify.annotations.Nullable;
+        final class AnnotationOnlyNullableScalarAssignment {
           static <E> void query(
               QueryOperations operations,
-              NullableQueryColumn<E, String> nickname,
+              Selectable<String> nickname,
               QueryTable<E> table) {
-            SelectQuery<E, String> names = operations.select(nickname).from(table);
+            SelectQuery<String> names = operations.select(nickname).from(table);
           }
         }
         """;
@@ -674,11 +833,11 @@ class QueryTypeSafetyCompilationTest {
             "samples.ValidNullableScalar",
             valid,
             temporaryDirectory.resolve("valid-nullable-scalar")));
-    assertFalse(
+    assertTrue(
         compile(
-            "samples.InvalidNullableScalar",
-            invalid,
-            temporaryDirectory.resolve("invalid-nullable-scalar")));
+            "samples.AnnotationOnlyNullableScalarAssignment",
+            annotationOnlyNullableAssignment,
+            temporaryDirectory.resolve("annotation-only-nullable-scalar")));
   }
 
   @Test
@@ -687,9 +846,10 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidExplicitCount {
           static <E, R> Page<R> query(
-              SelectQuery<E, R> content, SelectQuery<E, E> equivalentCountSource) {
+              SelectQuery<R> content, SelectQuery<E> equivalentCountSource) {
             CountQuery count = equivalentCountSource.countQuery();
             return content.fetchPage(PageRequest.page(0, 20), count);
           }
@@ -709,26 +869,27 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class ValidDerivedRelation {
           static final class Pet {}
           static void query(
               QueryOperations operations,
               QueryTable<Pet> pet,
-              NonNullQueryColumn<Pet, Long> id,
-              NullableQueryColumn<Pet, String> name,
+              NonNullSelectable<Long> id,
+              Selectable<String> name,
               QueryCondition on) {
             NonNullDerivedOutput<Long> idOutput = Sql.output(id, "pet_id");
             DerivedOutput<String> nameOutput = Sql.output(name, "display_name");
             DerivedRelation derived =
                 Sql.derived(Sql.select(id).from(pet), "visible_pet", idOutput);
             NonNullSelectable<Long> derivedId = derived.column(idOutput);
-            SelectQuery<?, Long> neutralRoot = operations.select(derivedId).from(derived);
-            SelectQuery<Pet, Long> entityRoot =
+            SelectQuery<Long> neutralRoot = operations.select(derivedId).from(derived);
+            SelectQuery<Long> entityRoot =
                 operations.select(derivedId).from(pet).join(derived).on(on);
             DerivedRelation nullableRelation =
                 Sql.derived(Sql.select(name).from(pet), "named_pet", nameOutput);
             Selectable<String> derivedName = nullableRelation.column(nameOutput);
-            NullableSelectQuery<?, String> nullableRoot =
+            SelectQuery<@Nullable String> nullableRoot =
                 operations.select(derivedName).from(nullableRelation);
             neutralRoot.crossJoin(derived.as("other_pet"));
             entityRoot.leftJoin(nullableRelation).on(on);
@@ -740,11 +901,12 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class InvalidDerivedNullness {
           static final class Pet {}
           static void query(
               QueryTable<Pet> pet,
-              NullableQueryColumn<Pet, String> name) {
+              Selectable<String> name) {
             DerivedOutput<String> output = Sql.output(name, "display_name");
             DerivedRelation derived =
                 Sql.derived(Sql.select(name).from(pet), "named_pet", output);
@@ -756,16 +918,17 @@ class QueryTypeSafetyCompilationTest {
         """
         package samples;
         import io.skis.query.*;
+        import org.jspecify.annotations.Nullable;
         final class InvalidDerivedRoot {
           static final class Pet {}
           static void query(
               QueryOperations operations,
               QueryTable<Pet> pet,
-              NonNullQueryColumn<Pet, Long> id) {
+              NonNullSelectable<Long> id) {
             NonNullDerivedOutput<Long> output = Sql.output(id, "pet_id");
             DerivedRelation derived =
                 Sql.derived(Sql.select(id).from(pet), "visible_pet", output);
-            SelectQuery<Pet, Long> invalid =
+            SelectQuery<String> invalid =
                 operations.select(derived.column(output)).from(derived);
           }
         }
@@ -786,6 +949,64 @@ class QueryTypeSafetyCompilationTest {
             "samples.InvalidDerivedRoot",
             invalidRoot,
             temporaryDirectory.resolve("invalid-derived-root")));
+  }
+
+  @Test
+  void keepsPublicDslTablesAndSelectablesSeparatedFromAstTypes() throws Exception {
+    String validGeneratedTableSurface =
+        """
+        package samples;
+        import io.skis.metadata.EntityMeta;
+        import io.skis.metadata.PropertyMeta;
+        import io.skis.query.QueryTable;
+        import io.skis.query.Selectable;
+        abstract class ValidGeneratedTableSurface<E> extends QueryTable<E> {
+          ValidGeneratedTableSurface(EntityMeta<E> entity) {
+            super(entity);
+          }
+          <V> Selectable<V> generatedColumn(PropertyMeta<E, V> property) {
+            return queryColumn(property);
+          }
+        }
+        """;
+    String selectableExpressionLeak =
+        """
+        package samples;
+        import io.skis.query.Selectable;
+        import io.skis.sql.ast.SqlExpression;
+        final class SelectableExpressionLeak {
+          static SqlExpression<String> leak(Selectable<String> selectable) {
+            return selectable.expression();
+          }
+        }
+        """;
+    String queryTableAstLeak =
+        """
+        package samples;
+        import io.skis.query.QueryTable;
+        import io.skis.sql.ast.TableExpression;
+        final class QueryTableAstLeak {
+          static <E> TableExpression<E> leak(QueryTable<E> table) {
+            return table;
+          }
+        }
+        """;
+
+    assertTrue(
+        compile(
+            "samples.ValidGeneratedTableSurface",
+            validGeneratedTableSurface,
+            temporaryDirectory.resolve("valid-generated-table-surface")));
+    assertFalse(
+        compile(
+            "samples.SelectableExpressionLeak",
+            selectableExpressionLeak,
+            temporaryDirectory.resolve("selectable-expression-leak")));
+    assertFalse(
+        compile(
+            "samples.QueryTableAstLeak",
+            queryTableAstLeak,
+            temporaryDirectory.resolve("query-table-ast-leak")));
   }
 
   private static boolean compile(String className, String source, Path output) throws IOException {

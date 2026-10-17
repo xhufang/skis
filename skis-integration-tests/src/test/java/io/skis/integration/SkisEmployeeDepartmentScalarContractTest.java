@@ -1,6 +1,7 @@
 package io.skis.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.core.ExecutionContext;
@@ -13,9 +14,10 @@ import io.skis.jdbc.ConnectionProvider;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryParameter;
-import io.skis.query.QueryParameters;
 import io.skis.query.Selectable;
 import io.skis.query.SingleColumnSelect;
+import io.skis.query.Slice;
+import io.skis.query.SliceRequest;
 import io.skis.query.Sql;
 import io.skis.runtime.SkisExecutor;
 import io.skis.runtime.SkisExecutorFactory;
@@ -27,6 +29,7 @@ import java.util.List;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.h2.jdbcx.JdbcDataSource;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 
@@ -99,28 +102,45 @@ class SkisEmployeeDepartmentScalarContractTest {
                           .id()
                           .eq(employee.departmentId())
                           .and(department.name().like(pattern))));
-      SingleColumnSelect<Long> description =
+      SingleColumnSelect<@Nullable Long> description =
           Sql.select(departmentId)
               .from(employee)
               .where(employee.id().ge(minimumEmployeeId))
               .distinct()
               .orderBy(departmentId.asc().nullsLast());
-      QueryParameters parameters =
-          QueryParameters.builder().bind(pattern, "%部").bind(minimumEmployeeId, 1L).build();
-      var query = executor.query(description, parameters);
+      var query =
+          executor
+              .query(description)
+              .bind(pattern, "%部")
+              .bind(minimumEmployeeId, 1L);
 
       // Two employees share department 10; the unmatched department 30 becomes one SQL NULL.
       assertEquals(Arrays.asList(10L, 20L, null), query.fetchList());
       assertEquals(Arrays.asList(10L, 20L, null), query.fetchList());
+      try (var rows = query.stream()) {
+        assertEquals(Arrays.asList(10L, 20L, null), rows.toList());
+      }
       assertEquals(
           Arrays.asList(null, 20L, 10L),
           query.orderBy(departmentId.desc().nullsFirst()).fetchList());
-      Page<Long> firstPage = query.fetchPage(PageRequest.page(0, 2));
+      Page<@Nullable Long> firstPage = query.fetchPage(PageRequest.page(0, 2));
       assertEquals(List.of(10L, 20L), firstPage.items());
       assertEquals(3L, firstPage.totalElements());
-      Page<Long> lastPage = query.fetchPage(PageRequest.page(1, 2));
+      Page<@Nullable Long> lastPage = query.fetchPage(PageRequest.page(1, 2));
       assertEquals(Collections.singletonList(null), lastPage.items());
       assertEquals(3L, lastPage.totalElements());
+
+      Slice<@Nullable Long> nullableSlice =
+          executor
+              .select(departmentId)
+              .from(employee)
+              .where(employee.id().ge(minimumEmployeeId))
+              .orderBy(employee.id().asc())
+              .bind(pattern, "%部")
+              .bind(minimumEmployeeId, 1L)
+              .fetchSlice(SliceRequest.offset(0, 4));
+      assertEquals(Arrays.asList(10L, 10L, 20L, null), nullableSlice.items());
+      assertFalse(nullableSlice.hasNext());
 
       // The same description also has to be laid out correctly when embedded in another block.
       DepartmentTable outerDepartment = DepartmentTable.DEPARTMENT.as("outer_d");
@@ -129,11 +149,21 @@ class SkisEmployeeDepartmentScalarContractTest {
               .from(outerDepartment)
               .where(outerDepartment.id().in(description))
               .orderBy(outerDepartment.id().asc());
-      assertEquals(List.of(10L, 20L), executor.query(nested, parameters).fetchList());
+      assertEquals(
+          List.of(10L, 20L),
+          executor
+              .query(nested)
+              .bind(pattern, "%部")
+              .bind(minimumEmployeeId, 1L)
+              .fetchList());
 
-      QueryParameters otherParameters =
-          QueryParameters.builder().bind(pattern, "研发%").bind(minimumEmployeeId, 1L).build();
-      assertEquals(Arrays.asList(10L, null), executor.query(description, otherParameters).fetchList());
+      assertEquals(
+          Arrays.asList(10L, null),
+          executor
+              .query(description)
+              .bind(pattern, "研发%")
+              .bind(minimumEmployeeId, 1L)
+              .fetchList());
     }
   }
 

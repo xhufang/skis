@@ -216,7 +216,7 @@ class QueryPaginationCompilationTest {
     assertEquals(1, statement.selections().size());
     assertEquals(1, statement.hiddenSelections().size());
     HiddenSelection hidden = statement.hiddenSelections().getFirst();
-    assertSame(TABLE.nickname().expression(), hidden.expression());
+    assertSame(SelectableSupport.expression(TABLE.nickname()), hidden.expression());
     assertEquals(Identifier.of("__skis_order_0"), hidden.alias());
     assertEquals(List.of(11), arguments(query));
   }
@@ -291,8 +291,8 @@ class QueryPaginationCompilationTest {
   void oneImmutableQueryReusesPlansWhileKeepingPageValuesOutsideThem() {
     QueryOperations operations = operations();
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet, Pet> query =
-        (DefaultSelectQuery<Pet, Pet>)
+    DefaultSelectQuery<Pet> query =
+        (DefaultSelectQuery<Pet>)
             operations.selectFrom(TABLE).where(TABLE.name().eq("Mimi")).orderBy(TABLE.id().asc());
 
     QueryCompilation<Pet> first = query.compilation(new QueryPagination.Offset(20, 0));
@@ -327,24 +327,24 @@ class QueryPaginationCompilationTest {
   void validatesStableDistinctNullableKeysetAndContinuationContractsBeforeJdbc() {
     QueryOperations operations = operations();
 
-    SelectQuery<Pet, Pet> unstable = operations.selectFrom(TABLE).orderBy(TABLE.name().asc());
+    SelectQuery<Pet> unstable = operations.selectFrom(TABLE).orderBy(TABLE.name().asc());
     assertThrows(
         QueryValidationException.class, () -> unstable.fetchSlice(SliceRequest.offset(0, 10)));
 
-    SelectQuery<Pet, Pet> nullableDefault =
+    SelectQuery<Pet> nullableDefault =
         operations.selectFrom(TABLE).orderBy(TABLE.nickname().asc(), TABLE.id().asc());
     assertThrows(
         QueryValidationException.class,
         () -> nullableDefault.fetchSlice(SliceRequest.keysetFirst(10)));
 
-    SelectQuery<Pet, String> stableDistinct =
+    SelectQuery<String> stableDistinct =
         operations.select(TABLE.name()).from(TABLE).distinct().orderBy(TABLE.name().asc());
     AssertionError reachedJdbc =
         assertThrows(
             AssertionError.class, () -> stableDistinct.fetchSlice(SliceRequest.keysetFirst(10)));
     assertEquals("plan execution must not occur in this test", reachedJdbc.getMessage());
 
-    SelectQuery<Pet, Pet> ordered = operations.selectFrom(TABLE).orderBy(TABLE.id().asc());
+    SelectQuery<Pet> ordered = operations.selectFrom(TABLE).orderBy(TABLE.id().asc());
     SliceContinuation foreign =
         SliceContinuation.offset("foreign-query", "foreign-order", 10, "foreign-parameters");
     assertThrows(
@@ -358,14 +358,14 @@ class QueryPaginationCompilationTest {
     QueryOperations operations = bind(catalog);
     QueryCondition predicate = TABLE.id().eq(7L);
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet, Pet> query =
-        (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE).where(predicate);
+    DefaultSelectQuery<Pet> query =
+        (DefaultSelectQuery<Pet>) operations.selectFrom(TABLE).where(predicate);
 
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
     QueryCompilation<Pet> repeated = query.compilation(QueryPagination.None.INSTANCE);
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet, Pet> unfiltered =
-        (DefaultSelectQuery<Pet, Pet>) operations.selectFrom(TABLE);
+    DefaultSelectQuery<Pet> unfiltered =
+        (DefaultSelectQuery<Pet>) operations.selectFrom(TABLE);
     QueryCompilation<Pet> unfilteredCompilation =
         unfiltered.compilation(QueryPagination.None.INSTANCE);
 
@@ -458,37 +458,32 @@ class QueryPaginationCompilationTest {
 
   private static final class PetTable extends QueryTable<Pet> {
 
-    private final NonNullQueryColumn<Pet, Long> id = nonNullQueryColumn(ID);
-    private final NonNullQueryColumn<Pet, String> name = nonNullQueryColumn(NAME);
-    private final NullableQueryColumn<Pet, String> nickname = nullableQueryColumn(NICKNAME);
+    private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
+    private final NonNullSelectable<String> name = nonNullQueryColumn(NAME);
+    private final Selectable<String> nickname = nullableQueryColumn(NICKNAME);
 
     private PetTable() {
       super(PET);
     }
 
-    private PetTable(Identifier alias) {
+    private PetTable(String alias) {
       super(PET, alias);
     }
 
-    private NonNullQueryColumn<Pet, Long> id() {
+    private NonNullSelectable<Long> id() {
       return id;
     }
 
-    private NonNullQueryColumn<Pet, String> name() {
+    private NonNullSelectable<String> name() {
       return name;
     }
 
-    private NullableQueryColumn<Pet, String> nickname() {
+    private Selectable<String> nickname() {
       return nickname;
     }
 
     @Override
     public PetTable as(String alias) {
-      return new PetTable(Identifier.of(alias));
-    }
-
-    @Override
-    public PetTable as(Identifier alias) {
       return new PetTable(alias);
     }
   }

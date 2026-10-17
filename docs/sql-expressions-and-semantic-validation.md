@@ -39,8 +39,9 @@ stable value snapshot. The query layer now separates parameter identity into thr
 1. `QueryParameter<V>` is an opaque, strongly typed reference with no value, query-block ordinal,
    logical ordinal, or JDBC position. References use object identity; an optional name is diagnostic
    only.
-2. Immutable `QueryParameters` associates references with captured values. Missing, extra,
-   duplicate, nullability-invalid, and runtime Java-type-invalid bindings fail before JDBC work.
+2. `SelectQuery.bind(parameter, value)` returns an immutable query copy and captures the value at
+   the binding boundary. Missing, extra, duplicate, nullability-invalid, and runtime
+   Java-type-invalid bindings fail before JDBC work.
 3. Final statement layout assigns dense zero-based `ParameterSlot<T>` ordinals. The renderer records
    a slot once for every physical `?`, so one logical reference may occur at several JDBC positions.
 
@@ -66,7 +67,7 @@ internal parameter environment, so their source API and SQL semantics do not cha
 
 Binding and predicate construction copy every array value recursively and clone the built-in
 mutable JDBC representations `java.sql.Date`, `Time`, and `Timestamp`. Comparison and between bounds
-as well as every `IN`/`NOT IN` element use this same `QueryParameters` capture boundary. Copying
+as well as every `IN`/`NOT IN` element use this same query-value capture boundary. Copying
 happens once, never while composing environments, laying out slots, binding JDBC parameters, or
 reading rows.
 
@@ -88,29 +89,26 @@ parameterization and embedding contract is implemented.
 
 The public result-shape types are deliberately different:
 
-- `SelectDescription<R>` is a general, conservatively nullable result description;
-- `NonNullSelectDescription<R>` preserves a complete entity or generated projection's declared
-  non-null result contract;
-- `SingleColumnSelect<V>` proves exactly one visible SQL value per returned row, but proves neither
-  one-row cardinality nor non-nullness;
-- `NonNullSingleColumnSelect<V>` additionally preserves a declared non-null value contract.
+- `SelectDescription<R>` is the general result description; `R` carries the declared result
+  nullability;
+- `SingleColumnSelect<R>` proves exactly one visible SQL value per returned row, but does not prove
+  one-row cardinality; its result type carries the declared nullability.
 
-All variants keep their shape across WHERE, Join, DISTINCT, and ORDER BY chaining. They do not
+Both shapes keep their contract across WHERE, Join, DISTINCT, and ORDER BY chaining. They do not
 expose `fetchList`, `fetchPage`, `cursor`, `stream`, or execution options. Top-level execution is an
-explicit adaptation through `executor.query(description)` or
-`executor.query(description, parameters)`; the latter validates the entire environment before any
-JDBC resource can be acquired.
+explicit adaptation through `executor.query(description)`, followed by immutable `bind(...)`
+calls when the description declares parameters. The complete binding environment is validated
+before any JDBC resource can be acquired.
 
 ```java
 QueryParameter<String> name = Sql.parameter(String.class, "name");
-NonNullSingleColumnSelect<Long> petIds =
+SingleColumnSelect<Long> petIds =
     Sql.select(pet.id())
         .from(pet)
         .where(pet.name().eq(name))
         .orderBy(pet.id().asc());
 
-QueryParameters parameters = QueryParameters.of(name, "Mimi");
-List<Long> ids = executor.query(petIds, parameters).fetchList();
+List<Long> ids = executor.query(petIds).bind(name, "Mimi").fetchList();
 ```
 
 Reusable descriptions must use parameter-reference predicate overloads such as `eq(parameter)`,

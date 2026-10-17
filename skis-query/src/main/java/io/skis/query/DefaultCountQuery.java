@@ -7,9 +7,9 @@ import java.util.Objects;
 final class DefaultCountQuery implements CountQuery {
 
   private final DefaultQueryOperations operations;
-  private final DefaultSelectQuery<?, ?> source;
+  private final DefaultSelectQuery<?> source;
 
-  DefaultCountQuery(DefaultQueryOperations operations, DefaultSelectQuery<?, ?> source) {
+  DefaultCountQuery(DefaultQueryOperations operations, DefaultSelectQuery<?> source) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.source = Objects.requireNonNull(source, "source");
   }

@@ -11,7 +11,7 @@ import java.util.Objects;
 final class ScalarSubquerySelectable<V> implements Selectable<V> {
 
   private final SelectQueryState<V> subquery;
-  private final Selectable<V> output;
+  private final Selectable<?> output;
   private final ScalarSubqueryExpression<V> expression;
   private final List<QueryParameter<?>> parameterReferences;
 
@@ -28,8 +28,9 @@ final class ScalarSubquerySelectable<V> implements Selectable<V> {
   }
 
   @Override
+  @SuppressWarnings("unchecked")
   public Class<V> javaType() {
-    return output.javaType();
+    return (Class<V>) output.javaType();
   }
 
   @Override
@@ -42,13 +43,8 @@ final class ScalarSubquerySelectable<V> implements Selectable<V> {
     return Nullability.NULLABLE;
   }
 
-  @Override
-  public SqlExpression<V> expression() {
+  SqlExpression<V> expression() {
     return expression;
-  }
-
-  SelectQueryState<V> subquery() {
-    return subquery;
   }
 
   Selectable<V> output() {

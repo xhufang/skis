@@ -5,14 +5,9 @@ import io.skis.core.TransactionException;
 import io.skis.jdbc.JdbcTransaction;
 import io.skis.metadata.EntityMeta;
 import io.skis.mutation.MutationOperations;
-import io.skis.query.NonNullSelectDescription;
 import io.skis.query.NonNullSelectable;
-import io.skis.query.NonNullSingleColumnSelect;
-import io.skis.query.NullableSelectFromStep;
-import io.skis.query.NullableSelectQuery;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryOperations;
-import io.skis.query.QueryParameters;
 import io.skis.query.QueryTable;
 import io.skis.query.SelectDescription;
 import io.skis.query.SelectFromStep;
@@ -22,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** Default explicit transaction session. */
 final class DefaultSkisSession implements SkisSession {
@@ -52,84 +48,51 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <E> SelectQuery<E, E> selectFrom(QueryTable<E> table) {
+  public <E> SelectQuery<E> selectFrom(QueryTable<E> table) {
     requireActive();
     return queries.selectFrom(table);
   }
 
   @Override
-  public <R> SelectFromStep<R> select(QueryTable<R> table) {
+  public <E> SelectFromStep<SelectQuery<E>> select(QueryTable<E> table) {
     requireActive();
     return queries.select(table);
   }
 
   @Override
-  public <R> NullableSelectFromStep<R> selectNullable(QueryTable<R> table) {
+  public <E> SelectFromStep<SelectQuery<@Nullable E>> selectNullable(QueryTable<E> table) {
     requireActive();
     return queries.selectNullable(table);
   }
 
   @Override
-  public <V> SelectFromStep<V> select(NonNullSelectable<V> column) {
+  public <V> SelectFromStep<SelectQuery<V>> select(NonNullSelectable<V> column) {
     requireActive();
     return queries.select(column);
   }
 
   @Override
-  public <V> NullableSelectFromStep<V> select(Selectable<V> column) {
+  public <V> SelectFromStep<SelectQuery<@Nullable V>> select(Selectable<V> column) {
     requireActive();
     return queries.select(column);
   }
 
   @Override
-  public <V> NullableSelectFromStep<V> selectNullable(NonNullSelectable<V> column) {
+  public <V> SelectFromStep<SelectQuery<@Nullable V>> selectNullable(NonNullSelectable<V> column) {
     requireActive();
     return queries.selectNullable(column);
   }
 
   @Override
-  public <R> SelectFromStep<R> select(ProjectionSelection<R> projection) {
+  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
     requireActive();
     return queries.select(projection);
   }
 
   @Override
-  public <R> NullableSelectQuery<?, R> query(SelectDescription<R> description) {
+  public <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description) {
     requireActive();
     return queries.query(description);
-  }
-
-  @Override
-  public <R> SelectQuery<?, R> query(NonNullSelectDescription<R> description) {
-    requireActive();
-    return queries.query(description);
-  }
-
-  @Override
-  public <V> SelectQuery<?, V> query(NonNullSingleColumnSelect<V> description) {
-    requireActive();
-    return queries.query(description);
-  }
-
-  @Override
-  public <R> NullableSelectQuery<?, R> query(
-      SelectDescription<R> description, QueryParameters parameters) {
-    requireActive();
-    return queries.query(description, parameters);
-  }
-
-  @Override
-  public <R> SelectQuery<?, R> query(
-      NonNullSelectDescription<R> description, QueryParameters parameters) {
-    requireActive();
-    return queries.query(description, parameters);
-  }
-
-  @Override
-  public <V> SelectQuery<?, V> query(
-      NonNullSingleColumnSelect<V> description, QueryParameters parameters) {
-    requireActive();
-    return queries.query(description, parameters);
   }
 
   @Override

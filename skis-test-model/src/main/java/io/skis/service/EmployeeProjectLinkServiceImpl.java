@@ -58,7 +58,8 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
                   .selectFrom(LINK)
                   .where(LINK.employeeId().eq(employeeId))
                   .and(LINK.projectId().eq(projectId))
-                  .fetchOne();
+                  .fetchOne()
+                  .toOptional();
           return link
               .map(value -> session.deleteById(EmployeeProjectLinkMeta.ENTITY, value.getId()))
               .orElse(0);
@@ -76,7 +77,8 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
         .selectFrom(LINK)
         .where(LINK.employeeId().eq(employeeId))
         .and(LINK.projectId().eq(projectId))
-        .fetchOne();
+        .fetchOne()
+        .toOptional();
   }
 
   @Override

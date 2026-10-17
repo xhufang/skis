@@ -62,7 +62,8 @@ final class QueryPlanCompiler {
     requireCanonicalModel(model, table);
     PredicateShape<E> shape = equalityShape(table, equalityProperty);
     SelectStatement statement =
-        constructedStatement(() -> new SelectStatement(table.selections(), table, shape.ast()));
+        constructedStatement(
+            () -> new SelectStatement(table.selections(), table.tableExpression(), shape.ast()));
     return compilePlanFromProperties(model, statement, shape.properties(), model.fullRowDecoder());
   }
 
@@ -81,7 +82,7 @@ final class QueryPlanCompiler {
         .plan();
   }
 
-  <R> QueryCompilation<Long> compileCount(
+  <R extends @Nullable Object> QueryCompilation<Long> compileCount(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       boolean distinct,
@@ -148,7 +149,7 @@ final class QueryPlanCompiler {
                 }));
   }
 
-  <R> QueryCompilation<OrderedRow<R>> compileOrdered(
+  <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileOrdered(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       List<SortSpecification> orderBy,
@@ -178,7 +179,7 @@ final class QueryPlanCompiler {
         statementArguments);
   }
 
-  private <R> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
+  private <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
@@ -216,18 +217,7 @@ final class QueryPlanCompiler {
     for (int index = 0; index < resolvedOrderMappings.size(); index++) {
       mutableOrderReaders.add(resolvedOrderMappings.get(index).reader(indexes[index], false));
     }
-    List<ProjectionMapping.ValueReader<?>> orderReaders = List.copyOf(mutableOrderReaders);
-    RowDecoder<R> valueDecoder = selection.decoder();
-    int orderValueCount = orderReaders.size();
-    RowDecoder<OrderedRow<R>> decoder =
-        (resultSet, context) -> {
-          R value = valueDecoder.decode(resultSet, context);
-          List<@Nullable Object> orderValues = new ArrayList<>(orderValueCount);
-          for (ProjectionMapping.ValueReader<?> reader : orderReaders) {
-            orderValues.add(reader.read(resultSet, context));
-          }
-          return new OrderedRow<>(value, orderValues);
-        };
+    RowDecoder<OrderedRow<R>> decoder = orderedRowDecoder(selection.decoder(), mutableOrderReaders);
     return compileResolvedSelection(
         selected,
         QueryPlanKey.PlanVariant.orderedContent(QueryPaginationShape.from(pagination)),
@@ -241,7 +231,21 @@ final class QueryPlanCompiler {
         statementArguments);
   }
 
-  <R> QueryCompilation<R> compileSelection(
+  private static <R extends @Nullable Object> RowDecoder<OrderedRow<R>> orderedRowDecoder(
+      RowDecoder<R> valueDecoder, List<ProjectionMapping.ValueReader<?>> mutableOrderReaders) {
+    List<ProjectionMapping.ValueReader<?>> orderReaders = List.copyOf(mutableOrderReaders);
+    int orderValueCount = orderReaders.size();
+    return (resultSet, context) -> {
+      R value = valueDecoder.decode(resultSet, context);
+      List<@Nullable Object> orderValues = new ArrayList<>(orderValueCount);
+      for (ProjectionMapping.ValueReader<?> reader : orderReaders) {
+        orderValues.add(reader.read(resultSet, context));
+      }
+      return new OrderedRow<>(value, orderValues);
+    };
+  }
+
+  <R extends @Nullable Object> QueryCompilation<R> compileSelection(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       List<SortSpecification> orderBy,
@@ -274,7 +278,7 @@ final class QueryPlanCompiler {
         statementArguments);
   }
 
-  private <R> QueryCompilation<R> compileResolvedSelection(
+  private <R extends @Nullable Object> QueryCompilation<R> compileResolvedSelection(
       SelectedResult<?> selected,
       QueryPlanKey.PlanVariant variant,
       CompiledQueryStructure structure,
@@ -371,7 +375,7 @@ final class QueryPlanCompiler {
     return ResolvedValueMapping.resolve((Selectable) selectable, (SqlExpression) expression, scope);
   }
 
-  private <E, R> CompiledQueryPlan<R, Object> compilePlanFromProperties(
+  private <E, R extends @Nullable Object> CompiledQueryPlan<R, Object> compilePlanFromProperties(
       EntityRuntimeModel<E> model,
       StatementAst statement,
       List<PropertyMeta<E, ?>> properties,
@@ -386,7 +390,7 @@ final class QueryPlanCompiler {
     return compilePlan(statement, parameters, rowDecoder);
   }
 
-  private <R> CompiledQueryPlan<R, Object> compilePlan(
+  private <R extends @Nullable Object> CompiledQueryPlan<R, Object> compilePlan(
       StatementAst statement, List<LogicalParameter> logicalParameters, RowDecoder<R> rowDecoder) {
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(rowDecoder, "rowDecoder");
@@ -394,7 +398,7 @@ final class QueryPlanCompiler {
     return renderPlan(prepareContext(statement), logicalParameters, rowDecoder);
   }
 
-  private <R> CompiledQueryPlan<R, Object> renderPlan(
+  private <R extends @Nullable Object> CompiledQueryPlan<R, Object> renderPlan(
       QueryCompilationContext compilationContext,
       List<LogicalParameter> logicalParameters,
       RowDecoder<R> rowDecoder) {
@@ -558,7 +562,7 @@ final class QueryPlanCompiler {
 
   private static <E, V> PredicateShape<E> equalityShapeTyped(
       QueryTable<E> table, PropertyMeta<E, V> property) {
-    ColumnExpression<E, V> column = table.expression(property);
+    ColumnExpression<E, V> column = table.internalColumn(property).expression();
     ParameterSlot<V> slot =
         new ParameterSlot<>(0, property.javaType(), column.sqlType(), Nullability.NON_NULL);
     return new PredicateShape<>(column.eq(slot), List.of(property));

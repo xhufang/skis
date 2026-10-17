@@ -26,6 +26,7 @@ public final class JdbcExecutor {
   private static final int NO_MINIMUM_MAX_ROWS = 0;
   private static final int UNCONFIGURED_QUERY_TIMEOUT = -1;
   private static final int FETCH_ONE_CARDINALITY_ROWS = 2;
+  private static final Object CURSOR_NOT_POSITIONED = new Object();
   private static final System.Logger LOGGER = System.getLogger(JdbcExecutor.class.getName());
 
   private final ConnectionProvider connectionProvider;
@@ -106,12 +107,13 @@ public final class JdbcExecutor {
   }
 
   /** Executes and materializes every result row. */
-  public <R, P> List<@Nullable R> fetchList(CompiledQueryPlan<R, P> plan, P parameters) {
+  public <R extends @Nullable Object, P> List<R> fetchList(
+      CompiledQueryPlan<R, P> plan, P parameters) {
     return fetchList(plan, parameters, ExecutionContext.EMPTY);
   }
 
   /** Executes and materializes every result row using an explicit execution context. */
-  public <R, P> List<@Nullable R> fetchList(
+  public <R extends @Nullable Object, P> List<R> fetchList(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
@@ -122,7 +124,7 @@ public final class JdbcExecutor {
           try (PreparedStatement statement =
                   prepare(connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS);
               ResultSet resultSet = statement.executeQuery()) {
-            List<@Nullable R> results = new ArrayList<>();
+            List<R> results = new ArrayList<>();
             while (resultSet.next()) {
               results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
             }
@@ -139,13 +141,13 @@ public final class JdbcExecutor {
   }
 
   /** Executes one nullable result row while preserving the distinction between no row and NULL. */
-  public <R, P> JdbcRow<R> fetchNullableOne(
+  public <R extends @Nullable Object, P> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     return fetchSingleRow(plan, parameters, executionContext, true, true);
   }
 
   /** Executes one SQL-limited nullable result row without cardinality checking. */
-  public <R, P> JdbcRow<R> fetchNullableFirst(
+  public <R extends @Nullable Object, P> JdbcRow<R> fetchNullableFirst(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     return fetchSingleRow(plan, parameters, executionContext, true, false);
   }
@@ -168,7 +170,7 @@ public final class JdbcExecutor {
   }
 
   /** Executes a size+1 slice while keeping the extra internal row outside visible maxRows. */
-  public <R, P> List<@Nullable R> fetchSliceList(
+  public <R extends @Nullable Object, P> List<R> fetchSliceList(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext, int pageSize) {
     validateRequestedRows(pageSize, executionContext);
     int internalRows;
@@ -184,7 +186,7 @@ public final class JdbcExecutor {
   }
 
   /** Executes content and count on one acquired connection and returns no partial result. */
-  public <R, P, C> JdbcPageResult<R> fetchPage(
+  public <R extends @Nullable Object, P, C> JdbcPageResult<R> fetchPage(
       CompiledQueryPlan<R, P> contentPlan,
       P contentParameters,
       CompiledQueryPlan<Long, C> countPlan,
@@ -197,7 +199,7 @@ public final class JdbcExecutor {
         contentPlan,
         executionContext,
         connection -> {
-          List<@Nullable R> items =
+          List<R> items =
               executeList(
                   connection,
                   contentPlan,
@@ -211,7 +213,7 @@ public final class JdbcExecutor {
             if (!count.present() || count.value() == null) {
               throw new SQLException("count query did not return one non-null row");
             }
-            return new JdbcPageResult<R>(items, count.value());
+            return new JdbcPageResult<@Nullable R>(items, count.value());
           } catch (PhasedSqlFailure failure) {
             throw translate(countPlan, failure.phase(), failure.sqlException());
           } catch (SQLException failure) {
@@ -221,7 +223,7 @@ public final class JdbcExecutor {
   }
 
   /** Opens an explicit cursor that owns its ResultSet, Statement, and acquired connection. */
-  public <R, P> JdbcCursor<R> openCursor(
+  public <R extends @Nullable Object, P> JdbcCursor<R> openCursor(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
@@ -258,35 +260,11 @@ public final class JdbcExecutor {
   /** Executes a query requiring at most one row using an explicit execution context. */
   public <R, P> Optional<R> fetchOne(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
-    Objects.requireNonNull(plan, "plan");
-    Objects.requireNonNull(executionContext, "executionContext");
-    return withConnection(
-        plan,
-        executionContext,
-        connection -> {
-          try (PreparedStatement statement =
-                  prepare(
-                      connection, plan, parameters, executionContext, FETCH_ONE_CARDINALITY_ROWS);
-              ResultSet resultSet = statement.executeQuery()) {
-            if (!resultSet.next()) {
-              return Optional.empty();
-            }
-            var result = plan.rowDecoder().decode(resultSet, rowReadContext);
-            if (result == null) {
-              throw new SQLException("non-null query decoder returned null");
-            }
-            if (resultSet.next()) {
-              throw new NonUniqueResultException(
-                  "query expected at most one row [sqlFingerprint="
-                      + QueryExecutionException.fingerprint(plan.sql())
-                      + "]");
-            }
-            return Optional.of(result);
-          }
-        });
+    JdbcRow<R> row = fetchSingleRow(plan, parameters, executionContext, false, true);
+    return row.present() ? Optional.of(Objects.requireNonNull(row.value())) : Optional.empty();
   }
 
-  private <R, P> JdbcRow<R> fetchSingleRow(
+  private <R extends @Nullable Object, P> JdbcRow<R> fetchSingleRow(
       CompiledQueryPlan<R, P> plan,
       P parameters,
       ExecutionContext executionContext,
@@ -302,7 +280,7 @@ public final class JdbcExecutor {
                 connection, plan, parameters, executionContext, nullable, checkMultiple));
   }
 
-  private <R, P> List<@Nullable R> executeList(
+  private <R extends @Nullable Object, P> List<R> executeList(
       Connection connection,
       CompiledQueryPlan<R, P> plan,
       P parameters,
@@ -312,7 +290,7 @@ public final class JdbcExecutor {
     try (PreparedStatement statement =
             prepare(connection, plan, parameters, executionContext, minimumMaxRows);
         ResultSet resultSet = statement.executeQuery()) {
-      List<@Nullable R> results = new ArrayList<>();
+      List<R> results = new ArrayList<>();
       while (resultSet.next()) {
         results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
       }
@@ -320,7 +298,7 @@ public final class JdbcExecutor {
     }
   }
 
-  private <R, P> JdbcRow<R> executeSingleRow(
+  private <R extends @Nullable Object, P> JdbcRow<R> executeSingleRow(
       Connection connection,
       CompiledQueryPlan<R, P> plan,
       P parameters,
@@ -379,7 +357,7 @@ public final class JdbcExecutor {
         });
   }
 
-  private <R, P> PreparedStatement prepare(
+  private <R extends @Nullable Object, P> PreparedStatement prepare(
       Connection connection,
       CompiledQueryPlan<R, P> plan,
       P parameters,
@@ -430,8 +408,7 @@ public final class JdbcExecutor {
             optionsConfigured
                 ? applyExecutionOptions(statement, statementOptions, minimumMaxRows)
                 : UNCONFIGURED_QUERY_TIMEOUT;
-        connectionProvider.configureStatement(
-            statement, executionContext, queryTimeoutSeconds);
+        connectionProvider.configureStatement(statement, executionContext, queryTimeoutSeconds);
       } catch (SQLException failure) {
         throw new PhasedSqlFailure(JdbcFailureDiagnostics.Phase.CONFIGURE, failure);
       }
@@ -599,13 +576,12 @@ public final class JdbcExecutor {
     }
   }
 
-  private final class DefaultJdbcCursor<R> implements JdbcCursor<R> {
+  private final class DefaultJdbcCursor<R extends @Nullable Object> implements JdbcCursor<R> {
 
     private final CompiledQueryPlan<R, ?> plan;
     private final CursorResources<R> resources;
     private final Cleaner.Cleanable cleanable;
-    private boolean positioned;
-    private @Nullable R current;
+    private @Nullable Object current = CURSOR_NOT_POSITIONED;
 
     private DefaultJdbcCursor(
         CompiledQueryPlan<R, ?> plan,
@@ -624,15 +600,13 @@ public final class JdbcExecutor {
       if (resources.isClosed()) {
         return false;
       }
-      positioned = false;
-      current = null;
+      current = CURSOR_NOT_POSITIONED;
       try {
         if (!resources.resultSet.next()) {
           close();
           return false;
         }
         current = plan.rowDecoder().decode(resources.resultSet, rowReadContext);
-        positioned = true;
         return true;
       } catch (SQLException failure) {
         RuntimeException primary = translate(plan, JdbcFailureDiagnostics.Phase.EXECUTE, failure);
@@ -643,12 +617,12 @@ public final class JdbcExecutor {
     }
 
     @Override
-    public @Nullable R current() {
-      if (!positioned || resources.isClosed()) {
+    public R current() {
+      if (current == CURSOR_NOT_POSITIONED || resources.isClosed()) {
         throw new IllegalStateException(
             "current() requires a successful advance() and an open cursor");
       }
-      return current;
+      return cursorValue(current);
     }
 
     @Override
@@ -671,8 +645,7 @@ public final class JdbcExecutor {
     }
 
     private @Nullable Throwable closeResources(@Nullable Throwable primary) {
-      positioned = false;
-      current = null;
+      current = CURSOR_NOT_POSITIONED;
       Throwable result = resources.closeResources(primary);
       cleanable.clean();
       return result;
@@ -689,7 +662,13 @@ public final class JdbcExecutor {
     }
   }
 
-  private final class CursorResources<R> implements Runnable {
+  @SuppressWarnings("unchecked")
+  private static <R extends @Nullable Object> R cursorValue(@Nullable Object value) {
+    // Only RowDecoder<R> values reach this branch; the private sentinel is rejected first.
+    return (R) value;
+  }
+
+  private final class CursorResources<R extends @Nullable Object> implements Runnable {
 
     private final CompiledQueryPlan<R, ?> plan;
     private final ExecutionContext executionContext;
