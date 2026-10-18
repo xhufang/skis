@@ -6,6 +6,16 @@
 
 ### Changed
 
+- 0.2.7 T05 完成 API/SPI/internal 与模块边界重排：扩展和生成合同迁入 `.spi`，mapping registry、JDBC
+  计划/执行状态及 mutation 装配迁入 `.internal`；新增并发布 `skis-dialect-support`，PG/H2 直接组合标准 Renderer，
+  删除旧 core ID 工具并由 test-model 使用局部序列。Reactor、BOM、发布白名单与 Javadoc internal 排除已同步；
+  新增只依赖 `skis-dialect-api` 的独立方言消费者，并保留完整 H2 外部消费者验证 Codec/连接装配。普通查询公共类型为
+  30 项，另列两个生成 SPI 和经确认暂留的 `QueryPlanCatalog`/`QueryRuntime` 装配例外；受控编译和过渡渲染入口退出归 T07。
+  按项目约定未在本地编译运行，待 CI、独立消费者与真实数据库验证。
+- 0.2.7 T04 完成生成式映射与命名收口：以互斥的 `@ReusableProjection`/`@SpecialProjection` 统一生成 `XxxPro`，
+  可复用投影使用 `of(...)`，专用投影使用不可变 `all()` 单例；`@PropertyFrom` 生成完整元模型引用并在最终查询块绑定。
+  实体表单例按 `petTable` 规则生成，旧大写字段删除；生成 ABI 提升到 7，投影/来源生成合同迁入 query SPI，增量处理、
+  冲突和 nullability 相关 golden/消费者源码同步。按项目约定未在本地编译运行，待 CI 与真实数据库验证。
 - 0.2.7 T03 完成调用入口收口：新增 `Skis.create(DataSource, Dialect)` 与 `Skis.builder(DataSource)`，删除
   `SkisExecutorFactory`、无参数 builder 及同义 DataSource setter；Builder 保留显式 ConnectionProvider、方言、
   ClassLoader、运行时注册表、执行选项和有界计划缓存配置，缺少方言时拒绝构建。查询与写入 Fast Path 全部改用

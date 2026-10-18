@@ -1,6 +1,5 @@
 package io.skis.service;
 
-import io.skis.core.id.IdWorker;
 import io.skis.entity.EmployeeProjectLink;
 import io.skis.entity.skis.EmployeeProjectLinkTable;
 import io.skis.runtime.SkisExecutor;
@@ -101,7 +100,7 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
   private static void prepareForInsert(EmployeeProjectLink link) {
     Objects.requireNonNull(link, "link");
     Instant now = Instant.now();
-    link.setId(IdWorker.getInstance().nextId());
+    link.setId(TestModelIds.next());
     link.setCreateStamp(now);
     link.setModifyStamp(now);
     link.setVersion(0L);

@@ -16,10 +16,10 @@ final class RuntimeModelGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(4096);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.mapping.EntityRuntimeModel;\n");
-    source.append("import io.skis.mapping.EntityRuntimeModelProvider;\n");
-    source.append("import io.skis.mapping.JdbcCodecs;\n");
-    source.append("import io.skis.mapping.PropertyRuntime;\n");
+    source.append("import io.skis.mapping.spi.EntityRuntimeModel;\n");
+    source.append("import io.skis.mapping.spi.EntityRuntimeModelProvider;\n");
+    source.append("import io.skis.mapping.spi.JdbcCodecs;\n");
+    source.append("import io.skis.mapping.spi.PropertyRuntime;\n");
     source.append("import java.util.List;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);
     source

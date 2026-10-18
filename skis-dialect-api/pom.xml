@@ -9,7 +9,7 @@
   </parent>
   <artifactId>skis-dialect-api</artifactId>
   <name>skis-dialect-api</name>
-  <description>Database dialect capabilities, types, lowering, and rendering SPIs</description>
+  <description>Database dialect capabilities, types, and SQL rendering SPIs</description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
@@ -17,15 +17,7 @@
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-metadata</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-sql-ast</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-mapping</artifactId>
     </dependency>
     <dependency>
       <groupId>org.jspecify</groupId>

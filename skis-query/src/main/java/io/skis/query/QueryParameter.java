@@ -8,8 +8,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Opaque, strongly typed reference to one query value.
  *
- * <p>A reference is identified by object identity. It deliberately contains neither a runtime
- * value nor a query-block, logical-slot, or JDBC parameter ordinal. An optional name is diagnostic
+ * <p>A reference is identified by object identity. It deliberately contains neither a runtime value
+ * nor a query-block, logical-slot, or JDBC parameter ordinal. An optional name is diagnostic
  * information only and never participates in parameter identity.
  */
 public final class QueryParameter<V> {
@@ -18,8 +18,7 @@ public final class QueryParameter<V> {
   private final Nullability nullability;
   private final @Nullable String diagnosticName;
 
-  QueryParameter(
-      Class<V> javaType, Nullability nullability, @Nullable String diagnosticName) {
+  QueryParameter(Class<V> javaType, Nullability nullability, @Nullable String diagnosticName) {
     this.javaType = boxed(Objects.requireNonNull(javaType, "javaType"));
     this.nullability = Objects.requireNonNull(nullability, "nullability");
     if (this.javaType == Void.class) {

@@ -1,6 +1,7 @@
 package io.skis.jdbc;
 
-import io.skis.core.ExecutionContext;
+import io.skis.core.spi.ExecutionContext;
+import io.skis.jdbc.spi.ConnectionProvider;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Objects;

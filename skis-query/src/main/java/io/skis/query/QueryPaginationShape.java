@@ -6,10 +6,8 @@ import java.util.Objects;
 /** Immutable, value-free pagination identity shared by local and catalog plan caches. */
 record QueryPaginationShape(Mode mode, List<Boolean> keysetNullMarkers) {
 
-  private static final QueryPaginationShape NONE =
-      new QueryPaginationShape(Mode.NONE, List.of());
-  private static final QueryPaginationShape LIMIT =
-      new QueryPaginationShape(Mode.LIMIT, List.of());
+  private static final QueryPaginationShape NONE = new QueryPaginationShape(Mode.NONE, List.of());
+  private static final QueryPaginationShape LIMIT = new QueryPaginationShape(Mode.LIMIT, List.of());
   private static final QueryPaginationShape OFFSET =
       new QueryPaginationShape(Mode.OFFSET, List.of());
 

@@ -6,12 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.core.ExecutionContext;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.core.TransactionException;
-import io.skis.dialect.RenderedSql;
-import io.skis.jdbc.CompiledQueryPlan;
-import io.skis.jdbc.JdbcExecutor;
-import io.skis.jdbc.JdbcTransaction;
+import io.skis.dialect.spi.RenderedSql;
+import io.skis.jdbc.internal.CompiledQueryPlan;
+import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.jdbc.QueryExecutionException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;

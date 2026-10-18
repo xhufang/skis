@@ -1,6 +1,4 @@
-/**
- * Immutable plans, statement options, classified failures, and JDBC resource-lifecycle execution.
- */
+/** Public JDBC adapters and classified persistence failures. */
 @NullMarked
 package io.skis.jdbc;
 

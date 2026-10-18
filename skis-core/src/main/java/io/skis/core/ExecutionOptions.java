@@ -1,11 +1,12 @@
 package io.skis.core;
 
+import io.skis.core.spi.ExecutionContext;
 import java.time.Duration;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Immutable statement options whose unset fields inherit executor or JDBC driver defaults. */
-public final class ExecutionOptions {
+public final class ExecutionOptions implements ExecutionContext {
 
   private static final int UNSET = -1;
 
@@ -19,7 +20,6 @@ public final class ExecutionOptions {
   private final int maxRows;
   private final boolean queryTagConfigured;
   private final @Nullable QueryTag queryTag;
-  private final @Nullable ExecutionContext executionContext;
 
   private ExecutionOptions(
       int queryTimeoutSeconds,
@@ -34,12 +34,6 @@ public final class ExecutionOptions {
     this.maxRows = maxRows;
     this.queryTagConfigured = queryTagConfigured;
     this.queryTag = queryTag;
-    boolean empty =
-        queryTimeoutSeconds == UNSET
-            && fetchSize == UNSET
-            && maxRows == UNSET
-            && !queryTagConfigured;
-    this.executionContext = empty ? null : new OptionsExecutionContext(this);
   }
 
   /** Starts an empty mutable builder. Validation happens as each option is supplied. */
@@ -81,8 +75,9 @@ public final class ExecutionOptions {
         && !queryTagConfigured;
   }
 
-  ExecutionContext executionContext() {
-    return requireSet(executionContext, "executionContext");
+  @Override
+  public ExecutionOptions executionOptions() {
+    return this;
   }
 
   /** Returns whether a statement timeout override is present. */
@@ -92,7 +87,7 @@ public final class ExecutionOptions {
 
   /** Returns the caller-facing timeout, or fails when this field is unset. */
   public Duration statementTimeout() {
-    return requireSet(statementTimeout, "statementTimeout");
+    return requireSet(statementTimeout);
   }
 
   /** Returns the prevalidated JDBC timeout in whole seconds, or fails when unset. */
@@ -168,9 +163,9 @@ public final class ExecutionOptions {
         queryTimeoutSeconds, statementTimeout, fetchSize, maxRows, queryTagConfigured, queryTag);
   }
 
-  private static <T> T requireSet(@Nullable T value, String name) {
+  private static <T> T requireSet(@Nullable T value) {
     if (value == null) {
-      throw new IllegalStateException(name + " is not configured");
+      throw new IllegalStateException("statementTimeout" + " is not configured");
     }
     return value;
   }

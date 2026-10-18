@@ -54,6 +54,7 @@
     <module>skis-processor</module>
     <module>skis-sql-ast</module>
     <module>skis-dialect-api</module>
+    <module>skis-dialect-support</module>
     <module>skis-optimizer</module>
     <module>skis-mapping</module>
     <module>skis-jdbc</module>
@@ -161,6 +162,11 @@
       <dependency>
         <groupId>io.github.xhufang</groupId>
         <artifactId>skis-dialect-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.github.xhufang</groupId>
+        <artifactId>skis-dialect-support</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -504,6 +510,7 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-javadoc-plugin</artifactId>
             <configuration>
+              <excludePackageNames>*.internal</excludePackageNames>
               <skip>${maven.deploy.skip}</skip>
             </configuration>
             <executions>

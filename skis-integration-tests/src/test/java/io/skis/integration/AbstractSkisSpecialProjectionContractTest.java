@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.Dialect;
+import io.skis.dialect.spi.Dialect;
 import io.skis.entity.skis.EmployeeTable;
 import io.skis.entity.skis.ProjectTable;
 import io.skis.projection.ProjectPrincipalView;

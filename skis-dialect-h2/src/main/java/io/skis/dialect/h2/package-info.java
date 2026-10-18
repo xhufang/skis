@@ -1,4 +1,4 @@
-/** H2 SQL rendering for development and test environments. */
+/** H2 dialect composition and exception classification for development and test environments. */
 @NullMarked
 package io.skis.dialect.h2;
 

@@ -15,9 +15,9 @@ import java.util.Objects;
  * while embedding the same block twice can allocate distinct statement slots backed by the same
  * query-level reference.
  *
- * <p>The first pass retains original expressions for validation. When it finds an empty-IN
- * operand or DISTINCT scalar ordering that can reuse a selected output, a second pass lays out
- * only the parameters needed by the final statement.
+ * <p>The first pass retains original expressions for validation. When it finds an empty-IN operand
+ * or DISTINCT scalar ordering that can reuse a selected output, a second pass lays out only the
+ * parameters needed by the final statement.
  */
 final class StatementParameterLayout {
 

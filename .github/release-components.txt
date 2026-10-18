@@ -4,6 +4,7 @@ skis-core
 skis-dialect-api
 skis-dialect-h2
 skis-dialect-postgresql
+skis-dialect-support
 skis-jdbc
 skis-mapping
 skis-metadata

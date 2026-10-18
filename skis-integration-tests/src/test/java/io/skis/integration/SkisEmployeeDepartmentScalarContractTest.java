@@ -4,13 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.skis.core.ExecutionContext;
-import io.skis.dialect.Dialect;
+import io.skis.core.spi.ExecutionContext;
+import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
 import io.skis.entity.skis.DepartmentTable;
 import io.skis.entity.skis.EmployeeTable;
-import io.skis.jdbc.ConnectionProvider;
+import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryParameter;

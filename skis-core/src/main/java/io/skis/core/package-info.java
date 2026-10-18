@@ -1,4 +1,4 @@
-/** Public execution contexts and framework-wide lifecycle contracts. */
+/** Public execution options and framework-wide failure contracts. */
 @NullMarked
 package io.skis.core;
 

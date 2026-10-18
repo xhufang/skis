@@ -1,8 +1,8 @@
 package io.skis.query;
 
-import io.skis.dialect.Dialect;
-import io.skis.dialect.DialectCapabilities;
-import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectCapabilities;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;

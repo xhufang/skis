@@ -411,7 +411,7 @@ class SkisEntityProcessorTest {
     assertTrue(generated.contains("Selectable<java.lang.String> name)"), generated);
     assertTrue(
         generated.contains(
-            "skis-projection:6:samples.NullableSummary:(JLjava/lang/String;)V:"
+            "skis-projection:7:samples.NullableSummary:(JLjava/lang/String;)V:"
                 + "id=java.lang.Long!:name=java.lang.String?"),
         generated);
     assertGeneratedEquals(result, "NullableSummaryPro.java");
@@ -1852,7 +1852,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=6\n"
+        ("# skis-generated-abi=7\n"
                 + "samples.skis.AlphaRuntimeModel\n"
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
@@ -1950,7 +1950,7 @@ class SkisEntityProcessorTest {
     assertEquals(outputSnapshot(normal), outputSnapshot(reversed));
     assertTrue(
         generatedSource(normal, "AlphaSummaryPro.java")
-            .contains("comments = \"Projection ABI 6\""));
+            .contains("comments = \"Projection ABI 7\""));
   }
 
   @Test

@@ -1,6 +1,5 @@
 package io.skis.service;
 
-import io.skis.core.id.IdWorker;
 import io.skis.entity.Employee;
 import io.skis.entity.EmployeeProjectLink;
 import io.skis.entity.skis.DepartmentTable;
@@ -196,7 +195,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   private static void prepareForInsert(Employee employee) {
     Objects.requireNonNull(employee, "employee");
     Instant now = Instant.now();
-    employee.setId(IdWorker.getInstance().nextId());
+    employee.setId(TestModelIds.next());
     employee.setCreateStamp(now);
     employee.setModifyStamp(now);
     employee.setVersion(0L);
@@ -205,7 +204,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   private static EmployeeProjectLink newLink(Long employeeId, Long projectId) {
     EmployeeProjectLink link = new EmployeeProjectLink();
     Instant now = Instant.now();
-    link.setId(IdWorker.getInstance().nextId());
+    link.setId(TestModelIds.next());
     link.setCreateStamp(now);
     link.setModifyStamp(now);
     link.setVersion(0L);

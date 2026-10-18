@@ -17,6 +17,10 @@
     </dependency>
     <dependency>
       <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-dialect-support</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-sql-ast</artifactId>
     </dependency>
     <dependency>

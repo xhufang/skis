@@ -1,6 +1,6 @@
 package io.skis.jdbc;
 
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.SqlExceptionCategory;
 import java.io.Serial;
 import java.sql.SQLException;
 
@@ -15,21 +15,18 @@ public final class QueryExecutionException extends SkisPersistenceException {
 
   /** Translates a driver failure using only structural query diagnostics. */
   public static QueryExecutionException from(String dialectId, String sql, SQLException cause) {
-    return from(
-        JdbcFailureDiagnostics.Phase.EXECUTE,
-        dialectId,
-        sql,
-        cause,
-        SqlExceptionCategory.UNCATEGORIZED);
+    return from("execution", dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
   }
 
-  static QueryExecutionException from(
-      JdbcFailureDiagnostics.Phase phase, String dialectId, String sql, SQLException cause) {
+  /** Translates a driver failure from a named JDBC resource lifecycle phase. */
+  public static QueryExecutionException from(
+      String phase, String dialectId, String sql, SQLException cause) {
     return from(phase, dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
   }
 
-  static QueryExecutionException from(
-      JdbcFailureDiagnostics.Phase phase,
+  /** Translates a classified driver failure from a named JDBC resource lifecycle phase. */
+  public static QueryExecutionException from(
+      String phase,
       String dialectId,
       String sql,
       SQLException cause,

@@ -1,7 +1,7 @@
 package io.skis.mutation;
 
 import io.skis.core.SkisException;
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.SqlExceptionCategory;
 import java.io.Serial;
 import java.util.Objects;
 

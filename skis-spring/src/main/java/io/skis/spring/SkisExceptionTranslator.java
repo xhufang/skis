@@ -1,9 +1,9 @@
 package io.skis.spring;
 
 import io.skis.core.SkisException;
-import io.skis.dialect.Dialect;
-import io.skis.dialect.ExceptionClassifier;
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.ExceptionClassifier;
+import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.jdbc.SkisPersistenceException;
 import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;

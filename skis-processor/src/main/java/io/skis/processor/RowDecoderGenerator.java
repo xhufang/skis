@@ -15,10 +15,10 @@ final class RowDecoderGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(4096);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.mapping.JdbcCodecs;\n");
-    source.append("import io.skis.mapping.RowDecoder;\n");
-    source.append("import io.skis.mapping.RowLayout;\n");
-    source.append("import io.skis.mapping.RowReadContext;\n");
+    source.append("import io.skis.mapping.spi.JdbcCodecs;\n");
+    source.append("import io.skis.mapping.spi.RowDecoder;\n");
+    source.append("import io.skis.mapping.spi.RowLayout;\n");
+    source.append("import io.skis.mapping.spi.RowReadContext;\n");
     source.append("import java.sql.ResultSet;\n");
     source.append("import java.sql.SQLException;\n\n");
     source.append(SourceText.GENERATED_ANNOTATION);

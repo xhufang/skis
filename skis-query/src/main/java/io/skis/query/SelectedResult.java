@@ -1,6 +1,6 @@
 package io.skis.query;
 
-import io.skis.jdbc.CompiledQueryPlan;
+import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
 import java.util.List;

@@ -4,8 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-import io.skis.mapping.JdbcReadContext;
-import io.skis.mapping.JdbcWriteContext;
+import io.skis.mapping.spi.JdbcReadContext;
+import io.skis.mapping.spi.JdbcWriteContext;
 import java.lang.reflect.Proxy;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;

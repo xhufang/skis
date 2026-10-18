@@ -1,7 +1,7 @@
 package io.skis.query;
 
-import io.skis.mapping.RowDecoder;
-import io.skis.mapping.RowLayout;
+import io.skis.mapping.spi.RowDecoder;
+import io.skis.mapping.spi.RowLayout;
 import io.skis.metadata.PropertyMeta;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;

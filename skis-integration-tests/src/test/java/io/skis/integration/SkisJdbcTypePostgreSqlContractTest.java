@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.dialect.postgresql.PostgreSqlCodecs;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
-import io.skis.mapping.JdbcReadContext;
-import io.skis.mapping.JdbcWriteContext;
+import io.skis.mapping.spi.JdbcReadContext;
+import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
 import io.skis.testmodel.types.JdbcTypes;

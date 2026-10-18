@@ -1,13 +1,13 @@
 package io.skis.query;
 
-import io.skis.dialect.Dialect;
-import io.skis.dialect.RenderedSql;
-import io.skis.jdbc.CompiledQueryPlan;
-import io.skis.mapping.EntityRuntimeModel;
-import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.mapping.JdbcTypeCodec;
-import io.skis.mapping.JdbcWriteContext;
-import io.skis.mapping.RowDecoder;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.RenderedSql;
+import io.skis.jdbc.internal.CompiledQueryPlan;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
+import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcTypeCodec;
+import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.mapping.spi.RowDecoder;
 import io.skis.metadata.PropertyMeta;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.ColumnExpression;

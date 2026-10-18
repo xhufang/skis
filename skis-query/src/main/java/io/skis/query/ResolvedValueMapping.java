@@ -1,9 +1,9 @@
 package io.skis.query;
 
-import io.skis.mapping.EntityRuntimeModel;
-import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.mapping.JdbcTypeCodec;
-import io.skis.mapping.PropertyRuntime;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
+import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcTypeCodec;
+import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationReference;

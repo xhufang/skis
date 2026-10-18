@@ -1,20 +1,22 @@
 package io.skis.runtime;
 
 import io.skis.core.ExecutionOptions;
-import io.skis.dialect.Dialect;
-import io.skis.jdbc.ConnectionProvider;
+import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.DataSourceConnectionProvider;
-import io.skis.jdbc.JdbcExecutor;
-import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.mapping.JdbcWriteContext;
-import io.skis.mapping.RowReadContext;
+import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
+import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.mapping.spi.RowReadContext;
 import io.skis.mutation.MutationOperations;
-import io.skis.mutation.MutationPlanCatalog;
-import io.skis.mutation.MutationRuntime;
+import io.skis.mutation.internal.MutationPlanCatalog;
+import io.skis.mutation.internal.MutationRuntime;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryRuntime;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
@@ -68,9 +70,10 @@ public final class Skis {
       return this;
     }
 
-    /** Supplies an already loaded immutable registry for containers, tests, or AOT assembly. */
-    public Builder runtimeRegistry(EntityRuntimeRegistry runtimeRegistry) {
-      this.runtimeRegistry = Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
+    /** Supplies generated runtime models directly for containers or AOT assembly. */
+    public Builder runtimeModels(Collection<? extends EntityRuntimeModel<?>> runtimeModels) {
+      this.runtimeRegistry =
+          EntityRuntimeRegistry.of(Objects.requireNonNull(runtimeModels, "runtimeModels"));
       return this;
     }
 

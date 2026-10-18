@@ -1,11 +1,11 @@
 package io.skis.query;
 
-import io.skis.core.ExecutionContext;
-import io.skis.dialect.Dialect;
-import io.skis.jdbc.CompiledQueryPlan;
-import io.skis.jdbc.ConnectionProvider;
-import io.skis.jdbc.JdbcExecutor;
-import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.core.spi.ExecutionContext;
+import io.skis.dialect.spi.Dialect;
+import io.skis.jdbc.internal.CompiledQueryPlan;
+import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;

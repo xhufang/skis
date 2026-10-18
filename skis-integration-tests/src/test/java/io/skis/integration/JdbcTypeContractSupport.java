@@ -6,8 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.mapping.JdbcCodecs;
-import io.skis.mapping.JdbcReadContext;
+import io.skis.mapping.spi.JdbcCodecs;
+import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.testmodel.types.JdbcTypes;
 import java.math.BigDecimal;
 import java.math.BigInteger;

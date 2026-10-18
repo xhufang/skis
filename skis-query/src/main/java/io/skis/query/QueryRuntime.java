@@ -1,8 +1,8 @@
 package io.skis.query;
 
-import io.skis.dialect.Dialect;
-import io.skis.jdbc.JdbcExecutor;
-import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.dialect.spi.Dialect;
+import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import java.time.Duration;
 import java.util.Objects;
 

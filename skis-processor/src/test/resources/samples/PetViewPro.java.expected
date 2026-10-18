@@ -9,14 +9,14 @@ import java.util.List;
 
 @javax.annotation.processing.Generated(
     value = "io.skis.processor.SkisProjectionProcessor",
-    comments = "Projection ABI 6")
+    comments = "Projection ABI 7")
 public final class PetViewPro implements ProjectionType<samples.PetView> {
 
   private static final ProjectionMapping<samples.PetView> MAPPING =
       ProjectionMapping.generated(
-          6,
+          7,
           samples.PetView.class,
-          "skis-projection:6:samples.PetView:(JLjava/lang/String;)V:id=java.lang.Long!:name=java.lang.String!",
+          "skis-projection:7:samples.PetView:(JLjava/lang/String;)V:id=java.lang.Long!:name=java.lang.String!",
           List.of(
               new ProjectionMapping.Parameter(0, "id", java.lang.Long.class, Nullability.NON_NULL, 0),
               new ProjectionMapping.Parameter(1, "name", java.lang.String.class, Nullability.NON_NULL, 1)),
