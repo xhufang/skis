@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.MutationException;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.JdbcCodecs;
@@ -130,10 +131,10 @@ class JdbcCodecsTest {
     assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, readFailure.code());
 
     assertEquals("value", JdbcCodecs.requireBindValue("value", 6));
-    QueryValidationException bindFailure =
+    MutationException bindFailure =
         assertThrows(
-            QueryValidationException.class, () -> JdbcCodecs.requireBindValue(null, 6));
-    assertEquals(SkisErrorCode.QUERY_PARAMETER_VALUE, bindFailure.code());
+            MutationException.class, () -> JdbcCodecs.requireBindValue(null, 6));
+    assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL, bindFailure.code());
   }
 
   @Test

@@ -130,9 +130,10 @@ class QueryPaginationCompilationTest {
                         pagination,
                         List.of(),
                         wrongSegments));
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, segmentFailure.code());
     assertEquals(
         "final statement ordinary parameter value count must be 1 but was 0",
-        segmentFailure.getMessage());
+        segmentFailure.diagnostics().facts().detail());
   }
 
   @Test

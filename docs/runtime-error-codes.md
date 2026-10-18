@@ -16,7 +16,7 @@ APT 的 `SKISnnn` 编码独立，见 [`apt-error-codes.md`](apt-error-codes.md)�
 | `SkisPersistenceException`（抽象，jdbc） | SKISX | JDBC 执行与资源生命周期 | 子类工厂 |
 | `QueryExecutionException` | SKISX | 查询执行；`operation=QUERY`、`statementKind=SELECT` | `from(phase, dialectId, sql, SQLException, category)` |
 | `JdbcExecutionException` | SKISX | 写入执行；`operation=MUTATION`、语句类型来自编译计划 | `from(phase, statementKind, dialectId, sql, SQLException, category)` |
-| `MutationException` | SKISM | 写入语义、保护规则、行数合同 | `of(code, detail[, cause])` |
+| `MutationException`（core） | SKISM | 写入语义、保护规则、行数合同、必需写入值为空 | `of(code, detail[, cause])` |
 | `OptimisticLockException` | SKISM | 乐观锁冲突 | `of(detail[, cause])` |
 | `TransactionException` | SKISX | 本地事务/会话生命周期 | `of(code, detail[, cause])` |
 
@@ -131,6 +131,7 @@ APT 的 `SKISnnn` 编码独立，见 [`apt-error-codes.md`](apt-error-codes.md)�
 | `SKISM010` | `MUTATION_VERSION_READ_FAILED` | MUTATION | EXECUTION | optimistic version could not be read from the entity | detail；实体名；原始 cause 保留 | 写入语义、保护规则或乐观锁 |
 | `SKISM011` | `MUTATION_VERSION_TYPE_MISMATCH` | MUTATION | SEMANTIC_VALIDATION | optimistic version value does not match the declared version type | detail、expectedType/actualType | 写入语义、保护规则或乐观锁 |
 | `SKISM012` | `MUTATION_PARAMETER_SHAPE` | MUTATION | COMPILATION | dialect rendered an unexpected mutation parameter shape | detail、语句类型 | 写入语义、保护规则或乐观锁 |
+| `SKISM013` | `MUTATION_REQUIRED_VALUE_NULL` | MUTATION | INPUT_CONSTRUCTION | required mutation property value is null | detail、属性名/索引；不记录值 | 写入语义、保护规则或乐观锁 |
 
 ## 4. JDBC 分类与 Spring 映射
 

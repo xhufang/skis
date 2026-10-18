@@ -11,7 +11,7 @@ import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PropertyMeta;
-import io.skis.mutation.MutationException;
+import io.skis.core.MutationException;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DeleteStatement;

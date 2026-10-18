@@ -1,11 +1,11 @@
 package io.skis.spring;
 
+import io.skis.core.MutationException;
 import io.skis.core.NonUniqueResultException;
 import io.skis.core.SkisDiagnostics;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.SkisException;
 import io.skis.jdbc.SkisPersistenceException;
-import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;
 import java.io.Serial;
 import java.util.Objects;

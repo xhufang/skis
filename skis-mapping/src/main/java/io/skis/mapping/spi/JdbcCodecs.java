@@ -1,5 +1,6 @@
 package io.skis.mapping.spi;
 
+import io.skis.core.MutationException;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import java.math.BigDecimal;
@@ -281,12 +282,12 @@ public final class JdbcCodecs {
     return value;
   }
 
-  /** Requires a non-null value before binding a non-nullable parameter. */
+  /** Requires a non-null value before binding a non-nullable mutation property. */
   public static <T> T requireBindValue(@Nullable T value, int index) throws SQLException {
     if (value == null) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PARAMETER_VALUE,
-          "non-nullable parameter at JDBC index " + index + " is null");
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL,
+          "required mutation property at JDBC index " + index + " is null");
     }
     return value;
   }

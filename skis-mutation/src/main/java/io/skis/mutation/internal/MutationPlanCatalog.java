@@ -7,7 +7,7 @@ import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
-import io.skis.mutation.MutationException;
+import io.skis.core.MutationException;
 import io.skis.mutation.MutationOperations;
 import java.util.Collections;
 import java.util.IdentityHashMap;

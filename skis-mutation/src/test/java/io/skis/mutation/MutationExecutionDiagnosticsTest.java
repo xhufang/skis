@@ -2,13 +2,13 @@ package io.skis.mutation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionOptions;
-import io.skis.core.QueryValidationException;
+import io.skis.core.MutationException;
 import io.skis.core.SkisDiagnosticStage;
 import io.skis.core.SkisDiagnostics;
 import io.skis.core.SkisErrorCode;
@@ -216,10 +216,8 @@ class MutationExecutionDiagnosticsTest {
         assertThrows(
             MutationException.class, () -> operations.insert(PET_TABLE, new Pet(1L, null)));
 
-    assertEquals(SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH, failure.code());
-    QueryValidationException cause =
-        assertInstanceOf(QueryValidationException.class, failure.getCause());
-    assertEquals(SkisErrorCode.QUERY_PARAMETER_VALUE, cause.code());
+    assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL, failure.code());
+    assertNull(failure.getCause());
   }
 
   @Test

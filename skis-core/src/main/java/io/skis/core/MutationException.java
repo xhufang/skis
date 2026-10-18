@@ -1,9 +1,5 @@
-package io.skis.mutation;
+package io.skis.core;
 
-import io.skis.core.SkisDiagnostics;
-import io.skis.core.SkisErrorCode;
-import io.skis.core.SkisErrorFamily;
-import io.skis.core.SkisException;
 import java.io.Serial;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -11,9 +7,9 @@ import org.jspecify.annotations.Nullable;
 /**
  * Reports an invalid mutation, a violated write-protection rule, or an optimistic-lock conflict.
  *
- * <p>Database failures raised while executing a write remain {@link io.skis.jdbc.JdbcExecutionException}
- * with an {@code SKISX} database-category code. They are not wrapped in this exception: the database
- * reason keeps one authoritative code and is not duplicated for INSERT/UPDATE/DELETE callers.
+ * <p>Database failures raised while executing a write remain {@code JdbcExecutionException} with an
+ * {@code SKISX} database-category code. They are not wrapped in this exception: the database reason
+ * keeps one authoritative code and is not duplicated for INSERT/UPDATE/DELETE callers.
  */
 public class MutationException extends SkisException {
 

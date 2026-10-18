@@ -7,7 +7,7 @@ import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
-import io.skis.mutation.MutationException;
+import io.skis.core.MutationException;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;

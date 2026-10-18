@@ -1,5 +1,6 @@
 package io.skis.mutation;
 
+import io.skis.core.MutationException;
 import io.skis.core.SkisDiagnostics;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.SkisErrorFamily;

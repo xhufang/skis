@@ -448,7 +448,12 @@ public enum SkisErrorCode {
       "SKISM012",
       SkisErrorFamily.MUTATION,
       SkisDiagnosticStage.COMPILATION,
-      "dialect rendered an unexpected mutation parameter shape");
+      "dialect rendered an unexpected mutation parameter shape"),
+  MUTATION_REQUIRED_VALUE_NULL(
+      "SKISM013",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.INPUT_CONSTRUCTION,
+      "required mutation property value is null");
 
   private final String code;
   private final SkisErrorFamily family;

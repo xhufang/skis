@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.MutationException;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -77,11 +78,11 @@ class EntityRuntimeModelTest {
 
     assertEquals(3, index.get());
     assertEquals(41L, value.get());
-    QueryValidationException failure =
+    MutationException failure =
         assertThrows(
-            QueryValidationException.class,
+            MutationException.class,
             () -> model().property(ID).bind(statement, 1, "wrong", JdbcWriteContext.EMPTY));
-    assertEquals(SkisErrorCode.QUERY_PARAMETER_VALUE, failure.code());
+    assertEquals(SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH, failure.code());
   }
 
   @Test
