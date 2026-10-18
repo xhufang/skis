@@ -196,18 +196,26 @@ final class JdbcTypeContractSupport {
               QueryValidationException.class,
               () -> JdbcCodecs.readLong(resultSet, 1, JdbcReadContext.EMPTY));
       assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, primitiveNull.code());
-      assertThrows(
-          QueryValidationException.class,
-          () -> JdbcCodecs.readByte(resultSet, 2, JdbcReadContext.EMPTY));
-      assertThrows(
-          QueryValidationException.class,
-          () -> JdbcCodecs.readShort(resultSet, 3, JdbcReadContext.EMPTY));
-      assertThrows(
-          QueryValidationException.class,
-          () -> JdbcCodecs.readInt(resultSet, 4, JdbcReadContext.EMPTY));
-      assertThrows(
-          QueryValidationException.class,
-          () -> JdbcCodecs.readLong(resultSet, 5, JdbcReadContext.EMPTY));
+      QueryValidationException byteFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readByte(resultSet, 2, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, byteFailure.code());
+      QueryValidationException shortFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readShort(resultSet, 3, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, shortFailure.code());
+      QueryValidationException intFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readInt(resultSet, 4, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, intFailure.code());
+      QueryValidationException longFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readLong(resultSet, 5, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, longFailure.code());
       assertThrows(
           QueryValidationException.class,
           () -> JdbcCodecs.readBigInteger(resultSet, 6, JdbcReadContext.EMPTY));

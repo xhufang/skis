@@ -91,9 +91,13 @@ public final class JdbcCodecs {
 
   public static byte readByte(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    byte value = resultSet.getByte(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      byte value = resultSet.getByte(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "byte", failure);
+    }
   }
 
   public static @Nullable Byte readNullableByte(
@@ -104,9 +108,13 @@ public final class JdbcCodecs {
 
   public static short readShort(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    short value = resultSet.getShort(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      short value = resultSet.getShort(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "short", failure);
+    }
   }
 
   public static @Nullable Short readNullableShort(
@@ -117,9 +125,13 @@ public final class JdbcCodecs {
 
   public static int readInt(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    int value = resultSet.getInt(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      int value = resultSet.getInt(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "int", failure);
+    }
   }
 
   public static @Nullable Integer readNullableInt(
@@ -130,9 +142,13 @@ public final class JdbcCodecs {
 
   public static long readLong(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    long value = resultSet.getLong(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      long value = resultSet.getLong(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "long", failure);
+    }
   }
 
   public static @Nullable Long readNullableLong(
@@ -564,6 +580,17 @@ public final class JdbcCodecs {
     } else {
       statement.setTimestamp(index, value);
     }
+  }
+
+  private static QueryValidationException numericRangeFailure(
+      int index, String targetType, SQLException failure) throws SQLException {
+    if (!"22003".equals(failure.getSQLState())) {
+      throw failure;
+    }
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_RESULT_MAPPING,
+        "numeric value at JDBC index " + index + " does not fit " + targetType,
+        failure);
   }
 
   private static void requirePresent(ResultSet resultSet, int index) throws SQLException {
