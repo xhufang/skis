@@ -208,8 +208,13 @@ class DerivedRelationDslTest {
             QueryValidationException.class,
             () -> Sql.derived(invalid, "invalid_boundary", exposed));
 
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
-    assertTrue(failure.getMessage().contains("table references are matched by object identity"));
+    assertEquals(SkisErrorCode.QUERY_DERIVED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
+    assertTrue(
+        failure
+            .getCause()
+            .getMessage()
+            .contains("table references are matched by object identity"));
   }
 
   @Test
