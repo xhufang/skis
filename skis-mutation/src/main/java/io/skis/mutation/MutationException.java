@@ -1,37 +1,73 @@
 package io.skis.mutation;
 
+import io.skis.core.SkisDiagnostics;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.SkisErrorFamily;
 import io.skis.core.SkisException;
-import io.skis.dialect.spi.SqlExceptionCategory;
 import java.io.Serial;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
-/** Reports an invalid mutation or a failed mutation execution. */
+/**
+ * Reports an invalid mutation, a violated write-protection rule, or an optimistic-lock conflict.
+ *
+ * <p>Database failures raised while executing a write remain {@link io.skis.jdbc.JdbcExecutionException}
+ * with an {@code SKISX} database-category code. They are not wrapped in this exception: the database
+ * reason keeps one authoritative code and is not duplicated for INSERT/UPDATE/DELETE callers.
+ */
 public class MutationException extends SkisException {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  private final SqlExceptionCategory category;
-
-  /** Creates a mutation failure with a safe structural diagnostic. */
-  public MutationException(String message) {
-    super(message);
-    this.category = SqlExceptionCategory.UNCATEGORIZED;
+  /** Creates a mutation failure; subclasses may narrow the accepted code family. */
+  protected MutationException(
+      SkisErrorCode code,
+      SkisDiagnostics diagnostics,
+      @Nullable Throwable cause,
+      SkisErrorFamily... allowedFamilies) {
+    super(code, diagnostics, cause, allowedFamilies);
   }
 
-  /** Creates a mutation failure retaining its original cause. */
-  public MutationException(String message, Throwable cause) {
-    super(message, cause);
-    this.category = SqlExceptionCategory.UNCATEGORIZED;
+  /** Creates a mutation semantics failure with a safe structural detail. */
+  public static MutationException of(SkisErrorCode code, String detail) {
+    return of(code, detail, null);
   }
 
-  /** Creates a JDBC-backed mutation failure with its dialect-classified category. */
-  public MutationException(String message, Throwable cause, SqlExceptionCategory category) {
-    super(message, cause);
-    this.category = Objects.requireNonNull(category, "category");
+  /** Creates a mutation semantics failure retaining its original cause. */
+  public static MutationException of(
+      SkisErrorCode code, String detail, @Nullable Throwable cause) {
+    String requiredDetail = Objects.requireNonNull(detail, "detail");
+    if (requiredDetail.isBlank()) {
+      throw new IllegalArgumentException("detail must not be blank");
+    }
+    SkisDiagnostics diagnostics = SkisDiagnostics.of(code.defaultStage(), requiredDetail);
+    return of(code, diagnostics, cause);
   }
 
-  /** Returns the classified JDBC category, or {@code UNCATEGORIZED} for validation failures. */
-  public final SqlExceptionCategory category() {
-    return category;
+  /** Creates a mutation semantics failure from explicitly supplied diagnostics. */
+  public static MutationException of(SkisErrorCode code, SkisDiagnostics diagnostics) {
+    return of(code, diagnostics, null);
+  }
+
+  /** Creates a mutation semantics failure from explicit diagnostics and an original cause. */
+  public static MutationException of(
+      SkisErrorCode code, SkisDiagnostics diagnostics, @Nullable Throwable cause) {
+    return new MutationException(
+        code, requireDiagnostics(code, diagnostics), cause, SkisErrorFamily.MUTATION);
+  }
+
+  private static SkisDiagnostics requireDiagnostics(
+      SkisErrorCode code, SkisDiagnostics diagnostics) {
+    SkisErrorCode requiredCode = Objects.requireNonNull(code, "code");
+    SkisDiagnostics required = Objects.requireNonNull(diagnostics, "diagnostics");
+    if (required.stage() != requiredCode.defaultStage()) {
+      throw new IllegalArgumentException(
+          requiredCode.code() + " diagnostics must use stage " + requiredCode.defaultStage());
+    }
+    SkisDiagnostics.Facts facts = required.facts();
+    if (facts == null || facts.detail() == null || facts.detail().isBlank()) {
+      throw new IllegalArgumentException(requiredCode.code() + " diagnostics require detail");
+    }
+    return required;
   }
 }

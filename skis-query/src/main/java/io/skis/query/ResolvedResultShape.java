@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.RowDecoder;
 import io.skis.mapping.spi.RowLayout;
 import io.skis.metadata.PropertyMeta;
@@ -7,7 +9,6 @@ import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -21,20 +22,26 @@ record ResolvedResultShape<R extends @Nullable Object>(
     expressions = List.copyOf(expressions);
     selections = List.copyOf(selections);
     if (expressions.isEmpty()) {
-      throw new QueryValidationException("a result shape must contain at least one expression");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_SELECTION_SHAPE,
+          "a result shape must contain at least one expression");
     }
     Objects.requireNonNull(decoder, "decoder");
     if (expressions.size() != selections.size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_SELECTION_SHAPE,
           "resolved result selection count does not match its SQL expression count");
     }
     for (int ordinal = 0; ordinal < selections.size(); ordinal++) {
       ResolvedSelection selection = selections.get(ordinal);
       if (selection.resultIndex() != ordinal + 1) {
-        throw new QueryValidationException("resolved result indexes must be dense and one-based");
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_SELECTION_SHAPE,
+            "resolved result indexes must be dense and one-based");
       }
       if (!expressions.get(ordinal).equals(selection.valueMapping().expression())) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_RESULT_MAPPING,
             "resolved value mapping does not match its selected SQL expression");
       }
     }
@@ -44,7 +51,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
     TableRuntimeScope.Occurrence<E> occurrence = scope.require(table);
     var model = occurrence.model();
     if (scope.isNullExtended(table)) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
           "non-null entity selection references null-extended "
               + occurrence.description()
               + "; use selectNullable(table)");
@@ -57,7 +65,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
     TableRuntimeScope.Occurrence<E> occurrence = scope.require(table);
     var model = occurrence.model();
     if (model.entity().primaryKey().isEmpty()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_METADATA_REQUIRED,
           "selectNullable(table) requires complete non-null primary-key metadata for "
               + occurrence.description());
     }
@@ -81,7 +90,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
       Selectable<R> selectable, SqlExpression<R> expression, TableRuntimeScope scope) {
     ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
     if (mapping.effectiveNullability().isNullable()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
           "non-null scalar selection '"
               + SelectableSupport.summary(selectable)
               + "' is effectively nullable; use selectNullable(selectable)");
@@ -112,7 +122,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
     List<ProjectionMapping.Parameter> parameters = mapping.parameters();
     List<Selectable<?>> selectables = selection.selections();
     if (parameters.size() != selectables.size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PROJECTION_MAPPING,
           "projection '"
               + mapping.resultType().getTypeName()
               + "' requires "
@@ -121,7 +132,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
               + selectables.size());
     }
     if (compiledExpressions.size() != selectables.size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COMPILED_SHAPE,
           "compiled projection expression count does not match its generated mapping");
     }
     List<SqlExpression<?>> expressions = new ArrayList<>(selectables.size());
@@ -141,7 +153,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
             selectable,
             location,
             selectable.nullability(),
-            "cannot be resolved in the final query scope: " + failure.getMessage());
+            "cannot be resolved in the final query scope",
+            failure);
       }
       if (!parameter.javaType().equals(valueMapping.javaType())) {
         throw projectionFailure(
@@ -193,10 +206,9 @@ record ResolvedResultShape<R extends @Nullable Object>(
     return new ResolvedResultShape<>(expressions, decoder, resolved);
   }
 
-  private static <R> R requireDecodedValue(@Nullable R value, String nullMessage)
-      throws SQLException {
+  private static <R> R requireDecodedValue(@Nullable R value, String nullMessage) {
     if (value == null) {
-      throw new SQLException(nullMessage);
+      throw QueryValidationException.of(SkisErrorCode.QUERY_NON_NULL_RESULT, nullMessage);
     }
     return value;
   }
@@ -236,8 +248,21 @@ record ResolvedResultShape<R extends @Nullable Object>(
       String location,
       Nullability effectiveNullability,
       String reason) {
+    return projectionFailure(
+        mapping, parameter, selectable, location, effectiveNullability, reason, null);
+  }
+
+  private static QueryValidationException projectionFailure(
+      ProjectionMapping<?> mapping,
+      ProjectionMapping.Parameter parameter,
+      Selectable<?> selectable,
+      String location,
+      Nullability effectiveNullability,
+      String reason,
+      @Nullable Throwable cause) {
     SqlType expectedSqlType = SqlType.fromJavaType(parameter.javaType());
-    return new QueryValidationException(
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_PROJECTION_MAPPING,
         "projection '"
             + mapping.resultType().getTypeName()
             + "' parameter #"
@@ -261,7 +286,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
             + " / effective "
             + effectiveNullability
             + " and "
-            + reason);
+            + reason,
+        cause);
   }
 
   private record CompiledReaders(
@@ -283,7 +309,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
     public <V> ProjectionMapping.ValueReader<V> reader(int parameterOrdinal, Class<?> javaType) {
       Objects.requireNonNull(javaType, "javaType");
       if (parameterOrdinal < 0 || parameterOrdinal >= parameters.size()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PROJECTION_MAPPING,
             "projection reader parameter ordinal "
                 + parameterOrdinal
                 + " is outside [0, "
@@ -292,7 +319,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
       }
       ProjectionMapping.Parameter parameter = parameters.get(parameterOrdinal);
       if (!parameter.javaType().equals(javaType)) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PROJECTION_MAPPING,
             "generated projection reader for parameter '"
                 + parameter.name()
                 + "' requested "

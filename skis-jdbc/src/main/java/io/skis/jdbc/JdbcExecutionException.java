@@ -1,5 +1,7 @@
 package io.skis.jdbc;
 
+import io.skis.core.SkisOperation;
+import io.skis.core.SkisStatementKind;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import java.io.Serial;
 import java.sql.SQLException;
@@ -13,28 +15,27 @@ public final class JdbcExecutionException extends SkisPersistenceException {
     super(diagnostics, cause);
   }
 
-  /** Translates a driver failure using structural statement diagnostics only. */
+  /**
+   * Translates a classified driver failure from a strongly typed JDBC lifecycle phase.
+   *
+   * <p>Every call site must supply the category determined once by the JDBC boundary. The operation
+   * is fixed to {@link SkisOperation#MUTATION}; the statement kind is the compiled mutation shape.
+   */
   public static JdbcExecutionException from(
-      String operation, String dialectId, String sql, SQLException cause) {
-    return from(operation, "execution", dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
-  }
-
-  /** Translates a driver failure from a named JDBC resource lifecycle phase. */
-  public static JdbcExecutionException from(
-      String operation, String phase, String dialectId, String sql, SQLException cause) {
-    return from(operation, phase, dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
-  }
-
-  /** Translates a classified driver failure from a named JDBC resource lifecycle phase. */
-  public static JdbcExecutionException from(
-      String operation,
-      String phase,
+      JdbcPhase phase,
+      SkisStatementKind statementKind,
       String dialectId,
       String sql,
       SQLException cause,
       SqlExceptionCategory category) {
-    JdbcFailureDiagnostics diagnostics =
-        JdbcFailureDiagnostics.from(operation, phase, dialectId, sql, cause, category);
+    return create(
+        JdbcFailureDiagnostics.of(
+            SkisOperation.MUTATION, phase, statementKind, dialectId, sql, cause, category),
+        cause);
+  }
+
+  static JdbcExecutionException create(
+      JdbcFailureDiagnostics diagnostics, SQLException cause) {
     return new JdbcExecutionException(diagnostics, cause);
   }
 }

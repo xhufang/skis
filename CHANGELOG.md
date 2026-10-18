@@ -6,6 +6,16 @@
 
 ### Changed
 
+- 0.2.7 T06 完成运行时错误码与安全诊断收口：core 新增 `SkisErrorFamily`、`SkisDiagnosticStage`、
+  `SkisOperation`、`SkisStatementKind`、83 个显式 `SkisErrorCode`、不可变分组 `SkisDiagnostics`，并把
+  `QueryValidationException` 迁入 core；取消仅 message 的框架异常构造，改为受约束模块工厂与公开 SPI 工厂。
+  JDBC 以 `JdbcPhase` 取代字符串 phase/operation 临时入口，数据库分类只在边界执行一次并固定映射到 SKISX，
+  Spring 直接消费分类并补充多行到 `IncorrectResultSizeDataAccessException`、乐观锁和资源失败映射；执行失败为主异常、
+  关闭/释放失败进入 suppressed，写入触发的数据库错误不再重复包装。接入查询 DSL/语义、分页/continuation、缓存配置、
+  运行时装配、JDBC 资源、mutation、事务/会话和游标线程边界；默认 message/diagnostics 仅含结构信息，不保存完整 SQL、
+  参数/结果值、AST 或 JDBC 资源，也不调用值对象 `toString()`。完整码表和字段见 `docs/runtime-error-codes.md`，
+  ADR-0014、合同明细 §7.3 和指南 §25 已同步。按项目约定未在本地编译运行，待 CI、独立消费者与真实数据库验证；
+  `ParameterRedactor` 与全仓日志治理仍归 0.2.8。
 - 0.2.7 T05 完成 API/SPI/internal 与模块边界重排：扩展和生成合同迁入 `.spi`，mapping registry、JDBC
   计划/执行状态及 mutation 装配迁入 `.internal`；新增并发布 `skis-dialect-support`，PG/H2 直接组合标准 Renderer，
   删除旧 core ID 工具并由 test-model 使用局部序列。Reactor、BOM、发布白名单与 Javadoc internal 排除已同步；

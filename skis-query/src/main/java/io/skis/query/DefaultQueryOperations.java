@@ -1,6 +1,8 @@
 package io.skis.query;
 
 import io.skis.core.ExecutionOptions;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcExecutor;
@@ -174,11 +176,7 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   void validateRequestedRows(int requestedRows, ExecutionContext executionContext) {
-    try {
-      jdbcExecutor.validateRequestedRows(requestedRows, executionContext);
-    } catch (IllegalArgumentException exception) {
-      throw new QueryValidationException(exception.getMessage(), exception);
-    }
+    jdbcExecutor.validateRequestedRows(requestedRows, executionContext);
   }
 
   private <E> EntityPlanSet<E> requirePlanSet(EntityMeta<E> entity) {
@@ -188,7 +186,8 @@ final class DefaultQueryOperations implements QueryOperations {
   private static void requireValueType(PropertyMeta<?, ?> property, @Nullable Object value) {
     if (!property.javaType().isInstance(value)) {
       String receivedType = value == null ? "null" : value.getClass().getTypeName();
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
           "findById id for property '"
               + property.name()
               + "' requires "

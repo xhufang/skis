@@ -1,8 +1,10 @@
 package io.skis.mutation.internal;
 
 import io.skis.core.ExecutionOptions;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
-import io.skis.jdbc.JdbcExecutionException;
+import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
@@ -40,8 +42,7 @@ final class DefaultMutationOperations implements MutationOperations {
     EntityMeta<E> entity = requireEntity(table);
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     requireEntityValue(entity, value);
-    int affected =
-        execute(entity, "insert", () -> jdbcExecutor.executeUpdate(plans.insert(), value, context));
+    int affected = executeUpdate(plans.insert(), value, context);
     if (affected != 1) {
       throw unexpectedRowCount(entity, "insert", affected, "exactly one");
     }
@@ -66,13 +67,9 @@ final class DefaultMutationOperations implements MutationOperations {
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     requireEntityValue(entity, value);
     EntityMutationPlanSet.UpdateExecution<E> execution = plans.update(value);
-    int affected =
-        execute(
-            entity,
-            "updateById",
-            () -> jdbcExecutor.executeUpdate(execution.plan(), value, context));
+    int affected = executeUpdate(execution.plan(), value, context);
     if (execution.versionChecked() && affected == 0) {
-      throw new OptimisticLockException(
+      throw OptimisticLockException.of(
           "optimistic update conflict for entity '" + entity.entityName() + "'");
     }
     if (affected > 1) {
@@ -99,9 +96,7 @@ final class DefaultMutationOperations implements MutationOperations {
     EntityMutationPlanSet<E> plans = requirePlanSet(entity);
     PropertyMeta<E, ?> idProperty = entity.primaryKey().orElseThrow().properties().getFirst();
     requireValueType(idProperty, id);
-    int affected =
-        execute(
-            entity, "deleteById", () -> jdbcExecutor.executeUpdate(plans.delete(), id, context));
+    int affected = executeUpdate(plans.delete(), id, context);
     if (affected > 1) {
       throw unexpectedRowCount(entity, "deleteById", affected, "at most one");
     }
@@ -119,7 +114,8 @@ final class DefaultMutationOperations implements MutationOperations {
   private static <E> void requireEntityValue(EntityMeta<E> entity, E value) {
     Objects.requireNonNull(value, "value");
     if (!entity.javaType().isInstance(value)) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_ENTITY_TYPE_MISMATCH,
           "mutation for entity '"
               + entity.entityName()
               + "' requires "
@@ -129,7 +125,8 @@ final class DefaultMutationOperations implements MutationOperations {
 
   private static void requireValueType(PropertyMeta<?, ?> property, Object value) {
     if (!property.javaType().isInstance(value)) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH,
           "deleteById id"
               + " for property '"
               + property.name()
@@ -138,30 +135,25 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  private static <E> int execute(EntityMeta<E> entity, String operation, MutationWork work) {
+  private <P> int executeUpdate(
+      CompiledMutationPlan<P> plan, P parameters, ExecutionContext context) {
     try {
-      return work.execute();
-    } catch (JdbcExecutionException failure) {
-      MutationException translated =
-          new MutationException(
-              "failed to "
-                  + operation
-                  + " entity '"
-                  + entity.entityName()
-                  + "'; "
-                  + failure.getMessage(),
-              Objects.requireNonNull(failure.getCause(), "JDBC failure cause"),
-              failure.category());
-      for (Throwable suppressed : failure.getSuppressed()) {
-        translated.addSuppressed(suppressed);
+      return jdbcExecutor.executeUpdate(plan, parameters, context);
+    } catch (QueryValidationException failure) {
+      if (failure.code() != SkisErrorCode.QUERY_PARAMETER_VALUE) {
+        throw failure;
       }
-      throw translated;
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH,
+          "mutation value violates a generated property type or nullability contract",
+          failure);
     }
   }
 
   private static MutationException unexpectedRowCount(
       EntityMeta<?> entity, String operation, int affected, String expected) {
-    return new MutationException(
+    return MutationException.of(
+        SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
         operation
             + " for entity '"
             + entity.entityName()
@@ -169,10 +161,5 @@ final class DefaultMutationOperations implements MutationOperations {
             + affected
             + " rows; expected "
             + expected);
-  }
-
-  @FunctionalInterface
-  private interface MutationWork {
-    int execute();
   }
 }

@@ -1,6 +1,7 @@
 package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -8,6 +9,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -113,7 +116,23 @@ class DerivedRelationDslTest {
     assertThrows(
         QueryValidationException.class,
         () -> Sql.derived(description, "duplicate_output", id, duplicateAlias));
-    assertThrows(IllegalArgumentException.class, () -> Sql.output(inner.id(), ""));
+    String sensitiveAlias = "secret-invalid-alias;delete";
+    QueryValidationException invalidOutputAlias =
+        assertThrows(
+            QueryValidationException.class, () -> Sql.output(inner.id(), sensitiveAlias));
+    assertEquals(SkisErrorCode.QUERY_DERIVED_SHAPE, invalidOutputAlias.code());
+    assertTrue(invalidOutputAlias.getCause() instanceof IllegalArgumentException);
+    assertFalse(invalidOutputAlias.getMessage().contains(sensitiveAlias));
+
+    QueryValidationException invalidTableAlias =
+        assertThrows(QueryValidationException.class, () -> new PetTable().as(sensitiveAlias));
+    assertEquals(SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE, invalidTableAlias.code());
+    assertFalse(invalidTableAlias.getMessage().contains(sensitiveAlias));
+
+    QueryValidationException invalidRelationAlias =
+        assertThrows(QueryValidationException.class, () -> first.as(sensitiveAlias));
+    assertEquals(SkisErrorCode.QUERY_DERIVED_SHAPE, invalidRelationAlias.code());
+    assertFalse(invalidRelationAlias.getMessage().contains(sensitiveAlias));
 
     SingleColumnSelect<Long> duplicateRelationAlias =
         Sql.select(firstId).from(first).crossJoin(first.as("first_pet"));

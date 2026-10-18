@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.PropertyMeta;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.query.spi.ProjectionSource;
@@ -21,7 +23,8 @@ final class ProjectionSourceBinder {
         Objects.requireNonNull(projection.mapping(), "projection mapping");
     List<ProjectionSource> sources = List.copyOf(projection.sources());
     if (sources.size() != mapping.parameters().size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PROJECTION_MAPPING,
           "special projection '"
               + mapping.resultType().getTypeName()
               + "' declares "
@@ -132,7 +135,8 @@ final class ProjectionSourceBinder {
   private static QueryValidationException sourceFailure(
       ProjectionMapping<?> mapping, int ordinal, PropertyMeta<?, ?> property, String reason) {
     ProjectionMapping.Parameter parameter = mapping.parameters().get(ordinal);
-    return new QueryValidationException(
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_PROJECTION_MAPPING,
         "special projection '"
             + mapping.resultType().getTypeName()
             + "' parameter #"

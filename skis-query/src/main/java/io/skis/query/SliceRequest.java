@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -21,10 +23,12 @@ public final class SliceRequest {
       Mode mode, long offset, int pageSize, @Nullable SliceContinuation continuation) {
     this.mode = Objects.requireNonNull(mode, "mode");
     if (offset < 0) {
-      throw new IllegalArgumentException("offset must not be negative");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "offset must not be negative");
     }
     if (pageSize <= 0) {
-      throw new IllegalArgumentException("pageSize must be positive");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "pageSize must be positive");
     }
     this.offset = offset;
     this.pageSize = pageSize;

@@ -1,5 +1,7 @@
 package io.skis.mapping.spi;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Date;
@@ -168,7 +170,9 @@ public final class JdbcCodecs {
       throws SQLException {
     String value = resultSet.getString(index);
     if (value == null) {
-      throw new SQLException("non-nullable column at JDBC index " + index + " returned NULL");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT,
+          "non-nullable column at JDBC index " + index + " returned NULL");
     }
     return requireSingleCharacter(value, index);
   }
@@ -193,8 +197,10 @@ public final class JdbcCodecs {
     try {
       return value.toBigIntegerExact();
     } catch (ArithmeticException exception) {
-      throw new SQLException(
-          "numeric value at JDBC index " + index + " is not an exact integer", exception);
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
+          "numeric value at JDBC index " + index + " is not an exact integer",
+          exception);
     }
   }
 
@@ -268,7 +274,9 @@ public final class JdbcCodecs {
   /** Requires a non-null value read for a non-nullable column. */
   public static <T> T requireReadValue(@Nullable T value, int index) throws SQLException {
     if (value == null) {
-      throw new SQLException("non-nullable column at JDBC index " + index + " returned NULL");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT,
+          "non-nullable column at JDBC index " + index + " returned NULL");
     }
     return value;
   }
@@ -276,7 +284,9 @@ public final class JdbcCodecs {
   /** Requires a non-null value before binding a non-nullable parameter. */
   public static <T> T requireBindValue(@Nullable T value, int index) throws SQLException {
     if (value == null) {
-      throw new SQLException("non-nullable parameter at JDBC index " + index + " is null");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_VALUE,
+          "non-nullable parameter at JDBC index " + index + " is null");
     }
     return value;
   }
@@ -557,13 +567,16 @@ public final class JdbcCodecs {
 
   private static void requirePresent(ResultSet resultSet, int index) throws SQLException {
     if (resultSet.wasNull()) {
-      throw new SQLException("non-nullable column at JDBC index " + index + " returned NULL");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT,
+          "non-nullable column at JDBC index " + index + " returned NULL");
     }
   }
 
   private static char requireSingleCharacter(String value, int index) throws SQLException {
     if (value.length() != 1) {
-      throw new SQLException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "character column at JDBC index "
               + index
               + " returned "

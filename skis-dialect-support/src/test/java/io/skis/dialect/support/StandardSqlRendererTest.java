@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.internal.DialectQueryFeatures;
 import io.skis.dialect.spi.Dialect;
@@ -211,7 +212,10 @@ class StandardSqlRendererTest {
                     statement,
                     analysis));
 
-    assertEquals(direct.getMessage(), resolved.getMessage());
+    assertEquals(direct.code(), resolved.code());
+    assertEquals(
+        direct.diagnostics().dialect().missingCapability(),
+        resolved.diagnostics().dialect().missingCapability());
   }
 
   @Test

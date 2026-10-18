@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.EntityMeta;
 import java.time.Duration;
 import java.util.IdentityHashMap;
@@ -53,11 +55,14 @@ final class ProjectionPlanCache {
 
   ProjectionPlanCache(int maximumSize, Duration expireAfterAccess, LongSupplier ticker) {
     if (maximumSize < 0) {
-      throw new IllegalArgumentException("projection plan cache maximumSize must not be negative");
+      throw SkisConfigurationException.of(
+          SkisErrorCode.CACHE_CONFIGURATION_INVALID,
+          "projection plan cache maximumSize must not be negative");
     }
     Objects.requireNonNull(expireAfterAccess, "expireAfterAccess");
     if (expireAfterAccess.isZero() || expireAfterAccess.isNegative()) {
-      throw new IllegalArgumentException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.CACHE_CONFIGURATION_INVALID,
           "projection plan cache expireAfterAccess must be positive");
     }
     this.maximumSize = maximumSize;

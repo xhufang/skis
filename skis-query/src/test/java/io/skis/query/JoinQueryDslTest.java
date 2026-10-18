@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
@@ -1539,7 +1540,7 @@ class JoinQueryDslTest {
 
     assertSame(cardinality, thrown.getCause());
     assertEquals("21000", thrown.sqlState());
-    assertEquals(41, thrown.vendorCode());
+    assertEquals(Integer.valueOf(41), thrown.vendorCode());
     assertEquals(1, cardinality.getSuppressed().length);
     assertSame(statementClose, cardinality.getSuppressed()[0]);
     assertEquals(1, thrown.getSuppressed().length);

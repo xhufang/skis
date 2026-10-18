@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
 import java.util.Arrays;
@@ -79,7 +81,12 @@ public final class Sql {
   }
 
   public static <V> NonNullDerivedOutput<V> output(NonNullSelectable<V> selectable, String alias) {
-    return output(selectable, Identifier.of(alias));
+    return output(
+        selectable,
+        identifier(
+            alias,
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "derived output alias is not a portable SQL identifier"));
   }
 
   private static <V> NonNullDerivedOutput<V> output(
@@ -89,7 +96,12 @@ public final class Sql {
   }
 
   public static <V> DerivedOutput<V> output(Selectable<V> selectable, String alias) {
-    return output(selectable, Identifier.of(alias));
+    return output(
+        selectable,
+        identifier(
+            alias,
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "derived output alias is not a portable SQL identifier"));
   }
 
   private static <V> DerivedOutput<V> output(Selectable<V> selectable, Identifier alias) {
@@ -99,7 +111,12 @@ public final class Sql {
   }
 
   public static <V> DerivedOutput<V> outputNullable(NonNullSelectable<V> selectable, String alias) {
-    return outputNullable(selectable, Identifier.of(alias));
+    return outputNullable(
+        selectable,
+        identifier(
+            alias,
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "derived output alias is not a portable SQL identifier"));
   }
 
   private static <V> DerivedOutput<V> outputNullable(
@@ -112,7 +129,13 @@ public final class Sql {
 
   public static DerivedRelation derived(
       SelectDescription<?> description, String alias, DerivedOutput<?>... outputs) {
-    return derived(description, Identifier.of(alias), outputs);
+    return derived(
+        description,
+        identifier(
+            alias,
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "derived relation alias is not a portable SQL identifier"),
+        outputs);
   }
 
   private static DerivedRelation derived(
@@ -147,6 +170,15 @@ public final class Sql {
         Objects.requireNonNull(javaType, "javaType"),
         Nullability.NULLABLE,
         Objects.requireNonNull(diagnosticName, "diagnosticName"));
+  }
+
+  static Identifier identifier(String value, SkisErrorCode code, String detail) {
+    Objects.requireNonNull(value, "identifier");
+    try {
+      return Identifier.of(value);
+    } catch (IllegalArgumentException failure) {
+      throw QueryValidationException.ofCause(code, failure, detail);
+    }
   }
 
   private static <Q> SelectFromStep<Q> fromStep(Function<QueryRelation, Q> factory) {

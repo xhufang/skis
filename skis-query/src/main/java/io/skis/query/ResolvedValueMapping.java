@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcTypeCodec;
@@ -11,7 +13,6 @@ import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
-import java.sql.SQLException;
 import java.util.Objects;
 
 /** Query-local value contract resolved from a framework-owned selectable expression. */
@@ -35,15 +36,18 @@ record ResolvedValueMapping<V>(
       throw new IllegalArgumentException("source occurrence ordinal must be -1 or non-negative");
     }
     if (!javaType.equals(selectable.javaType()) || !javaType.equals(expression.javaType())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "selectable Java type does not match its resolved value mapping");
     }
     if (sqlType != selectable.sqlType() || sqlType != expression.sqlType()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "selectable SQL type does not match its resolved value mapping");
     }
     if (selectable.nullability() != expression.nullability()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "selectable nullability does not match its SQL expression");
     }
   }
@@ -62,7 +66,8 @@ record ResolvedValueMapping<V>(
       case DerivedColumnSelectable<?> derived -> resolveDerivedUntyped(derived, expression, scope);
       case ScalarSubquerySelectable<?> scalar -> resolveScalarUntyped(scalar, expression, scope);
       default ->
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_RESULT_MAPPING,
               "no query-local value mapping is registered for framework expression '"
                   + SelectableSupport.summary(selectable)
                   + "'");
@@ -80,8 +85,12 @@ record ResolvedValueMapping<V>(
       Objects.requireNonNull(context, "context");
       V value = readerCodec.read(resultSet, resultIndex, context);
       if (value == null && requireNonNull) {
-        throw new SQLException(
-            "required selection '" + selectionSummary + "' is null at JDBC index " + resultIndex);
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_NON_NULL_RESULT,
+            "required selection '"
+                + selectionSummary
+                + "' is null at JDBC index "
+                + resultIndex);
       }
       return value;
     };
@@ -117,7 +126,8 @@ record ResolvedValueMapping<V>(
             DerivedColumnExpression<?>(DerivedRelationReference relation, int outputOrdinal))
         || relation != typed.relation().reference()
         || outputOrdinal != typed.outputOrdinal()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "compiled derived selection does not reference its concrete relation occurrence and "
               + "output ordinal");
     }
@@ -137,7 +147,8 @@ record ResolvedValueMapping<V>(
   private static <V> ResolvedValueMapping<V> resolveScalarUntyped(
       ScalarSubquerySelectable<?> scalar, SqlExpression<V> expression, TableRuntimeScope scope) {
     if (!(expression instanceof ScalarSubqueryExpression<?>)) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "compiled scalar selection is not backed by a scalar-subquery AST node");
     }
     ScalarSubquerySelectable<V> typed = (ScalarSubquerySelectable) scalar;
@@ -162,7 +173,8 @@ record ResolvedValueMapping<V>(
       }
       default -> {}
     }
-    throw new QueryValidationException(
+    throw QueryValidationException.of(
+        SkisErrorCode.QUERY_RESULT_MAPPING,
         "no result Codec is registered for selectable output '"
             + SelectableSupport.summary(output)
             + "'");

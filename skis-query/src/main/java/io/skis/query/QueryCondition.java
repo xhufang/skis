@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
@@ -364,7 +366,8 @@ final class QueryConditions {
   static QueryCondition reusableStructure(QueryCondition condition) {
     FrameworkQueryCondition framework = framework(condition);
     if (!framework.parameters().isEmpty()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CAPTURED_VALUE,
           "a reusable SELECT description cannot capture ordinary values; use Sql.parameter(...) "
               + "in the condition and bind it through "
               + "executor.query(description).bind(parameter, value)");
@@ -383,10 +386,6 @@ final class QueryConditionCompiler {
   private final StatementParameterLayout layout;
   private final QueryParameterBindings bindings;
   private final StatementParameterLayout.QueryBlock queryBlock;
-
-  QueryConditionCompiler() {
-    this(new StatementParameterLayout(), new QueryParameterBindings());
-  }
 
   QueryConditionCompiler(StatementParameterLayout layout, QueryParameterBindings bindings) {
     this.layout = Objects.requireNonNull(layout, "layout");

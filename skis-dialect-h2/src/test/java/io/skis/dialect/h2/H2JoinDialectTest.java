@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.RenderedSql;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.FromClause;
@@ -93,10 +94,14 @@ class H2JoinDialectTest {
             SqlRenderException.class,
             () -> H2Dialect.INSTANCE.renderer().render(statement));
 
+    assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, validationFailure.code());
+    assertEquals("h2", validationFailure.diagnostics().dialect().dialectId());
     assertEquals(
-        "dialect 'h2' does not support FULL JOIN at SELECT FROM join #2 (missing FULL_JOIN)",
-        validationFailure.getMessage());
-    assertEquals(validationFailure.getMessage(), renderingFailure.getMessage());
+        "FULL_JOIN", validationFailure.diagnostics().dialect().missingCapability());
+    assertEquals(validationFailure.code(), renderingFailure.code());
+    assertEquals(
+        validationFailure.diagnostics().dialect().missingCapability(),
+        renderingFailure.diagnostics().dialect().missingCapability());
   }
 
   @Test

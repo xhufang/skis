@@ -1,14 +1,21 @@
 package io.skis.spring;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.NonUniqueResultException;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.TransactionException;
 import io.skis.dialect.spi.SqlExceptionCategory;
+import io.skis.jdbc.JdbcExecutionException;
+import io.skis.jdbc.JdbcPhase;
 import io.skis.jdbc.QueryExecutionException;
-import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;
 import java.sql.SQLException;
 import org.junit.jupiter.api.Test;
@@ -18,6 +25,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.UncategorizedDataAccessException;
@@ -28,100 +36,117 @@ class SkisExceptionTranslatorTest {
   void translatesClassifiedQueryFailuresAndRetainsTheSkisCause() {
     SQLException sqlFailure = new SQLException("duplicate sensitive value", "23505", 17);
     QueryExecutionException skisFailure =
-        QueryExecutionException.from("test", "SELECT id FROM pet WHERE name = ?", sqlFailure);
-    SkisExceptionTranslator translator =
-        new SkisExceptionTranslator(ignored -> SqlExceptionCategory.DUPLICATE_KEY);
+        QueryExecutionException.from(
+            JdbcPhase.EXECUTE, "test", "SELECT id FROM pet WHERE name = ?", sqlFailure,
+            SqlExceptionCategory.DUPLICATE_KEY);
+    SkisExceptionTranslator translator = new SkisExceptionTranslator();
 
     DataAccessException translated = translator.translateExceptionIfPossible(skisFailure);
 
     assertInstanceOf(DuplicateKeyException.class, translated);
     assertSame(skisFailure, translated.getCause());
     assertSame(sqlFailure, skisFailure.getCause());
+    assertEquals(SkisErrorCode.DB_DUPLICATE_KEY, skisFailure.code());
     assertTrue(translated.getMessage().contains("sqlFingerprint="));
     assertFalse(translated.getMessage().contains("SELECT id"));
     assertFalse(translated.getMessage().contains("sensitive value"));
   }
 
   @Test
-  void translatesWrappedMutationFailuresUsingTheConfiguredClassifier() {
-    SQLException foreignKeyFailure = new SQLException("foreign key", "23503", 23);
-    MutationException mutationFailure =
-        new MutationException("cannot insert entity", foreignKeyFailure);
-    SkisExceptionTranslator translator =
-        new SkisExceptionTranslator(ignored -> SqlExceptionCategory.FOREIGN_KEY_VIOLATION);
-
-    DataAccessException translated = translator.translateExceptionIfPossible(mutationFailure);
-
-    assertInstanceOf(DataIntegrityViolationException.class, translated);
-    assertSame(mutationFailure, translated.getCause());
-    assertSame(foreignKeyFailure, mutationFailure.getCause());
-  }
-
-  @Test
-  void usesTheCategoryAlreadyRetainedByTheMutationBoundary() {
+  void consumesTheMutationBoundaryClassificationWithoutReclassifying() {
     SQLException sqlFailure = new SQLException("duplicate", "23505", 24);
-    MutationException mutationFailure =
-        new MutationException(
-            "cannot insert entity", sqlFailure, SqlExceptionCategory.DUPLICATE_KEY);
+    JdbcExecutionException mutationFailure =
+        JdbcExecutionException.from(
+            JdbcPhase.EXECUTE,
+            io.skis.core.SkisStatementKind.INSERT,
+            "test",
+            "INSERT INTO pet (name) VALUES (?)",
+            sqlFailure,
+            SqlExceptionCategory.DUPLICATE_KEY);
 
     DataAccessException translated =
         new SkisExceptionTranslator().translateExceptionIfPossible(mutationFailure);
 
     assertInstanceOf(DuplicateKeyException.class, translated);
     assertSame(mutationFailure, translated.getCause());
+    assertEquals(SkisErrorCode.DB_DUPLICATE_KEY, mutationFailure.code());
+  }
+
+  @Test
+  void doesNotGuessACategoryFromAStateThatWasAlreadyUnclassified() {
+    SQLException sqlFailure = new SQLException("duplicate", "23505", 25);
+    QueryExecutionException uncategorized =
+        QueryExecutionException.from(
+            JdbcPhase.EXECUTE, "test", "INSERT INTO pet (name) VALUES (?)", sqlFailure,
+            SqlExceptionCategory.UNCATEGORIZED);
+
+    DataAccessException translated =
+        new SkisExceptionTranslator().translateExceptionIfPossible(uncategorized);
+
+    assertInstanceOf(UncategorizedDataAccessException.class, translated);
+    assertEquals(SkisErrorCode.DB_UNCATEGORIZED, uncategorized.code());
   }
 
   @Test
   void mapsEveryPortableFailureFamily() {
-    SQLException sqlFailure = new SQLException("failure", "state", 1);
-
     assertInstanceOf(
-        QueryTimeoutException.class,
-        translate(sqlFailure, SqlExceptionCategory.TIMEOUT));
+        QueryTimeoutException.class, translate(SqlExceptionCategory.TIMEOUT));
     assertInstanceOf(
         UncategorizedDataAccessException.class,
-        translate(sqlFailure, SqlExceptionCategory.QUERY_CANCELED));
+        translate(SqlExceptionCategory.QUERY_CANCELED));
     assertInstanceOf(
-        CannotAcquireLockException.class,
-        translate(sqlFailure, SqlExceptionCategory.LOCK_NOT_AVAILABLE));
+        CannotAcquireLockException.class, translate(SqlExceptionCategory.LOCK_NOT_AVAILABLE));
     assertInstanceOf(
         DataAccessResourceFailureException.class,
-        translate(sqlFailure, SqlExceptionCategory.CONNECTION_FAILURE));
+        translate(SqlExceptionCategory.CONNECTION_FAILURE));
     assertInstanceOf(
         DataIntegrityViolationException.class,
-        translate(sqlFailure, SqlExceptionCategory.CONSTRAINT_VIOLATION));
+        translate(SqlExceptionCategory.CONSTRAINT_VIOLATION));
     assertInstanceOf(
-        ConcurrencyFailureException.class,
-        translate(sqlFailure, SqlExceptionCategory.DEADLOCK));
+        DataIntegrityViolationException.class,
+        translate(SqlExceptionCategory.FOREIGN_KEY_VIOLATION));
     assertInstanceOf(
-        ConcurrencyFailureException.class,
-        translate(sqlFailure, SqlExceptionCategory.SERIALIZATION_FAILURE));
+        ConcurrencyFailureException.class, translate(SqlExceptionCategory.DEADLOCK));
+    assertInstanceOf(
+        ConcurrencyFailureException.class, translate(SqlExceptionCategory.SERIALIZATION_FAILURE));
     assertInstanceOf(
         UncategorizedDataAccessException.class,
-        translate(sqlFailure, SqlExceptionCategory.UNCATEGORIZED));
+        translate(SqlExceptionCategory.UNCATEGORIZED));
     assertInstanceOf(
         OptimisticLockingFailureException.class,
         new SkisExceptionTranslator()
-            .translateExceptionIfPossible(new OptimisticLockException("version conflict")));
+            .translateExceptionIfPossible(OptimisticLockException.of("version conflict")));
   }
 
   @Test
-  void classifierErrorsDoNotMaskTheOriginalJdbcFailure() {
+  void mapsMultipleRowsWithoutClaimingAPreciseTotal() {
+    NonUniqueResultException failure = NonUniqueResultException.of("query expected at most one row");
+
+    DataAccessException translated =
+        new SkisExceptionTranslator().translateExceptionIfPossible(failure);
+
+    IncorrectResultSizeDataAccessException resultSize =
+        assertInstanceOf(IncorrectResultSizeDataAccessException.class, translated);
+    assertEquals(1, resultSize.getExpectedSize());
+    assertEquals(2, resultSize.getActualSize());
+    assertSame(failure, translated.getCause());
+    assertEquals(SkisErrorCode.QUERY_MULTIPLE_ROWS, failure.code());
+  }
+
+  @Test
+  void preservesCauseAndSuppressedOfClassifiedJdbcFailures() {
     SQLException sqlFailure = new SQLException("failure", "42000", 25);
-    AssertionError classifierFailure = new AssertionError("classifier failed");
-    MutationException mutationFailure = new MutationException("mutation failed", sqlFailure);
-    SkisExceptionTranslator translator =
-        new SkisExceptionTranslator(
-            ignored -> {
-              throw classifierFailure;
-            });
+    SQLException releaseFailure = new SQLException("release", "08006", 26);
+    QueryExecutionException failure =
+        QueryExecutionException.from(
+            JdbcPhase.EXECUTE, "test", "SELECT 1", sqlFailure, SqlExceptionCategory.UNCATEGORIZED);
+    failure.addSuppressed(releaseFailure);
 
-    DataAccessException translated = translator.translateExceptionIfPossible(mutationFailure);
+    DataAccessException translated =
+        new SkisExceptionTranslator().translateExceptionIfPossible(failure);
 
-    assertInstanceOf(UncategorizedDataAccessException.class, translated);
-    assertSame(mutationFailure, translated.getCause());
-    assertSame(sqlFailure, mutationFailure.getCause());
-    assertSame(classifierFailure, sqlFailure.getSuppressed()[0]);
+    assertSame(failure, translated.getCause());
+    assertSame(releaseFailure, failure.getSuppressed()[0]);
   }
 
   @Test
@@ -130,13 +155,43 @@ class SkisExceptionTranslatorTest {
 
     assertNull(translator.translateExceptionIfPossible(new IllegalStateException("unrelated")));
     assertNull(
-        translator.translateExceptionIfPossible(new MutationException("validation failure")));
+        translator.translateExceptionIfPossible(
+            QueryValidationException.of(SkisErrorCode.QUERY_WHERE_CONTRACT, "invalid WHERE")));
+    assertNull(
+        translator.translateExceptionIfPossible(
+            SkisConfigurationException.of(
+                SkisErrorCode.ASSEMBLY_CONFIGURATION_INVALID, "missing dialect")));
   }
 
-  private static DataAccessException translate(
-      SQLException sqlFailure, SqlExceptionCategory category) {
-    MutationException mutationFailure = new MutationException("mutation failed", sqlFailure);
-    return new SkisExceptionTranslator(ignored -> category)
-        .translateExceptionIfPossible(mutationFailure);
+  @Test
+  void doesNotReclassifyTransactionOrSessionFailuresAsDataAccessFailures() {
+    SkisExceptionTranslator translator = new SkisExceptionTranslator();
+    SkisErrorCode[] transactionCodes = {
+      SkisErrorCode.TRANSACTION_EXTERNAL_OWNERSHIP,
+      SkisErrorCode.TRANSACTION_BEGIN_FAILED,
+      SkisErrorCode.TRANSACTION_COMMIT_OUTCOME_UNKNOWN,
+      SkisErrorCode.TRANSACTION_ROLLBACK_OUTCOME_UNKNOWN,
+      SkisErrorCode.TRANSACTION_NOT_ACTIVE,
+      SkisErrorCode.TRANSACTION_CLOSE_FAILED,
+      SkisErrorCode.TRANSACTION_AFTER_COMMIT_FAILED,
+      SkisErrorCode.SESSION_INACTIVE
+    };
+
+    for (SkisErrorCode code : transactionCodes) {
+      TransactionException failure =
+          TransactionException.of(code, "transaction or session lifecycle failure");
+      assertNull(translator.translateExceptionIfPossible(failure), code::code);
+    }
+  }
+
+  private static DataAccessException translate(SqlExceptionCategory category) {
+    QueryExecutionException failure =
+        QueryExecutionException.from(
+            JdbcPhase.EXECUTE,
+            "test",
+            "SELECT id FROM pet WHERE name = ?",
+            new SQLException("failure", "state", 1),
+            category);
+    return new SkisExceptionTranslator().translateExceptionIfPossible(failure);
   }
 }

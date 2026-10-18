@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.ParameterSlot;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -76,7 +78,8 @@ final class StatementParameterLayout {
       Objects.requireNonNull(source, "source");
       Objects.requireNonNull(parameter, "parameter");
       if (!source.javaType().equals(parameter.javaType())) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_TYPE_MISMATCH,
             "query parameter Java type "
                 + parameter.javaType().getTypeName()
                 + " does not match expression '"
@@ -90,11 +93,13 @@ final class StatementParameterLayout {
         if (!existing.javaType().equals(source.javaType())
             || existing.sqlType() != source.sqlType()
             || existing.nullability() != parameter.nullability()) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_PARAMETER_LAYOUT,
               "query parameter is used with conflicting Java type, SQL type or nullability");
         }
         if (!SelectableSupport.sameOccurrence(registered.binderSource(), source)) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_PARAMETER_LAYOUT,
               "query parameter is reused with conflicting expression Codec sources '"
                   + SelectableSupport.summary(registered.binderSource())
                   + "' and '"

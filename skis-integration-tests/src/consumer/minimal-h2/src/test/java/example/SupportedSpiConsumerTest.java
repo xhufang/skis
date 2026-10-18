@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import example.skis.PetMeta;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
@@ -61,9 +62,20 @@ class SupportedSpiConsumerTest {
         assertThrows(
             SqlRenderException.class,
             () -> dialect.renderer().render(new CountAst(pet, null, pet.id())));
+    assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, unsupported.code());
+    assertEquals("external", unsupported.diagnostics().dialect().dialectId());
     assertEquals(
-        "dialect 'external' does not support distinct count (missing COUNT_DISTINCT)",
-        unsupported.getMessage());
+        "COUNT_DISTINCT", unsupported.diagnostics().dialect().missingCapability());
+
+    SqlRenderException constructed =
+        SqlRenderException.of(
+            SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+            "external",
+            "FEATURE",
+            "external dialect contract detail");
+    assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, constructed.code());
+    assertEquals("external", constructed.diagnostics().dialect().dialectId());
+    assertEquals("FEATURE", constructed.diagnostics().dialect().missingCapability());
 
     Connection connection = connections.acquire(ExecutionContext.EMPTY);
     try {

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
 import io.skis.jdbc.internal.JdbcCursor;
 import io.skis.sql.ast.SqlType;
 import java.sql.Timestamp;
@@ -108,13 +109,13 @@ class PaginationValueTypesTest {
 
   @Test
   void requestAndSingleRowContractsRejectInvalidAmbiguity() {
-    assertThrows(IllegalArgumentException.class, () -> PageRequest.page(-1, 10));
-    assertThrows(IllegalArgumentException.class, () -> PageRequest.page(0, 0));
+    assertThrows(QueryValidationException.class, () -> PageRequest.page(-1, 10));
+    assertThrows(QueryValidationException.class, () -> PageRequest.page(0, 0));
     assertEquals(
         (long) Integer.MAX_VALUE * Integer.MAX_VALUE,
         PageRequest.page(Integer.MAX_VALUE, Integer.MAX_VALUE).offset());
-    assertThrows(IllegalArgumentException.class, () -> SliceRequest.offset(-1, 10));
-    assertThrows(IllegalArgumentException.class, () -> SliceRequest.keysetFirst(0));
+    assertThrows(QueryValidationException.class, () -> SliceRequest.offset(-1, 10));
+    assertThrows(QueryValidationException.class, () -> SliceRequest.keysetFirst(0));
 
     SingleRow<String> noRow = SingleRow.noRow();
     SingleRow<@Nullable String> presentNull = SingleRow.present(null);

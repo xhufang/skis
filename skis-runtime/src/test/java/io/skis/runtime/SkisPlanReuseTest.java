@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -81,17 +83,20 @@ class SkisPlanReuseTest {
         new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 0),
         disabled.queryPlanCacheStatistics());
     assertThrows(
-        IllegalArgumentException.class,
+        SkisConfigurationException.class,
         () -> Skis.builder(dataSource()).planCacheMaximumSize(-1));
     assertThrows(
-        IllegalArgumentException.class,
+        SkisConfigurationException.class,
         () -> Skis.builder(dataSource()).planCacheExpireAfterAccess(Duration.ZERO));
   }
 
   @Test
   void requiresADataSourceAndExplicitDialect() {
     assertThrows(NullPointerException.class, () -> Skis.builder(null));
-    assertThrows(NullPointerException.class, () -> Skis.builder(dataSource()).build());
+    SkisConfigurationException missingDialect =
+        assertThrows(
+            SkisConfigurationException.class, () -> Skis.builder(dataSource()).build());
+    assertEquals(SkisErrorCode.ASSEMBLY_CONFIGURATION_INVALID, missingDialect.code());
     assertThrows(
         NullPointerException.class,
         () -> Skis.create(dataSource(), null));

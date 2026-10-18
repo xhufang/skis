@@ -13,6 +13,10 @@
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-metadata</artifactId>
     </dependency>
     <dependency>

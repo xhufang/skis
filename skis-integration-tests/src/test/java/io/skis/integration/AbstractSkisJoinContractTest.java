@@ -526,7 +526,7 @@ abstract class AbstractSkisJoinContractTest {
     SQLException cause = (SQLException) failure.getCause();
     assertTrue(cause.getSQLState() != null && !cause.getSQLState().isBlank());
     assertEquals(cause.getSQLState(), failure.sqlState());
-    assertEquals(cause.getErrorCode(), failure.vendorCode());
+    assertEquals(Integer.valueOf(cause.getErrorCode()), failure.vendorCode());
   }
 
   @Test

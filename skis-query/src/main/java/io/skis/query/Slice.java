@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -15,10 +17,13 @@ public record Slice<R extends @Nullable Object>(
     items = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(items, "items")));
     Objects.requireNonNull(nextContinuation, "nextContinuation");
     if (pageSize <= 0 || items.size() > pageSize) {
-      throw new IllegalArgumentException("slice items or pageSize are invalid");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "slice items or pageSize are invalid");
     }
     if (hasNext != nextContinuation.isPresent()) {
-      throw new IllegalArgumentException("hasNext and nextContinuation must agree");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID,
+          "hasNext and nextContinuation must agree");
     }
   }
 

@@ -1,5 +1,7 @@
 package io.skis.metadata;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -64,7 +66,8 @@ public final class EntityMeta<E> {
     validatePrimaryKey(primaryKey);
     validateVersion(version);
     if (!readOnly && primaryKey == null) {
-      throw new IllegalArgumentException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.METADATA_PRIMARY_KEY_REQUIRED,
           "writable entity '" + entityName + "' requires a primary key");
     }
   }
@@ -151,13 +154,13 @@ public final class EntityMeta<E> {
   /**
    * Returns a persistent property by its Java name.
    *
-   * @throws IllegalArgumentException when the property is not part of this entity
+   * @throws SkisConfigurationException when the property is not part of this entity
    */
   public PropertyMeta<E, ?> property(String propertyName) {
     return findProperty(propertyName)
         .orElseThrow(
             () ->
-                new IllegalArgumentException(
+                metadataInvalid(
                     "unknown property '" + propertyName + "' on entity '" + entityName + "'"));
   }
 
@@ -166,12 +169,12 @@ public final class EntityMeta<E> {
     Objects.requireNonNull(candidateProperties, "properties");
     List<PropertyMeta<E, ?>> result = List.copyOf(candidateProperties);
     if (result.isEmpty()) {
-      throw new IllegalArgumentException("entity '" + entityName + "' must contain a property");
+      throw metadataInvalid("entity '" + entityName + "' must contain a property");
     }
     for (int index = 0; index < result.size(); index++) {
       PropertyMeta<E, ?> property = Objects.requireNonNull(result.get(index), "property");
       if (property.ordinal() != index) {
-        throw new IllegalArgumentException(
+        throw metadataInvalid(
             "property '"
                 + property.name()
                 + "' has ordinal "
@@ -189,7 +192,7 @@ public final class EntityMeta<E> {
     for (PropertyMeta<E, ?> property : candidateProperties) {
       PropertyMeta<E, ?> previous = result.putIfAbsent(property.name(), property);
       if (previous != null) {
-        throw new IllegalArgumentException(
+        throw metadataInvalid(
             "duplicate property '" + property.name() + "' on entity '" + entityName + "'");
       }
     }
@@ -205,7 +208,7 @@ public final class EntityMeta<E> {
       }
       PropertyMeta<E, ?> previous = writablePropertiesByColumn.putIfAbsent(column.name(), property);
       if (previous != null) {
-        throw new IllegalArgumentException(
+        throw metadataInvalid(
             "writable properties '"
                 + previous.name()
                 + "' and '"
@@ -226,7 +229,7 @@ public final class EntityMeta<E> {
     for (PropertyMeta<E, ?> property : candidatePrimaryKey.properties()) {
       PropertyMeta<E, ?> entityProperty = propertiesByName.get(property.name());
       if (entityProperty != property) {
-        throw new IllegalArgumentException(
+        throw metadataInvalid(
             "primary-key property '"
                 + property.name()
                 + "' does not belong to entity '"
@@ -244,7 +247,7 @@ public final class EntityMeta<E> {
     PropertyMeta<E, ?> property = candidateVersion.property();
     PropertyMeta<E, ?> entityProperty = propertiesByName.get(property.name());
     if (entityProperty != property) {
-      throw new IllegalArgumentException(
+      throw versionInvalid(
           "version property '"
               + property.name()
               + "' does not belong to entity '"
@@ -252,12 +255,12 @@ public final class EntityMeta<E> {
               + "'");
     }
     if (readOnly) {
-      throw new IllegalArgumentException(
+      throw versionInvalid(
           "read-only entity '" + entityName + "' must not declare a version property");
     }
     if (primaryKey != null
         && primaryKey.properties().stream().anyMatch(keyProperty -> keyProperty == property)) {
-      throw new IllegalArgumentException(
+      throw versionInvalid(
           "version property '"
               + property.name()
               + "' must not be part of the primary key on entity '"
@@ -269,8 +272,16 @@ public final class EntityMeta<E> {
   private static String requireEntityName(String entityName) {
     Objects.requireNonNull(entityName, "entityName");
     if (entityName.isBlank()) {
-      throw new IllegalArgumentException("entityName must not be blank");
+      throw metadataInvalid("entityName must not be blank");
     }
     return entityName;
+  }
+
+  private static SkisConfigurationException metadataInvalid(String detail) {
+    return SkisConfigurationException.of(SkisErrorCode.METADATA_INVALID, detail);
+  }
+
+  private static SkisConfigurationException versionInvalid(String detail) {
+    return SkisConfigurationException.of(SkisErrorCode.METADATA_VERSION_INVALID, detail);
   }
 }

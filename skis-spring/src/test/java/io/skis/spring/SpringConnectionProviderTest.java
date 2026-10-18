@@ -12,6 +12,7 @@ import io.skis.dialect.spi.RenderedSql;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcTransaction;
+import io.skis.jdbc.JdbcPhase;
 import io.skis.jdbc.QueryExecutionException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
@@ -183,7 +184,7 @@ class SpringConnectionProviderTest {
                       .fetchList(plan, new Object()));
 
       assertSame(timeoutFailure, thrown.getCause());
-      assertEquals("execution", thrown.phase());
+      assertEquals(JdbcPhase.EXECUTE, thrown.phase());
       assertTrue(queryTimeoutSeconds.get() > 0);
       assertTrue(queryTimeoutSeconds.get() <= 5);
     } finally {

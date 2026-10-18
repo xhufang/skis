@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -25,7 +27,8 @@ sealed interface QueryPagination
     public Offset {
       requireLimit(limit);
       if (offset < 0) {
-        throw new IllegalArgumentException("offset must not be negative");
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "offset must not be negative");
       }
     }
   }
@@ -41,7 +44,8 @@ sealed interface QueryPagination
 
   private static void requireLimit(int limit) {
     if (limit <= 0) {
-      throw new IllegalArgumentException("limit must be positive");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "limit must be positive");
     }
   }
 }

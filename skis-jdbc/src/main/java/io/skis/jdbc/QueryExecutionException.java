@@ -1,5 +1,7 @@
 package io.skis.jdbc;
 
+import io.skis.core.SkisOperation;
+import io.skis.core.SkisStatementKind;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import java.io.Serial;
 import java.sql.SQLException;
@@ -13,30 +15,32 @@ public final class QueryExecutionException extends SkisPersistenceException {
     super(diagnostics, cause);
   }
 
-  /** Translates a driver failure using only structural query diagnostics. */
-  public static QueryExecutionException from(String dialectId, String sql, SQLException cause) {
-    return from("execution", dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
-  }
-
-  /** Translates a driver failure from a named JDBC resource lifecycle phase. */
+  /**
+   * Translates a classified driver failure from a strongly typed JDBC lifecycle phase.
+   *
+   * <p>Every call site must supply the category determined once by the JDBC boundary. The operation
+   * is fixed to {@link SkisOperation#QUERY} and the statement kind to {@link SkisStatementKind#SELECT}.
+   */
   public static QueryExecutionException from(
-      String phase, String dialectId, String sql, SQLException cause) {
-    return from(phase, dialectId, sql, cause, SqlExceptionCategory.UNCATEGORIZED);
-  }
-
-  /** Translates a classified driver failure from a named JDBC resource lifecycle phase. */
-  public static QueryExecutionException from(
-      String phase,
+      JdbcPhase phase,
       String dialectId,
       String sql,
       SQLException cause,
       SqlExceptionCategory category) {
-    JdbcFailureDiagnostics diagnostics =
-        JdbcFailureDiagnostics.from("query", phase, dialectId, sql, cause, category);
-    return new QueryExecutionException(diagnostics, cause);
+    return create(
+        JdbcFailureDiagnostics.of(
+            SkisOperation.QUERY,
+            phase,
+            SkisStatementKind.SELECT,
+            dialectId,
+            sql,
+            cause,
+            category),
+        cause);
   }
 
-  static String fingerprint(String sql) {
-    return JdbcFailureDiagnostics.fingerprint(sql);
+  static QueryExecutionException create(
+      JdbcFailureDiagnostics diagnostics, SQLException cause) {
+    return new QueryExecutionException(diagnostics, cause);
   }
 }

@@ -1,9 +1,11 @@
 package io.skis.runtime;
 
 import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.SkisException;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.EntityRuntimeModelProvider;
-import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
@@ -11,6 +13,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Loads generated providers once from deterministic indexes without scanning the class path. */
 final class EntityRuntimeModelLoader {
@@ -49,8 +52,10 @@ final class EntityRuntimeModelLoader {
     try {
       return EntityRuntimeRegistry.of(models);
     } catch (IllegalArgumentException failure) {
-      throw new SkisConfigurationException(
-          "generated entity indexes produced an invalid runtime registry", failure);
+      throw SkisConfigurationException.of(
+          SkisErrorCode.ASSEMBLY_INDEX_INVALID,
+          "generated entity indexes produced an invalid runtime registry",
+          failure);
     }
   }
 
@@ -59,20 +64,22 @@ final class EntityRuntimeModelLoader {
     try {
       EntityRuntimeModel<?> model = provider.model();
       if (model == null) {
-        throw new SkisConfigurationException(
-            "generated entity provider " + entry.description() + " returned a null runtime model");
+        throw providerFailure(
+            "generated entity provider " + entry.description() + " returned a null runtime model",
+            null);
       }
       return model;
-    } catch (SkisConfigurationException failure) {
+    } catch (SkisException failure) {
       throw failure;
     } catch (RuntimeException failure) {
-      throw new SkisConfigurationException(
+      throw providerFailure(
           "generated entity provider "
               + entry.description()
               + " failed to supply its runtime model",
           failure);
     } catch (LinkageError failure) {
-      throw new SkisConfigurationException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.ASSEMBLY_ABI_INCOMPATIBLE,
           "generated entity provider "
               + entry.description()
               + " is not link-compatible with this runtime",
@@ -82,7 +89,8 @@ final class EntityRuntimeModelLoader {
 
   private static SkisConfigurationException duplicateModel(
       String duplicate, LoadedEntity first, LoadedEntity second) {
-    return new SkisConfigurationException(
+    return SkisConfigurationException.of(
+        SkisErrorCode.ASSEMBLY_MODEL_DUPLICATE,
         "generated entity providers "
             + first.entry().description()
             + " and "
@@ -97,36 +105,43 @@ final class EntityRuntimeModelLoader {
     try {
       Class<?> providerType = Class.forName(providerName, true, classLoader);
       if (!EntityRuntimeModelProvider.class.isAssignableFrom(providerType)) {
-        throw new SkisConfigurationException(
+        throw providerFailure(
             "generated provider "
                 + entry.description()
                 + " does not implement "
-                + EntityRuntimeModelProvider.class.getName());
+                + EntityRuntimeModelProvider.class.getName(),
+            null);
       }
       Object provider = providerType.getConstructor().newInstance();
       return (EntityRuntimeModelProvider) provider;
     } catch (ClassNotFoundException failure) {
-      throw new SkisConfigurationException(
+      throw providerFailure(
           "generated entity provider " + entry.description() + " is missing", failure);
     } catch (NoSuchMethodException failure) {
-      throw new SkisConfigurationException(
+      throw providerFailure(
           "generated entity provider " + entry.description() + " has no public no-arg constructor",
           failure);
     } catch (InstantiationException | IllegalAccessException failure) {
-      throw new SkisConfigurationException(
+      throw providerFailure(
           "cannot instantiate generated entity provider " + entry.description(), failure);
     } catch (InvocationTargetException failure) {
       Throwable cause = failure.getCause() == null ? failure : failure.getCause();
-      throw new SkisConfigurationException(
+      throw providerFailure(
           "generated entity provider " + entry.description() + " failed during initialization",
           cause);
     } catch (LinkageError failure) {
-      throw new SkisConfigurationException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.ASSEMBLY_ABI_INCOMPATIBLE,
           "generated entity provider "
               + entry.description()
               + " is not link-compatible with this runtime",
           failure);
     }
+  }
+
+  private static SkisConfigurationException providerFailure(
+      String detail, @Nullable Throwable cause) {
+    return SkisConfigurationException.of(SkisErrorCode.ASSEMBLY_PROVIDER_INVALID, detail, cause);
   }
 
   private record LoadedEntity(GeneratedIndexReader.Entry entry) {}

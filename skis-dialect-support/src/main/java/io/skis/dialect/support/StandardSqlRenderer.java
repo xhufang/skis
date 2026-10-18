@@ -1,5 +1,6 @@
 package io.skis.dialect.support;
 
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.internal.DialectJoinFeatures;
 import io.skis.dialect.internal.DialectQueryFeatures;
@@ -166,11 +167,16 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderSelect(
       SelectStatement statement, RenderContext context, List<Identifier> outputAliases) {
     if (!outputAliases.isEmpty() && outputAliases.size() != statement.selections().size()) {
-      throw new SqlRenderException(
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+          dialectId,
           "derived SELECT alias count does not match its visible output count");
     }
     if (!statement.groupBy().isEmpty() || statement.having().isPresent()) {
-      throw new SqlRenderException(
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_RESERVED_STRUCTURE,
+          dialectId,
+          "GROUP BY/HAVING",
           "dialect '"
               + dialectId
               + "' cannot render reserved GROUP BY/HAVING structure before that capability "
@@ -282,7 +288,9 @@ public final class StandardSqlRenderer implements SqlRenderer {
     }
     int index = statement.selections().indexOf(item.expression());
     if (index < 0) {
-      throw new SqlRenderException(
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+          dialectId,
           "DISTINCT scalar ORDER BY must reference a selected expression with the same logical "
               + "parameters");
     }
@@ -295,7 +303,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
     if (nullOrder != NullOrder.DIALECT_DEFAULT
         && !capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
       if (selectedIndex > 0) {
-        throw new SqlRenderException(
+        throw SqlRenderException.of(
+            SkisErrorCode.DIALECT_NULLS_ORDERING_UNSUPPORTED,
+            dialectId,
+            "NULLS_FIRST_LAST",
             "dialect '"
                 + dialectId
                 + "' requires native NULLS FIRST/LAST for DISTINCT scalar output ordering");
@@ -693,16 +704,20 @@ public final class StandardSqlRenderer implements SqlRenderer {
       case TIMESTAMP -> "TIMESTAMP";
       case TIMESTAMP_WITH_TIME_ZONE -> "TIMESTAMP WITH TIME ZONE";
       case VARBINARY, OTHER ->
-          throw new SqlRenderException(
-              "dialect '" + dialectId + "' cannot render CAST target " + type);
+          throw SqlRenderException.of(
+              SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+              dialectId,
+              "cannot render CAST target " + type);
     };
   }
 
   private void renderColumn(ColumnExpression<?, ?> column, RenderContext context) {
     TableExpression<?> table = context.resolve(column.table());
     if (table == null) {
-      throw new SqlRenderException(
-          "dialect '" + dialectId + "' cannot render a column outside the FROM scope");
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+          dialectId,
+          "cannot render a column outside the FROM scope");
     }
     if (context.qualifyColumns) {
       String qualifier = table.alias().map(Identifier::value).orElse(table.entity().table().name());
@@ -715,8 +730,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderDerivedColumn(DerivedColumnExpression<?> column, RenderContext context) {
     DerivedRelationReference relation = context.resolve(column.relation());
     if (relation == null) {
-      throw new SqlRenderException(
-          "dialect '" + dialectId + "' cannot render a derived column outside the FROM scope");
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+          dialectId,
+          "cannot render a derived column outside the FROM scope");
     }
     context.sql.append(identifierRules.quote(relation.alias().value()));
     context.sql.append('.');
@@ -725,8 +742,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void renderColumnName(ColumnExpression<?, ?> column, RenderContext context) {
     if (context.resolve(column.table()) == null) {
-      throw new SqlRenderException(
-          "dialect '" + dialectId + "' cannot render a mutation column outside its target table");
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+          dialectId,
+          "cannot render a mutation column outside its target table");
     }
     context.sql.append(identifierRules.quote(column.property().column().name()));
   }
@@ -781,7 +800,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void require(DialectFeature feature, String description) {
     if (!capabilities.supports(feature)) {
-      throw new SqlRenderException(
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+          dialectId,
+          feature.name(),
           "dialect '"
               + dialectId
               + "' does not support "
@@ -794,19 +816,18 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void requireUnaliasedMutationTarget(TableExpression<?> target) {
     if (target.alias().isPresent()) {
-      throw new SqlRenderException(
-          "dialect '" + dialectId + "' does not support aliases on mutation target tables");
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+          dialectId,
+          "does not support aliases on mutation target tables");
     }
   }
 
   private SqlRenderException unsupported(String nodeKind, Object node) {
-    return new SqlRenderException(
-        "dialect '"
-            + dialectId
-            + "' cannot render "
-            + nodeKind
-            + " type "
-            + node.getClass().getName());
+    return SqlRenderException.of(
+        SkisErrorCode.DIALECT_RENDER_FAILURE,
+        dialectId,
+        "cannot render " + nodeKind + " type " + node.getClass().getName());
   }
 
   private static final class RenderContext {

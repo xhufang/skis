@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import io.skis.core.SkisConfigurationException;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -1049,10 +1050,10 @@ class ProjectionPlanCacheTest {
   @Test
   void rejectsInvalidConfigurationAndStatistics() {
     assertThrows(
-        IllegalArgumentException.class,
+        SkisConfigurationException.class,
         () -> new ProjectionPlanCache(-1, Duration.ofMinutes(30), () -> 0L));
     assertThrows(
-        IllegalArgumentException.class,
+        SkisConfigurationException.class,
         () -> new ProjectionPlanCache(0, Duration.ZERO, () -> 0L));
     assertThrows(
         IllegalArgumentException.class,

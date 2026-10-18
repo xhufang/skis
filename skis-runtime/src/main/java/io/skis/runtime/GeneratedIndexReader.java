@@ -1,6 +1,7 @@
 package io.skis.runtime;
 
 import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.GeneratedModelAbi;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
+import org.jspecify.annotations.Nullable;
 
 /** Reads deterministic generated-provider indexes while retaining conflict provenance. */
 final class GeneratedIndexReader {
@@ -45,7 +47,7 @@ final class GeneratedIndexReader {
       resources.sort(Comparator.comparing(URL::toExternalForm));
       return resources;
     } catch (IOException failure) {
-      throw new SkisConfigurationException(
+      throw indexFailure(
           "cannot enumerate generated " + modelKind + " indexes at " + indexPath, failure);
     }
   }
@@ -71,7 +73,7 @@ final class GeneratedIndexReader {
           if (value.startsWith("#")) {
             if (value.startsWith(ABI_PREFIX)) {
               if (abiLine >= 0) {
-                throw new SkisConfigurationException(
+                throw indexFailure(
                     "generated "
                         + modelKind
                         + " index "
@@ -87,7 +89,7 @@ final class GeneratedIndexReader {
             continue;
           }
           if (!isBinaryName(value)) {
-            throw new SkisConfigurationException(
+            throw indexFailure(
                 "invalid generated "
                     + modelKind
                     + " provider name '"
@@ -100,7 +102,7 @@ final class GeneratedIndexReader {
           Entry current = new Entry(value, resource, lineNumber);
           Entry previous = resourceEntries.putIfAbsent(value, current);
           if (previous != null) {
-            throw new SkisConfigurationException(
+            throw indexFailure(
                 "duplicate generated "
                     + modelKind
                     + " provider '"
@@ -115,11 +117,10 @@ final class GeneratedIndexReader {
     } catch (SkisConfigurationException failure) {
       throw failure;
     } catch (IOException failure) {
-      throw new SkisConfigurationException(
-          "cannot read generated " + modelKind + " index " + resource, failure);
+      throw indexFailure("cannot read generated " + modelKind + " index " + resource, failure);
     }
     if (abiLine < 0) {
-      throw new SkisConfigurationException(
+      throw indexFailure(
           "generated "
               + modelKind
               + " index "
@@ -131,7 +132,7 @@ final class GeneratedIndexReader {
     for (Entry current : resourceEntries.values()) {
       Entry previous = entries.putIfAbsent(current.providerName(), current);
       if (previous != null) {
-        throw new SkisConfigurationException(
+        throw indexFailure(
             "duplicate generated "
                 + modelKind
                 + " provider '"
@@ -149,10 +150,11 @@ final class GeneratedIndexReader {
     try {
       GeneratedModelAbi.requireCompatible(Integer.parseInt(abi));
     } catch (NumberFormatException failure) {
-      throw new SkisConfigurationException(
+      throw indexFailure(
           "invalid generated-model ABI '" + abi + "' at " + resource + ":" + lineNumber, failure);
     } catch (IncompatibleClassChangeError failure) {
-      throw new SkisConfigurationException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.ASSEMBLY_ABI_INCOMPATIBLE,
           "incompatible generated-model ABI '"
               + abi
               + "' in generated "
@@ -163,6 +165,15 @@ final class GeneratedIndexReader {
               + lineNumber,
           failure);
     }
+  }
+
+  private static SkisConfigurationException indexFailure(String detail) {
+    return SkisConfigurationException.of(SkisErrorCode.ASSEMBLY_INDEX_INVALID, detail);
+  }
+
+  private static SkisConfigurationException indexFailure(
+      String detail, @Nullable Throwable cause) {
+    return SkisConfigurationException.of(SkisErrorCode.ASSEMBLY_INDEX_INVALID, detail, cause);
   }
 
   private static boolean isBinaryName(String value) {

@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.PropertyMeta;
@@ -148,7 +150,8 @@ final class EntityPlanSet<E> {
   }
 
   private QueryValidationException unsupportedFindById() {
-    return new QueryValidationException(
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_METADATA_REQUIRED,
         "findById requires exactly one primary-key property for entity '"
             + model.entity().entityName()
             + "'");

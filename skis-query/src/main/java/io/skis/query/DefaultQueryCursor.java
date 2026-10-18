@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.JdbcCursor;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -27,9 +29,11 @@ final class DefaultQueryCursor<R extends @Nullable Object> implements QueryCurso
   public R current() {
     requireOwner("current");
     R value = delegate.current();
-    return nullableResult
-        ? value
-        : Objects.requireNonNull(value, "non-null query cursor decoded a null value");
+    if (!nullableResult && value == null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query cursor decoded a null value");
+    }
+    return value;
   }
 
   @Override
@@ -45,7 +49,8 @@ final class DefaultQueryCursor<R extends @Nullable Object> implements QueryCurso
 
   private void requireOwner(String operation) {
     if (Thread.currentThread() != owner) {
-      throw new IllegalStateException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CURSOR_THREAD,
           "query cursor " + operation + " must run on its resource-owning thread");
     }
   }
