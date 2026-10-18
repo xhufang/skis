@@ -674,8 +674,9 @@ class StandardSqlRendererTest {
     SqlRenderException failure =
         assertThrows(SqlRenderException.class, () -> RENDERER.render(unknown));
 
-    assertTrue(failure.getMessage().contains("dialect 'test'"));
-    assertTrue(failure.getMessage().contains(unknown.getClass().getName()));
+    assertEquals(SkisErrorCode.DIALECT_RENDER_FAILURE, failure.code());
+    assertEquals("test", failure.diagnostics().dialect().dialectId());
+    assertTrue(failure.diagnostics().facts().detail().contains(unknown.getClass().getName()));
   }
 
   private static EntityMeta<Pet> metadata(TableMeta table) {
