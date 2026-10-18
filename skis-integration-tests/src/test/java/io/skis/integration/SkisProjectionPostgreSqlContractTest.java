@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import io.skis.core.ExecutionOptions;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
-import io.skis.mutation.MutationException;
+import io.skis.jdbc.JdbcExecutionException;
 import io.skis.mutation.OptimisticLockException;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
@@ -139,8 +139,8 @@ class SkisProjectionPostgreSqlContractTest {
 
     try {
       executor.insert(PetTable.petTable, pet);
-      MutationException failure =
-          assertThrows(MutationException.class, () -> executor.insert(PetTable.petTable, pet));
+      JdbcExecutionException failure =
+          assertThrows(JdbcExecutionException.class, () -> executor.insert(PetTable.petTable, pet));
 
       SQLException sqlFailure = (SQLException) failure.getCause();
       assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());

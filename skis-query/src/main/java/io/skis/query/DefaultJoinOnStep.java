@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.JoinType;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -15,7 +17,8 @@ final class DefaultJoinOnStep<R extends @Nullable Object> implements JoinOnStep<
     this.query = Objects.requireNonNull(query, "query");
     this.type = Objects.requireNonNull(type, "type");
     if (type == JoinType.CROSS) {
-      throw new IllegalArgumentException("CROSS JOIN does not use an ON stage");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_JOIN_CONTRACT, "CROSS JOIN does not use an ON stage");
     }
     this.right = Objects.requireNonNull(right, "right");
   }

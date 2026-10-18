@@ -9,7 +9,7 @@ import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.dialect.h2.H2Dialect;
-import io.skis.mutation.MutationException;
+import io.skis.jdbc.JdbcExecutionException;
 import io.skis.mutation.OptimisticLockException;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
@@ -229,8 +229,8 @@ class SkisMutationTransactionTest {
     Pet pet = new Pet(31L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
     executor.insert(PetTable.petTable, pet);
 
-    MutationException failure =
-        assertThrows(MutationException.class, () -> executor.insert(PetTable.petTable, pet));
+    JdbcExecutionException failure =
+        assertThrows(JdbcExecutionException.class, () -> executor.insert(PetTable.petTable, pet));
 
     SQLException sqlFailure = (SQLException) failure.getCause();
     assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());

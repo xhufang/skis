@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
@@ -105,9 +107,10 @@ class QueryPaginationCompilationTest {
                         List.of(),
                         QueryTestSupport.arguments(structure)));
 
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, failure.code());
     assertEquals(
         "final statement requires 3 logical parameter values but received 1",
-        failure.getMessage());
+        failure.diagnostics().facts().detail());
 
     QueryArguments wrongSegments =
         QueryParameters.empty()
@@ -127,9 +130,10 @@ class QueryPaginationCompilationTest {
                         pagination,
                         List.of(),
                         wrongSegments));
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, segmentFailure.code());
     assertEquals(
         "final statement ordinary parameter value count must be 1 but was 0",
-        segmentFailure.getMessage());
+        segmentFailure.diagnostics().facts().detail());
   }
 
   @Test
@@ -160,11 +164,12 @@ class QueryPaginationCompilationTest {
                         List.of(),
                         wrongShape));
 
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, failure.code());
     assertEquals(
         "final statement pagination shape must be "
             + "QueryPaginationShape[mode=KEYSET, keysetNullMarkers=[true, false]] but was "
             + "QueryPaginationShape[mode=KEYSET, keysetNullMarkers=[false, true]]",
-        failure.getMessage());
+        failure.diagnostics().facts().detail());
   }
 
   @Test

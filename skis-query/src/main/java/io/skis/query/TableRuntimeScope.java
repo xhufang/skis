@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.PropertyRuntime;
@@ -40,7 +42,8 @@ final class TableRuntimeScope {
       if (sourceTable != null) {
         QueryTable<?> table = QueryTable.ownerOf(sourceTable);
         if (table == null) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_EXPRESSION_IDENTITY,
               "table occurrence #"
                   + occurrence.occurrenceOrdinal()
                   + " is not backed by a query table");
@@ -54,7 +57,8 @@ final class TableRuntimeScope {
         derived.put(reference, occurrence.occurrenceOrdinal());
         continue;
       }
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_EXPRESSION_IDENTITY,
           "relation occurrence #"
               + occurrence.occurrenceOrdinal()
               + " has no supported runtime source kind");
@@ -99,7 +103,8 @@ final class TableRuntimeScope {
     Objects.requireNonNull(table, "table");
     Occurrence<?> occurrence = occurrencesByTable.get(table.tableExpression());
     if (occurrence == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
           "table entity '"
               + table.entity().entityName()
               + "'"
@@ -115,7 +120,8 @@ final class TableRuntimeScope {
     try {
       return occurrence.model().property(column.property());
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_EXPRESSION_IDENTITY,
           "property '" + column.property().name() + "' does not match " + occurrence.description(),
           failure);
     }
@@ -131,7 +137,8 @@ final class TableRuntimeScope {
     Objects.requireNonNull(relation, "relation");
     Integer ordinal = ordinalsByDerivedRelation.get(relation.reference());
     if (ordinal == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
           "derived relation alias '"
               + relation.alias()
               + "' is not visible in the final query scope");
@@ -155,7 +162,8 @@ final class TableRuntimeScope {
     try {
       return new Occurrence<>(ordinal, table, registry.require(table.entity()));
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_METADATA_REQUIRED,
           "cannot resolve runtime model for table occurrence #"
               + ordinal
               + " entity '"

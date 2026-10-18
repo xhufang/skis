@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.Nullability;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,10 +24,13 @@ public final class QueryParameter<V> {
     this.javaType = boxed(Objects.requireNonNull(javaType, "javaType"));
     this.nullability = Objects.requireNonNull(nullability, "nullability");
     if (this.javaType == Void.class) {
-      throw new IllegalArgumentException("query parameter Java type must not be void");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH, "query parameter Java type must not be void");
     }
     if (diagnosticName != null && diagnosticName.isBlank()) {
-      throw new IllegalArgumentException("query parameter diagnostic name must not be blank");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_VALUE,
+          "query parameter diagnostic name must not be blank");
     }
     this.diagnosticName = diagnosticName;
   }
@@ -71,7 +76,8 @@ public final class QueryParameter<V> {
           case "double" -> Double.class;
           case "char" -> Character.class;
           default ->
-              throw new IllegalArgumentException(
+              throw QueryValidationException.of(
+                  SkisErrorCode.QUERY_TYPE_MISMATCH,
                   "unsupported primitive query parameter Java type " + javaType.getTypeName());
         };
     return (Class<V>) boxedType;

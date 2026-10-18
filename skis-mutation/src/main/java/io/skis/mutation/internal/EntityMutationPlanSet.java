@@ -1,11 +1,13 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
-import io.skis.mutation.MutationException;
+import io.skis.core.MutationException;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -27,14 +29,24 @@ final class EntityMutationPlanSet<E> {
       @Nullable CompiledMutationPlan<E> uncheckedUpdate,
       CompiledMutationPlan<Object> delete) {
     this.model = Objects.requireNonNull(model, "model");
-    this.binders = model.mutationBinders().orElseThrow();
+    this.binders =
+        model
+            .mutationBinders()
+            .orElseThrow(
+                () ->
+                    SkisConfigurationException.of(
+                        SkisErrorCode.MUTATION_BINDERS_MISSING,
+                        "entity '"
+                            + model.entity().entityName()
+                            + "' has no generated mutation binders"));
     this.insert = insert;
     this.checkedUpdate = checkedUpdate;
     this.uncheckedUpdate = uncheckedUpdate;
     this.delete = Objects.requireNonNull(delete, "delete");
     boolean versioned = model.entity().version().isPresent();
     if (versioned == (binders.versionReader() == null)) {
-      throw new MutationException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.MUTATION_BINDERS_MISSING,
           "generated version reader does not match metadata for entity '"
               + model.entity().entityName()
               + "'");
@@ -47,7 +59,8 @@ final class EntityMutationPlanSet<E> {
 
   CompiledMutationPlan<E> insert() {
     if (insert == null) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_NO_INSERTABLE_PROPERTIES,
           "entity '" + entity().entityName() + "' has no insertable properties");
     }
     return insert;
@@ -61,7 +74,8 @@ final class EntityMutationPlanSet<E> {
     Object expectedVersion = readExpectedVersion(value);
     CompiledMutationPlan<E> selected = expectedVersion == null ? uncheckedUpdate : checkedUpdate;
     if (selected == null) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_NO_UPDATABLE_PROPERTIES,
           "entity '" + entity().entityName() + "' has no updatable properties");
     }
     return new UpdateExecution<>(selected, expectedVersion != null);
@@ -75,15 +89,18 @@ final class EntityMutationPlanSet<E> {
     try {
       expected = binders.versionReader().read(value);
     } catch (SQLException failure) {
-      throw new MutationException(
-          "cannot read optimistic version for entity '" + entity().entityName() + "'", failure);
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_VERSION_READ_FAILED,
+          "cannot read optimistic version for entity '" + entity().entityName() + "'",
+          failure);
     }
     if (expected == null) {
       return null;
     }
     PropertyMeta<E, ?> version = entity().version().orElseThrow().property();
     if (!version.javaType().isInstance(expected)) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_VERSION_TYPE_MISMATCH,
           "optimistic version for entity '"
               + entity().entityName()
               + "' requires "

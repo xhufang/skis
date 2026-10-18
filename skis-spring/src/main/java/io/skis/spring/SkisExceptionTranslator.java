@@ -1,14 +1,13 @@
 package io.skis.spring;
 
+import io.skis.core.MutationException;
+import io.skis.core.NonUniqueResultException;
+import io.skis.core.SkisDiagnostics;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.SkisException;
-import io.skis.dialect.spi.Dialect;
-import io.skis.dialect.spi.ExceptionClassifier;
-import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.jdbc.SkisPersistenceException;
-import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;
 import java.io.Serial;
-import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 import org.springframework.dao.CannotAcquireLockException;
@@ -17,6 +16,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.UncategorizedDataAccessException;
@@ -24,25 +24,16 @@ import org.springframework.dao.support.PersistenceExceptionTranslator;
 
 /**
  * Bridges SKIS persistence failures into Spring's portable {@code DataAccessException} hierarchy.
+ *
+ * <p>The JDBC boundary classifies a driver failure exactly once. This translator consumes the
+ * resulting {@link SkisErrorCode} and never parses a message, inspects a driver code, or invokes a
+ * dialect classifier again. Configuration, query-semantic, and dialect failures return {@code null}
+ * so another translator or the caller retains the original SKIS exception.
  */
 public final class SkisExceptionTranslator implements PersistenceExceptionTranslator {
 
-  private final ExceptionClassifier exceptionClassifier;
-
-  /** Creates a translator that retains failures but uses no vendor-specific classification. */
-  public SkisExceptionTranslator() {
-    this(ExceptionClassifier.NONE);
-  }
-
-  /** Creates a translator using the selected dialect's JDBC error contract. */
-  public SkisExceptionTranslator(Dialect dialect) {
-    this(Objects.requireNonNull(dialect, "dialect").exceptionClassifier());
-  }
-
-  /** Creates a translator with an explicit thread-safe classifier. */
-  public SkisExceptionTranslator(ExceptionClassifier exceptionClassifier) {
-    this.exceptionClassifier = Objects.requireNonNull(exceptionClassifier, "exceptionClassifier");
-  }
+  /** Creates a translator that consumes the classification already attached to each SKIS failure. */
+  public SkisExceptionTranslator() {}
 
   /**
    * Translates only SKIS failures; unrelated runtime exceptions return {@code null} for delegation
@@ -51,63 +42,55 @@ public final class SkisExceptionTranslator implements PersistenceExceptionTransl
   @Override
   public @Nullable DataAccessException translateExceptionIfPossible(RuntimeException exception) {
     Objects.requireNonNull(exception, "exception");
-    if (!(exception instanceof SkisException)) {
+    if (!(exception instanceof SkisException skisFailure)) {
       return null;
     }
-    if (exception instanceof OptimisticLockException) {
-      return new OptimisticLockingFailureException(safeMessage(exception), exception);
+    switch (exception) {
+      case OptimisticLockException ignored -> {
+        return new OptimisticLockingFailureException(safeMessage(exception), exception);
+      }
+      case NonUniqueResultException nonUnique -> {
+        return new IncorrectResultSizeDataAccessException(
+            safeMessage(exception), 1, observedRows(nonUnique), exception);
+      }
+      case SkisPersistenceException ignored -> {
+        return translatePersistence(skisFailure);
+      }
+      case MutationException ignored -> {
+        return null;
+      }
+      default -> {
+      }
     }
+    return null;
+  }
 
-    SQLException sqlException = findSqlException(exception);
-    if (sqlException == null) {
-      return null;
-    }
-    SqlExceptionCategory category = category(exception, sqlException);
-    String message = safeMessage(exception);
-    return switch (category) {
-      case DUPLICATE_KEY -> new DuplicateKeyException(message, exception);
-      case FOREIGN_KEY_VIOLATION, CONSTRAINT_VIOLATION ->
-          new DataIntegrityViolationException(message, exception);
-      case TIMEOUT -> new QueryTimeoutException(message, exception);
-      case QUERY_CANCELED -> uncategorized(message, exception);
-      case LOCK_NOT_AVAILABLE -> new CannotAcquireLockException(message, exception);
-      case CONNECTION_FAILURE -> new DataAccessResourceFailureException(message, exception);
-      case DEADLOCK, SERIALIZATION_FAILURE -> new ConcurrencyFailureException(message, exception);
-      case UNCATEGORIZED -> uncategorized(message, exception);
+  private static @Nullable DataAccessException translatePersistence(SkisException failure) {
+    String message = safeMessage(failure);
+    return switch (failure.code()) {
+      case DB_DUPLICATE_KEY -> new DuplicateKeyException(message, failure);
+      case DB_FOREIGN_KEY_VIOLATION, DB_CONSTRAINT_VIOLATION ->
+          new DataIntegrityViolationException(message, failure);
+      case DB_TIMEOUT -> new QueryTimeoutException(message, failure);
+      case DB_QUERY_CANCELED, DB_UNCATEGORIZED, JDBC_STATEMENT_CONFIGURE_FAILED,
+           JDBC_RESULT_SET_CLOSE_FAILED, JDBC_STATEMENT_CLOSE_FAILED -> uncategorized(message, failure);
+      case DB_LOCK_NOT_AVAILABLE -> new CannotAcquireLockException(message, failure);
+      case DB_CONNECTION_FAILURE, JDBC_CONNECTION_ACQUIRE_FAILED, JDBC_CONNECTION_RELEASE_FAILED ->
+          new DataAccessResourceFailureException(message, failure);
+      case DB_DEADLOCK, DB_SERIALIZATION_FAILURE -> new ConcurrencyFailureException(message, failure);
+      // A compiled parameter-layout failure is a framework contract violation, not a data-access
+      // failure. Leave it for the caller instead of mislabeling it as a database problem.
+      case JDBC_PARAMETER_BINDING_FAILED -> null;
+      default -> null;
     };
   }
 
-  private SqlExceptionCategory category(RuntimeException exception, SQLException sqlException) {
-    if (exception instanceof SkisPersistenceException persistenceException
-        && persistenceException.category() != SqlExceptionCategory.UNCATEGORIZED) {
-      return persistenceException.category();
+  private static int observedRows(NonUniqueResultException failure) {
+    SkisDiagnostics.Facts facts = failure.diagnostics().facts();
+    if (facts != null && facts.observedCount() != null) {
+      return Math.max(NonUniqueResultException.OBSERVED_ROW_LOWER_BOUND, facts.observedCount());
     }
-    if (exception instanceof MutationException mutationException
-        && mutationException.category() != SqlExceptionCategory.UNCATEGORIZED) {
-      return mutationException.category();
-    }
-    try {
-      SqlExceptionCategory category = exceptionClassifier.classify(sqlException);
-      return Objects.requireNonNull(category, "exception classifier result");
-    } catch (RuntimeException | Error classifierFailure) {
-      sqlException.addSuppressed(classifierFailure);
-      return SqlExceptionCategory.UNCATEGORIZED;
-    }
-  }
-
-  private static @Nullable SQLException findSqlException(Throwable failure) {
-    Throwable current = failure;
-    while (current != null) {
-      if (current instanceof SQLException sqlException) {
-        return sqlException;
-      }
-      Throwable cause = current.getCause();
-      if (cause == current) {
-        return null;
-      }
-      current = cause;
-    }
-    return null;
+    return NonUniqueResultException.OBSERVED_ROW_LOWER_BOUND;
   }
 
   private static String safeMessage(RuntimeException exception) {

@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -70,11 +72,12 @@ class EntityMetaTest {
   void rejectsWritableEntityWithoutPrimaryKey() {
     PropertyMeta<Pet, String> name = property(0, "name", String.class, "pet_name", false);
 
-    IllegalArgumentException exception =
+    SkisConfigurationException exception =
         assertThrows(
-            IllegalArgumentException.class,
+            SkisConfigurationException.class,
             () -> EntityMeta.simple(Pet.class, TableMeta.of("pet"), List.of(name), null, false));
 
+    assertEquals(SkisErrorCode.METADATA_PRIMARY_KEY_REQUIRED, exception.code());
     assertTrue(exception.getMessage().contains("requires a primary key"));
   }
 
@@ -84,11 +87,13 @@ class EntityMetaTest {
     PropertyMeta<Pet, Long> differentId = property(0, "id", Long.class, "pet_id", false);
     PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(differentId));
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class, TableMeta.of("pet"), List.of(entityId), primaryKey, false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class, TableMeta.of("pet"), List.of(entityId), primaryKey, false));
+    assertEquals(SkisErrorCode.METADATA_INVALID, failure.code());
   }
 
   @Test
@@ -98,11 +103,13 @@ class EntityMetaTest {
     PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(copiedId));
 
     assertEquals(entityId, copiedId);
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class, TableMeta.of("pet"), List.of(entityId), primaryKey, false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class, TableMeta.of("pet"), List.of(entityId), primaryKey, false));
+    assertEquals(SkisErrorCode.METADATA_INVALID, failure.code());
   }
 
   @Test
@@ -118,11 +125,13 @@ class EntityMetaTest {
     PropertyMeta<Pet, String> duplicate = property(1, "externalId", String.class, "id", false);
     PrimaryKeyMeta<Pet> primaryKey = new PrimaryKeyMeta<>(List.of(id));
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class, TableMeta.of("pet"), List.of(id, duplicate), primaryKey, false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class, TableMeta.of("pet"), List.of(id, duplicate), primaryKey, false));
+    assertEquals(SkisErrorCode.METADATA_INVALID, failure.code());
   }
 
   @Test
@@ -216,16 +225,18 @@ class EntityMetaTest {
     VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(differentVersion, VersionStrategy.NUMERIC_INCREMENT);
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class,
-                TableMeta.of("pet"),
-                List.of(id, entityVersion),
-                primaryKey,
-                versionMeta,
-                false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class,
+                    TableMeta.of("pet"),
+                    List.of(id, entityVersion),
+                    primaryKey,
+                    versionMeta,
+                    false));
+    assertEquals(SkisErrorCode.METADATA_VERSION_INVALID, failure.code());
   }
 
   @Test
@@ -238,16 +249,18 @@ class EntityMetaTest {
         new VersionMeta<>(copiedVersion, VersionStrategy.NUMERIC_INCREMENT);
 
     assertEquals(entityVersion, copiedVersion);
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class,
-                TableMeta.of("pet"),
-                List.of(id, entityVersion),
-                primaryKey,
-                versionMeta,
-                false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class,
+                    TableMeta.of("pet"),
+                    List.of(id, entityVersion),
+                    primaryKey,
+                    versionMeta,
+                    false));
+    assertEquals(SkisErrorCode.METADATA_VERSION_INVALID, failure.code());
   }
 
   @Test
@@ -256,16 +269,18 @@ class EntityMetaTest {
     VersionMeta<PetView, Long> versionMeta =
         new VersionMeta<>(version, VersionStrategy.NUMERIC_INCREMENT);
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                PetView.class,
-                TableMeta.of("pet_view"),
-                List.of(version),
-                null,
-                versionMeta,
-                true));
+    SkisConfigurationException readOnlyFailure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    PetView.class,
+                    TableMeta.of("pet_view"),
+                    List.of(version),
+                    null,
+                    versionMeta,
+                    true));
+    assertEquals(SkisErrorCode.METADATA_VERSION_INVALID, readOnlyFailure.code());
   }
 
   @Test
@@ -275,11 +290,14 @@ class EntityMetaTest {
     VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(version, VersionStrategy.NUMERIC_INCREMENT);
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class, TableMeta.of("pet"), List.of(version), primaryKey, versionMeta, false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class, TableMeta.of("pet"), List.of(version), primaryKey, versionMeta,
+                    false));
+    assertEquals(SkisErrorCode.METADATA_VERSION_INVALID, failure.code());
   }
 
   private static <E, V> PropertyMeta<E, V> property(

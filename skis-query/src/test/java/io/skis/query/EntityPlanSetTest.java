@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.core.spi.ExecutionContext;
 import io.skis.core.ExecutionOptions;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -133,7 +135,8 @@ class EntityPlanSetTest {
             QueryValidationException.class,
             () -> compiler.compileQuery(runtimeModel, TABLE, structure));
 
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
     assertEquals(List.of(), laterPhases);
   }
 

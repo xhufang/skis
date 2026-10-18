@@ -3,6 +3,7 @@ package io.skis.dialect.support;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -150,9 +151,9 @@ class JoinSqlRendererTest {
             SqlRenderException.class,
             () -> innerOnly.render(new SelectStatement(List.of(root.id()), from)));
 
-    assertEquals(
-        "dialect 'limited' does not support FULL JOIN at SELECT FROM join #2 (missing FULL_JOIN)",
-        failure.getMessage());
+    assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, failure.code());
+    assertEquals("limited", failure.diagnostics().dialect().dialectId());
+    assertEquals("FULL_JOIN", failure.diagnostics().dialect().missingCapability());
   }
 
   private static SqlPredicate on(

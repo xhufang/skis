@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.testmodel.types.JdbcTypes;
@@ -13,7 +15,6 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -190,22 +191,37 @@ final class JdbcTypeContractSupport {
                     + "CAST(1.5 AS DECIMAL(2, 1)), CAST('SKIS' AS VARCHAR(4))")) {
       assertTrue(resultSet.next());
 
-      SQLException primitiveNull =
+      QueryValidationException primitiveNull =
           assertThrows(
-              SQLException.class, () -> JdbcCodecs.readLong(resultSet, 1, JdbcReadContext.EMPTY));
-      assertEquals("non-nullable column at JDBC index 1 returned NULL", primitiveNull.getMessage());
+              QueryValidationException.class,
+              () -> JdbcCodecs.readLong(resultSet, 1, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, primitiveNull.code());
+      QueryValidationException byteFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readByte(resultSet, 2, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, byteFailure.code());
+      QueryValidationException shortFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readShort(resultSet, 3, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, shortFailure.code());
+      QueryValidationException intFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readInt(resultSet, 4, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, intFailure.code());
+      QueryValidationException longFailure =
+          assertThrows(
+              QueryValidationException.class,
+              () -> JdbcCodecs.readLong(resultSet, 5, JdbcReadContext.EMPTY));
+      assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, longFailure.code());
       assertThrows(
-          SQLException.class, () -> JdbcCodecs.readByte(resultSet, 2, JdbcReadContext.EMPTY));
+          QueryValidationException.class,
+          () -> JdbcCodecs.readBigInteger(resultSet, 6, JdbcReadContext.EMPTY));
       assertThrows(
-          SQLException.class, () -> JdbcCodecs.readShort(resultSet, 3, JdbcReadContext.EMPTY));
-      assertThrows(
-          SQLException.class, () -> JdbcCodecs.readInt(resultSet, 4, JdbcReadContext.EMPTY));
-      assertThrows(
-          SQLException.class, () -> JdbcCodecs.readLong(resultSet, 5, JdbcReadContext.EMPTY));
-      assertThrows(
-          SQLException.class, () -> JdbcCodecs.readBigInteger(resultSet, 6, JdbcReadContext.EMPTY));
-      assertThrows(
-          SQLException.class, () -> JdbcCodecs.readChar(resultSet, 7, JdbcReadContext.EMPTY));
+          QueryValidationException.class,
+          () -> JdbcCodecs.readChar(resultSet, 7, JdbcReadContext.EMPTY));
     }
   }
 }

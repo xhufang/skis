@@ -1,5 +1,7 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.jdbc.internal.CompiledMutationPlan;
@@ -9,7 +11,7 @@ import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PropertyMeta;
-import io.skis.mutation.MutationException;
+import io.skis.core.MutationException;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DeleteStatement;
@@ -39,7 +41,8 @@ final class MutationPlanCompiler {
     Objects.requireNonNull(model, "model");
     EntityMeta<E> entity = model.entity();
     if (entity.readOnly()) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_ENTITY_READ_ONLY,
           "read-only entity '" + entity.entityName() + "' cannot compile mutation plans");
     }
     EntityMutationBinders<E> binders =
@@ -47,7 +50,8 @@ final class MutationPlanCompiler {
             .mutationBinders()
             .orElseThrow(
                 () ->
-                    new MutationException(
+                    SkisConfigurationException.of(
+                        SkisErrorCode.MUTATION_BINDERS_MISSING,
                         "entity '"
                             + entity.entityName()
                             + "' has no generated mutation binders; regenerate it with ABI "
@@ -193,11 +197,13 @@ final class MutationPlanCompiler {
             .primaryKey()
             .orElseThrow(
                 () ->
-                    new MutationException(
+                    MutationException.of(
+                        SkisErrorCode.MUTATION_PRIMARY_KEY_REQUIRED,
                         "entity '" + entity.entityName() + "' has no primary key"))
             .properties();
     if (keys.size() != 1) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_FAST_PATH_PRIMARY_KEY,
           "mutation Fast Paths require exactly one primary-key property for entity '"
               + entity.entityName()
               + "'");
@@ -211,7 +217,8 @@ final class MutationPlanCompiler {
       RenderedSql rendered,
       List<ParameterSlot<?>> expected) {
     if (!rendered.parameters().equals(expected)) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_PARAMETER_SHAPE,
           "dialect rendered an unexpected "
               + operation
               + " parameter shape for entity '"

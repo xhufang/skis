@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.JoinType;
@@ -129,7 +131,8 @@ final class SelectQueryState<R extends @Nullable Object> {
     List<SelectableSupport.ExpressionIdentity> expressions = selected().expressionIdentities();
     for (SortSpecification item : orderBy) {
       if (!expressions.contains(SelectableSupport.expressionIdentity(item.selectable()))) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_ORDER_BY_NOT_SELECTED,
             "distinct ORDER BY expression '"
                 + SelectableSupport.summary(item.selectable())
                 + "' is not part of the selected result");
@@ -140,7 +143,8 @@ final class SelectQueryState<R extends @Nullable Object> {
   SelectQueryState<R> where(QueryCondition predicate) {
     Objects.requireNonNull(predicate, "predicate");
     if (where != null) {
-      throw new QueryValidationException("where(...) may only be called once per query");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_WHERE_CONTRACT, "where(...) may only be called once per query");
     }
     return copy(joins, predicate, groupBy, having, orderBy, distinct);
   }
@@ -148,7 +152,8 @@ final class SelectQueryState<R extends @Nullable Object> {
   SelectQueryState<R> chainWhere(QueryCondition predicate, boolean conjunction) {
     Objects.requireNonNull(predicate, "predicate");
     if (where == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_WHERE_CONTRACT,
           (conjunction ? "and" : "or") + "(...) requires an existing where predicate");
     }
     return copy(
@@ -180,7 +185,8 @@ final class SelectQueryState<R extends @Nullable Object> {
     Objects.requireNonNull(direction, "direction");
     QueryTable<?> entityRoot = entityRootOrNull();
     if (entityRoot == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_METADATA_REQUIRED,
           "thenByPrimaryKey requires an entity-table root; this query root is derived");
     }
     return thenByPrimaryKey(entityRoot, direction);
@@ -194,7 +200,8 @@ final class SelectQueryState<R extends @Nullable Object> {
             .primaryKey()
             .orElseThrow(
                 () ->
-                    new QueryValidationException(
+                    QueryValidationException.of(
+                        SkisErrorCode.QUERY_METADATA_REQUIRED,
                         "thenByPrimaryKey requires primary-key metadata for entity '"
                             + entityRoot.entity().entityName()
                             + "'"));
@@ -282,13 +289,16 @@ final class SelectQueryState<R extends @Nullable Object> {
 
   private static void validateOrderItems(List<SortSpecification> items) {
     if (items.isEmpty()) {
-      throw new QueryValidationException("orderBy requires at least one ordering item");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_ORDER_BY_CONTRACT,
+          "orderBy requires at least one ordering item");
     }
     Set<SelectableSupport.ExpressionIdentity> expressions = new HashSet<>();
     for (SortSpecification item : items) {
       Objects.requireNonNull(item, "ordering item");
       if (!expressions.add(SelectableSupport.expressionIdentity(item.selectable()))) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_ORDER_BY_CONTRACT,
             "ORDER BY repeats expression '" + SelectableSupport.summary(item.selectable()) + "'");
       }
     }

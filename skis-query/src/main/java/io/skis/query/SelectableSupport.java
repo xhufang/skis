@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.SqlExpression;
@@ -126,7 +128,8 @@ final class SelectableSupport {
     Class<?> leftJavaType = boxedJavaType(source.javaType());
     Class<?> outputJavaType = boxedJavaType(child.valueExpression().javaType());
     if (!leftJavaType.equals(outputJavaType)) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
           "expression '"
               + summary(source)
               + "' has Java type "
@@ -135,7 +138,8 @@ final class SelectableSupport {
               + outputJavaType.getTypeName());
     }
     if (!source.sqlType().equalityCompatibleWith(child.valueExpression().sqlType())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
           (negated ? "notIn" : "in")
               + " subquery does not support SQL types "
               + source.sqlType()
@@ -224,7 +228,8 @@ final class SelectableSupport {
       Selectable<?> left, ComparisonOperator operator, Selectable<?> right) {
     requireComparison(left, operator);
     if (!left.javaType().equals(right.javaType())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
           "expression '"
               + summary(left)
               + "' has Java type "
@@ -239,8 +244,13 @@ final class SelectableSupport {
             ? left.sqlType().orderingCompatibleWith(right.sqlType())
             : left.sqlType().equalityCompatibleWith(right.sqlType());
     if (!compatible) {
-      throw new QueryValidationException(
-          operator + " does not support SQL types " + left.sqlType() + " and " + right.sqlType());
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
+          operator
+              + " does not support SQL types "
+              + left.sqlType()
+              + " and "
+              + right.sqlType());
     }
   }
 
@@ -259,14 +269,16 @@ final class SelectableSupport {
   private static <V> V requireValue(
       Selectable<V> selectable, String operation, @Nullable Object value) {
     if (value == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
           operation
               + "(null) is not supported for expression '"
               + summary(selectable)
               + "'; use isNull()/isNotNull() for SQL null tests");
     }
     if (!selectable.javaType().isInstance(value)) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
           "expression '"
               + summary(selectable)
               + "' requires "
@@ -281,7 +293,8 @@ final class SelectableSupport {
       Selectable<V> selectable, QueryParameter<V> parameter) {
     Objects.requireNonNull(parameter, "parameter");
     if (!selectable.javaType().equals(parameter.javaType())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_VALUE,
           "expression '"
               + summary(selectable)
               + "' requires query parameter type "
@@ -292,7 +305,8 @@ final class SelectableSupport {
   }
 
   private static QueryValidationException unsupported(Selectable<?> selectable, String operation) {
-    return new QueryValidationException(
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_TYPE_MISMATCH,
         operation
             + " is not supported for expression '"
             + summary(selectable)
@@ -314,7 +328,10 @@ final class SelectableSupport {
       case "float" -> Float.class;
       case "double" -> Double.class;
       case "char" -> Character.class;
-      default -> throw new QueryValidationException("IN subquery Java type must not be void");
+      default ->
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE,
+              "IN subquery Java type must not be void");
     };
   }
 }

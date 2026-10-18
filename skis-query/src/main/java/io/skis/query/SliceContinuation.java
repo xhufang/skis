@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.sql.ast.SqlType;
 import java.lang.reflect.Array;
@@ -51,14 +53,16 @@ public final class SliceContinuation {
     this.generatedAbi = GeneratedModelAbi.CURRENT;
     if (this.sqlTypes.size() != this.nullMarkers.size()
         || this.sqlTypes.size() != this.keysetValues.size()) {
-      throw new IllegalArgumentException("continuation keyset shapes differ");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID, "continuation keyset shapes differ");
     }
   }
 
   static SliceContinuation offset(
       String queryFingerprint, String orderSignature, long nextOffset, String parameterDigest) {
     if (nextOffset < 0) {
-      throw new IllegalArgumentException("nextOffset must not be negative");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID, "nextOffset must not be negative");
     }
     return new SliceContinuation(
         Mode.OFFSET,
@@ -172,7 +176,8 @@ public final class SliceContinuation {
   private static String requireText(String value, String name) {
     Objects.requireNonNull(value, name);
     if (value.isBlank()) {
-      throw new IllegalArgumentException(name + " must not be blank");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID, name + " must not be blank");
     }
     return value;
   }

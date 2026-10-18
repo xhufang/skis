@@ -1,6 +1,8 @@
 package io.skis.query;
 
 import io.skis.core.ExecutionOptions;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcPageResult;
@@ -406,18 +408,21 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
 
   private QueryCompilation<Long> requireExplicitCount(CountQuery explicitCountQuery) {
     if (!(explicitCountQuery instanceof DefaultCountQuery countQuery)) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COUNT_CONTRACT,
           "explicit count must be a built-in SKIS CountQuery created with countQuery()");
     }
     if (countQuery.operations() != operations) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COUNT_CONTRACT,
           "explicit count must use the same execution and data-source scope as the content query");
     }
     if (!countQuery
         .executionContext()
         .executionOptions()
         .equals(executionContext.executionOptions())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COUNT_CONTRACT,
           "explicit count must use the same execution options as the content query");
     }
     return countQuery.compilation();
@@ -488,7 +493,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
 
   private void validatePaginationOrder(boolean keyset) {
     if (state.orderBy().isEmpty()) {
-      throw new QueryValidationException("pagination requires explicit stable ORDER BY");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_ORDER_REQUIRED,
+          "pagination requires explicit stable ORDER BY");
     }
     CompiledQueryStructure structure = analysis().structure();
     validateOrderScope(structure.fromClause());
@@ -506,7 +513,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 .map(SelectableSupport.ExpressionIdentity::expression)
                 .findFirst()
                 .orElseThrow();
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
             "distinct pagination ORDER BY must cover every selected expression; missing '"
                 + expressionSummary(missing)
                 + "'");
@@ -519,7 +527,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
         if (structure.fromClause().effectiveNullability(column.expression()).isNullable()
             && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
               "effectively nullable keyset ordering property '"
                   + column.property().name()
                   + "' must declare nullsFirst() or nullsLast()");
@@ -549,14 +558,16 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       SqlExpression<?> expression = item.expression();
       if (expression instanceof ColumnExpression<?, ?> column
           && fromClause.occurrenceOf(column.table()).isEmpty()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
             "ORDER BY expression '"
                 + expressionSummary(expression)
                 + "' is not visible in the final FROM/JOIN scope");
       }
       if (expression instanceof DerivedColumnExpression<?> column
           && fromClause.occurrenceOf(column.relation()).isEmpty()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
             "ORDER BY expression '"
                 + expressionSummary(expression)
                 + "' is not visible in the final FROM/JOIN scope");
@@ -573,7 +584,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
               .primaryKey()
               .orElseThrow(
                   () ->
-                      new QueryValidationException(
+                      QueryValidationException.of(
+                          SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
                           "pagination ORDER BY requires primary-key metadata for "
                               + occurrenceDescription(occurrence)));
       for (PropertyMeta<?, ?> property : primaryKey.properties()) {
@@ -587,7 +599,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                           && column.property() == property;
                     });
         if (!present) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
               "pagination ORDER BY is not stable for "
                   + occurrenceDescription(occurrence)
                   + "; missing primary-key property '"
@@ -601,21 +614,28 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   private void validateContinuation(
       SliceContinuation continuation, List<@Nullable Object> keysetValues) {
     if (continuation.formatVersion() != SliceContinuation.FORMAT_VERSION) {
-      throw new QueryValidationException("unsupported continuation format version");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID,
+          "unsupported continuation format version");
     }
     if (continuation.generatedAbi() != GeneratedModelAbi.CURRENT) {
-      throw new QueryValidationException("continuation generated-model ABI is incompatible");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID,
+          "continuation generated-model ABI is incompatible");
     }
     if (!continuation.queryFingerprint().equals(queryFingerprint())
         || !continuation.orderSignature().equals(orderSignature())
         || !continuation.parameterDigest().equals(parameterDigest())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_CONTINUATION_INVALID,
           "continuation does not belong to this query structure, ordering, or parameter set");
     }
     if (continuation.mode() == SliceContinuation.Mode.KEYSET) {
       if (keysetValues.size() != state.orderBy().size()
           || continuation.sqlTypes().size() != state.orderBy().size()) {
-        throw new QueryValidationException("continuation ordering value count does not match");
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_CONTINUATION_VALUE,
+            "continuation ordering value count does not match");
       }
       for (int index = 0; index < state.orderBy().size(); index++) {
         SortSpecification sort = state.orderBy().get(index);
@@ -623,7 +643,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         if (continuation.sqlTypes().get(index) != sort.selectable().sqlType()
             || continuation.nullMarkers().get(index) != (value == null)
             || (value != null && !sort.selectable().javaType().isInstance(value))) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_CONTINUATION_VALUE,
               "continuation value type does not match ordering expression '"
                   + SelectableSupport.summary(sort.selectable())
                   + "'");
@@ -678,7 +699,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
               .occurrenceOf(column.table().tableExpression())
               .orElseThrow(
                   () ->
-                      new QueryValidationException(
+                      QueryValidationException.of(
+                          SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
                           "ORDER BY expression '"
                               + expressionSummary(item.expression())
                               + "' is not visible in the final FROM/JOIN scope"));
@@ -720,7 +742,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         .entityTable()
         .orElseThrow(
             () ->
-                new QueryValidationException(
+                QueryValidationException.of(
+                    SkisErrorCode.QUERY_METADATA_REQUIRED,
                     "relation occurrence #"
                         + occurrence.occurrenceOrdinal()
                         + " is not backed by an entity table"));
@@ -820,7 +843,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         return;
       }
     }
-    throw new QueryValidationException(
+    throw QueryValidationException.of(
+        SkisErrorCode.QUERY_PARAMETER_DECLARATION,
         "binding is not declared by the complete query description: " + parameter);
   }
 
@@ -829,8 +853,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       return SingleRow.noRow();
     }
     R value = row.value();
-    if (!state.selected().nullableResult()) {
-      Objects.requireNonNull(value, "non-null query decoded a null value");
+    if (!state.selected().nullableResult() && value == null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query decoded a null value");
     }
     return SingleRow.present(value);
   }
@@ -840,7 +865,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       return;
     }
     for (R value : values) {
-      Objects.requireNonNull(value, message);
+      if (value == null) {
+        throw QueryValidationException.of(SkisErrorCode.QUERY_NON_NULL_RESULT, message);
+      }
     }
   }
 
@@ -895,7 +922,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     if (item.selectable() instanceof QueryColumn<?, ?> column) {
       return column;
     }
-    throw new QueryValidationException(
+    throw QueryValidationException.of(
+        SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
         "pagination identity analysis does not yet support ORDER BY expression '"
             + SelectableSupport.summary(item.selectable())
             + "'");
@@ -905,7 +933,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     try {
       return Math.addExact(pageSize, 1);
     } catch (ArithmeticException exception) {
-      throw new QueryValidationException("pageSize + 1 overflows int", exception);
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_OVERFLOW, "pageSize + 1 overflows int", exception);
     }
   }
 
@@ -913,7 +942,10 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     try {
       return Math.addExact(offset, pageSize);
     } catch (ArithmeticException exception) {
-      throw new QueryValidationException("slice continuation offset overflows long", exception);
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_OVERFLOW,
+          "slice continuation offset overflows long",
+          exception);
     }
   }
 
@@ -923,9 +955,12 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     return items;
   }
 
-  private static <T> List<T> requireNonNullValues(List<T> values) {
+  private static <T extends @Nullable Object> List<T> requireNonNullValues(List<T> values) {
     for (T value : values) {
-      Objects.requireNonNull(value, "ordered query produced a null row");
+      if (value == null) {
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_NON_NULL_RESULT, "ordered query produced a null row");
+      }
     }
     return values;
   }

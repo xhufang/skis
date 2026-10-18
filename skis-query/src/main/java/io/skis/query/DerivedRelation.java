@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.DerivedOutputColumn;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.DerivedRelationSource;
@@ -50,7 +52,11 @@ public final class DerivedRelation {
 
   /** Creates another occurrence over the same SELECT and handles with a different alias. */
   public DerivedRelation as(String alias) {
-    return as(Identifier.of(alias));
+    return as(
+        Sql.identifier(
+            alias,
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "derived relation alias is not a portable SQL identifier"));
   }
 
   /** Creates another occurrence over the same SELECT and handles with a different alias. */
@@ -88,7 +94,8 @@ public final class DerivedRelation {
       return QueryStructureCompiler.compileSubquery(
           state, new StatementParameterLayout(), new QueryParameterBindings());
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_DERIVED_SHAPE, failure, "derived SELECT preview compilation failed");
     }
   }
 
@@ -97,13 +104,15 @@ public final class DerivedRelation {
     try {
       analysis = SemanticValidator.analyzeComplete(statement);
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_DERIVED_SHAPE, failure, "derived SELECT semantic validation failed");
     }
     for (int index = 0; index < outputs.size(); index++) {
       DerivedOutput<?> output = outputs.get(index);
       Nullability effective = selectionNullability(analysis, index);
       if (!output.nullability().isNullable() && effective.isNullable()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
             "derived output '"
                 + output.alias()
                 + "' is effectively nullable after the inner query's complete join chain; "
@@ -121,7 +130,8 @@ public final class DerivedRelation {
         return expression.effectiveNullability();
       }
     }
-    throw new QueryValidationException(
+    throw QueryValidationException.of(
+        SkisErrorCode.QUERY_DERIVED_SHAPE,
         "derived query has no resolved visible SELECT output #" + ordinal);
   }
 
@@ -129,7 +139,8 @@ public final class DerivedRelation {
     Objects.requireNonNull(output, "output");
     Integer ordinal = ordinals.get(output);
     if (ordinal == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_DERIVED_SHAPE,
           "derived output handle '"
               + output.alias()
               + "' does not belong to relation alias '"
@@ -143,11 +154,13 @@ public final class DerivedRelation {
       SelectQueryState<?> state, List<DerivedOutput<?>> outputs) {
     Objects.requireNonNull(outputs, "outputs");
     if (outputs.isEmpty()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_DERIVED_SHAPE,
           "a derived relation requires at least one explicitly aliased output");
     }
     if (outputs.size() != state.selected().expressions().size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_DERIVED_SHAPE,
           "derived relation output shape has "
               + outputs.size()
               + " handles but its SELECT has "
@@ -158,7 +171,8 @@ public final class DerivedRelation {
     for (int index = 0; index < outputs.size(); index++) {
       DerivedOutput<?> output = Objects.requireNonNull(outputs.get(index), "derived output");
       if (!state.selected().matchesOutput(index, output.selectable())) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
             "derived output handle #"
                 + index
                 + " ('"
@@ -177,8 +191,12 @@ public final class DerivedRelation {
     for (int index = 0; index < outputs.size(); index++) {
       Integer previous = indexed.put(outputs.get(index), index);
       if (previous != null) {
-        throw new QueryValidationException(
-            "the same derived output handle is repeated at ordinals " + previous + " and " + index);
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "the same derived output handle is repeated at ordinals "
+                + previous
+                + " and "
+                + index);
       }
     }
     return indexed;
@@ -229,7 +247,10 @@ public final class DerivedRelation {
       return new DerivedRelationReference(
           Objects.requireNonNull(alias, "alias"), descriptors(outputs));
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_DERIVED_SHAPE,
+          failure,
+          "derived relation reference construction failed");
     }
   }
 }

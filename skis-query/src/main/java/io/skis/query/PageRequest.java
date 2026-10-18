@@ -1,14 +1,19 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
+
 /** Zero-based offset page request. */
 public record PageRequest(int pageIndex, int pageSize) {
 
   public PageRequest {
     if (pageIndex < 0) {
-      throw new IllegalArgumentException("pageIndex must not be negative");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "pageIndex must not be negative");
     }
     if (pageSize <= 0) {
-      throw new IllegalArgumentException("pageSize must be positive");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "pageSize must be positive");
     }
   }
 

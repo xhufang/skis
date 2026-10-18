@@ -3,10 +3,17 @@ package io.skis.jdbc.internal;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.NonUniqueResultException;
 import io.skis.core.QueryTag;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnosticStage;
+import io.skis.core.SkisDiagnostics;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.SkisOperation;
+import io.skis.core.SkisStatementKind;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.ExceptionClassifier;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.jdbc.JdbcExecutionException;
+import io.skis.jdbc.JdbcPhase;
 import io.skis.jdbc.QueryExecutionException;
 import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.spi.JdbcWriteContext;
@@ -158,7 +165,8 @@ public final class JdbcExecutor {
   /** Validates a user-visible page size against effective statement/executor maxRows. */
   public void validateRequestedRows(int requestedRows, ExecutionContext executionContext) {
     if (requestedRows <= 0) {
-      throw new IllegalArgumentException("requestedRows must be positive");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED, "requestedRows must be positive");
     }
     ExecutionOptions options =
         Objects.requireNonNull(executionContext, "executionContext").executionOptions();
@@ -167,8 +175,9 @@ public final class JdbcExecutor {
             ? options.maxRows()
             : defaultExecutionOptions.hasMaxRows() ? defaultExecutionOptions.maxRows() : 0;
     if (configured > 0 && requestedRows > configured) {
-      throw new IllegalArgumentException(
-          "requested page size " + requestedRows + " exceeds effective maxRows " + configured);
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
+          "requested page size exceeds the effective maxRows");
     }
   }
 
@@ -180,7 +189,8 @@ public final class JdbcExecutor {
     try {
       internalRows = Math.addExact(pageSize, 1);
     } catch (ArithmeticException exception) {
-      throw new IllegalArgumentException("pageSize + 1 overflows int", exception);
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_OVERFLOW, "pageSize + 1 overflows int", exception);
     }
     return withConnection(
         plan,
@@ -214,13 +224,15 @@ public final class JdbcExecutor {
                 executeSingleRow(
                     connection, countPlan, countParameters, executionContext, false, true);
             if (!count.present() || count.value() == null) {
-              throw new SQLException("count query did not return one non-null row");
+              throw QueryValidationException.of(
+                  SkisErrorCode.QUERY_RESULT_MAPPING,
+                  "count query did not return one non-null row");
             }
             return new JdbcPageResult<@Nullable R>(items, count.value());
           } catch (PhasedSqlFailure failure) {
             throw translate(countPlan, failure.phase(), failure.sqlException());
           } catch (SQLException failure) {
-            throw translate(countPlan, JdbcFailurePhase.EXECUTE, failure);
+            throw translate(countPlan, JdbcPhase.EXECUTE, failure);
           }
         });
   }
@@ -234,7 +246,7 @@ public final class JdbcExecutor {
     try {
       connection = connectionProvider.acquire(executionContext);
     } catch (SQLException failure) {
-      throw translate(plan, JdbcFailurePhase.ACQUIRE, failure);
+      throw translate(plan, JdbcPhase.ACQUIRE, failure);
     }
     PreparedStatement statement = null;
     try {
@@ -246,7 +258,7 @@ public final class JdbcExecutor {
       closeOpenFailure(plan, connection, statement, executionContext, primary);
       throw primary;
     } catch (SQLException failure) {
-      RuntimeException primary = translate(plan, JdbcFailurePhase.EXECUTE, failure);
+      RuntimeException primary = translate(plan, JdbcPhase.EXECUTE, failure);
       closeOpenFailure(plan, connection, statement, executionContext, primary);
       throw primary;
     } catch (RuntimeException | Error failure) {
@@ -318,13 +330,28 @@ public final class JdbcExecutor {
       }
       JdbcRow<R> row = JdbcRow.present(plan.rowDecoder().decode(resultSet, rowReadContext));
       if (!nullable && row.value() == null) {
-        throw new SQLException("non-null query decoder returned null");
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_NON_NULL_RESULT,
+            SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
+                .operation(SkisOperation.QUERY)
+                .phase(JdbcPhase.EXECUTE.label())
+                .statementKind(SkisStatementKind.SELECT)
+                .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
+                .dialectId(plan.dialectId())
+                .detail("non-null query decoder returned null")
+                .build());
       }
       if (checkMultiple && resultSet.next()) {
-        throw new NonUniqueResultException(
-            "query expected at most one row [sqlFingerprint="
-                + JdbcFingerprint.of(plan.sql())
-                + "]");
+        throw NonUniqueResultException.of(
+            SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
+                .operation(SkisOperation.QUERY)
+                .phase(JdbcPhase.EXECUTE.label())
+                .statementKind(SkisStatementKind.SELECT)
+                .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
+                .dialectId(plan.dialectId())
+                .observedCount(NonUniqueResultException.OBSERVED_ROW_LOWER_BOUND)
+                .detail("query expected at most one row")
+                .build());
       }
       return row;
     }
@@ -344,8 +371,8 @@ public final class JdbcExecutor {
         executionContext,
         (phase, failure) ->
             JdbcExecutionException.from(
-                plan.operation(),
-                phase.label(),
+                phase,
+                SkisStatementKind.fromOperationName(plan.operation()),
                 plan.dialectId(),
                 plan.sql(),
                 failure,
@@ -405,11 +432,10 @@ public final class JdbcExecutor {
       int nextIndex = parameterBinder.bind(statement, 1, parameters, writeContext);
       int expectedNextIndex = parameterCount + 1;
       if (nextIndex != expectedNextIndex) {
-        throw new SQLException(
-            "compiled parameter binder returned index "
-                + nextIndex
-                + " but expected "
-                + expectedNextIndex);
+        throw new PhasedSqlFailure(
+            JdbcPhase.BIND,
+            new SQLException(
+                "compiled parameter binder returned an unexpected next index"));
       }
       try {
         int queryTimeoutSeconds =
@@ -418,7 +444,7 @@ public final class JdbcExecutor {
                 : UNCONFIGURED_QUERY_TIMEOUT;
         connectionProvider.configureStatement(statement, executionContext, queryTimeoutSeconds);
       } catch (SQLException failure) {
-        throw new PhasedSqlFailure(JdbcFailurePhase.CONFIGURE, failure);
+        throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
       }
       return statement;
     } catch (PhasedSqlFailure failure) {
@@ -495,7 +521,7 @@ public final class JdbcExecutor {
         executionContext,
         (phase, failure) ->
             QueryExecutionException.from(
-                phase.label(), plan.dialectId(), plan.sql(), failure, classify(failure)),
+                phase, plan.dialectId(), plan.sql(), failure, classify(failure)),
         work);
   }
 
@@ -505,7 +531,7 @@ public final class JdbcExecutor {
     try {
       connection = connectionProvider.acquire(executionContext);
     } catch (SQLException failure) {
-      throw failureTranslator.translate(JdbcFailurePhase.ACQUIRE, failure);
+      throw failureTranslator.translate(JdbcPhase.ACQUIRE, failure);
     }
 
     Throwable pendingFailure = null;
@@ -517,7 +543,7 @@ public final class JdbcExecutor {
       pendingFailure = translated;
       throw translated;
     } catch (SQLException failure) {
-      RuntimeException translated = failureTranslator.translate(JdbcFailurePhase.EXECUTE, failure);
+      RuntimeException translated = failureTranslator.translate(JdbcPhase.EXECUTE, failure);
       pendingFailure = translated;
       throw translated;
     } catch (RuntimeException | Error failure) {
@@ -530,7 +556,7 @@ public final class JdbcExecutor {
         if (pendingFailure != null) {
           pendingFailure.addSuppressed(releaseFailure);
         } else {
-          throw failureTranslator.translate(JdbcFailurePhase.RELEASE, releaseFailure);
+          throw failureTranslator.translate(JdbcPhase.RELEASE, releaseFailure);
         }
       } catch (RuntimeException | Error releaseFailure) {
         if (pendingFailure != null) {
@@ -553,9 +579,9 @@ public final class JdbcExecutor {
   }
 
   private QueryExecutionException translate(
-      CompiledQueryPlan<?, ?> plan, JdbcFailurePhase phase, SQLException failure) {
+      CompiledQueryPlan<?, ?> plan, JdbcPhase phase, SQLException failure) {
     return QueryExecutionException.from(
-        phase.label(), plan.dialectId(), plan.sql(), failure, classify(failure));
+        phase, plan.dialectId(), plan.sql(), failure, classify(failure));
   }
 
   private void closeOpenFailure(
@@ -568,7 +594,7 @@ public final class JdbcExecutor {
       try {
         statement.close();
       } catch (SQLException failure) {
-        primary.addSuppressed(translate(plan, JdbcFailurePhase.STATEMENT_CLOSE, failure));
+        primary.addSuppressed(translate(plan, JdbcPhase.STATEMENT_CLOSE, failure));
       } catch (RuntimeException | Error failure) {
         primary.addSuppressed(failure);
       }
@@ -576,7 +602,7 @@ public final class JdbcExecutor {
     try {
       connectionProvider.release(connection, executionContext);
     } catch (SQLException failure) {
-      primary.addSuppressed(translate(plan, JdbcFailurePhase.RELEASE, failure));
+      primary.addSuppressed(translate(plan, JdbcPhase.RELEASE, failure));
     } catch (RuntimeException | Error failure) {
       primary.addSuppressed(failure);
     }
@@ -615,7 +641,7 @@ public final class JdbcExecutor {
         current = plan.rowDecoder().decode(resources.resultSet, rowReadContext);
         return true;
       } catch (SQLException failure) {
-        RuntimeException primary = translate(plan, JdbcFailurePhase.EXECUTE, failure);
+        RuntimeException primary = translate(plan, JdbcPhase.EXECUTE, failure);
         throw runtimeFailure(closeResources(primary));
       } catch (RuntimeException | Error failure) {
         throw runtimeFailure(closeResources(failure));
@@ -734,7 +760,7 @@ public final class JdbcExecutor {
         resultSet.close();
         return primary;
       } catch (SQLException failure) {
-        return append(primary, translate(plan, JdbcFailurePhase.RESULT_SET_CLOSE, failure));
+        return append(primary, translate(plan, JdbcPhase.RESULT_SET_CLOSE, failure));
       } catch (RuntimeException | Error failure) {
         return append(primary, failure);
       }
@@ -745,7 +771,7 @@ public final class JdbcExecutor {
         statement.close();
         return primary;
       } catch (SQLException failure) {
-        return append(primary, translate(plan, JdbcFailurePhase.STATEMENT_CLOSE, failure));
+        return append(primary, translate(plan, JdbcPhase.STATEMENT_CLOSE, failure));
       } catch (RuntimeException | Error failure) {
         return append(primary, failure);
       }
@@ -756,7 +782,7 @@ public final class JdbcExecutor {
         connectionProvider.release(connection, executionContext);
         return primary;
       } catch (SQLException failure) {
-        return append(primary, translate(plan, JdbcFailurePhase.RELEASE, failure));
+        return append(primary, translate(plan, JdbcPhase.RELEASE, failure));
       } catch (RuntimeException | Error failure) {
         return append(primary, failure);
       }
@@ -783,21 +809,21 @@ public final class JdbcExecutor {
 
   @FunctionalInterface
   private interface SqlFailureTranslator {
-    RuntimeException translate(JdbcFailurePhase phase, SQLException failure);
+    RuntimeException translate(JdbcPhase phase, SQLException failure);
   }
 
   private static final class PhasedSqlFailure extends RuntimeException {
 
-    private final JdbcFailurePhase phase;
+    private final JdbcPhase phase;
     private final SQLException sqlException;
 
-    private PhasedSqlFailure(JdbcFailurePhase phase, SQLException sqlException) {
+    private PhasedSqlFailure(JdbcPhase phase, SQLException sqlException) {
       super(sqlException);
       this.phase = phase;
       this.sqlException = sqlException;
     }
 
-    private JdbcFailurePhase phase() {
+    private JdbcPhase phase() {
       return phase;
     }
 

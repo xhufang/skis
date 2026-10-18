@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ColumnExpression;
@@ -33,7 +35,13 @@ public abstract class QueryTable<E> {
   protected QueryTable(EntityMeta<E> entity, String alias) {
     EntityMeta<E> checked = Objects.requireNonNull(entity, "entity");
     this.tableNode =
-        new TableNode<>(this, checked, Identifier.of(Objects.requireNonNull(alias, "alias")));
+        new TableNode<>(
+            this,
+            checked,
+            Sql.identifier(
+                alias,
+                SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE,
+                "query table alias is not a portable SQL identifier"));
     ColumnSet<E> columnSet = createColumns(checked);
     this.columns = columnSet.columns();
     this.selections = columnSet.selections();
@@ -61,7 +69,8 @@ public abstract class QueryTable<E> {
     Objects.requireNonNull(property, "property");
     int ordinal = property.ordinal();
     if (ordinal < 0 || ordinal >= columns.size() || columns.get(ordinal).property() != property) {
-      throw new IllegalArgumentException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_EXPRESSION_IDENTITY,
           "property '"
               + property.name()
               + "' does not belong to query table '"
@@ -78,7 +87,9 @@ public abstract class QueryTable<E> {
   protected final <V> NonNullSelectable<V> nonNullQueryColumn(PropertyMeta<E, V> property) {
     QueryColumn<E, V> column = internalColumn(property);
     if (column.nullable()) {
-      throw new IllegalArgumentException("non-null query column uses nullable metadata");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
+          "non-null query column uses nullable metadata");
     }
     return (NonNullSelectable<V>) column;
   }
@@ -87,7 +98,9 @@ public abstract class QueryTable<E> {
   protected final <V> Selectable<V> nullableQueryColumn(PropertyMeta<E, V> property) {
     QueryColumn<E, V> column = internalColumn(property);
     if (!column.nullable()) {
-      throw new IllegalArgumentException("nullable query column uses non-null metadata");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
+          "nullable query column uses non-null metadata");
     }
     return column;
   }

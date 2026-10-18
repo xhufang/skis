@@ -1,5 +1,6 @@
 package io.skis.dialect.internal;
 
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -122,7 +123,10 @@ public final class DialectQueryFeatures {
       String description,
       String blockPath) {
     if (!capabilities.supports(feature)) {
-      throw new SqlRenderException(
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+          dialectId,
+          feature.name(),
           "dialect '"
               + dialectId
               + "' does not support "

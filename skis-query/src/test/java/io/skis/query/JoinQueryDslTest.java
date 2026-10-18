@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
@@ -520,10 +522,15 @@ class JoinQueryDslTest {
             () ->
                 ((DefaultSelectQuery<Pet>) replaced)
                     .compilation(QueryPagination.None.INSTANCE));
-    assertTrue(failure.getMessage().contains("$ ORDER BY item #0"));
-    assertTrue(failure.getMessage().contains("ordered_owner.id"));
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
-    assertTrue(failure.getMessage().contains("table references are matched by object identity"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("$ ORDER BY item #0"));
+    assertTrue(failure.getCause().getMessage().contains("ordered_owner.id"));
+    assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
+    assertTrue(
+        failure
+            .getCause()
+            .getMessage()
+            .contains("table references are matched by object identity"));
   }
 
   @Test
@@ -918,9 +925,10 @@ class JoinQueryDslTest {
     QueryValidationException failure =
         assertThrows(
             QueryValidationException.class, () -> ResolvedValueMapping.resolve(one, scope));
+    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
     assertEquals(
         "no query-local value mapping is registered for framework expression 'LiteralExpression'",
-        failure.getMessage());
+        failure.diagnostics().facts().detail());
   }
 
   @Test
@@ -973,7 +981,8 @@ class JoinQueryDslTest {
                     .compiler()
                     .compileQuery(plans.model(), PET_TABLE, invalidStructure));
 
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
     assertFalse(failure.getMessage().contains(sensitiveValue));
     assertFalse(String.valueOf(failure.getCause()).contains(sensitiveValue));
   }
@@ -1229,7 +1238,9 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class, () -> ((DefaultCountQuery) count).compilation());
 
-    assertTrue(failure.getMessage().contains("not visible in the current or any ancestor"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(
+        failure.getCause().getMessage().contains("not visible in the current or any ancestor"));
   }
 
   @Test
@@ -1311,7 +1322,9 @@ class JoinQueryDslTest {
             QueryValidationException.class,
             () -> operations().query(description).bind(name, "Ada").fetchList());
 
-    assertTrue(failure.getMessage().contains("not visible in the current or any ancestor"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(
+        failure.getCause().getMessage().contains("not visible in the current or any ancestor"));
   }
 
   @Test
@@ -1431,8 +1444,9 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () -> operations().query(description).bind(name, "Ada").fetchList());
-    assertTrue(failure.getMessage().contains("ORDER BY[0]"));
-    assertTrue(failure.getMessage().contains("not visible"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("ORDER BY[0]"));
+    assertTrue(failure.getCause().getMessage().contains("not visible"));
   }
 
   @Test
@@ -1539,7 +1553,7 @@ class JoinQueryDslTest {
 
     assertSame(cardinality, thrown.getCause());
     assertEquals("21000", thrown.sqlState());
-    assertEquals(41, thrown.vendorCode());
+    assertEquals(Integer.valueOf(41), thrown.vendorCode());
     assertEquals(1, cardinality.getSuppressed().length);
     assertSame(statementClose, cardinality.getSuppressed()[0]);
     assertEquals(1, thrown.getSuppressed().length);
@@ -1707,8 +1721,9 @@ class JoinQueryDslTest {
             () ->
                 ((DefaultSelectQuery<Owner>) operations().query(invalid))
                     .compilation(QueryPagination.None.INSTANCE));
-    assertTrue(failure.getMessage().contains("JOIN ON"));
-    assertTrue(failure.getMessage().contains("before it is visible"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("JOIN ON"));
+    assertTrue(failure.getCause().getMessage().contains("before it is visible"));
   }
 
   @Test
@@ -1725,7 +1740,8 @@ class JoinQueryDslTest {
             () ->
                 ((DefaultSelectQuery<Long>) operations().query(correlated))
                     .compilation(QueryPagination.None.INSTANCE));
-    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+    assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
+    assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
 
     SelectDescription<Owner> outer =
         Sql.selectFrom(OWNER_TABLE).where(Sql.exists(correlated));

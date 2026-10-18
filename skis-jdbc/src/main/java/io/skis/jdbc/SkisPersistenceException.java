@@ -1,6 +1,9 @@
 package io.skis.jdbc;
 
+import io.skis.core.SkisErrorFamily;
 import io.skis.core.SkisException;
+import io.skis.core.SkisOperation;
+import io.skis.core.SkisStatementKind;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import java.io.Serial;
 import java.sql.SQLException;
@@ -11,18 +14,20 @@ public abstract class SkisPersistenceException extends SkisException {
 
   @Serial private static final long serialVersionUID = 1L;
 
-  private final String operation;
-  private final String phase;
+  private final SkisOperation operation;
+  private final JdbcPhase phase;
+  private final @Nullable SkisStatementKind statementKind;
   private final String dialectId;
   private final String sqlFingerprint;
   private final @Nullable String sqlState;
-  private final int vendorCode;
+  private final @Nullable Integer vendorCode;
   private final SqlExceptionCategory category;
 
   SkisPersistenceException(JdbcFailureDiagnostics diagnostics, SQLException cause) {
-    super(diagnostics.message(), cause);
+    super(diagnostics.code(), diagnostics.diagnostics(), cause, SkisErrorFamily.EXECUTION);
     this.operation = diagnostics.operation();
     this.phase = diagnostics.phase();
+    this.statementKind = diagnostics.statementKind();
     this.dialectId = diagnostics.dialectId();
     this.sqlFingerprint = diagnostics.sqlFingerprint();
     this.sqlState = diagnostics.sqlState();
@@ -30,43 +35,43 @@ public abstract class SkisPersistenceException extends SkisException {
     this.category = diagnostics.category();
   }
 
-  /** Returns the structural query or mutation operation. */
-  public String operation() {
+  /** Returns the strongly typed query or mutation operation. */
+  public final SkisOperation operation() {
     return operation;
   }
 
   /** Returns the JDBC lifecycle phase in which the failure occurred. */
-  public String phase() {
+  public final JdbcPhase phase() {
     return phase;
   }
 
+  /** Returns the SQL statement kind when known, or {@code null} when it is not reported. */
+  public final @Nullable SkisStatementKind statementKind() {
+    return statementKind;
+  }
+
   /** Returns the dialect identifier used by the failed plan. */
-  public String dialectId() {
+  public final String dialectId() {
     return dialectId;
   }
 
   /** Returns the value-independent SQL fingerprint; parameters and query tags are excluded. */
-  public String sqlFingerprint() {
+  public final String sqlFingerprint() {
     return sqlFingerprint;
   }
 
   /** Returns the driver SQLState, or {@code null} when the driver supplied none. */
-  public @Nullable String sqlState() {
+  public final @Nullable String sqlState() {
     return sqlState;
   }
 
-  /** Returns the vendor-specific JDBC error code. */
-  public int vendorCode() {
+  /** Returns the vendor-specific JDBC error code, or {@code null} when the driver supplied none. */
+  public final @Nullable Integer vendorCode() {
     return vendorCode;
   }
 
-  /** Returns the dialect-classified failure category. */
-  public SqlExceptionCategory category() {
+  /** Returns the single authoritative dialect-classified failure category. */
+  public final SqlExceptionCategory category() {
     return category;
-  }
-
-  /** Returns the original driver failure. */
-  public SQLException sqlException() {
-    return (SQLException) getCause();
   }
 }

@@ -2,13 +2,17 @@ package io.skis.jdbc;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.core.spi.ExecutionContext;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.NonUniqueResultException;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.SkisOperation;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.ExceptionClassifier;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.spi.SqlExceptionCategory;
@@ -16,6 +20,7 @@ import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcCursor;
 import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.jdbc.internal.JdbcFingerprint;
 import io.skis.jdbc.internal.JdbcPageResult;
 import io.skis.jdbc.internal.JdbcRow;
 import io.skis.jdbc.spi.ConnectionProvider;
@@ -175,7 +180,7 @@ class JdbcExecutorTest {
             () -> new JdbcExecutor(provider).fetchList(plan(), 17L));
 
     assertSame(configurationFailure, thrown.getCause());
-    assertEquals("statement-configuration", thrown.phase());
+    assertEquals(JdbcPhase.CONFIGURE, thrown.phase());
     assertEquals(1, scenario.statementCloses.get());
     assertEquals(1, scenario.releases.get());
     assertEquals(List.of("statement", "connection"), scenario.resourceCloseEvents);
@@ -280,7 +285,7 @@ class JdbcExecutorTest {
                     .fetchList(plan(), 17L, ExecutionContext.of(options)));
 
     assertSame(configurationFailure, thrown.getCause());
-    assertEquals("statement-configuration", thrown.phase());
+    assertEquals(JdbcPhase.CONFIGURE, thrown.phase());
     assertDiagnosticMessage(
         thrown, "query", "statement-configuration", "test", QUERY_SQL);
     assertEquals(1, configurationFailure.getSuppressed().length);
@@ -354,6 +359,30 @@ class JdbcExecutorTest {
   }
 
   @Test
+  void classifiesEachDriverFailureExactlyOnceAtTheJdbcBoundary() {
+    Scenario scenario = new Scenario(List.of());
+    scenario.executionFailure = new SQLException("execute", "42000", 87);
+    AtomicInteger classifications = new AtomicInteger();
+    JdbcExecutor executor =
+        configuredExecutor(
+            scenario.provider(),
+            ExecutionOptions.NONE,
+            ignored -> {
+              classifications.incrementAndGet();
+              return SqlExceptionCategory.UNCATEGORIZED;
+            });
+
+    QueryExecutionException failure =
+        assertThrows(
+            QueryExecutionException.class,
+            () -> executor.fetchList(plan(), 17L));
+
+    assertEquals(1, classifications.get());
+    assertEquals(SkisErrorCode.DB_UNCATEGORIZED, failure.code());
+    assertEquals(SqlExceptionCategory.UNCATEGORIZED, failure.category());
+  }
+
+  @Test
   void detectsNonUniqueRowsAndStillReleasesResources() {
     Scenario scenario = new Scenario(List.of("Mimi", "Fifi"));
     JdbcExecutor executor = new JdbcExecutor(scenario.provider());
@@ -381,7 +410,7 @@ class JdbcExecutorTest {
 
     assertSame(executionFailure, thrown.getCause());
     assertEquals("42000", thrown.sqlState());
-    assertEquals(9, thrown.vendorCode());
+    assertEquals(Integer.valueOf(9), thrown.vendorCode());
     assertDiagnosticMessage(thrown, "query", "execution", "test", QUERY_SQL);
     assertEquals(1, executionFailure.getSuppressed().length);
     assertSame(statementCloseFailure, executionFailure.getSuppressed()[0]);
@@ -428,7 +457,7 @@ class JdbcExecutorTest {
 
     assertSame(acquireFailure, thrown.getCause());
     assertEquals("08001", thrown.sqlState());
-    assertEquals(17, thrown.vendorCode());
+    assertEquals(Integer.valueOf(17), thrown.vendorCode());
     assertDiagnosticMessage(thrown, "query", "connection-acquire", "test", QUERY_SQL);
     assertEquals(0, scenario.statementCloses.get());
     assertEquals(0, scenario.resultSetCloses.get());
@@ -449,7 +478,7 @@ class JdbcExecutorTest {
 
     assertSame(releaseFailure, thrown.getCause());
     assertEquals("08006", thrown.sqlState());
-    assertEquals(29, thrown.vendorCode());
+    assertEquals(Integer.valueOf(29), thrown.vendorCode());
     assertDiagnosticMessage(thrown, "query", "connection-release", "test", QUERY_SQL);
     assertEquals(1, scenario.resultSetCloses.get());
     assertEquals(1, scenario.statementCloses.get());
@@ -643,16 +672,16 @@ class JdbcExecutorTest {
         assertThrows(QueryExecutionException.class, cursor::advance);
 
     assertSame(decodeFailure, thrown.getCause());
-    assertEquals("execution", thrown.phase());
+    assertEquals(JdbcPhase.EXECUTE, thrown.phase());
     assertEquals(3, thrown.getSuppressed().length);
     assertEquals(
-        "result-set-close",
+        JdbcPhase.RESULT_SET_CLOSE,
         ((QueryExecutionException) thrown.getSuppressed()[0]).phase());
     assertEquals(
-        "statement-close",
+        JdbcPhase.STATEMENT_CLOSE,
         ((QueryExecutionException) thrown.getSuppressed()[1]).phase());
     assertEquals(
-        "connection-release",
+        JdbcPhase.RELEASE,
         ((QueryExecutionException) thrown.getSuppressed()[2]).phase());
     assertTrue(cursor.isClosed());
     assertEquals(
@@ -672,13 +701,13 @@ class JdbcExecutorTest {
     QueryExecutionException thrown =
         assertThrows(QueryExecutionException.class, cursor::close);
 
-    assertEquals("result-set-close", thrown.phase());
+    assertEquals(JdbcPhase.RESULT_SET_CLOSE, thrown.phase());
     assertEquals(2, thrown.getSuppressed().length);
     assertEquals(
-        "statement-close",
+        JdbcPhase.STATEMENT_CLOSE,
         ((QueryExecutionException) thrown.getSuppressed()[0]).phase());
     assertEquals(
-        "connection-release",
+        JdbcPhase.RELEASE,
         ((QueryExecutionException) thrown.getSuppressed()[1]).phase());
     assertTrue(cursor.isClosed());
     assertEquals(
@@ -703,17 +732,20 @@ class JdbcExecutorTest {
   }
 
   @Test
-  void nonNullableSingleRowRejectsPresentNull() {
+  void nonNullableSingleRowRejectsPresentNullAsAQueryResultContractFailure() {
     Scenario nullRow = new Scenario(java.util.Collections.singletonList(null));
 
-    QueryExecutionException thrown =
+    QueryValidationException thrown =
         assertThrows(
-            QueryExecutionException.class,
+            QueryValidationException.class,
             () ->
                 new JdbcExecutor(nullRow.provider())
                     .fetchFirst(plan(), 17L, ExecutionContext.EMPTY));
 
-    assertEquals("non-null query decoder returned null", thrown.getCause().getMessage());
+    assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, thrown.code());
+    assertEquals(1, nullRow.resultSetCloses.get());
+    assertEquals(1, nullRow.statementCloses.get());
+    assertEquals(1, nullRow.releases.get());
   }
 
   @Test
@@ -728,7 +760,7 @@ class JdbcExecutorTest {
     assertEquals(List.of("one", "two", "extra"), rows);
     assertEquals(3, scenario.maxRows.get());
     assertThrows(
-        IllegalArgumentException.class,
+        QueryValidationException.class,
         () -> new JdbcExecutor(scenario.provider()).validateRequestedRows(3, context));
   }
 
@@ -884,13 +916,7 @@ class JdbcExecutorTest {
           statement.setLong(firstIndex, value);
           return firstIndex + 1;
         },
-        (resultSet, context) -> {
-          String value = resultSet.getString(1);
-          if (value == null) {
-            throw new SQLException("non-null query decoder returned null");
-          }
-          return value;
-        });
+        (resultSet, context) -> resultSet.getString(1));
   }
 
   private static CompiledQueryPlan<@Nullable String, Long> nullablePlan() {
@@ -968,18 +994,42 @@ class JdbcExecutorTest {
 
   private static void assertDiagnosticMessage(
       RuntimeException failure, String operation, String phase, String dialectId, String sql) {
+    SkisPersistenceException persistence =
+        assertInstanceOf(SkisPersistenceException.class, failure);
+    SkisOperation expectedOperation =
+        switch (operation) {
+          case "query" -> SkisOperation.QUERY;
+          case "deleteById", "mutation" -> SkisOperation.MUTATION;
+          default -> throw new AssertionError("unexpected operation " + operation);
+        };
+    JdbcPhase expectedPhase =
+        switch (phase) {
+          case "connection-acquire" -> JdbcPhase.ACQUIRE;
+          case "statement-configuration" -> JdbcPhase.CONFIGURE;
+          case "execution" -> JdbcPhase.EXECUTE;
+          case "result-set-close" -> JdbcPhase.RESULT_SET_CLOSE;
+          case "statement-close" -> JdbcPhase.STATEMENT_CLOSE;
+          case "connection-release" -> JdbcPhase.RELEASE;
+          default -> throw new AssertionError("unexpected phase " + phase);
+        };
+    assertEquals(expectedOperation, persistence.operation());
+    assertEquals(expectedPhase, persistence.phase());
+    assertEquals(dialectId, persistence.dialectId());
+    assertEquals(JdbcFingerprint.of(sql), persistence.sqlFingerprint());
     String message = Objects.requireNonNull(failure.getMessage(), "failure message");
-    assertTrue(message.startsWith("JDBC " + operation + " failed [phase=" + phase));
+    assertTrue(message.contains("phase=" + phase));
+    assertTrue(message.contains("operation=" + expectedOperation.label()));
     assertTrue(message.contains("dialect=" + dialectId));
-    assertTrue(
-        message.contains("sqlFingerprint=" + QueryExecutionException.fingerprint(sql)));
+    assertTrue(message.contains("sqlFingerprint=" + JdbcFingerprint.of(sql)));
     assertFalse(message.contains(sql));
     assertFalse(message.contains(SENSITIVE_PARAMETER));
     if (failure.getCause() instanceof SQLException sqlFailure) {
       String sqlState = sqlFailure.getSQLState();
-      assertTrue(
-          message.contains(
-              "sqlState=" + (sqlState == null || sqlState.isBlank() ? "unknown" : sqlState)));
+      if (sqlState == null || sqlState.isBlank()) {
+        assertFalse(message.contains("sqlState="));
+      } else {
+        assertTrue(message.contains("sqlState=" + sqlState));
+      }
       assertTrue(message.contains("vendorCode=" + sqlFailure.getErrorCode()));
     }
   }

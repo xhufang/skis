@@ -1,9 +1,10 @@
 package io.skis.mapping.spi;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -120,7 +121,8 @@ public final class EntityRuntimeModel<E> {
         return null;
       }
       if (nullKeys != 0) {
-        throw new SQLException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_RESULT_MAPPING,
             "nullable entity '"
                 + entity.entityName()
                 + "' has a partially null primary key in the result row");
@@ -129,9 +131,10 @@ public final class EntityRuntimeModel<E> {
     };
   }
 
-  private E requireDecodedEntity(@Nullable E decoded) throws SQLException {
+  private E requireDecodedEntity(@Nullable E decoded) {
     if (decoded == null) {
-      throw new SQLException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "generated decoder returned null for present entity '" + entity.entityName() + "'");
     }
     return decoded;

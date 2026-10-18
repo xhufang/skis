@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.query.spi.ProjectionMapping;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +17,8 @@ public final class ProjectionSelection<R> {
     this.mapping = Objects.requireNonNull(mapping, "mapping");
     Objects.requireNonNull(selections, "selections");
     if (selections.size() != mapping.parameters().size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PROJECTION_MAPPING,
           "projection '"
               + mapping.resultType().getTypeName()
               + "' requires "

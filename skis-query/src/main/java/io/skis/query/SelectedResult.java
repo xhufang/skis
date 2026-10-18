@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
@@ -239,7 +241,8 @@ final class SelectedResult<R extends @Nullable Object> {
           if (requireTable().selections().size() == 1) {
             yield requireTable().selections().getFirst();
           }
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_COUNT_CONTRACT,
               "automatic count cannot preserve a multi-expression distinct complete entity "
                   + "without primary-key metadata; provide an explicit count query");
         }
@@ -247,7 +250,8 @@ final class SelectedResult<R extends @Nullable Object> {
           yield null;
         }
         if (primaryKey.composite()) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_COUNT_CONTRACT,
               "automatic count cannot preserve a distinct complete entity with a composite "
                   + "primary key after JOIN; provide an explicit count query");
         }
@@ -256,7 +260,8 @@ final class SelectedResult<R extends @Nullable Object> {
       case REQUIRED_SCALAR, NULLABLE_SCALAR -> singleExpression(compiledExpressions);
       case GENERATED_PROJECTION -> {
         if (compiledExpressions.size() != 1) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_COUNT_CONTRACT,
               "automatic count cannot preserve a multi-expression distinct result; provide an "
                   + "explicit count query");
         }
@@ -278,7 +283,8 @@ final class SelectedResult<R extends @Nullable Object> {
   private ResolvedResultShape<R> entityShape(
       TableRuntimeScope scope, List<SqlExpression<?>> compiledExpressions, boolean nullable) {
     if (!compiledExpressions.equals(requireTable().selections())) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COMPILED_SHAPE,
           "compiled complete-entity selection does not match its table mapping");
     }
     return (ResolvedResultShape)
@@ -312,7 +318,8 @@ final class SelectedResult<R extends @Nullable Object> {
 
   private SqlExpression<?> singleExpression(List<SqlExpression<?>> compiledExpressions) {
     if (compiledExpressions.size() != 1) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COMPILED_SHAPE,
           "compiled scalar selection requires exactly one SQL expression");
     }
     return compiledExpressions.getFirst();

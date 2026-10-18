@@ -1,5 +1,8 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
@@ -62,7 +65,8 @@ public final class QueryPlanCatalog {
     for (EntityRuntimeModel<?> model : runtimeRegistry.models()) {
       EntityPlanSet<?> previous = indexed.put(model.entity(), createPlanSet(model, compiler));
       if (previous != null) {
-        throw new IllegalArgumentException(
+        throw SkisConfigurationException.of(
+            SkisErrorCode.ASSEMBLY_MODEL_DUPLICATE,
             "duplicate query plan set for entity '" + model.entity().entityName() + "'");
       }
     }
@@ -104,7 +108,8 @@ public final class QueryPlanCatalog {
   <E> EntityPlanSet<E> require(EntityMeta<E> entity) {
     EntityPlanSet<?> plans = planSets.get(Objects.requireNonNull(entity, "entity"));
     if (plans == null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_METADATA_REQUIRED,
           "no generated runtime model is registered for entity '" + entity.entityName() + "'");
     }
     return (EntityPlanSet<E>) plans;

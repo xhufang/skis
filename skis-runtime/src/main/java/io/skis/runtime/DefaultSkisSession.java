@@ -1,6 +1,7 @@
 package io.skis.runtime;
 
 import io.skis.core.ExecutionOptions;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.TransactionException;
 import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
@@ -170,8 +171,10 @@ final class DefaultSkisSession implements SkisSession {
       throw error;
     }
     if (callbackFailure != null) {
-      throw new TransactionException(
-          "transaction committed but an afterCommit callback failed", callbackFailure);
+      throw TransactionException.of(
+          SkisErrorCode.TRANSACTION_AFTER_COMMIT_FAILED,
+          "transaction committed but an afterCommit callback failed",
+          callbackFailure);
     }
   }
 
@@ -198,7 +201,8 @@ final class DefaultSkisSession implements SkisSession {
 
   private void requireActive() {
     if (!active()) {
-      throw new TransactionException("SKIS session is no longer active");
+      throw TransactionException.of(
+          SkisErrorCode.SESSION_INACTIVE, "SKIS session is no longer active");
     }
   }
 }

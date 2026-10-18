@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.MutationException;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.mapping.spi.JdbcWriteContext;
@@ -113,24 +116,25 @@ class JdbcCodecsTest {
     nullableInteger.assertInvocation("getInt", new Object[] {3});
 
     InvocationRecorder missingPrimitive = new InvocationRecorder(0L, true);
-    SQLException primitiveFailure =
+    QueryValidationException primitiveFailure =
         assertThrows(
-            SQLException.class,
+            QueryValidationException.class,
             () ->
                 JdbcCodecs.readLong(
                     missingPrimitive.proxy(ResultSet.class), 4, JdbcReadContext.EMPTY));
-    assertEquals(
-        "non-nullable column at JDBC index 4 returned NULL", primitiveFailure.getMessage());
+    assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, primitiveFailure.code());
 
     assertEquals("value", JdbcCodecs.requireReadValue("value", 5));
-    SQLException readFailure =
-        assertThrows(SQLException.class, () -> JdbcCodecs.requireReadValue(null, 5));
-    assertEquals("non-nullable column at JDBC index 5 returned NULL", readFailure.getMessage());
+    QueryValidationException readFailure =
+        assertThrows(
+            QueryValidationException.class, () -> JdbcCodecs.requireReadValue(null, 5));
+    assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, readFailure.code());
 
     assertEquals("value", JdbcCodecs.requireBindValue("value", 6));
-    SQLException bindFailure =
-        assertThrows(SQLException.class, () -> JdbcCodecs.requireBindValue(null, 6));
-    assertEquals("non-nullable parameter at JDBC index 6 is null", bindFailure.getMessage());
+    MutationException bindFailure =
+        assertThrows(
+            MutationException.class, () -> JdbcCodecs.requireBindValue(null, 6));
+    assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL, bindFailure.code());
   }
 
   @Test
@@ -234,16 +238,21 @@ class JdbcCodecsTest {
         resultSet -> JdbcCodecs.readBigInteger(resultSet, 3, JdbcReadContext.EMPTY));
 
     InvocationRecorder fractional = new InvocationRecorder(new BigDecimal("1.5"));
-    assertThrows(
-        SQLException.class,
-        () ->
-            JdbcCodecs.readBigInteger(fractional.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+    QueryValidationException fractionalFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                JdbcCodecs.readBigInteger(
+                    fractional.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, fractionalFailure.code());
     InvocationRecorder multipleCharacters = new InvocationRecorder("SKIS");
-    assertThrows(
-        SQLException.class,
-        () ->
-            JdbcCodecs.readChar(
-                multipleCharacters.proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+    QueryValidationException characterFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                JdbcCodecs.readChar(
+                    multipleCharacters.proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, characterFailure.code());
   }
 
   @Test

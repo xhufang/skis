@@ -1,6 +1,8 @@
 package io.skis.runtime;
 
 import io.skis.core.ExecutionOptions;
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.DataSourceConnectionProvider;
 import io.skis.jdbc.internal.JdbcExecutor;
@@ -72,8 +74,15 @@ public final class Skis {
 
     /** Supplies generated runtime models directly for containers or AOT assembly. */
     public Builder runtimeModels(Collection<? extends EntityRuntimeModel<?>> runtimeModels) {
-      this.runtimeRegistry =
-          EntityRuntimeRegistry.of(Objects.requireNonNull(runtimeModels, "runtimeModels"));
+      try {
+        this.runtimeRegistry =
+            EntityRuntimeRegistry.of(Objects.requireNonNull(runtimeModels, "runtimeModels"));
+      } catch (IllegalArgumentException failure) {
+        throw SkisConfigurationException.of(
+            SkisErrorCode.ASSEMBLY_MODEL_DUPLICATE,
+            "supplied runtime model registry is invalid",
+            failure);
+      }
       return this;
     }
 
@@ -96,7 +105,9 @@ public final class Skis {
      */
     public Builder planCacheMaximumSize(int maximumSize) {
       if (maximumSize < 0) {
-        throw new IllegalArgumentException("planCacheMaximumSize must not be negative");
+        throw SkisConfigurationException.of(
+            SkisErrorCode.CACHE_CONFIGURATION_INVALID,
+            "planCacheMaximumSize must not be negative");
       }
       this.planCacheMaximumSize = maximumSize;
       return this;
@@ -106,7 +117,9 @@ public final class Skis {
     public Builder planCacheExpireAfterAccess(Duration expireAfterAccess) {
       Objects.requireNonNull(expireAfterAccess, "expireAfterAccess");
       if (expireAfterAccess.isZero() || expireAfterAccess.isNegative()) {
-        throw new IllegalArgumentException("planCacheExpireAfterAccess must be positive");
+        throw SkisConfigurationException.of(
+            SkisErrorCode.CACHE_CONFIGURATION_INVALID,
+            "planCacheExpireAfterAccess must be positive");
       }
       this.planCacheExpireAfterAccess = expireAfterAccess;
       return this;
@@ -114,7 +127,11 @@ public final class Skis {
 
     /** Loads any unspecified generated registries and creates the thread-safe executor. */
     public SkisExecutor build() {
-      Dialect selectedDialect = Objects.requireNonNull(dialect, "dialect must be configured");
+      Dialect selectedDialect = dialect;
+      if (selectedDialect == null) {
+        throw SkisConfigurationException.of(
+            SkisErrorCode.ASSEMBLY_CONFIGURATION_INVALID, "dialect must be configured");
+      }
       EntityRuntimeRegistry selectedRegistry = runtimeRegistry;
       if (selectedRegistry == null) {
         selectedRegistry = EntityRuntimeModelLoader.load(resolveClassLoader(classLoader));

@@ -1,5 +1,8 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.jdbc.internal.CompiledQueryPlan;
@@ -114,7 +117,8 @@ final class QueryPlanCompiler {
       QueryArguments statementArguments,
       @Nullable SqlExpression<?> distinctExpression) {
     if (!structure.groupBy().isEmpty() || structure.having() != null) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COUNT_CONTRACT,
           "countQuery does not yet support GROUP BY or HAVING descriptions");
     }
     CountAst count =
@@ -144,7 +148,8 @@ final class QueryPlanCompiler {
                 (resultSet, context) -> {
                   long value = resultSet.getLong(1);
                   if (resultSet.wasNull()) {
-                    throw new SQLException("COUNT result was unexpectedly null");
+                    throw QueryValidationException.of(
+                        SkisErrorCode.QUERY_RESULT_MAPPING, "COUNT result was unexpectedly null");
                   }
                   return value;
                 }));
@@ -199,7 +204,8 @@ final class QueryPlanCompiler {
         indexes[index] = visibleIndex + 1;
       } else {
         if (distinct) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_ORDER_BY_NOT_SELECTED,
               "distinct keyset ordering must select every ordering expression");
         }
         indexes[index] = selection.expressions().size() + hidden.size() + 1;
@@ -364,7 +370,8 @@ final class QueryPlanCompiler {
       return specifications.stream().map(SortSpecification::ast).toList();
     }
     if (structure.orderBy().size() != specifications.size()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_COMPILED_SHAPE,
           "compiled ORDER BY item count does not match the query description");
     }
     return structure.orderBy();
@@ -407,7 +414,8 @@ final class QueryPlanCompiler {
     try {
       rendered = compilationContext.render(dialect);
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_COMPILED_SHAPE, failure, "SQL rendering failed");
     }
     List<RenderedBinding> renderedBindings = renderedBindings(logicalParameters, rendered);
     int logicalParameterCount = logicalParameters.size();
@@ -436,7 +444,8 @@ final class QueryPlanCompiler {
     try {
       return QueryCompilationContext.prepare(statement, dialect);
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_COMPILED_SHAPE, failure, "query compilation context is invalid");
     }
   }
 
@@ -464,8 +473,10 @@ final class QueryPlanCompiler {
     return List.copyOf(bindings);
   }
 
-  private QueryValidationException unexpectedParameterShape() {
-    return new QueryValidationException(
+  private SqlRenderException unexpectedParameterShape() {
+    return SqlRenderException.of(
+        SkisErrorCode.DIALECT_PARAMETER_SHAPE,
+        dialect.id(),
         "dialect '" + dialect.id() + "' rendered an unexpected statement parameter shape");
   }
 
@@ -473,7 +484,8 @@ final class QueryPlanCompiler {
     for (int ordinal = 0; ordinal < parameters.size(); ordinal++) {
       LogicalParameter parameter = Objects.requireNonNull(parameters.get(ordinal), "parameter");
       if (parameter.descriptor().ordinal() != ordinal) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_LAYOUT,
             "logical parameter ordinals must be dense from zero; expected "
                 + ordinal
                 + " but found "
@@ -486,7 +498,8 @@ final class QueryPlanCompiler {
     try {
       return factory.get();
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_COMPILED_SHAPE, failure, "AST construction failed");
     }
   }
 
@@ -498,18 +511,19 @@ final class QueryPlanCompiler {
         Nullability.NON_NULL);
   }
 
-  private static @Nullable QueryArguments requireArguments(Object argument, int expectedCount)
-      throws SQLException {
+  private static @Nullable QueryArguments requireArguments(Object argument, int expectedCount) {
     Objects.requireNonNull(argument, "argument");
     if (expectedCount == 0) {
       if (argument != NoParameters.INSTANCE) {
-        throw new SQLException("compiled query does not accept parameters");
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_LAYOUT, "compiled query does not accept parameters");
       }
       return null;
     }
     if (argument instanceof QueryArguments values) {
       if (values.size() != expectedCount) {
-        throw new SQLException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_LAYOUT,
             "compiled query requires "
                 + expectedCount
                 + " logical parameters but received "
@@ -520,7 +534,9 @@ final class QueryPlanCompiler {
     if (expectedCount == 1 && argument != NoParameters.INSTANCE) {
       return null;
     }
-    throw new SQLException("compiled query requires " + expectedCount + " logical parameters");
+    throw QueryValidationException.of(
+        SkisErrorCode.QUERY_PARAMETER_LAYOUT,
+        "compiled query requires " + expectedCount + " logical parameters");
   }
 
   private static void validateStatementArguments(
@@ -531,21 +547,24 @@ final class QueryPlanCompiler {
     Objects.requireNonNull(arguments, "arguments");
     Objects.requireNonNull(expectedPaginationShape, "expectedPaginationShape");
     if (arguments.size() != expectedCount) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_LAYOUT,
           "final statement requires "
               + expectedCount
               + " logical parameter values but received "
               + arguments.size());
     }
     if (arguments.ordinarySize() != expectedOrdinaryCount) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_LAYOUT,
           "final statement ordinary parameter value count must be "
               + expectedOrdinaryCount
               + " but was "
               + arguments.ordinarySize());
     }
     if (!arguments.paginationShape().equals(expectedPaginationShape)) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_LAYOUT,
           "final statement pagination shape must be "
               + expectedPaginationShape
               + " but was "
@@ -571,7 +590,8 @@ final class QueryPlanCompiler {
 
   private static <E> void requireCanonicalModel(EntityRuntimeModel<E> model, QueryTable<E> table) {
     if (table.entity() != model.entity()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_METADATA_REQUIRED,
           "query table does not use the canonical runtime metadata of entity '"
               + model.entity().entityName()
               + "'");
@@ -632,7 +652,9 @@ final class QueryPlanCompiler {
         PreparedStatement statement, int index, @Nullable Object value, JdbcWriteContext context)
         throws SQLException {
       if (value == null && !descriptor.nullability().isNullable()) {
-        throw new SQLException("non-null query parameter is null at JDBC parameter index " + index);
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_VALUE,
+            "non-null query parameter is null at JDBC parameter index " + index);
       }
       if (codec != null) {
         bindCodec(codec, descriptor.javaType(), statement, index, value, context);
@@ -641,7 +663,9 @@ final class QueryPlanCompiler {
       switch (scalarBinding) {
         case INTEGER -> statement.setInt(index, requireType(value, Integer.class));
         case LONG -> statement.setLong(index, requireType(value, Long.class));
-        case NONE -> throw new SQLException("logical parameter has no binder");
+        case NONE ->
+            throw QueryValidationException.of(
+                SkisErrorCode.QUERY_PARAMETER_LAYOUT, "logical parameter has no binder");
       }
     }
 
@@ -657,10 +681,12 @@ final class QueryPlanCompiler {
       Objects.requireNonNull(statement, "statement");
       Objects.requireNonNull(context, "context");
       if (index < 1) {
-        throw new IllegalArgumentException("JDBC parameter index must be positive");
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_LAYOUT, "JDBC parameter index must be positive");
       }
       if (value != null && !javaType.isInstance(value)) {
-        throw new SQLException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_VALUE,
             "query parameter requires "
                 + javaType.getTypeName()
                 + " but received "
@@ -669,9 +695,10 @@ final class QueryPlanCompiler {
       codec.bind(statement, index, value, context);
     }
 
-    private static <T> T requireType(@Nullable Object value, Class<T> type) throws SQLException {
+    private static <T> T requireType(@Nullable Object value, Class<T> type) {
       if (!type.isInstance(value)) {
-        throw new SQLException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_LAYOUT,
             "pagination parameter requires "
                 + type.getTypeName()
                 + " but received "
@@ -715,7 +742,8 @@ final class QueryPlanCompiler {
       if (orderBy.size() != values.size()
           || compiledOrder.size() != orderBy.size()
           || orderBy.isEmpty()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_CONTINUATION_VALUE,
             "keyset continuation value count must match a non-empty ORDER BY");
       }
       @SuppressWarnings("unchecked")
@@ -729,14 +757,16 @@ final class QueryPlanCompiler {
             resolveValueMapping(sort.selectable(), expression, runtimeScope);
         nullable[index] = mapping.effectiveNullability().isNullable();
         if (nullable[index] && sort.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_CONTINUATION_VALUE,
               "effectively nullable keyset ordering expression '"
                   + SelectableSupport.summary(sort.selectable())
                   + "' must declare nullsFirst() or nullsLast()");
         }
         if (value == null) {
           if (!nullable[index]) {
-            throw new QueryValidationException(
+            throw QueryValidationException.of(
+                SkisErrorCode.QUERY_CONTINUATION_VALUE,
                 "keyset continuation contains null for non-null expression '"
                     + SelectableSupport.summary(sort.selectable())
                     + "'");
@@ -744,7 +774,8 @@ final class QueryPlanCompiler {
           continue;
         }
         if (!mapping.javaType().isInstance(value)) {
-          throw new QueryValidationException(
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_CONTINUATION_VALUE,
               "keyset continuation Java type does not match expression '"
                   + SelectableSupport.summary(sort.selectable())
                   + "'");
@@ -814,7 +845,8 @@ final class QueryPlanCompiler {
 
     private void addConditionMapping(Selectable<?> source, ParameterSlot<?> slot) {
       if (!slot.javaType().equals(source.javaType()) || slot.sqlType() != source.sqlType()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_LAYOUT,
             "query parameter slot descriptor does not match expression '"
                 + SelectableSupport.summary(source)
                 + "'");
@@ -877,7 +909,8 @@ final class QueryPlanCompiler {
         SqlExpression<V> expression, ComparisonOperator operator, ParameterSlot<?> slot) {
       if (!expression.javaType().equals(slot.javaType())
           || expression.sqlType() != slot.sqlType()) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_CONTINUATION_VALUE,
             "keyset parameter slot does not match its ordering expression");
       }
       @SuppressWarnings("unchecked")

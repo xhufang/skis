@@ -3,12 +3,15 @@ package io.skis.query;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.JdbcCursor;
 import io.skis.sql.ast.SqlType;
 import java.sql.Timestamp;
@@ -108,13 +111,13 @@ class PaginationValueTypesTest {
 
   @Test
   void requestAndSingleRowContractsRejectInvalidAmbiguity() {
-    assertThrows(IllegalArgumentException.class, () -> PageRequest.page(-1, 10));
-    assertThrows(IllegalArgumentException.class, () -> PageRequest.page(0, 0));
+    assertThrows(QueryValidationException.class, () -> PageRequest.page(-1, 10));
+    assertThrows(QueryValidationException.class, () -> PageRequest.page(0, 0));
     assertEquals(
         (long) Integer.MAX_VALUE * Integer.MAX_VALUE,
         PageRequest.page(Integer.MAX_VALUE, Integer.MAX_VALUE).offset());
-    assertThrows(IllegalArgumentException.class, () -> SliceRequest.offset(-1, 10));
-    assertThrows(IllegalArgumentException.class, () -> SliceRequest.keysetFirst(0));
+    assertThrows(QueryValidationException.class, () -> SliceRequest.offset(-1, 10));
+    assertThrows(QueryValidationException.class, () -> SliceRequest.keysetFirst(0));
 
     SingleRow<String> noRow = SingleRow.noRow();
     SingleRow<@Nullable String> presentNull = SingleRow.present(null);
@@ -214,8 +217,12 @@ class PaginationValueTypesTest {
     wrongThread.start();
     wrongThread.join();
 
-    assertTrue(readFailure.get() instanceof IllegalStateException);
-    assertTrue(closeFailure.get() instanceof IllegalStateException);
+    QueryValidationException readViolation =
+        assertInstanceOf(QueryValidationException.class, readFailure.get());
+    QueryValidationException closeViolation =
+        assertInstanceOf(QueryValidationException.class, closeFailure.get());
+    assertEquals(SkisErrorCode.QUERY_CURSOR_THREAD, readViolation.code());
+    assertEquals(SkisErrorCode.QUERY_CURSOR_THREAD, closeViolation.code());
     assertEquals(0, delegate.advanceCount);
     assertEquals(0, delegate.closeCount);
 
@@ -245,7 +252,9 @@ class PaginationValueTypesTest {
     wrongThread.start();
     wrongThread.join();
 
-    assertTrue(failure.get() instanceof IllegalStateException);
+    QueryValidationException violation =
+        assertInstanceOf(QueryValidationException.class, failure.get());
+    assertEquals(SkisErrorCode.QUERY_CURSOR_THREAD, violation.code());
     assertEquals(0, delegate.advanceCount);
     stream.close();
     assertEquals(1, delegate.closeCount);
@@ -270,7 +279,9 @@ class PaginationValueTypesTest {
     wrongThread.start();
     wrongThread.join();
 
-    assertTrue(failure.get() instanceof IllegalStateException);
+    QueryValidationException iteratorViolation =
+        assertInstanceOf(QueryValidationException.class, failure.get());
+    assertEquals(SkisErrorCode.QUERY_CURSOR_THREAD, iteratorViolation.code());
     assertEquals(0, delegate.advanceCount);
     stream.close();
     assertEquals(1, delegate.closeCount);
@@ -309,8 +320,12 @@ class PaginationValueTypesTest {
     reader.join();
     closer.join();
 
-    assertTrue(readFailure.get() instanceof IllegalStateException);
-    assertTrue(closeFailure.get() instanceof IllegalStateException);
+    QueryValidationException readViolation =
+        assertInstanceOf(QueryValidationException.class, readFailure.get());
+    QueryValidationException closeViolation =
+        assertInstanceOf(QueryValidationException.class, closeFailure.get());
+    assertEquals(SkisErrorCode.QUERY_CURSOR_THREAD, readViolation.code());
+    assertEquals(SkisErrorCode.QUERY_CURSOR_THREAD, closeViolation.code());
     assertEquals(0, delegate.advanceCount);
     assertEquals(0, delegate.closeCount);
     cursor.close();

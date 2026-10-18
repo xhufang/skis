@@ -1,5 +1,6 @@
 package io.skis.jdbc.internal;
 
+import io.skis.core.SkisErrorCode;
 import io.skis.core.TransactionException;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.spi.ConnectionProvider;
@@ -69,7 +70,8 @@ public final class JdbcTransaction implements AutoCloseable {
     ExecutionContext context = Objects.requireNonNull(executionContext, "executionContext");
     JdbcExecutor template = Objects.requireNonNull(executorTemplate, "executorTemplate");
     if (!provider.supportsLocalTransactions()) {
-      throw new TransactionException(
+      throw TransactionException.of(
+          SkisErrorCode.TRANSACTION_EXTERNAL_OWNERSHIP,
           "connection provider delegates transaction ownership to an external transaction manager");
     }
 
@@ -88,7 +90,10 @@ public final class JdbcTransaction implements AutoCloseable {
     } catch (SQLException failure) {
       cleanUpFailedBegin(
           provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);
-      throw new TransactionException("cannot begin JDBC transaction", failure);
+      throw TransactionException.of(
+          SkisErrorCode.TRANSACTION_BEGIN_FAILED,
+          "cannot begin JDBC transaction",
+          failure);
     } catch (RuntimeException | Error failure) {
       cleanUpFailedBegin(
           provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);
@@ -115,8 +120,10 @@ public final class JdbcTransaction implements AutoCloseable {
       state = State.COMMITTED;
     } catch (SQLException | RuntimeException failure) {
       state = State.COMMIT_OUTCOME_UNKNOWN;
-      throw new TransactionException(
-          "JDBC commit failed; transaction outcome may be unknown", failure);
+      throw TransactionException.of(
+          SkisErrorCode.TRANSACTION_COMMIT_OUTCOME_UNKNOWN,
+          "JDBC commit failed; transaction outcome may be unknown",
+          failure);
     } catch (Error failure) {
       state = State.COMMIT_OUTCOME_UNKNOWN;
       throw failure;
@@ -131,8 +138,10 @@ public final class JdbcTransaction implements AutoCloseable {
       state = State.ROLLED_BACK;
     } catch (SQLException | RuntimeException failure) {
       state = State.ROLLBACK_OUTCOME_UNKNOWN;
-      throw new TransactionException(
-          "JDBC rollback failed; transaction outcome may be unknown", failure);
+      throw TransactionException.of(
+          SkisErrorCode.TRANSACTION_ROLLBACK_OUTCOME_UNKNOWN,
+          "JDBC rollback failed; transaction outcome may be unknown",
+          failure);
     } catch (Error failure) {
       state = State.ROLLBACK_OUTCOME_UNKNOWN;
       throw failure;
@@ -185,7 +194,9 @@ public final class JdbcTransaction implements AutoCloseable {
 
   private void requireActive() {
     if (state != State.ACTIVE) {
-      throw new TransactionException("transaction is not active [state=" + state.description + "]");
+      throw TransactionException.of(
+          SkisErrorCode.TRANSACTION_NOT_ACTIVE,
+          "transaction is not active [state=" + state.description + "]");
     }
   }
 
@@ -239,7 +250,8 @@ public final class JdbcTransaction implements AutoCloseable {
     if (failure instanceof Error) {
       return failure;
     }
-    return new TransactionException(message, failure);
+    return TransactionException.of(
+        SkisErrorCode.TRANSACTION_CLOSE_FAILED, message, failure);
   }
 
   private static void rethrow(@Nullable Throwable failure) {

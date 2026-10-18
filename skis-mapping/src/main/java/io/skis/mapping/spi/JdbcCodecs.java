@@ -1,5 +1,8 @@
 package io.skis.mapping.spi;
 
+import io.skis.core.MutationException;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Date;
@@ -88,9 +91,13 @@ public final class JdbcCodecs {
 
   public static byte readByte(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    byte value = resultSet.getByte(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      byte value = resultSet.getByte(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "byte", failure);
+    }
   }
 
   public static @Nullable Byte readNullableByte(
@@ -101,9 +108,13 @@ public final class JdbcCodecs {
 
   public static short readShort(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    short value = resultSet.getShort(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      short value = resultSet.getShort(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "short", failure);
+    }
   }
 
   public static @Nullable Short readNullableShort(
@@ -114,9 +125,13 @@ public final class JdbcCodecs {
 
   public static int readInt(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    int value = resultSet.getInt(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      int value = resultSet.getInt(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "int", failure);
+    }
   }
 
   public static @Nullable Integer readNullableInt(
@@ -127,9 +142,13 @@ public final class JdbcCodecs {
 
   public static long readLong(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    long value = resultSet.getLong(index);
-    requirePresent(resultSet, index);
-    return value;
+    try {
+      long value = resultSet.getLong(index);
+      requirePresent(resultSet, index);
+      return value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "long", failure);
+    }
   }
 
   public static @Nullable Long readNullableLong(
@@ -168,7 +187,9 @@ public final class JdbcCodecs {
       throws SQLException {
     String value = resultSet.getString(index);
     if (value == null) {
-      throw new SQLException("non-nullable column at JDBC index " + index + " returned NULL");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT,
+          "non-nullable column at JDBC index " + index + " returned NULL");
     }
     return requireSingleCharacter(value, index);
   }
@@ -193,8 +214,10 @@ public final class JdbcCodecs {
     try {
       return value.toBigIntegerExact();
     } catch (ArithmeticException exception) {
-      throw new SQLException(
-          "numeric value at JDBC index " + index + " is not an exact integer", exception);
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
+          "numeric value at JDBC index " + index + " is not an exact integer",
+          exception);
     }
   }
 
@@ -268,15 +291,19 @@ public final class JdbcCodecs {
   /** Requires a non-null value read for a non-nullable column. */
   public static <T> T requireReadValue(@Nullable T value, int index) throws SQLException {
     if (value == null) {
-      throw new SQLException("non-nullable column at JDBC index " + index + " returned NULL");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT,
+          "non-nullable column at JDBC index " + index + " returned NULL");
     }
     return value;
   }
 
-  /** Requires a non-null value before binding a non-nullable parameter. */
+  /** Requires a non-null value before binding a non-nullable mutation property. */
   public static <T> T requireBindValue(@Nullable T value, int index) throws SQLException {
     if (value == null) {
-      throw new SQLException("non-nullable parameter at JDBC index " + index + " is null");
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL,
+          "required mutation property at JDBC index " + index + " is null");
     }
     return value;
   }
@@ -555,15 +582,29 @@ public final class JdbcCodecs {
     }
   }
 
+  private static QueryValidationException numericRangeFailure(
+      int index, String targetType, SQLException failure) throws SQLException {
+    if (!"22003".equals(failure.getSQLState())) {
+      throw failure;
+    }
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_RESULT_MAPPING,
+        "numeric value at JDBC index " + index + " does not fit " + targetType,
+        failure);
+  }
+
   private static void requirePresent(ResultSet resultSet, int index) throws SQLException {
     if (resultSet.wasNull()) {
-      throw new SQLException("non-nullable column at JDBC index " + index + " returned NULL");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT,
+          "non-nullable column at JDBC index " + index + " returned NULL");
     }
   }
 
   private static char requireSingleCharacter(String value, int index) throws SQLException {
     if (value.length() != 1) {
-      throw new SQLException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_RESULT_MAPPING,
           "character column at JDBC index "
               + index
               + " returned "

@@ -1,11 +1,13 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.SkisConfigurationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
-import io.skis.mutation.MutationException;
+import io.skis.core.MutationException;
 import io.skis.mutation.MutationOperations;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -28,7 +30,8 @@ public final class MutationPlanCatalog {
       }
       EntityMutationPlanSet<?> previous = indexed.put(model.entity(), compile(model, compiler));
       if (previous != null) {
-        throw new MutationException(
+        throw SkisConfigurationException.of(
+            SkisErrorCode.ASSEMBLY_MODEL_DUPLICATE,
             "duplicate mutation plan set for entity '" + model.entity().entityName() + "'");
       }
     }
@@ -45,12 +48,14 @@ public final class MutationPlanCatalog {
   <E> EntityMutationPlanSet<E> require(EntityMeta<E> entity) {
     Objects.requireNonNull(entity, "entity");
     if (entity.readOnly()) {
-      throw new MutationException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_ENTITY_READ_ONLY,
           "read-only entity '" + entity.entityName() + "' cannot be mutated");
     }
     EntityMutationPlanSet<?> plans = planSets.get(entity);
     if (plans == null) {
-      throw new MutationException(
+      throw SkisConfigurationException.of(
+          SkisErrorCode.ASSEMBLY_MODEL_MISSING,
           "no generated mutation model is registered for entity '" + entity.entityName() + "'");
     }
     return (EntityMutationPlanSet<E>) plans;

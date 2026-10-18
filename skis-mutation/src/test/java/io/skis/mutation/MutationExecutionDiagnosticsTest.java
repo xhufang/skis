@@ -2,12 +2,17 @@ package io.skis.mutation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.core.spi.ExecutionContext;
 import io.skis.core.ExecutionOptions;
+import io.skis.core.MutationException;
+import io.skis.core.SkisDiagnosticStage;
+import io.skis.core.SkisDiagnostics;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -15,11 +20,13 @@ import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
 import io.skis.dialect.support.StandardSqlRenderer;
-import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.jdbc.JdbcExecutionException;
+import io.skis.jdbc.JdbcPhase;
 import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
-import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.ColumnMeta;
@@ -38,6 +45,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class MutationExecutionDiagnosticsTest {
@@ -100,14 +108,18 @@ class MutationExecutionDiagnosticsTest {
             TestDialect.INSTANCE,
             new JdbcExecutor(provider));
 
-    MutationException thrown =
+    JdbcExecutionException thrown =
         assertThrows(
-            MutationException.class,
+            JdbcExecutionException.class,
             () -> operations.insert(PET_TABLE, new Pet(1L, SENSITIVE_NAME)));
 
+    assertEquals(SkisErrorCode.DB_UNCATEGORIZED, thrown.code());
+    assertEquals(JdbcPhase.EXECUTE, thrown.phase());
     String message = Objects.requireNonNull(thrown.getMessage(), "failure message");
-    assertTrue(message.startsWith("failed to insert entity 'Pet'; JDBC insert failed"));
+    assertTrue(message.contains("[SKISX019]"));
+    assertTrue(message.contains("operation=mutation"));
     assertTrue(message.contains("phase=execution"));
+    assertTrue(message.contains("statementKind=insert"));
     assertTrue(message.contains("dialect=test"));
     assertTrue(message.contains("sqlFingerprint="));
     assertTrue(message.contains("sqlState=42000"));
@@ -143,10 +155,80 @@ class MutationExecutionDiagnosticsTest {
     ExecutionOptions options = ExecutionOptions.builder().maxRows(1).build();
 
     assertThrows(
-        MutationException.class,
+        JdbcExecutionException.class,
         () -> operations.insert(PET_TABLE, new Pet(1L, SENSITIVE_NAME), options));
 
     assertSame(options, observed.get());
+  }
+
+  @Test
+  void classifiesGeneratedBinderValueFailuresAsMutationInputFailures() {
+    PreparedStatement statement =
+        proxy(
+            PreparedStatement.class,
+            (ignored, method, arguments) -> defaultValue(method.getReturnType()));
+    Connection connection =
+        proxy(
+            Connection.class,
+            (ignored, method, arguments) ->
+                method.getName().equals("prepareStatement")
+                    ? statement
+                    : defaultValue(method.getReturnType()));
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) {
+            return connection;
+          }
+
+          @Override
+          public void release(Connection released, ExecutionContext context) {}
+        };
+    EntityMutationBinders<Pet> binders =
+        new EntityMutationBinders<>(
+            (prepared, firstIndex, value, context) -> {
+              JdbcCodecs.bindLong(prepared, firstIndex, value.id(), context);
+              JdbcCodecs.bindString(
+                  prepared,
+                  firstIndex + 1,
+                  JdbcCodecs.requireBindValue(value.name(), firstIndex + 1),
+                  context);
+              return firstIndex + 2;
+            },
+            (prepared, firstIndex, value, context) -> firstIndex + 2,
+            (prepared, firstIndex, value, context) -> firstIndex + 2,
+            null);
+    EntityRuntimeModel<Pet> model =
+        new EntityRuntimeModel<>(
+            PET,
+            layout -> (resultSet, context) -> new Pet(1L, "Mimi"),
+            List.of(
+                new PropertyRuntime<>(ID, JdbcCodecs.LONG),
+                new PropertyRuntime<>(NAME, JdbcCodecs.STRING)),
+            binders);
+    MutationOperations operations =
+        MutationRuntime.create(
+            EntityRuntimeRegistry.of(List.of(model)),
+            TestDialect.INSTANCE,
+            new JdbcExecutor(provider));
+
+    MutationException failure =
+        assertThrows(
+            MutationException.class, () -> operations.insert(PET_TABLE, new Pet(1L, null)));
+
+    assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL, failure.code());
+    assertNull(failure.getCause());
+  }
+
+  @Test
+  void optimisticLockExplicitDiagnosticsRequireExecutionDetail() {
+    SkisDiagnostics wrongStage =
+        SkisDiagnostics.of(SkisDiagnosticStage.RESULT_DECODING, "optimistic conflict");
+    SkisDiagnostics missingDetail =
+        SkisDiagnostics.of(SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT.defaultStage());
+
+    assertThrows(IllegalArgumentException.class, () -> OptimisticLockException.of(wrongStage));
+    assertThrows(IllegalArgumentException.class, () -> OptimisticLockException.of(missingDetail));
   }
 
   private static EntityRuntimeModel<Pet> runtimeModel() {
@@ -201,7 +283,7 @@ class MutationExecutionDiagnosticsTest {
     throw new AssertionError(type);
   }
 
-  private record Pet(Long id, String name) {}
+  private record Pet(Long id, @Nullable String name) {}
 
   private static final class PetTable extends QueryTable<Pet> {
 

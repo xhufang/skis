@@ -1,10 +1,11 @@
 package io.skis.query.spi;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.RowDecoder;
 import io.skis.mapping.spi.RowReadContext;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.query.ProjectionSelection;
-import io.skis.query.QueryValidationException;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.Nullability;
 import java.lang.reflect.Modifier;
@@ -44,7 +45,8 @@ public final class ProjectionMapping<R> {
     this.mappingId = requireText(mappingId, "mappingId");
     Objects.requireNonNull(parameters, "parameters");
     if (parameters.isEmpty()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PROJECTION_MAPPING,
           "a projection mapping must declare at least one parameter");
     }
     List<Parameter> copy = new ArrayList<>(parameters.size());
@@ -59,14 +61,16 @@ public final class ProjectionMapping<R> {
   private static Parameter requireParameter(Parameter parameter, int expectedOrdinal) {
     Objects.requireNonNull(parameter, "parameter");
     if (parameter.ordinal() != expectedOrdinal) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PROJECTION_MAPPING,
           "projection parameter ordinals must be dense from zero; expected "
               + expectedOrdinal
               + " but found "
               + parameter.ordinal());
     }
     if (parameter.constructorPosition() != expectedOrdinal) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PROJECTION_MAPPING,
           "projection parameter '"
               + parameter.name()
               + "' has constructor position "

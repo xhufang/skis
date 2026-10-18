@@ -1,5 +1,7 @@
 package io.skis.mapping.spi;
 
+import io.skis.core.MutationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.PropertyMeta;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -22,18 +24,24 @@ public record PropertyRuntime<E, V>(PropertyMeta<E, V> property, JdbcTypeCodec<V
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(context, "context");
     if (index < 1) {
-      throw new IllegalArgumentException("JDBC parameter index must be positive");
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_PARAMETER_SHAPE, "JDBC parameter index must be positive");
     }
     if (value == null) {
       if (!property.column().nullable()) {
-        throw new SQLException(
-            "required property '" + property.name() + "' is null at JDBC parameter index " + index);
+        throw MutationException.of(
+            SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL,
+            "required property '"
+                + property.name()
+                + "' is null at JDBC parameter index "
+                + index);
       }
       codec.bind(statement, index, null, context);
       return;
     }
     if (!property.javaType().isInstance(value)) {
-      throw new IllegalArgumentException(
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH,
           "property '"
               + property.name()
               + "' requires "

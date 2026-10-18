@@ -1,5 +1,8 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnostics;
+import io.skis.core.SkisErrorCode;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -93,12 +96,14 @@ final class QueryParameters {
       Objects.requireNonNull(parameter, "parameter");
       declared.put(parameter, Boolean.TRUE);
       if (!bindings.containsKey(parameter)) {
-        throw new QueryValidationException("missing binding for " + describe(parameter));
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_MISSING, "missing binding for " + describe(parameter));
       }
     }
     for (QueryParameter<?> bound : bindings.keySet()) {
       if (!declared.containsKey(bound)) {
-        throw new QueryValidationException(
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_DECLARATION,
             "binding for " + describe(bound) + " is not declared by the query description");
       }
     }
@@ -113,7 +118,8 @@ final class QueryParameters {
       Objects.requireNonNull(parameter, "parameter");
       Binding binding = bindings.get(parameter);
       if (binding == null) {
-        throw new QueryValidationException("missing binding for " + describe(parameter));
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_MISSING, "missing binding for " + describe(parameter));
       }
       values[index] = binding.value();
     }
@@ -124,23 +130,26 @@ final class QueryParameters {
     Objects.requireNonNull(parameter, "parameter");
     if (value == null) {
       if (!parameter.nullability().isNullable()) {
-        throw new QueryValidationException("null is not allowed for " + describe(parameter));
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PARAMETER_VALUE, "null is not allowed for " + describe(parameter));
       }
       return new Binding(null);
     }
     if (!parameter.javaType().isInstance(value)) {
-      throw new QueryValidationException(
-          describe(parameter)
-              + " requires "
-              + parameter.javaType().getTypeName()
-              + " but received "
-              + value.getClass().getTypeName());
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_VALUE,
+          SkisDiagnostics.builder(SkisErrorCode.QUERY_PARAMETER_VALUE.defaultStage())
+              .types(parameter.javaType().getTypeName(), value.getClass().getTypeName())
+              .detail(describe(parameter))
+              .build());
     }
     return new Binding(QueryValueSnapshots.capture(value));
   }
 
   private static QueryValidationException duplicate(QueryParameter<?> parameter) {
-    return new QueryValidationException("duplicate binding for " + describe(parameter));
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_PARAMETER_DECLARATION,
+        "duplicate binding for " + describe(parameter));
   }
 
   private static String describe(QueryParameter<?> parameter) {

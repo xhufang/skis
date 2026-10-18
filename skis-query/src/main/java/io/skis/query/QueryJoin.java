@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
@@ -20,10 +22,12 @@ record QueryJoin(JoinType type, QueryRelation right, @Nullable QueryCondition on
     Objects.requireNonNull(type, "type");
     Objects.requireNonNull(right, "right");
     if (type == JoinType.CROSS && on != null) {
-      throw new IllegalArgumentException("CROSS JOIN must not declare an ON condition");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_JOIN_CONTRACT, "CROSS JOIN must not declare an ON condition");
     }
     if (type != JoinType.CROSS && on == null) {
-      throw new IllegalArgumentException(type + " JOIN requires an ON condition");
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_JOIN_CONTRACT, type + " JOIN requires an ON condition");
     }
   }
 }
@@ -75,7 +79,8 @@ final class QueryStructureCompiler {
     Objects.requireNonNull(bindings, "bindings");
     state.validateDistinctOrdering();
     if (state.sqlPagination().mode() != QueryPaginationShape.Mode.NONE) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE,
           "embedded SELECT descriptions do not yet support SQL pagination");
     }
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
@@ -96,7 +101,8 @@ final class QueryStructureCompiler {
           orderBy,
           null);
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_JOIN_CONTRACT, failure, "embedded SELECT construction failed");
     }
   }
 
@@ -126,7 +132,8 @@ final class QueryStructureCompiler {
       SqlPredicate havingAst = having == null ? null : QueryConditions.compile(having, compiler);
       return new CompiledBlock(new FromClause(rootAst, joinAst), whereAst, groupByAst, havingAst);
     } catch (IllegalArgumentException failure) {
-      throw new QueryValidationException(failure.getMessage(), failure);
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_JOIN_CONTRACT, failure, "JOIN construction failed");
     }
   }
 

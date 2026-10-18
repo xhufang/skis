@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SqlType;
@@ -17,7 +19,8 @@ public sealed class DerivedOutput<V> permits NonNullDerivedOutput {
     this.alias = Objects.requireNonNull(alias, "alias");
     this.nullability = Objects.requireNonNull(nullability, "nullability");
     if (!nullability.isNullable() && selectable.nullability().isNullable()) {
-      throw new QueryValidationException(
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
           "a nullable selectable cannot define a non-null derived output");
     }
   }
