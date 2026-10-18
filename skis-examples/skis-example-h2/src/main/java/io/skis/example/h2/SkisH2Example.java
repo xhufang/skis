@@ -20,7 +20,7 @@ public final class SkisH2Example {
     dataSource.setURL("jdbc:h2:mem:skis_example;DB_CLOSE_DELAY=-1");
     createSchema(dataSource);
 
-    PetTable pet = PetTable.PET;
+    PetTable pet = PetTable.petTable;
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     executor.insert(pet, new Pet(1L, "Mimi", null));
     List<Pet> selected = executor.selectFrom(pet).where(pet.name().eq("Mimi")).fetchList();

@@ -7,8 +7,8 @@ import io.skis.entity.skis.EmployeeTable;
 import io.skis.entity.skis.ProjectTable;
 import io.skis.projection.EmployeeProjectView;
 import io.skis.projection.ProjectPrincipalView;
-import io.skis.projection.skis.EmployeeProjectViewProjection;
-import io.skis.projection.skis.ProjectPrincipalViewProjection;
+import io.skis.projection.skis.EmployeeProjectViewPro;
+import io.skis.projection.skis.ProjectPrincipalViewPro;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.query.SelectQuery;
@@ -22,10 +22,10 @@ import java.util.Optional;
 /** Project CRUD, filtering, relationship, and LEFT JOIN projection examples. */
 public class ProjectServiceImpl implements ProjectService {
 
-  private static final EmployeeTable EMPLOYEE = EmployeeTable.EMPLOYEE;
+  private static final EmployeeTable EMPLOYEE = EmployeeTable.employeeTable;
   private static final EmployeeProjectLinkTable LINK =
-      EmployeeProjectLinkTable.EMPLOYEE_PROJECT_LINK;
-  private static final ProjectTable PROJECT = ProjectTable.PROJECT;
+      EmployeeProjectLinkTable.employeeProjectLinkTable;
+  private static final ProjectTable PROJECT = ProjectTable.projectTable;
 
   private final SkisExecutor skisExecutor;
 
@@ -129,7 +129,7 @@ public class ProjectServiceImpl implements ProjectService {
   public List<EmployeeProjectView> findMemberViews(long projectId) {
     return skisExecutor
         .select(
-            EmployeeProjectViewProjection.of(
+            EmployeeProjectViewPro.of(
                 EMPLOYEE.id(), EMPLOYEE.name(), PROJECT.id(), PROJECT.name(), PROJECT.status()))
         .from(PROJECT)
         .innerJoin(LINK)
@@ -143,9 +143,7 @@ public class ProjectServiceImpl implements ProjectService {
 
   private SelectQuery<ProjectPrincipalView> principalQuery() {
     return skisExecutor
-        .select(
-            ProjectPrincipalViewProjection.of(
-                PROJECT.id(), PROJECT.name(), EMPLOYEE.id(), EMPLOYEE.name()))
+        .select(ProjectPrincipalViewPro.all())
         .from(PROJECT)
         .leftJoin(EMPLOYEE)
         .on(PROJECT.principalId().eq(EMPLOYEE.id()));

@@ -13,7 +13,7 @@ import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
-import io.skis.testmodel.pet.skis.PetSummaryProjection;
+import io.skis.testmodel.pet.skis.PetSummaryPro;
 import io.skis.testmodel.pet.skis.PetTable;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -39,37 +39,37 @@ class SkisProjectionIntegrationTest {
             .planCacheExpireAfterAccess(Duration.ofMinutes(5))
             .build();
     Pet pet = new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
-    executor.insert(PetTable.PET, pet);
+    executor.insert(PetTable.petTable, pet);
     executor.insert(
-        PetTable.PET,
+        PetTable.petTable,
         new Pet(8L, "Nina", new BigDecimal("10.25"), false, null, "ignored"));
 
     List<String> names =
         executor
-            .select(PetTable.PET.name())
-            .from(PetTable.PET)
-            .where(PetTable.PET.id().eq(7L))
+            .select(PetTable.petTable.name())
+            .from(PetTable.petTable)
+            .where(PetTable.petTable.id().eq(7L))
             .fetchList();
     PetSummary projected =
         executor
             .select(
-                PetSummaryProjection.of(
-                    PetTable.PET.id(), PetTable.PET.name(), PetTable.PET.weight()))
-            .from(PetTable.PET)
-            .where(PetTable.PET.id().eq(7L))
+                PetSummaryPro.of(
+                    PetTable.petTable.id(), PetTable.petTable.name(), PetTable.petTable.weight()))
+            .from(PetTable.petTable)
+            .where(PetTable.petTable.id().eq(7L))
             .fetchOne()
             .orElseThrow();
     PetSummary reusedProjection = sharedTerminal(executor, true, 1, "generated projection", () ->
-        executor.select(PetSummaryProjection.of(
-                PetTable.PET.id(), PetTable.PET.name(), PetTable.PET.weight()))
-            .from(PetTable.PET).where(PetTable.PET.id().eq(8L)).fetchOne().orElseThrow());
+        executor.select(PetSummaryPro.of(
+                PetTable.petTable.id(), PetTable.petTable.name(), PetTable.petTable.weight()))
+            .from(PetTable.petTable).where(PetTable.petTable.id().eq(8L)).fetchOne().orElseThrow());
     String transactionalName =
         executor.inTransaction(
             session ->
                 session
-                    .select(PetTable.PET.name())
-                    .from(PetTable.PET)
-                    .where(PetTable.PET.id().eq(7L))
+                    .select(PetTable.petTable.name())
+                    .from(PetTable.petTable)
+                    .where(PetTable.petTable.id().eq(7L))
                     .fetchOne()
                     .orElseThrow());
 
@@ -90,13 +90,13 @@ class SkisProjectionIntegrationTest {
     SkisExecutor executor = Skis.create(database(), H2Dialect.INSTANCE);
     for (long id : List.of(7L, 8L, 9L)) {
       executor.insert(
-          PetTable.PET,
+          PetTable.petTable,
           new Pet(id, "pet-" + id, new BigDecimal("1.00"), false, null, "ignored"));
     }
     for (long threshold : List.of(7L, 8L)) {
       boolean warmed = threshold == 8L;
       Supplier<SelectQuery<Long>> query = () -> {
-        PetTable table = PetTable.PET.as("p");
+        PetTable table = PetTable.petTable.as("p");
         return executor.select(table.id()).from(table)
             .where(table.id().ge(threshold)).orderBy(table.id().asc());
       };
@@ -143,7 +143,7 @@ class SkisProjectionIntegrationTest {
                   return stream.toList();
                 }
               }));
-      PetTable single = PetTable.PET.as("single");
+      PetTable single = PetTable.petTable.as("single");
       assertEquals(threshold, sharedTerminal(executor, warmed, 1, "fetchOne",
           () -> executor.select(single.id()).from(single)
               .where(single.id().eq(threshold)).fetchOne().orElseThrow()));
@@ -176,18 +176,18 @@ class SkisProjectionIntegrationTest {
             .dialect(H2Dialect.INSTANCE)
             .build();
     executor.insert(
-        PetTable.PET,
+        PetTable.petTable,
         new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
     executor.insert(
-        PetTable.PET,
+        PetTable.petTable,
         new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored"));
 
     List<String> names =
         executor
-            .select(PetTable.PET.name())
-            .from(PetTable.PET)
+            .select(PetTable.petTable.name())
+            .from(PetTable.petTable)
             .distinct()
-            .orderBy(PetTable.PET.name().asc().nullsLast())
+            .orderBy(PetTable.petTable.name().asc().nullsLast())
             .fetchList();
 
     assertEquals(List.of("Mimi"), names);

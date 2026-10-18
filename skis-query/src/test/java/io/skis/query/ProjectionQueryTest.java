@@ -24,6 +24,8 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.query.spi.ProjectionMapping;
+import io.skis.query.spi.ProjectionSource;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.Nullability;
 import java.lang.reflect.Proxy;
@@ -195,6 +197,155 @@ class ProjectionQueryTest {
   }
 
   @Test
+  void bindsSpecialProjectionSourcesFromTheCompleteQueryBlock() throws Exception {
+    DeclaredProjection<PetOwnerView> projection =
+        new DeclaredProjection<>(
+            nullableOwnerMapping(),
+            List.of(ProjectionSource.of(PET_ID), ProjectionSource.of(OWNER_NAME)));
+    QueryCompilation<PetOwnerView> compilation =
+        compileSpecial(
+            projection,
+            List.of(
+                new QueryJoin(
+                    JoinType.INNER,
+                    QueryRelations.of(OWNER_TABLE),
+                    PET_TABLE.ownerId().eq(OWNER_TABLE.id()))));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\", \"owner\".\"owner_name\" "
+            + "FROM \"shelter\".\"pet\" INNER JOIN \"shelter\".\"owner\" "
+            + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
+        compilation.plan().sql());
+    assertEquals(
+        new PetOwnerView(7L, "Ada"),
+        compilation
+            .plan()
+            .rowDecoder()
+            .decode(resultSet(Map.of(1, 7L, 2, "Ada")), RowReadContext.EMPTY));
+  }
+
+  @Test
+  void validatesSpecialProjectionAliasesBeforeQueryBinding() {
+    assertEquals(
+        "owner_2", ProjectionSource.of(OWNER_NAME, "owner_2").alias().orElseThrow());
+    assertEquals("_owner", ProjectionSource.of(OWNER_NAME, "_owner").alias().orElseThrow());
+
+    for (String alias : List.of("", "bad alias", "bad-alias", "2owner", "所有者")) {
+      IllegalArgumentException failure =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> ProjectionSource.of(OWNER_NAME, alias),
+              alias);
+      assertTrue(failure.getMessage().contains("[A-Za-z_][A-Za-z0-9_]*"));
+    }
+  }
+
+  @Test
+  void rejectsMissingAndAmbiguousSpecialProjectionSources() {
+    DeclaredProjection<PetOwnerView> projection =
+        new DeclaredProjection<>(
+            nullableOwnerMapping(),
+            List.of(ProjectionSource.of(PET_ID), ProjectionSource.of(OWNER_NAME)));
+    QueryValidationException missing =
+        assertThrows(QueryValidationException.class, () -> compileSpecial(projection, List.of()));
+    assertTrue(missing.getMessage().contains("no matching entity table"));
+
+    OwnerTable reviewer = OWNER_TABLE.as("reviewer");
+    QueryValidationException ambiguous =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                compileSpecial(
+                    projection,
+                    List.of(
+                        new QueryJoin(
+                            JoinType.INNER,
+                            QueryRelations.of(OWNER_TABLE),
+                            PET_TABLE.ownerId().eq(OWNER_TABLE.id())),
+                        new QueryJoin(
+                            JoinType.INNER,
+                            QueryRelations.of(reviewer),
+                            OWNER_TABLE.id().eq(reviewer.id())))));
+    assertTrue(ambiguous.getMessage().contains("ambiguous across 2 occurrences"));
+  }
+
+  @Test
+  void bindsSpecialProjectionSelfJoinsByExactAlias() {
+    OwnerTable owner = OWNER_TABLE.as("owner");
+    OwnerTable reviewer = OWNER_TABLE.as("reviewer");
+    DeclaredProjection<OwnerPair> projection =
+        new DeclaredProjection<>(
+            ownerPairMapping(),
+            List.of(
+                ProjectionSource.of(OWNER_NAME, "owner"),
+                ProjectionSource.of(OWNER_NAME, "reviewer")));
+    QueryCompilation<OwnerPair> compilation =
+        compileSpecial(
+            projection,
+            List.of(
+                new QueryJoin(
+                    JoinType.INNER,
+                    QueryRelations.of(owner),
+                    PET_TABLE.ownerId().eq(owner.id())),
+                new QueryJoin(
+                    JoinType.INNER,
+                    QueryRelations.of(reviewer),
+                    owner.id().eq(reviewer.id()))));
+
+    assertTrue(compilation.plan().sql().contains("\"owner\".\"owner_name\""));
+    assertTrue(compilation.plan().sql().contains("\"reviewer\".\"owner_name\""));
+  }
+
+  @Test
+  void rejectsASpecialProjectionAliasBoundToTheWrongEntity() {
+    OwnerTable owner = OWNER_TABLE.as("owner");
+    DeclaredProjection<PetOwnerView> projection =
+        new DeclaredProjection<>(
+            nullableOwnerMapping(),
+            List.of(
+                ProjectionSource.of(PET_ID, "owner"),
+                ProjectionSource.of(OWNER_NAME, "owner")));
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                compileSpecial(
+                    projection,
+                    List.of(
+                        new QueryJoin(
+                            JoinType.INNER,
+                            QueryRelations.of(owner),
+                            PET_TABLE.ownerId().eq(owner.id())))));
+
+    assertTrue(failure.getMessage().contains("uses alias 'owner' for entity"));
+    assertTrue(failure.getMessage().contains("does not declare that property source"));
+  }
+
+  @Test
+  void appliesFinalOuterJoinNullabilityToSpecialProjectionSources() {
+    DeclaredProjection<StrictPetOwnerView> projection =
+        new DeclaredProjection<>(
+            strictOwnerMapping(),
+            List.of(ProjectionSource.of(PET_ID), ProjectionSource.of(OWNER_NAME)));
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                compileSpecial(
+                    projection,
+                    List.of(
+                        new QueryJoin(
+                            JoinType.LEFT,
+                            QueryRelations.of(OWNER_TABLE),
+                            PET_TABLE.ownerId().eq(OWNER_TABLE.id())))));
+
+    assertTrue(failure.getMessage().contains("parameter #2 'ownerName'"));
+    assertTrue(failure.getMessage().contains("effective NULLABLE"));
+  }
+
+  @Test
   void propagatesScalarSubqueryCodecAndNullabilityIntoGeneratedProjections() throws Exception {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
     Selectable<String> ownerName =
@@ -334,6 +485,26 @@ class ProjectionQueryTest {
             QueryTestSupport.arguments(structure));
   }
 
+  private static <R> QueryCompilation<R> compileSpecial(
+      ProjectionType<R> projection, List<QueryJoin> joins) {
+    SelectQueryState<R> state =
+        SelectQueryState.create(SelectedResult.specialProjection(projection), PET_TABLE);
+    for (QueryJoin join : joins) {
+      state = state.appendJoin(join.type(), join.right(), join.on());
+    }
+    CompiledQueryStructure structure = state.structure();
+    return catalog()
+        .compiler()
+        .compileSelection(
+            state.selected(),
+            structure,
+            List.of(),
+            false,
+            QueryPagination.None.INSTANCE,
+            List.of(),
+            QueryTestSupport.arguments(structure));
+  }
+
   private static ProjectionMapping<PetOwnerView> nullableOwnerMapping() {
     return ProjectionMapping.generated(
         GeneratedModelAbi.CURRENT,
@@ -462,6 +633,15 @@ class ProjectionQueryTest {
   private record StrictPetOwnerView(Long petId, String ownerName) {}
 
   private record OwnerPair(String owner, String reviewer) {}
+
+  private record DeclaredProjection<R>(
+      ProjectionMapping<R> mapping, List<ProjectionSource> sources)
+      implements ProjectionType<R> {
+
+    private DeclaredProjection {
+      sources = List.copyOf(sources);
+    }
+  }
 
   private record WrongTypeView(String value) {}
 

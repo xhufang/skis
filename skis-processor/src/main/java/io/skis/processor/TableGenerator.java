@@ -26,17 +26,25 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(" extends QueryTable<")
         .append(entityType)
         .append("> {\n\n");
+    for (PropertyModel property : model.properties()) {
+      source
+          .append("  public static final String ")
+          .append(property.fieldName())
+          .append(" = ")
+          .append(SourceText.string(model.entityTypeName() + "#" + property.name()))
+          .append(";\n");
+    }
+    source.append('\n');
     source
         .append("  public static final ")
         .append(className)
         .append(" ")
-        .append(SourceText.constantName(model.entityName()))
+        .append(SourceText.tableSingletonName(model.entityName()))
         .append(" = new ")
         .append(className)
         .append("();\n\n");
     for (PropertyModel property : model.properties()) {
-      String columnType =
-          property.column().nullable() ? "Selectable" : "NonNullSelectable";
+      String columnType = property.column().nullable() ? "Selectable" : "NonNullSelectable";
       source
           .append("  private final ")
           .append(columnType)
@@ -67,8 +75,7 @@ final class TableGenerator implements EntitySourceGenerator {
         .append(".ENTITY, alias);\n")
         .append("  }\n\n");
     for (PropertyModel property : model.properties()) {
-      String columnType =
-          property.column().nullable() ? "Selectable" : "NonNullSelectable";
+      String columnType = property.column().nullable() ? "Selectable" : "NonNullSelectable";
       source
           .append("  public ")
           .append(columnType)

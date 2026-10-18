@@ -24,6 +24,7 @@ final class SelectQueryState<R extends @Nullable Object> {
   private final QueryPaginationShape sqlPagination;
   private volatile @Nullable CompiledQueryStructure structure;
   private volatile @Nullable CompiledQueryStructure countStructure;
+  private volatile @Nullable SelectedResult<R> resolvedSelected;
 
   static <R extends @Nullable Object> SelectQueryState<R> create(
       SelectedResult<R> selected, QueryTable<?> root) {
@@ -71,7 +72,18 @@ final class SelectQueryState<R extends @Nullable Object> {
   }
 
   SelectedResult<R> selected() {
-    return selected;
+    SelectedResult<R> existing = resolvedSelected;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = resolvedSelected;
+      if (existing == null) {
+        existing = selected.resolveSources(root, joins);
+        resolvedSelected = existing;
+      }
+      return existing;
+    }
   }
 
   QueryRelation root() {
@@ -114,7 +126,7 @@ final class SelectQueryState<R extends @Nullable Object> {
     if (!distinct || orderBy.isEmpty()) {
       return;
     }
-    List<SelectableSupport.ExpressionIdentity> expressions = selected.expressionIdentities();
+    List<SelectableSupport.ExpressionIdentity> expressions = selected().expressionIdentities();
     for (SortSpecification item : orderBy) {
       if (!expressions.contains(SelectableSupport.expressionIdentity(item.selectable()))) {
         throw new QueryValidationException(

@@ -49,8 +49,8 @@ ExecutionOptions firstPage =
 
 List<Pet> pets =
     executor
-        .selectFrom(PetTable.PET)
-        .where(PetTable.PET.name().eq("Mimi"))
+        .selectFrom(PetTable.petTable)
+        .where(PetTable.petTable.name().eq("Mimi"))
         .withOptions(firstPage)
         .fetchList();
 ```
@@ -58,10 +58,10 @@ List<Pet> pets =
 The primary-key Fast Path and single-entity mutations use overloads:
 
 ```java
-executor.findById(PetTable.PET, id, firstPage);
-executor.insert(PetTable.PET, pet, firstPage);
-executor.updateById(PetTable.PET, pet, firstPage);
-executor.deleteById(PetTable.PET, id, firstPage);
+executor.findById(PetTable.petTable, id, firstPage);
+executor.insert(PetTable.petTable, pet, firstPage);
+executor.updateById(PetTable.petTable, pet, firstPage);
+executor.deleteById(PetTable.petTable, id, firstPage);
 ```
 
 Options are resolved independently in this order:
@@ -90,7 +90,7 @@ ExecutionOptions batchSession =
 executor.inTransaction(
     batchSession,
     session -> {
-      List<Pet> pets = session.selectFrom(PetTable.PET).fetchList();
+      List<Pet> pets = session.selectFrom(PetTable.petTable).fetchList();
       return pets.size();
     });
 ```

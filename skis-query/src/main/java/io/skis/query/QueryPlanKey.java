@@ -4,6 +4,7 @@ import io.skis.dialect.Dialect;
 import io.skis.dialect.DialectCapabilities;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.ResolvedSourceIdentity;
@@ -236,7 +237,8 @@ final class QueryPlanKey {
                 entity.table().name()));
       }
       identities.sort(
-          Comparator.comparing((EntityDependency identity) -> identity.source().blockPath().toString())
+          Comparator.comparing(
+                  (EntityDependency identity) -> identity.source().blockPath().toString())
               .thenComparingInt(identity -> identity.source().occurrenceOrdinal()));
       return new Dependencies(identities);
     }
@@ -397,7 +399,8 @@ final class QueryPlanKey {
   private record ProjectionDecoderIdentity(
       RuntimeTypeIdentity factoryType,
       long statefulFactoryToken,
-      List<ProjectionParameterIdentity> parameters) implements DecoderIdentity {
+      List<ProjectionParameterIdentity> parameters)
+      implements DecoderIdentity {
 
     private ProjectionDecoderIdentity {
       Objects.requireNonNull(factoryType, "factoryType");

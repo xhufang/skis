@@ -6,10 +6,14 @@ import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
 import org.jspecify.annotations.NonNull;
 
-@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 5")
+@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 6")
 public final class PetTable extends QueryTable<samples.Pet> {
 
-  public static final PetTable PET = new PetTable();
+  public static final String ID = "samples.Pet#id";
+  public static final String NAME = "samples.Pet#name";
+  public static final String VERSION_PROPERTY = "samples.Pet#version";
+
+  public static final PetTable petTable = new PetTable();
 
   private final NonNullSelectable<java.lang.Long> idColumn = nonNullQueryColumn(PetMeta.ID);
   private final Selectable<java.lang.String> nameColumn = nullableQueryColumn(PetMeta.NAME);

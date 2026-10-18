@@ -1,6 +1,6 @@
 package example;
 
-import io.skis.annotations.SkisProjection;
+import io.skis.annotations.ReusableProjection;
 
-@SkisProjection
+@ReusableProjection
 public record PetSummary(Long id, String name) {}

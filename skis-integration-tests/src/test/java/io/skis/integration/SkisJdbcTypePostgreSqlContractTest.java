@@ -37,16 +37,16 @@ class SkisJdbcTypePostgreSqlContractTest {
     SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
-      assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, expected));
-      assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, nulls));
-      assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, emptyBytes));
+      assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, expected));
+      assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, nulls));
+      assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, emptyBytes));
 
       JdbcTypeContractSupport.assertNonNullValues(
-          expected, executor.findById(JdbcTypesTable.JDBC_TYPES, id).orElseThrow());
+          expected, executor.findById(JdbcTypesTable.jdbcTypesTable, id).orElseThrow());
       JdbcTypeContractSupport.assertNullValues(
-          executor.findById(JdbcTypesTable.JDBC_TYPES, nullId).orElseThrow());
+          executor.findById(JdbcTypesTable.jdbcTypesTable, nullId).orElseThrow());
       JdbcTypeContractSupport.assertNonNullValues(
-          emptyBytes, executor.findById(JdbcTypesTable.JDBC_TYPES, emptyBytesId).orElseThrow());
+          emptyBytes, executor.findById(JdbcTypesTable.jdbcTypesTable, emptyBytesId).orElseThrow());
       JdbcTypeContractSupport.assertInvalidReadsFail(dataSource);
     } finally {
       deleteRows(dataSource, "jdbc_types", id, nullId, emptyBytesId);

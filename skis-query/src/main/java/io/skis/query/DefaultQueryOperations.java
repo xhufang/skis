@@ -94,6 +94,12 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
+  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection) {
+    return new DefaultSelectFromStep<>(
+        this, SelectedResult.specialProjection(Objects.requireNonNull(projection, "projection")));
+  }
+
+  @Override
   public <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description) {
     return executable(
         Objects.requireNonNull(description, "description").state(), QueryParameters.empty());

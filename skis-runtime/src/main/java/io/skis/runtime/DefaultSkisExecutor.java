@@ -8,6 +8,7 @@ import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCatalog;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
+import io.skis.query.ProjectionType;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryPlanCatalog;
@@ -86,6 +87,11 @@ final class DefaultSkisExecutor implements SkisExecutor {
 
   @Override
   public <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
+    return queries.select(projection);
+  }
+
+  @Override
+  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection) {
     return queries.select(projection);
   }
 

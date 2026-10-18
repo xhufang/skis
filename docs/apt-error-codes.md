@@ -320,6 +320,15 @@ meanings stable; those milestones are not separately published versions.
 - Fix: keep generated Binder/RowDecoder invocation points compatible with their contracts.
 - First public version: `0.1.0`.
 
+### SKIS041
+
+- Cause: the table singleton name derived from the entity simple name conflicts with another
+  generated table field.
+- Invalid: an entity/property combination that would generate the same field name as `petTable`.
+- Valid: generated fields have distinct Java names.
+- Fix: rename the entity or conflicting property; SKIS does not silently add a suffix.
+- First public version: `0.2.7`.
+
 ## Entity rounds and generated output
 
 ### SKIS097
@@ -353,16 +362,17 @@ meanings stable; those milestones are not separately published versions.
 
 ### SKIS201
 
-- Cause: a projection scan was requested for a type without `@SkisProjection`.
+- Cause: a projection scan was requested for a type without `@ReusableProjection` or
+  `@SpecialProjection`.
 - Invalid: `public record PetSummary(Long id) {}` submitted directly to the projection processor.
-- Valid: add marker annotation `@SkisProjection`.
+- Valid: add exactly one projection mode annotation.
 - Fix: annotate the result type or do not submit it for projection processing.
 - First public version: `0.1.0`.
 
 ### SKIS202
 
 - Cause: the projection is neither a class nor a record.
-- Invalid: `@SkisProjection public interface PetSummary`.
+- Invalid: `@ReusableProjection public interface PetSummary`.
 - Valid: use a concrete class or record result type.
 - Fix: change the projection declaration kind.
 - First public version: `0.1.0`.
@@ -539,6 +549,63 @@ meanings stable; those milestones are not separately published versions.
   has been removed; this code is retired and must not be reassigned.
 - First public version: `0.1.0`.
 
+## Special projection property sources
+
+### SKIS225
+
+- Cause: one result type declares both `@ReusableProjection` and `@SpecialProjection`.
+- Fix: keep exactly one projection mode.
+- First public version: `0.2.7`.
+
+### SKIS226
+
+- Cause: `@PropertyFrom` is used by a reusable projection, or a special-projection constructor
+  parameter has no source.
+- Fix: use `@PropertyFrom` only on a special projection and declare one source per parameter.
+- First public version: `0.2.7`.
+
+### SKIS227
+
+- Cause: a source string is not a complete `<entity-type>#<property-name>` identity, or its
+  generated metadata belongs to a different entity.
+- Fix: reference the generated table property constant directly.
+- First public version: `0.2.7`.
+
+### SKIS228
+
+- Cause: the boxed constructor-parameter type differs from the generated property type.
+- Fix: make the parameter and source property types exactly match.
+- First public version: `0.2.7`.
+
+### SKIS229
+
+- Cause: a constructor parameter that does not accept null references a nullable property.
+- Fix: annotate the parameter nullable or choose a non-null property.
+- First public version: `0.2.7`.
+
+### SKIS230
+
+- Cause: a non-empty `PropertyFrom.alias` is not a portable query-table identifier.
+- Fix: use the default empty alias for unique-source binding or an alias matching
+  `[A-Za-z_][A-Za-z0-9_]*`.
+- First public version: `0.2.7`.
+
+### SKIS231
+
+- Cause: the encoded property has no matching generated table constant, metadata field, or table
+  accessor.
+- Fix: regenerate the entity companions and reference an existing property constant.
+- First public version: `0.2.7`.
+
+### SKIS232
+
+- Cause: a record component conflicts with its explicit canonical-constructor parameter, or a
+  normal class source is duplicated, static, or does not match the selected constructor parameter's
+  name, type, and declared nullability.
+- Fix: retain one consistent source for each selected constructor parameter; keep source fields
+  non-static and structurally identical to their parameters.
+- First public version: `0.2.7`.
+
 ## Projection generated output
 
 ### SKIS298
@@ -551,7 +618,7 @@ meanings stable; those milestones are not separately published versions.
 ### SKIS299
 
 - Cause: a generated projection companion source cannot be created.
-- Invalid build: a user source already owns `<ResultType>Projection` in the `.skis` package.
+- Invalid build: a user source already owns `<ResultType>Pro` in the `.skis` package.
 - Valid build: reserve generated projection companion names for SKIS.
 - Fix: rename/remove the conflicting source and verify generated-source output permissions.
 - First public version: `0.1.0`.

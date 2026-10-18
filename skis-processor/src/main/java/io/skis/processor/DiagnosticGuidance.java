@@ -49,10 +49,11 @@ final class DiagnosticGuidance {
           "enable Lombok annotation processing and use a supported mutable Bean shape";
       case "SKIS039" -> "remove unsupported checked exceptions from the no-args constructor";
       case "SKIS040" -> "remove unsupported checked exceptions from Bean accessors";
+      case "SKIS041" -> "rename the entity or conflicting property used by generated table members";
       case "SKIS097" -> "generate referenced entity property types before processing ends";
       case "SKIS098" -> "remove entity-index output conflicts and check the class output path";
       case "SKIS099" -> "remove generated entity source conflicts and check the source output path";
-      case "SKIS201" -> "add @SkisProjection or remove the type from projection processing";
+      case "SKIS201" -> "add exactly one of @ReusableProjection or @SpecialProjection";
       case "SKIS202" -> "use a projection class or record";
       case "SKIS203" -> "move the projection to a top-level declaration";
       case "SKIS204" -> "declare the projection public";
@@ -71,12 +72,18 @@ final class DiagnosticGuidance {
       case "SKIS217" ->
           "generate referenced types and enable Lombok processing before processing ends";
       case "SKIS218" -> "make every projection parameter type accessible from the .skis package";
-      case "SKIS219" -> "set @SkisProjection.entity to a declared @SkisEntity type";
-      case "SKIS220" -> "fix the nested entity diagnostic before generating the projection";
-      case "SKIS221" -> "match an entity property name or add @ProjectionProperty";
-      case "SKIS222" -> "make the projection parameter and entity property types match";
-      case "SKIS223" -> "use a wrapper parameter or make the selected property non-null";
-      case "SKIS224" -> "name a persistent entity property in @ProjectionProperty";
+      case "SKIS225" -> "keep exactly one projection mode annotation";
+      case "SKIS226" -> "declare one @PropertyFrom per special-projection constructor parameter";
+      case "SKIS227" -> "use a generated Table property constant with a complete entity identity";
+      case "SKIS228" -> "make the projection parameter and source property types match exactly";
+      case "SKIS229" -> "make the projection parameter nullable or choose a non-null property";
+      case "SKIS230" ->
+          "use an empty alias or one matching [A-Za-z_][A-Za-z0-9_]*";
+      case "SKIS231" ->
+          "regenerate the referenced entity table and use one of its property constants";
+      case "SKIS232" ->
+          "keep one consistent source per selected parameter and make source fields non-static "
+              + "with matching type and nullability";
       case "SKIS298" -> "remove projection-index output conflicts and check the class output path";
       case "SKIS299" ->
           "remove generated projection source conflicts and check the source output path";

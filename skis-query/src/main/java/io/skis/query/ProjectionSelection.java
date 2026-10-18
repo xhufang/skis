@@ -1,5 +1,6 @@
 package io.skis.query;
 
+import io.skis.query.spi.ProjectionMapping;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -27,6 +28,12 @@ public final class ProjectionSelection<R> {
       copy.add(Objects.requireNonNull(selection, "selection"));
     }
     this.selections = List.copyOf(copy);
+  }
+
+  /** Infrastructure factory used by the generated projection SPI contract. */
+  public static <R> ProjectionSelection<R> generated(
+      ProjectionMapping<R> mapping, List<? extends Selectable<?>> selections) {
+    return new ProjectionSelection<>(mapping, selections);
   }
 
   /** Returns the user result type produced by this selection. */

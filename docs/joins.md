@@ -50,11 +50,11 @@ text as identity. CROSS JOIN does not create an ON snapshot because it has no ON
 Use a generated table's `as(...)` method whenever the same entity occurs more than once:
 
 ```java
-OwnerTable primaryOwner = OwnerTable.OWNER.as("primary_owner");
-OwnerTable reviewer = OwnerTable.OWNER.as("reviewer");
+OwnerTable primaryOwner = OwnerTable.ownerTable.as("primary_owner");
+OwnerTable reviewer = OwnerTable.ownerTable.as("reviewer");
 
 executor
-    .select(PetOwnerPairViewProjection.of(
+    .select(PetOwnerPairViewPro.of(
         pet.id(), primaryOwner.name(), reviewer.name()))
     .from(pet)
     .leftJoin(primaryOwner)
@@ -102,16 +102,16 @@ but becomes nullable in the final SELECT after a LEFT JOIN.
 
 ## Generated cross-table projections
 
-`@SkisProjection` describes constructor parameters, not a source entity. The generated companion
+`@ReusableProjection` describes constructor parameters, not a source entity. The generated companion
 binds each parameter position to an explicit selectable:
 
 ```java
-@SkisProjection
+@ReusableProjection
 public record PetOwnerView(long petId, String petName, @Nullable String ownerName) {}
 
 List<PetOwnerView> rows =
     executor
-        .select(PetOwnerViewProjection.of(pet.id(), pet.name(), owner.name()))
+        .select(PetOwnerViewPro.of(pet.id(), pet.name(), owner.name()))
         .from(pet)
         .leftJoin(owner)
         .on(pet.ownerId().eq(owner.id()))

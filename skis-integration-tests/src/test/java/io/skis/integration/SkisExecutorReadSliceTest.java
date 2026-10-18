@@ -27,7 +27,7 @@ class SkisExecutorReadSliceTest {
   void fetchFirstPushesOneRowLimitIntoTheFinalJdbcSql() {
     JdbcCapture capture = new JdbcCapture();
     SkisExecutor executor = Skis.create(capture.dataSource(), H2Dialect.INSTANCE);
-    PetTable pet = PetTable.PET;
+    PetTable pet = PetTable.petTable;
 
     assertTrue(executor.selectFrom(pet).orderBy(pet.id().asc()).fetchFirst().hasRow());
 
@@ -44,8 +44,8 @@ class SkisExecutorReadSliceTest {
     JdbcCapture capture = new JdbcCapture();
     SkisExecutor executor = Skis.create(capture.dataSource(), H2Dialect.INSTANCE);
 
-    Pet fastPath = executor.findById(PetTable.PET, 7L).orElseThrow();
-    PetTable pet = PetTable.PET;
+    Pet fastPath = executor.findById(PetTable.petTable, 7L).orElseThrow();
+    PetTable pet = PetTable.petTable;
     List<Pet> dsl = executor.selectFrom(pet).where(pet.name().eq("Mimi")).fetchList();
     String maliciousName = "Mimi' OR 1=1 --";
     List<String> projected =

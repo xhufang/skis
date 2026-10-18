@@ -3,7 +3,7 @@ package example;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import example.skis.PetSummaryProjection;
+import example.skis.PetSummaryPro;
 import example.skis.PetTable;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.runtime.Skis;
@@ -32,21 +32,21 @@ class MinimalConsumerTest {
     }
 
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
-    executor.insert(PetTable.PET, new Pet(1L, "Mimi", null));
+    executor.insert(PetTable.petTable, new Pet(1L, "Mimi", null));
 
-    Pet stored = executor.findById(PetTable.PET, 1L).orElseThrow();
+    Pet stored = executor.findById(PetTable.petTable, 1L).orElseThrow();
     assertEquals("Mimi", stored.name());
 
     PetSummary summary =
         executor
-            .select(PetSummaryProjection.of(PetTable.PET.id(), PetTable.PET.name()))
-            .from(PetTable.PET)
-            .where(PetTable.PET.id().eq(1L))
+            .select(PetSummaryPro.of(PetTable.petTable.id(), PetTable.petTable.name()))
+            .from(PetTable.petTable)
+            .where(PetTable.petTable.id().eq(1L))
             .fetchOne()
             .orElseThrow();
     assertEquals(new PetSummary(1L, "Mimi"), summary);
 
-    assertEquals(1, executor.deleteById(PetTable.PET, 1L));
-    assertTrue(executor.findById(PetTable.PET, 1L).isEmpty());
+    assertEquals(1, executor.deleteById(PetTable.petTable, 1L));
+    assertTrue(executor.findById(PetTable.petTable, 1L).isEmpty());
   }
 }

@@ -9,6 +9,7 @@ import io.skis.mapping.JdbcTypeCodec;
 import io.skis.mapping.JdbcWriteContext;
 import io.skis.mapping.RowDecoder;
 import io.skis.metadata.PropertyMeta;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;

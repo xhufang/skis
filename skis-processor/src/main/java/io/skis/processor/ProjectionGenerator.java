@@ -11,7 +11,7 @@ import javax.tools.JavaFileObject;
 final class ProjectionGenerator {
 
   String render(ProjectionModel model) {
-    String className = model.projectionName() + "Projection";
+    String className = model.projectionName() + "Pro";
     List<ProjectionModel.ProjectionParameter> parameters = model.parameters();
     Set<String> usedNames = new HashSet<>();
     parameters.forEach(parameter -> usedNames.add(parameter.name()));
@@ -25,10 +25,15 @@ final class ProjectionGenerator {
     StringBuilder source = new StringBuilder(4096 + parameters.size() * 320);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.query.NonNullSelectable;\n");
-    source.append("import io.skis.query.ProjectionMapping;\n");
-    source.append("import io.skis.query.ProjectionSelection;\n");
-    source.append("import io.skis.query.Selectable;\n");
+    if (model.kind() == ProjectionModel.ProjectionKind.REUSABLE) {
+      source.append("import io.skis.query.NonNullSelectable;\n");
+      source.append("import io.skis.query.ProjectionSelection;\n");
+      source.append("import io.skis.query.Selectable;\n");
+    } else {
+      source.append("import io.skis.query.ProjectionType;\n");
+      source.append("import io.skis.query.spi.ProjectionSource;\n");
+    }
+    source.append("import io.skis.query.spi.ProjectionMapping;\n");
     source.append("import io.skis.sql.ast.Nullability;\n");
     source.append("import java.util.List;\n\n");
     source
@@ -37,7 +42,11 @@ final class ProjectionGenerator {
         .append("    comments = \"Projection ABI ")
         .append(SourceText.GENERATED_ABI)
         .append("\")\n");
-    source.append("public final class ").append(className).append(" {\n\n");
+    source.append("public final class ").append(className);
+    if (model.kind() == ProjectionModel.ProjectionKind.SPECIAL) {
+      source.append(" implements ProjectionType<").append(model.projectionTypeName()).append(">");
+    }
+    source.append(" {\n\n");
     source
         .append("  private static final ProjectionMapping<")
         .append(model.projectionTypeName())
@@ -108,6 +117,18 @@ final class ProjectionGenerator {
           .append(index + 1 == parameters.size() ? ");\n" : ",\n");
     }
     source.append("          });\n\n");
+    if (model.kind() == ProjectionModel.ProjectionKind.SPECIAL) {
+      appendSpecialContract(source, model, className);
+    } else {
+      appendReusableContract(source, model, className);
+    }
+    source.append("}\n");
+    return source.toString();
+  }
+
+  private static void appendReusableContract(
+      StringBuilder source, ProjectionModel model, String className) {
+    List<ProjectionModel.ProjectionParameter> parameters = model.parameters();
     source.append("  private ").append(className).append("() {}\n\n");
     source
         .append("  public static ProjectionSelection<")
@@ -130,8 +151,48 @@ final class ProjectionGenerator {
           .append(index + 1 == parameters.size() ? ");\n" : ", ");
     }
     source.append("  }\n");
-    source.append("}\n");
-    return source.toString();
+  }
+
+  private static void appendSpecialContract(
+      StringBuilder source, ProjectionModel model, String className) {
+    source.append("  private static final List<ProjectionSource> SOURCES =\n");
+    source.append("      List.of(\n");
+    for (int index = 0; index < model.sources().size(); index++) {
+      ProjectionModel.ProjectionSource projectionSource = model.sources().get(index);
+      source
+          .append("          ProjectionSource.of(")
+          .append(projectionSource.metaTypeName())
+          .append('.')
+          .append(projectionSource.metaFieldName());
+      if (!projectionSource.alias().isEmpty()) {
+        source.append(", ").append(SourceText.string(projectionSource.alias()));
+      }
+      source.append(index + 1 == model.sources().size() ? "));\n\n" : "),\n");
+    }
+    source
+        .append("  private static final ")
+        .append(className)
+        .append(" INSTANCE = new ")
+        .append(className)
+        .append("();\n\n")
+        .append("  private ")
+        .append(className)
+        .append("() {}\n\n")
+        .append("  public static ")
+        .append(className)
+        .append(" all() {\n")
+        .append("    return INSTANCE;\n")
+        .append("  }\n\n")
+        .append("  @Override\n")
+        .append("  public ProjectionMapping<")
+        .append(model.projectionTypeName())
+        .append("> mapping() {\n")
+        .append("    return MAPPING;\n")
+        .append("  }\n\n")
+        .append("  @Override\n")
+        .append("  public List<ProjectionSource> sources() {\n")
+        .append("    return SOURCES;\n")
+        .append("  }\n");
   }
 
   void generate(ProjectionModel model, Filer filer) throws IOException {

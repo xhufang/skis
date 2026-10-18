@@ -121,6 +121,19 @@ final class EntityModelValidator {
         }
       }
     }
+    String tableSingleton = SourceText.tableSingletonName(model.entityName());
+    if (generatedFields.contains(tableSingleton)
+        || model.properties().stream()
+            .map(property -> property.name() + "Column")
+            .anyMatch(tableSingleton::equals)) {
+      problems.add(
+          problem(
+              "SKIS041",
+              "derived table singleton field '"
+                  + tableSingleton
+                  + "' conflicts with another generated table member",
+              model.type()));
+    }
     if (versionCount > 1) {
       problems.add(
           problem("SKIS009", "an entity may declare only one @Version property", model.type()));

@@ -6,7 +6,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Selects the public constructor used by the generated mapper for a {@link SkisProjection}. */
+/** Selects the public constructor used by a generated reusable or special projection mapper. */
 @Documented
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.CONSTRUCTOR)

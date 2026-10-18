@@ -10,14 +10,24 @@ record ProjectionModel(
     String projectionTypeName,
     String projectionBinaryName,
     String constructorDescriptor,
-    List<ProjectionParameter> parameters) {
+    ProjectionKind kind,
+    List<ProjectionParameter> parameters,
+    List<ProjectionSource> sources) {
 
   ProjectionModel {
     parameters = List.copyOf(parameters);
+    sources = List.copyOf(sources);
+    if (kind == ProjectionKind.REUSABLE && !sources.isEmpty()) {
+      throw new IllegalArgumentException("a reusable projection must not declare sources");
+    }
+    if (kind == ProjectionKind.SPECIAL && sources.size() != parameters.size()) {
+      throw new IllegalArgumentException(
+          "a special projection must declare one source per constructor parameter");
+    }
   }
 
   String generatedQualifiedName() {
-    return generatedPackage + "." + projectionName + "Projection";
+    return generatedPackage + "." + projectionName + "Pro";
   }
 
   String mappingId() {
@@ -47,4 +57,11 @@ record ProjectionModel(
       boolean primitive,
       String constructorTypeName,
       boolean nullable) {}
+
+  record ProjectionSource(String metaTypeName, String metaFieldName, String alias) {}
+
+  enum ProjectionKind {
+    REUSABLE,
+    SPECIAL
+  }
 }
