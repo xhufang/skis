@@ -1,4 +1,4 @@
-/** Generated and runtime JDBC parameter and row mapping contracts. */
+/** Mapping module namespace; supported generated contracts live in {@code .spi}. */
 @NullMarked
 package io.skis.mapping;
 

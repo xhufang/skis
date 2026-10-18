@@ -17,10 +17,10 @@ final class BinderGenerator implements EntitySourceGenerator {
     StringBuilder source = new StringBuilder(4096);
     source.append(SourceText.GENERATED_COMMENT);
     source.append("package ").append(model.generatedPackage()).append(";\n\n");
-    source.append("import io.skis.mapping.EntityMutationBinders;\n");
-    source.append("import io.skis.mapping.JdbcCodecs;\n");
-    source.append("import io.skis.mapping.JdbcWriteContext;\n");
-    source.append("import io.skis.mapping.ParameterBinder;\n");
+    source.append("import io.skis.mapping.spi.EntityMutationBinders;\n");
+    source.append("import io.skis.mapping.spi.JdbcCodecs;\n");
+    source.append("import io.skis.mapping.spi.JdbcWriteContext;\n");
+    source.append("import io.skis.mapping.spi.ParameterBinder;\n");
     source.append("import io.skis.metadata.VersionStrategy;\n");
     source.append("import java.sql.PreparedStatement;\n");
     source.append("import java.sql.SQLException;\n\n");

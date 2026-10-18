@@ -1,7 +1,7 @@
 package io.skis.query.spi;
 
-import io.skis.mapping.RowDecoder;
-import io.skis.mapping.RowReadContext;
+import io.skis.mapping.spi.RowDecoder;
+import io.skis.mapping.spi.RowReadContext;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryValidationException;

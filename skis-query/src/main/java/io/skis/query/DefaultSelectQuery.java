@@ -1,10 +1,10 @@
 package io.skis.query;
 
-import io.skis.core.ExecutionContext;
 import io.skis.core.ExecutionOptions;
-import io.skis.jdbc.CompiledQueryPlan;
-import io.skis.jdbc.JdbcPageResult;
-import io.skis.jdbc.JdbcRow;
+import io.skis.core.spi.ExecutionContext;
+import io.skis.jdbc.internal.CompiledQueryPlan;
+import io.skis.jdbc.internal.JdbcPageResult;
+import io.skis.jdbc.internal.JdbcRow;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;

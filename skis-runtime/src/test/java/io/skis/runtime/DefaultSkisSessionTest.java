@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.skis.core.ExecutionContext;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.core.TransactionException;
-import io.skis.jdbc.ConnectionProvider;
-import io.skis.jdbc.JdbcTransaction;
+import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.QueryOperations;
 import java.lang.reflect.Proxy;

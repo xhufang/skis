@@ -5,8 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.RenderedSql;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.SqlRenderException;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.FromClause;
@@ -94,7 +94,7 @@ class H2JoinDialectTest {
             () -> H2Dialect.INSTANCE.renderer().render(statement));
 
     assertEquals(
-        "dialect 'h2' does not support FULL JOIN at SELECT FROM join #2",
+        "dialect 'h2' does not support FULL JOIN at SELECT FROM join #2 (missing FULL_JOIN)",
         validationFailure.getMessage());
     assertEquals(validationFailure.getMessage(), renderingFailure.getMessage());
   }

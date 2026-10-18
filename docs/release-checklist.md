@@ -34,12 +34,12 @@ either publication as a cross-version API/ABI baseline.
 ## Expected Central components
 
 The authoritative component list is [`.github/release-components.txt`](../.github/release-components.txt).
-For `0.2.0`, which publishes the completed 0.1.x stabilization line without the later SQL DSL or
-MySQL work, it continues to contain exactly 16 GAVs:
+For the current `0.2.7-SNAPSHOT` cumulative release set it contains exactly 17 GAVs; the already
+published `0.2.0` component set remains a historical release fact and is not retroactively changed:
 
 - `skis-parent`, `skis-bom`;
 - `skis-annotations`, `skis-core`, `skis-metadata`, `skis-processor`;
-- `skis-sql-ast`, `skis-dialect-api`, `skis-mapping`, `skis-jdbc`;
+- `skis-sql-ast`, `skis-dialect-api`, `skis-dialect-support`, `skis-mapping`, `skis-jdbc`;
 - `skis-query`, `skis-mutation`, `skis-runtime`;
 - `skis-dialect-postgresql`, `skis-dialect-h2`, `skis-spring`.
 

@@ -4,18 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.Dialect;
-import io.skis.dialect.DialectCapabilities;
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.IdentifierRules;
-import io.skis.dialect.SqlRenderer;
-import io.skis.dialect.StandardIdentifierRules;
-import io.skis.dialect.StandardSqlRenderer;
-import io.skis.mapping.EntityMutationBinders;
-import io.skis.mapping.EntityRuntimeModel;
-import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.mapping.JdbcCodecs;
-import io.skis.mapping.PropertyRuntime;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectCapabilities;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.IdentifierRules;
+import io.skis.dialect.spi.SqlRenderer;
+import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlRenderer;
+import io.skis.mapping.spi.EntityMutationBinders;
+import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcCodecs;
+import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
@@ -51,7 +50,7 @@ class SkisPlanReuseTest {
     SkisExecutor executor =
         Skis.builder(dataSource())
             .dialect(dialect)
-            .runtimeRegistry(EntityRuntimeRegistry.of(List.of(runtimeModel())))
+            .runtimeModels(List.of(runtimeModel()))
             .build();
     int rendersAfterAssembly = dialect.renders.get();
 
@@ -70,7 +69,7 @@ class SkisPlanReuseTest {
     SkisExecutor disabled =
         Skis.builder(dataSource())
             .dialect(new CountingDialect())
-            .runtimeRegistry(EntityRuntimeRegistry.of(List.of(runtimeModel())))
+            .runtimeModels(List.of(runtimeModel()))
             .planCacheMaximumSize(0)
             .build();
 

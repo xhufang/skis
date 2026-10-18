@@ -1,13 +1,14 @@
 package io.skis.dialect.postgresql;
 
-import io.skis.dialect.Dialect;
-import io.skis.dialect.DialectCapabilities;
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.ExceptionClassifier;
-import io.skis.dialect.IdentifierRules;
-import io.skis.dialect.SqlRenderer;
-import io.skis.dialect.StandardIdentifierRules;
-import io.skis.dialect.StatementParameterLimit;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectCapabilities;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.ExceptionClassifier;
+import io.skis.dialect.spi.IdentifierRules;
+import io.skis.dialect.spi.SqlRenderer;
+import io.skis.dialect.spi.StatementParameterLimit;
+import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlRenderer;
 
 /** PostgreSQL dialect composition root for the currently supported SQL subset. */
 public final class PostgreSqlDialect implements Dialect {
@@ -35,6 +36,8 @@ public final class PostgreSqlDialect implements Dialect {
   // Use the connection-independent value as the conservative framework cap.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.explicit(65_535);
+  private static final SqlRenderer RENDERER =
+      new StandardSqlRenderer(ID, StandardIdentifierRules.INSTANCE, CAPABILITIES);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();
@@ -73,7 +76,7 @@ public final class PostgreSqlDialect implements Dialect {
 
   @Override
   public SqlRenderer renderer() {
-    return PostgreSqlRenderer.INSTANCE;
+    return RENDERER;
   }
 
   @Override

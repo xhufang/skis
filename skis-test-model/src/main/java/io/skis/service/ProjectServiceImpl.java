@@ -1,6 +1,5 @@
 package io.skis.service;
 
-import io.skis.core.id.IdWorker;
 import io.skis.entity.Project;
 import io.skis.entity.skis.EmployeeProjectLinkTable;
 import io.skis.entity.skis.EmployeeTable;
@@ -37,7 +36,7 @@ public class ProjectServiceImpl implements ProjectService {
   public Project createProject(Project project) {
     Objects.requireNonNull(project, "project");
     Instant now = Instant.now();
-    project.setId(IdWorker.getInstance().nextId());
+    project.setId(TestModelIds.next());
     project.setCreateStamp(now);
     project.setModifyStamp(now);
     project.setVersion(0L);

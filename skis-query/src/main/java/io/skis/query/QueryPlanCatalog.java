@@ -1,9 +1,9 @@
 package io.skis.query;
 
-import io.skis.dialect.Dialect;
-import io.skis.jdbc.JdbcExecutor;
-import io.skis.mapping.EntityRuntimeModel;
-import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.dialect.spi.Dialect;
+import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
+import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import java.time.Duration;
 import java.util.Collections;
@@ -16,18 +16,20 @@ import java.util.Optional;
  * Thread-safe catalog of entity Fast Path plans and owner boundary for shared query plans belonging
  * to one registry and dialect.
  *
- * <p>Ordinary query terminals share value-independent plans through this catalog; bindings created by
- * {@link #bind(JdbcExecutor)} use the same cache, including transaction-scoped executors.
+ * <p>Ordinary query terminals share value-independent plans through this catalog; bindings created
+ * by {@link #bind(JdbcExecutor)} use the same cache, including transaction-scoped executors.
  *
  * <p>A compiled decoder can legitimately retain its result type's class loader. Containers that
  * unload or replace application/plugin classes must first quiesce affected query executions and
  * then call {@link #clearProjectionPlans()} before dropping that loader; entity-scoped model
- * replacement may use {@link
- * #invalidateProjectionPlans(EntityMeta)} when every affected entity is known.
+ * replacement may use {@link #invalidateProjectionPlans(EntityMeta)} when every affected entity is
+ * known.
  */
 public final class QueryPlanCatalog {
 
-  /** Shared dynamic-plan capacity and distinct-key compilation admission bound; zero disables L1. */
+  /**
+   * Shared dynamic-plan capacity and distinct-key compilation admission bound; zero disables L1.
+   */
   public static final int DEFAULT_MAXIMUM_SIZE = ProjectionPlanCache.DEFAULT_MAXIMUM_SIZE;
 
   /** Shared dynamic-plan idle duration. */
@@ -50,7 +52,8 @@ public final class QueryPlanCatalog {
         QueryPlanKey.DialectIdentity.from(requiredDialect);
     this.sharedPlans = new ProjectionPlanCache(maximumSize, expireAfterAccess, System::nanoTime);
     QueryPlanKeyAssembler keys =
-        new QueryPlanKeyAssembler(runtimeRegistry, planIdentities, dialectIdentity, maximumSize != 0);
+        new QueryPlanKeyAssembler(
+            runtimeRegistry, planIdentities, dialectIdentity, maximumSize != 0);
     QueryPlanCompiler compiler =
         new QueryPlanCompiler(
             runtimeRegistry, requiredDialect, new QueryPlanResolver(sharedPlans, keys));

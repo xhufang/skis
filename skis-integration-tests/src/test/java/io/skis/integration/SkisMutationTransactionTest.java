@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;

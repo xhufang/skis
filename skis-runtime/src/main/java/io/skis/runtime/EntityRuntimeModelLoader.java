@@ -1,9 +1,9 @@
 package io.skis.runtime;
 
 import io.skis.core.SkisConfigurationException;
-import io.skis.mapping.EntityRuntimeModel;
-import io.skis.mapping.EntityRuntimeModelProvider;
-import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.EntityRuntimeModelProvider;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.metadata.EntityMeta;
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;

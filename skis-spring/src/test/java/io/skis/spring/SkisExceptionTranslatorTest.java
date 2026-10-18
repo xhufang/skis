@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.jdbc.QueryExecutionException;
 import io.skis.mutation.MutationException;
 import io.skis.mutation.OptimisticLockException;

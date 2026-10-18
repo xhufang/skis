@@ -1,6 +1,6 @@
 package io.skis.query;
 
-import io.skis.mapping.EntityRuntimeRegistry;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,6 +10,7 @@ import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /** One authority for deciding whether a fully validated statement can enter shared L1. */
+@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
 final class QueryPlanKeyAssembler {
 
   private final EntityRuntimeRegistry registry;
@@ -58,8 +59,7 @@ final class QueryPlanKeyAssembler {
       QueryPlanCompiler.LogicalParameter parameter = parameters.get(index);
       Optional<QueryPlanKey.ParameterShape> shape =
           switch (parameter.scalarBinding()) {
-            case INTEGER ->
-                Optional.of(QueryPlanKey.ParameterShape.paginationInteger(index));
+            case INTEGER -> Optional.of(QueryPlanKey.ParameterShape.paginationInteger(index));
             case LONG -> Optional.of(QueryPlanKey.ParameterShape.paginationLong(index));
             case NONE ->
                 QueryPlanKey.ParameterShape.codec(

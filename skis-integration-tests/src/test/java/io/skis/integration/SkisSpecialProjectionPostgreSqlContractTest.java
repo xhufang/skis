@@ -2,7 +2,7 @@ package io.skis.integration;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
-import io.skis.dialect.Dialect;
+import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
 import javax.sql.DataSource;
 import org.postgresql.ds.PGSimpleDataSource;

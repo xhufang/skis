@@ -3,8 +3,8 @@ package io.skis.dialect.h2;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.RenderedSql;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.RenderedSql;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedOutputColumn;

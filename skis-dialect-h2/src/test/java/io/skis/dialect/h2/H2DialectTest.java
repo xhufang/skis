@@ -2,13 +2,15 @@ package io.skis.dialect.h2;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.RenderedSql;
-import io.skis.dialect.SqlExceptionCategory;
-import io.skis.dialect.StatementParameterLimit;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.SqlExceptionCategory;
+import io.skis.dialect.spi.StatementParameterLimit;
+import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
@@ -51,7 +53,8 @@ class H2DialectTest {
     H2Dialect dialect = H2Dialect.INSTANCE;
 
     assertEquals("h2", dialect.id());
-    assertSame(H2Renderer.INSTANCE, dialect.renderer());
+    assertSame(dialect.renderer(), dialect.renderer());
+    assertInstanceOf(StandardSqlRenderer.class, dialect.renderer());
     assertSame(H2ExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());

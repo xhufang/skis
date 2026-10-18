@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.Dialect;
+import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.QueryExecutionException;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;

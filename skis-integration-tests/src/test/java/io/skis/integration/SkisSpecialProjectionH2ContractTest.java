@@ -1,6 +1,6 @@
 package io.skis.integration;
 
-import io.skis.dialect.Dialect;
+import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.h2.H2Dialect;
 import java.util.UUID;
 import javax.sql.DataSource;

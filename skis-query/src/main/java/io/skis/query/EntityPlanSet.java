@@ -1,7 +1,7 @@
 package io.skis.query;
 
-import io.skis.jdbc.CompiledQueryPlan;
-import io.skis.mapping.EntityRuntimeModel;
+import io.skis.jdbc.internal.CompiledQueryPlan;
+import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;

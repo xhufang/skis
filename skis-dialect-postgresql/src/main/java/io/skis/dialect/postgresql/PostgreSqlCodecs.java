@@ -1,8 +1,8 @@
 package io.skis.dialect.postgresql;
 
-import io.skis.mapping.JdbcReadContext;
-import io.skis.mapping.JdbcTypeCodec;
-import io.skis.mapping.JdbcWriteContext;
+import io.skis.mapping.spi.JdbcReadContext;
+import io.skis.mapping.spi.JdbcTypeCodec;
+import io.skis.mapping.spi.JdbcWriteContext;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;

@@ -1,13 +1,14 @@
 package io.skis.dialect.h2;
 
-import io.skis.dialect.Dialect;
-import io.skis.dialect.DialectCapabilities;
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.ExceptionClassifier;
-import io.skis.dialect.IdentifierRules;
-import io.skis.dialect.SqlRenderer;
-import io.skis.dialect.StandardIdentifierRules;
-import io.skis.dialect.StatementParameterLimit;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectCapabilities;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.ExceptionClassifier;
+import io.skis.dialect.spi.IdentifierRules;
+import io.skis.dialect.spi.SqlRenderer;
+import io.skis.dialect.spi.StatementParameterLimit;
+import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlRenderer;
 
 /** H2 development-and-test dialect composition root. */
 public final class H2Dialect implements Dialect {
@@ -33,6 +34,8 @@ public final class H2Dialect implements Dialect {
   // No stable dialect-level maximum has been accepted for the supported H2 contract.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.unknown();
+  private static final SqlRenderer RENDERER =
+      new StandardSqlRenderer(ID, StandardIdentifierRules.INSTANCE, CAPABILITIES);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();
@@ -71,7 +74,7 @@ public final class H2Dialect implements Dialect {
 
   @Override
   public SqlRenderer renderer() {
-    return H2Renderer.INSTANCE;
+    return RENDERER;
   }
 
   @Override

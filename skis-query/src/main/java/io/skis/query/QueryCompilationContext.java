@@ -1,7 +1,7 @@
 package io.skis.query;
 
-import io.skis.dialect.Dialect;
-import io.skis.dialect.RenderedSql;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.RenderedSql;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.SelectStatement;
@@ -9,7 +9,9 @@ import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.StatementAst;
 import java.util.Objects;
 
-/** Immutable hand-off between semantic analysis, dialect validation, rendering, and plan assembly. */
+/**
+ * Immutable hand-off between semantic analysis, dialect validation, rendering, and plan assembly.
+ */
 record QueryCompilationContext(StatementAst statement, QueryBlockAnalysis analysis) {
 
   QueryCompilationContext {

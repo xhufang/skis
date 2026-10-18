@@ -1,0 +1,720 @@
+package io.skis.dialect.support;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.skis.dialect.SqlRenderException;
+import io.skis.dialect.internal.DialectQueryFeatures;
+import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectCapabilities;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.IdentifierRules;
+import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.SqlRenderer;
+import io.skis.metadata.ColumnMeta;
+import io.skis.metadata.EntityMeta;
+import io.skis.metadata.PrimaryKeyMeta;
+import io.skis.metadata.PropertyMeta;
+import io.skis.metadata.TableMeta;
+import io.skis.metadata.VersionMeta;
+import io.skis.metadata.VersionStrategy;
+import io.skis.sql.ast.ArithmeticExpression;
+import io.skis.sql.ast.ArithmeticOperator;
+import io.skis.sql.ast.BetweenPredicate;
+import io.skis.sql.ast.CaseExpression;
+import io.skis.sql.ast.CaseWhen;
+import io.skis.sql.ast.CastExpression;
+import io.skis.sql.ast.CoalesceExpression;
+import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.ExistsPredicate;
+import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.IncrementExpression;
+import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.InSubqueryPredicate;
+import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.JoinClause;
+import io.skis.sql.ast.JoinType;
+import io.skis.sql.ast.LikePredicate;
+import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.NotPredicate;
+import io.skis.sql.ast.NullOrder;
+import io.skis.sql.ast.OrderByItem;
+import io.skis.sql.ast.OrderDirection;
+import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.QueryBlockAnalysis;
+import io.skis.sql.ast.ScalarSubqueryExpression;
+import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
+import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.TableExpression;
+import io.skis.sql.ast.UpdateAssignment;
+import io.skis.sql.ast.UpdateStatement;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Test;
+
+class StandardSqlRendererTest {
+
+  private static final PropertyMeta<Pet, Long> ID =
+      new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
+  private static final PropertyMeta<Pet, String> NAME =
+      new PropertyMeta<>(1, "name", String.class, ColumnMeta.of("pet_name", true));
+  private static final PropertyMeta<Pet, Long> VERSION =
+      new PropertyMeta<>(2, "version", Long.class, ColumnMeta.of("version", false));
+  private static final EntityMeta<Pet> PET = metadata(new TableMeta("", "shelter", "pet"));
+  private static final EntityMeta<Pet> CATALOG_PET =
+      metadata(new TableMeta("animal_db", "shelter", "pet"));
+  private static final EntityMeta<Pet> OTHER_PET = metadata(TableMeta.of("other_pet"));
+  private static final EntityMeta<Pet> SQL_LOOKING_PET =
+      metadata(TableMeta.of("pet; DROP TABLE audit; --"));
+  private static final SqlRenderer RENDERER =
+      new StandardSqlRenderer(
+          "test",
+          StandardIdentifierRules.INSTANCE,
+          DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
+
+  @Test
+  void rejectsInvalidOrIncompleteRendererIdentity() {
+    assertThrows(
+        NullPointerException.class,
+        () ->
+            new StandardSqlRenderer(
+                null, StandardIdentifierRules.INSTANCE, DialectCapabilities.none()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new StandardSqlRenderer(
+                " ", StandardIdentifierRules.INSTANCE, DialectCapabilities.none()));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new StandardSqlRenderer(
+                "PostgreSQL", StandardIdentifierRules.INSTANCE, DialectCapabilities.none()));
+    assertThrows(
+        NullPointerException.class,
+        () -> new StandardSqlRenderer("test", null, DialectCapabilities.none()));
+    assertThrows(
+        NullPointerException.class,
+        () -> new StandardSqlRenderer("test", StandardIdentifierRules.INSTANCE, null));
+  }
+
+  @Test
+  void preservesPlaceholderEncounterOrderWithoutParameterValues() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<String> selectedName = new ParameterSlot<>(1, String.class, true);
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+    SelectStatement statement =
+        new SelectStatement(List.of(pet.id(), selectedName), pet, pet.id().eq(id));
+
+    RenderedSql rendered = RENDERER.render(statement);
+
+    assertEquals(
+        "SELECT \"pet\".\"id\", ? FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
+        rendered.sql());
+    assertEquals(List.of(selectedName, id), rendered.parameters());
+  }
+
+  @Test
+  void exposesRepeatedParameterPositionsCreatedByNullOrderingFallback() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<String> ordered = new ParameterSlot<>(0, String.class, true);
+    SelectStatement statement =
+        new SelectStatement(
+            false,
+            List.of(pet.id()),
+            List.of(),
+            pet,
+            null,
+            List.of(new OrderByItem(ordered, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+
+    RenderedSql rendered = RENDERER.render(statement);
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" "
+            + "ORDER BY CASE WHEN ? IS NULL THEN 1 ELSE 0 END ASC, ? ASC",
+        rendered.sql());
+    assertEquals(List.of(ordered, ordered), rendered.parameters());
+  }
+
+  @Test
+  void exposesRepeatedParameterPositionsCreatedByNullableDistinctCountCompensation() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<String> value = new ParameterSlot<>(0, String.class, true);
+    CaseExpression<String> nullable =
+        new CaseExpression<>(List.of(new CaseWhen<>(pet.id().isNotNull(), value)));
+    SqlRenderer renderer =
+        new StandardSqlRenderer(
+            "test",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.COUNT_DISTINCT));
+
+    RenderedSql rendered = renderer.render(new CountAst(pet, null, nullable));
+
+    assertEquals(
+        "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL THEN ? END) "
+            + "+ CASE WHEN COUNT(*) > COUNT(CASE WHEN \"pet\".\"id\" IS NOT NULL "
+            + "THEN ? END) THEN 1 ELSE 0 END FROM \"shelter\".\"pet\"",
+        rendered.sql());
+    assertEquals(List.of(value, value), rendered.parameters());
+  }
+
+  @Test
+  void validatedRenderingReusesAnalysisAndPreservesDirectGoldenOutput() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
+    SelectStatement statement =
+        new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    DialectQueryFeatures.validate(
+        "test",
+        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES),
+        statement,
+        analysis);
+
+    RenderedSql direct = RENDERER.render(statement);
+    RenderedSql validated = RENDERER.renderValidated(statement, analysis);
+
+    assertEquals(direct, validated);
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
+        validated.sql());
+  }
+
+  @Test
+  void resolvedDialectValidationPreservesDirectFailureDiagnostics() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new ExistsPredicate(new SelectStatement(List.of(inner.id()), inner), false));
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+
+    SqlRenderException direct =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(statement));
+    SqlRenderException resolved =
+        assertThrows(
+            SqlRenderException.class,
+            () ->
+                DialectQueryFeatures.validate(
+                    "test",
+                    DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES),
+                    statement,
+                    analysis));
+
+    assertEquals(direct.getMessage(), resolved.getMessage());
+  }
+
+  @Test
+  void resolvedDialectValidationBridgeKeepsDirectValidationOverrideUntilT07() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement statement = new SelectStatement(List.of(pet.id()), pet);
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    AtomicInteger directValidations = new AtomicInteger();
+    Dialect dialect =
+        new Dialect() {
+          @Override
+          public String id() {
+            return "bridge-test";
+          }
+
+          @Override
+          public IdentifierRules identifierRules() {
+            return StandardIdentifierRules.INSTANCE;
+          }
+
+          @Override
+          public DialectCapabilities capabilities() {
+            return DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+          }
+
+          @Override
+          public SqlRenderer renderer() {
+            return RENDERER;
+          }
+
+          @Override
+          public void validate(StatementAst candidate) {
+            directValidations.incrementAndGet();
+            Dialect.super.validate(candidate);
+          }
+        };
+
+    dialect.validate(statement, analysis);
+
+    assertEquals(1, directValidations.get());
+  }
+
+  @Test
+  void rejectsCatalogInsteadOfSilentlyDroppingIt() {
+    PetTable pet = new PetTable(CATALOG_PET);
+
+    SqlRenderException failure =
+        assertThrows(
+            SqlRenderException.class,
+            () -> RENDERER.render(new SelectStatement(List.of(pet.id()), pet)));
+
+    assertTrue(failure.getMessage().contains("catalog-qualified table"));
+  }
+
+  @Test
+  void rejectsColumnsOutsideTheOnlyFromTable() {
+    PetTable pet = new PetTable(PET);
+    PetTable other = new PetTable(OTHER_PET);
+
+    IllegalArgumentException failure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () -> RENDERER.render(new SelectStatement(List.of(other.name()), pet)));
+
+    assertTrue(failure.getMessage().contains("$ SELECT item #0"));
+    assertTrue(failure.getMessage().contains("unresolved outer reference"));
+  }
+
+  @Test
+  void rejectsMissingExistsAndCorrelationCapabilitiesBeforeRendering() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    SelectStatement uncorrelated =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new ExistsPredicate(new SelectStatement(List.of(inner.id()), inner), false));
+
+    SqlRenderException missingExists =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(uncorrelated));
+    assertTrue(missingExists.getMessage().contains("EXISTS_SUBQUERY"));
+    assertTrue(missingExists.getMessage().contains("$/WHERE[0]#0"));
+
+    SqlRenderer existsOnly =
+        new StandardSqlRenderer(
+            "exists-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.EXISTS_SUBQUERY));
+    assertTrue(existsOnly.render(uncorrelated).sql().contains("EXISTS ("));
+    SelectStatement correlatedChild =
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(outer.id()));
+    SelectStatement correlated =
+        new SelectStatement(
+            List.of(outer.id()), outer, new ExistsPredicate(correlatedChild, false));
+
+    SqlRenderException missingCorrelation =
+        assertThrows(SqlRenderException.class, () -> existsOnly.render(correlated));
+    assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
+    assertTrue(missingCorrelation.getMessage().contains("$/WHERE[0]#0"));
+  }
+
+  @Test
+  void distinguishesInSubqueryAndCorrelationCapabilities() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    SelectStatement child = new SelectStatement(List.of(inner.id()), inner);
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()), outer, new InSubqueryPredicate<>(outer.id(), child, false));
+
+    SqlRenderException missingIn =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(statement));
+    assertTrue(missingIn.getMessage().contains("IN_SUBQUERY"));
+    assertTrue(missingIn.getMessage().contains("$/WHERE[0]#0"));
+
+    SqlRenderer inOnly =
+        new StandardSqlRenderer(
+            "in-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.IN_SUBQUERY));
+    assertTrue(inOnly.render(statement).sql().contains(" IN (SELECT "));
+
+    SelectStatement correlatedChild =
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(outer.id()));
+    SelectStatement correlated =
+        new SelectStatement(
+            List.of(outer.id()),
+            outer,
+            new InSubqueryPredicate<>(outer.id(), correlatedChild, true));
+    SqlRenderException missingCorrelation =
+        assertThrows(SqlRenderException.class, () -> inOnly.render(correlated));
+    assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
+  }
+
+  @Test
+  void distinguishesScalarSubqueryAndCorrelationCapabilities() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ScalarSubqueryExpression<String> uncorrelatedScalar =
+        new ScalarSubqueryExpression<>(new SelectStatement(List.of(inner.name()), inner));
+    SelectStatement uncorrelated =
+        new SelectStatement(List.of(outer.id(), uncorrelatedScalar), outer);
+
+    SqlRenderException missingScalar =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(uncorrelated));
+    assertTrue(missingScalar.getMessage().contains("SCALAR_SUBQUERY"));
+    assertTrue(missingScalar.getMessage().contains("$/SELECT[1]#0"));
+
+    SqlRenderer scalarOnly =
+        new StandardSqlRenderer(
+            "scalar-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.SCALAR_SUBQUERY));
+    assertTrue(scalarOnly.render(uncorrelated).sql().contains("(SELECT "));
+
+    SelectStatement correlatedChild =
+        new SelectStatement(List.of(inner.name()), inner, inner.id().eq(outer.id()));
+    SelectStatement correlated =
+        new SelectStatement(
+            List.of(outer.id(), new ScalarSubqueryExpression<>(correlatedChild)), outer);
+    SqlRenderException missingCorrelation =
+        assertThrows(SqlRenderException.class, () -> scalarOnly.render(correlated));
+    assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
+    assertTrue(missingCorrelation.getMessage().contains("$/SELECT[1]#0"));
+  }
+
+  @Test
+  void rejectsDistinctScalarOrderingWithIndependentLogicalParameters() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ScalarSubqueryExpression<String> selected =
+        new ScalarSubqueryExpression<>(
+            new SelectStatement(
+                List.of(inner.name()),
+                inner,
+                inner.name().eq(new ParameterSlot<>(0, String.class, true))));
+    ScalarSubqueryExpression<String> ordered =
+        new ScalarSubqueryExpression<>(
+            new SelectStatement(
+                List.of(inner.name()),
+                inner,
+                inner.name().eq(new ParameterSlot<>(1, String.class, true))));
+    SelectStatement statement =
+        new SelectStatement(
+            true,
+            List.of(selected),
+            List.of(),
+            outer,
+            null,
+            List.of(new OrderByItem(ordered, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+            null);
+    SqlRenderer renderer =
+        new StandardSqlRenderer(
+            "scalar-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> renderer.render(statement));
+    assertTrue(failure.getMessage().contains("same logical parameters"));
+  }
+
+  @Test
+  void rejectsDistinctScalarOutputNullOrderingWhenNativePlacementIsMissing() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ScalarSubqueryExpression<String> scalar =
+        new ScalarSubqueryExpression<>(new SelectStatement(List.of(inner.name()), inner));
+    SelectStatement statement =
+        new SelectStatement(
+            true,
+            List.of(scalar),
+            List.of(),
+            outer,
+            null,
+            List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+    SqlRenderer renderer =
+        new StandardSqlRenderer(
+            "scalar-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> renderer.render(statement));
+    assertTrue(failure.getMessage().contains("requires native NULLS FIRST/LAST"));
+  }
+
+  @Test
+  void reportsTheNestedBlockPathAndMissingJoinCapability() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(PET).as(Identifier.of("inner_pet"));
+    PetTable joined = new PetTable(OTHER_PET).as(Identifier.of("joined_pet"));
+    SelectStatement child =
+        new SelectStatement(
+            List.of(inner.id()),
+            new FromClause(
+                inner,
+                List.of(
+                    new JoinClause(JoinType.FULL, joined, inner.id().eq(joined.id())))));
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(outer.id()), outer, new ExistsPredicate(child, false));
+    SqlRenderer existsOnly =
+        new StandardSqlRenderer(
+            "exists-only",
+            StandardIdentifierRules.INSTANCE,
+            DialectCapabilities.of(
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.EXISTS_SUBQUERY));
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> existsOnly.render(statement));
+
+    assertTrue(failure.getMessage().contains("$/WHERE[0]#0"));
+    assertTrue(failure.getMessage().contains("missing FULL_JOIN"));
+  }
+
+  @Test
+  void doesNotSilentlyDropReservedGroupingStructure() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement grouped =
+        new SelectStatement(
+            false,
+            List.of(pet.name()),
+            List.of(),
+            pet,
+            null,
+            List.of(pet.name()),
+            null,
+            List.of(),
+            null);
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(grouped));
+
+    assertTrue(failure.getMessage().contains("GROUP BY/HAVING"));
+  }
+
+  @Test
+  void rendersComplexPortablePredicatesAndPreservesParameterOrder() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> lower = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<Long> upper = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<String> pattern = new ParameterSlot<>(2, String.class, false);
+    ParameterSlot<Long> first = new ParameterSlot<>(3, Long.class, false);
+    ParameterSlot<Long> second = new ParameterSlot<>(4, Long.class, false);
+
+    RenderedSql rendered =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(pet.id()),
+                pet,
+                LogicalPredicate.and(
+                    List.of(
+                        new BetweenPredicate<>(pet.id(), lower, upper),
+                        new LikePredicate(pet.name(), pattern),
+                        new InPredicate<>(pet.id(), List.of(first, second), false),
+                        new NotPredicate(pet.name().isNull())))));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
+            + "\"pet\".\"id\" BETWEEN ? AND ? AND \"pet\".\"pet_name\" LIKE ? "
+            + "AND \"pet\".\"id\" IN (?, ?) AND NOT (\"pet\".\"pet_name\" IS NULL)",
+        rendered.sql());
+    assertEquals(List.of(lower, upper, pattern, first, second), rendered.parameters());
+  }
+
+  @Test
+  void rendersEmptyMembershipWithDeterministicBooleanSemantics() {
+    PetTable pet = new PetTable(PET);
+
+    RenderedSql emptyIn =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), false)));
+    RenderedSql emptyNotIn =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), true)));
+
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE 1 = 0", emptyIn.sql());
+    assertEquals(
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE 1 = 1",
+        emptyNotIn.sql());
+  }
+
+  @Test
+  void rendersPortableStandardExpressionsAndPreservesNestedParameterOrder() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> addend = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<String> suffix = new ParameterSlot<>(1, String.class, false);
+    ParameterSlot<Long> threshold = new ParameterSlot<>(2, Long.class, false);
+    ParameterSlot<String> otherwise = new ParameterSlot<>(3, String.class, false);
+    ParameterSlot<String> fallback = new ParameterSlot<>(4, String.class, false);
+
+    RenderedSql rendered =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(
+                    LiteralExpression.trueLiteral(),
+                    LiteralExpression.falseLiteral(),
+                    LiteralExpression.zero(Long.class),
+                    LiteralExpression.one(Long.class),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
+                    new ConcatExpression(List.of(pet.name(), suffix)),
+                    new CaseExpression<>(
+                        List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())), otherwise),
+                    new CastExpression<>(pet.id(), String.class),
+                    new CoalesceExpression<>(List.of(pet.name(), fallback)),
+                    new CastExpression<>(
+                        LiteralExpression.nullLiteral(String.class), String.class)),
+                pet));
+
+    assertEquals(
+        "SELECT TRUE, FALSE, 0, 1, (\"pet\".\"id\" + ?), "
+            + "(\"pet\".\"pet_name\" || ?), "
+            + "CASE WHEN \"pet\".\"id\" > ? THEN \"pet\".\"pet_name\" ELSE ? END, "
+            + "CAST(\"pet\".\"id\" AS VARCHAR), COALESCE(\"pet\".\"pet_name\", ?), "
+            + "CAST(NULL AS VARCHAR) FROM \"shelter\".\"pet\"",
+        rendered.sql());
+    assertEquals(List.of(addend, suffix, threshold, otherwise, fallback), rendered.parameters());
+  }
+
+  @Test
+  void rendersEveryPortableArithmeticOperatorWithoutLosingPrecedence() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> operand = new ParameterSlot<>(0, Long.class, false);
+
+    RenderedSql rendered =
+        RENDERER.render(
+            new SelectStatement(
+                List.of(
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, operand),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.SUBTRACT, operand),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.MULTIPLY, operand),
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.DIVIDE, operand)),
+                pet));
+
+    assertEquals(
+        "SELECT (\"pet\".\"id\" + ?), (\"pet\".\"id\" - ?), "
+            + "(\"pet\".\"id\" * ?), (\"pet\".\"id\" / ?) FROM \"shelter\".\"pet\"",
+        rendered.sql());
+    assertEquals(List.of(operand, operand, operand, operand), rendered.parameters());
+  }
+
+  @Test
+  void quotesSqlLookingMetadataAsOneIdentifier() {
+    PetTable pet = new PetTable(SQL_LOOKING_PET);
+
+    RenderedSql rendered = RENDERER.render(new SelectStatement(List.of(pet.id()), pet));
+
+    assertEquals(
+        "SELECT \"pet; DROP TABLE audit; --\".\"id\" FROM \"pet; DROP TABLE audit; --\"",
+        rendered.sql());
+    assertEquals(0, rendered.parameterCount());
+  }
+
+  @Test
+  void rendersPortableSingleEntityMutationSql() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> insertId = new ParameterSlot<>(0, Long.class, false);
+    ParameterSlot<String> insertName = new ParameterSlot<>(1, String.class, true);
+    ParameterSlot<Long> insertVersion = new ParameterSlot<>(2, Long.class, false);
+
+    RenderedSql insert =
+        RENDERER.render(
+            new InsertStatement(
+                pet,
+                List.of(pet.id(), pet.name(), pet.version()),
+                List.of(insertId, insertName, insertVersion)));
+
+    assertEquals(
+        "INSERT INTO \"shelter\".\"pet\" (\"id\", \"pet_name\", \"version\") VALUES (?, ?, ?)",
+        insert.sql());
+    assertEquals(List.of(insertId, insertName, insertVersion), insert.parameters());
+
+    ParameterSlot<String> updateName = new ParameterSlot<>(0, String.class, true);
+    ParameterSlot<Long> updateId = new ParameterSlot<>(1, Long.class, false);
+    ParameterSlot<Long> expectedVersion = new ParameterSlot<>(2, Long.class, false);
+    RenderedSql update =
+        RENDERER.render(
+            new UpdateStatement(
+                pet,
+                List.of(
+                    new UpdateAssignment<>(pet.name(), updateName),
+                    new UpdateAssignment<>(pet.version(), new IncrementExpression<>(pet.version()))),
+                LogicalPredicate.and(
+                    List.of(pet.id().eq(updateId), pet.version().eq(expectedVersion)))));
+
+    assertEquals(
+        "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",
+        update.sql());
+    assertEquals(List.of(updateName, updateId, expectedVersion), update.parameters());
+
+    ParameterSlot<Long> deleteId = new ParameterSlot<>(0, Long.class, false);
+    RenderedSql delete =
+        RENDERER.render(new DeleteStatement(pet, pet.id().eq(deleteId)));
+
+    assertEquals("DELETE FROM \"shelter\".\"pet\" WHERE \"id\" = ?", delete.sql());
+    assertEquals(List.of(deleteId), delete.parameters());
+  }
+
+  @Test
+  void rejectsUnknownStatementNodesWithDialectContext() {
+    StatementAst unknown = new StatementAst() {};
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> RENDERER.render(unknown));
+
+    assertTrue(failure.getMessage().contains("dialect 'test'"));
+    assertTrue(failure.getMessage().contains(unknown.getClass().getName()));
+  }
+
+  private static EntityMeta<Pet> metadata(TableMeta table) {
+    return EntityMeta.simple(
+        Pet.class,
+        table,
+        List.of(ID, NAME, VERSION),
+        new PrimaryKeyMeta<>(List.of(ID)),
+        new VersionMeta<>(VERSION, VersionStrategy.NUMERIC_INCREMENT),
+        false);
+  }
+
+  private record Pet(Long id, String name, Long version) {}
+
+  private static final class PetTable extends TableExpression<Pet> {
+
+    private final ColumnExpression<Pet, Long> id = column(ID);
+    private final ColumnExpression<Pet, String> name = column(NAME);
+    private final ColumnExpression<Pet, Long> version = column(VERSION);
+
+    private PetTable(EntityMeta<Pet> entity) {
+      super(entity);
+    }
+
+    private PetTable(EntityMeta<Pet> entity, Identifier alias) {
+      super(entity, alias);
+    }
+
+    private ColumnExpression<Pet, Long> id() {
+      return id;
+    }
+
+    private ColumnExpression<Pet, String> name() {
+      return name;
+    }
+
+    private ColumnExpression<Pet, Long> version() {
+      return version;
+    }
+
+    @Override
+    public PetTable as(Identifier alias) {
+      return new PetTable(entity(), alias);
+    }
+  }
+}

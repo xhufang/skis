@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.jdbc.JdbcCursor;
+import io.skis.jdbc.internal.JdbcCursor;
 import io.skis.sql.ast.SqlType;
 import java.sql.Timestamp;
 import java.util.ArrayList;

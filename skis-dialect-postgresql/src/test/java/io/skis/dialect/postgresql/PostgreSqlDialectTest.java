@@ -2,13 +2,15 @@ package io.skis.dialect.postgresql;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.skis.dialect.DialectFeature;
-import io.skis.dialect.RenderedSql;
-import io.skis.dialect.SqlExceptionCategory;
-import io.skis.dialect.StatementParameterLimit;
+import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.SqlExceptionCategory;
+import io.skis.dialect.spi.StatementParameterLimit;
+import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
@@ -51,7 +53,8 @@ class PostgreSqlDialectTest {
     PostgreSqlDialect dialect = PostgreSqlDialect.INSTANCE;
 
     assertEquals("postgresql", dialect.id());
-    assertSame(PostgreSqlRenderer.INSTANCE, dialect.renderer());
+    assertSame(dialect.renderer(), dialect.renderer());
+    assertInstanceOf(StandardSqlRenderer.class, dialect.renderer());
     assertSame(PostgreSqlExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());

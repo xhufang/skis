@@ -1,8 +1,8 @@
 package io.skis.query;
 
-import io.skis.mapping.EntityRuntimeModel;
-import io.skis.mapping.EntityRuntimeRegistry;
-import io.skis.mapping.PropertyRuntime;
+import io.skis.mapping.internal.EntityRuntimeRegistry;
+import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Nullability;

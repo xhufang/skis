@@ -1,6 +1,6 @@
 package io.skis.query;
 
-import io.skis.jdbc.JdbcCursor;
+import io.skis.jdbc.internal.JdbcCursor;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 

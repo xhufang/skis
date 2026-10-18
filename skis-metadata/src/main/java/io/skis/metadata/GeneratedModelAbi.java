@@ -4,7 +4,7 @@ package io.skis.metadata;
 public final class GeneratedModelAbi {
 
   /** ABI implemented by this runtime. */
-  public static final int CURRENT = 6;
+  public static final int CURRENT = 7;
 
   private GeneratedModelAbi() {}
 

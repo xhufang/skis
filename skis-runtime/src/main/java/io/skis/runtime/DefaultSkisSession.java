@@ -2,7 +2,7 @@ package io.skis.runtime;
 
 import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
-import io.skis.jdbc.JdbcTransaction;
+import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;

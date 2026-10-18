@@ -1,7 +1,7 @@
 package io.skis.dialect.h2;
 
-import io.skis.dialect.ExceptionClassifier;
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.ExceptionClassifier;
+import io.skis.dialect.spi.SqlExceptionCategory;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;

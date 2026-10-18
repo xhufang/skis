@@ -106,7 +106,7 @@ jobs:
           if-no-files-found: ignore
 
   minimal-consumer:
-    name: Independent H2 consumer
+    name: Independent public consumers
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -131,6 +131,13 @@ jobs:
         shell: bash
         run: |
           project_version="$(./mvnw -q -N help:evaluate -Dexpression=project.version -DforceStdout)"
+          consumer_dir="${RUNNER_TEMP}/skis-spi-only-consumer"
+          cp -R skis-integration-tests/src/consumer/spi-only "${consumer_dir}"
+          ./mvnw -B -ntp \
+            -f "${consumer_dir}/pom.xml" \
+            -Dskis.version="${project_version}" \
+            verify
+
           consumer_dir="${RUNNER_TEMP}/skis-minimal-h2-consumer"
           cp -R skis-integration-tests/src/consumer/minimal-h2 "${consumer_dir}"
           ./mvnw -B -ntp \

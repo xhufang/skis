@@ -1,6 +1,7 @@
 package io.skis.jdbc;
 
-import io.skis.dialect.SqlExceptionCategory;
+import io.skis.dialect.spi.SqlExceptionCategory;
+import io.skis.jdbc.internal.JdbcFingerprint;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -8,23 +9,8 @@ import org.jspecify.annotations.Nullable;
 /** Internal value-independent diagnostics shared by query and mutation JDBC failures. */
 final class JdbcFailureDiagnostics {
 
-  enum Phase {
-    ACQUIRE("connection-acquire"),
-    CONFIGURE("statement-configuration"),
-    EXECUTE("execution"),
-    RESULT_SET_CLOSE("result-set-close"),
-    STATEMENT_CLOSE("statement-close"),
-    RELEASE("connection-release");
-
-    private final String label;
-
-    Phase(String label) {
-      this.label = label;
-    }
-  }
-
   private final String operation;
-  private final Phase phase;
+  private final String phase;
   private final String dialectId;
   private final String sqlFingerprint;
   private final @Nullable String sqlState;
@@ -33,7 +19,7 @@ final class JdbcFailureDiagnostics {
 
   private JdbcFailureDiagnostics(
       String operation,
-      Phase phase,
+      String phase,
       String dialectId,
       String sqlFingerprint,
       @Nullable String sqlState,
@@ -50,13 +36,16 @@ final class JdbcFailureDiagnostics {
 
   static JdbcFailureDiagnostics from(
       String operation,
-      Phase phase,
+      String phase,
       String dialectId,
       String sql,
       SQLException cause,
       SqlExceptionCategory category) {
     Objects.requireNonNull(operation, "operation");
     Objects.requireNonNull(phase, "phase");
+    if (phase.isBlank()) {
+      throw new IllegalArgumentException("phase must not be blank");
+    }
     Objects.requireNonNull(dialectId, "dialectId");
     Objects.requireNonNull(sql, "sql");
     Objects.requireNonNull(cause, "cause");
@@ -76,7 +65,7 @@ final class JdbcFailureDiagnostics {
   }
 
   String phase() {
-    return phase.label;
+    return phase;
   }
 
   String dialectId() {
@@ -103,7 +92,7 @@ final class JdbcFailureDiagnostics {
     return "JDBC "
         + operation
         + " failed [phase="
-        + phase.label
+        + phase
         + ", dialect="
         + dialectId
         + ", sqlFingerprint="
@@ -118,13 +107,7 @@ final class JdbcFailureDiagnostics {
   }
 
   static String fingerprint(String sql) {
-    Objects.requireNonNull(sql, "sql");
-    long hash = 0xcbf29ce484222325L;
-    for (int index = 0; index < sql.length(); index++) {
-      hash ^= sql.charAt(index);
-      hash *= 0x100000001b3L;
-    }
-    return Long.toUnsignedString(hash, 16);
+    return JdbcFingerprint.of(sql);
   }
 
   private static String safeState(@Nullable String sqlState) {

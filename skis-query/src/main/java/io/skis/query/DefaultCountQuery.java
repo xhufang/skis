@@ -1,6 +1,6 @@
 package io.skis.query;
 
-import io.skis.core.ExecutionContext;
+import io.skis.core.spi.ExecutionContext;
 import java.util.Objects;
 
 /** Built-in count plan derived from an immutable query. */

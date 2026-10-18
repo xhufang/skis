@@ -1,6 +1,5 @@
 package io.skis.service;
 
-import io.skis.core.id.IdWorker;
 import io.skis.entity.Department;
 import io.skis.entity.Employee;
 import io.skis.entity.skis.DepartmentTable;
@@ -29,7 +28,7 @@ public class DepartmentServiceImpl implements DepartmentService {
   public Department createDepartment(Department department) {
     Objects.requireNonNull(department, "department");
     Instant now = Instant.now();
-    department.setId(IdWorker.getInstance().nextId());
+    department.setId(TestModelIds.next());
     department.setCreateStamp(now);
     department.setModifyStamp(now);
     department.setVersion(0L);

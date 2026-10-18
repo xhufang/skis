@@ -1,11 +1,11 @@
 package io.skis.runtime;
 
-import io.skis.core.ExecutionContext;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.core.ExecutionOptions;
-import io.skis.jdbc.JdbcExecutor;
-import io.skis.jdbc.JdbcTransaction;
+import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
-import io.skis.mutation.MutationPlanCatalog;
+import io.skis.mutation.internal.MutationPlanCatalog;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;

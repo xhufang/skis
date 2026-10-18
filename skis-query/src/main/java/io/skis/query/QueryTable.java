@@ -33,10 +33,7 @@ public abstract class QueryTable<E> {
   protected QueryTable(EntityMeta<E> entity, String alias) {
     EntityMeta<E> checked = Objects.requireNonNull(entity, "entity");
     this.tableNode =
-        new TableNode<>(
-            this,
-            checked,
-            Identifier.of(Objects.requireNonNull(alias, "alias")));
+        new TableNode<>(this, checked, Identifier.of(Objects.requireNonNull(alias, "alias")));
     ColumnSet<E> columnSet = createColumns(checked);
     this.columns = columnSet.columns();
     this.selections = columnSet.selections();
@@ -124,8 +121,7 @@ public abstract class QueryTable<E> {
 
   private ColumnSet<E> createColumns(EntityMeta<E> entity) {
     List<QueryColumn<E, ?>> createdColumns = new ArrayList<>(entity.properties().size());
-    List<ColumnExpression<E, ?>> createdSelections =
-        new ArrayList<>(entity.properties().size());
+    List<ColumnExpression<E, ?>> createdSelections = new ArrayList<>(entity.properties().size());
     for (PropertyMeta<E, ?> property : entity.properties()) {
       addColumn(property, createdColumns, createdSelections);
     }

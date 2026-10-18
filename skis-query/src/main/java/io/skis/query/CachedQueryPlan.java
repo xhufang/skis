@@ -1,6 +1,6 @@
 package io.skis.query;
 
-import io.skis.jdbc.CompiledQueryPlan;
+import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.sql.ast.StatementAst;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
