@@ -237,16 +237,21 @@ class JdbcCodecsTest {
         resultSet -> JdbcCodecs.readBigInteger(resultSet, 3, JdbcReadContext.EMPTY));
 
     InvocationRecorder fractional = new InvocationRecorder(new BigDecimal("1.5"));
-    assertThrows(
-        SQLException.class,
-        () ->
-            JdbcCodecs.readBigInteger(fractional.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+    QueryValidationException fractionalFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                JdbcCodecs.readBigInteger(
+                    fractional.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, fractionalFailure.code());
     InvocationRecorder multipleCharacters = new InvocationRecorder("SKIS");
-    assertThrows(
-        SQLException.class,
-        () ->
-            JdbcCodecs.readChar(
-                multipleCharacters.proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+    QueryValidationException characterFailure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                JdbcCodecs.readChar(
+                    multipleCharacters.proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, characterFailure.code());
   }
 
   @Test

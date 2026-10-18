@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcWriteContext;
@@ -21,7 +23,6 @@ import io.skis.metadata.TableMeta;
 import java.lang.reflect.Proxy;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -76,9 +77,11 @@ class EntityRuntimeModelTest {
 
     assertEquals(3, index.get());
     assertEquals(41L, value.get());
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> model().property(ID).bind(statement, 1, "wrong", JdbcWriteContext.EMPTY));
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> model().property(ID).bind(statement, 1, "wrong", JdbcWriteContext.EMPTY));
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_VALUE, failure.code());
   }
 
   @Test
@@ -150,9 +153,11 @@ class EntityRuntimeModelTest {
     assertEquals(
         new CompositePet(1L, 2L),
         decoder.decode(resultSet(Map.of(1, 1L, 2, 2L)), RowReadContext.EMPTY));
-    assertThrows(
-        SQLException.class,
-        () -> decoder.decode(resultSet(Map.of(1, 1L)), RowReadContext.EMPTY));
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () -> decoder.decode(resultSet(Map.of(1, 1L)), RowReadContext.EMPTY));
+    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
   }
 
   @Test
