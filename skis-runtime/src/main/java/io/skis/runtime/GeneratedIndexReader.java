@@ -114,8 +114,6 @@ final class GeneratedIndexReader {
           }
         }
       }
-    } catch (SkisConfigurationException failure) {
-      throw failure;
     } catch (IOException failure) {
       throw indexFailure("cannot read generated " + modelKind + " index " + resource, failure);
     }
