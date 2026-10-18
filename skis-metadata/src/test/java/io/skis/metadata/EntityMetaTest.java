@@ -225,16 +225,18 @@ class EntityMetaTest {
     VersionMeta<Pet, Long> versionMeta =
         new VersionMeta<>(differentVersion, VersionStrategy.NUMERIC_INCREMENT);
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            EntityMeta.simple(
-                Pet.class,
-                TableMeta.of("pet"),
-                List.of(id, entityVersion),
-                primaryKey,
-                versionMeta,
-                false));
+    SkisConfigurationException failure =
+        assertThrows(
+            SkisConfigurationException.class,
+            () ->
+                EntityMeta.simple(
+                    Pet.class,
+                    TableMeta.of("pet"),
+                    List.of(id, entityVersion),
+                    primaryKey,
+                    versionMeta,
+                    false));
+    assertEquals(SkisErrorCode.METADATA_VERSION_INVALID, failure.code());
   }
 
   @Test
