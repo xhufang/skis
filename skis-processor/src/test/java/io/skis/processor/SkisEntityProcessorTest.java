@@ -64,8 +64,8 @@ class SkisEntityProcessorTest {
             "samples.TwentyColumnSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record TwentyColumnSummary(
                 long id,
                 String value1,
@@ -95,7 +95,7 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("twenty-column-projection"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "TwentyColumnSummaryProjection.java");
+    String generated = generatedSource(result, "TwentyColumnSummaryPro.java");
     assertTrue(
         generated.contains(
             "private static final ProjectionMapping<samples.TwentyColumnSummary> MAPPING ="),
@@ -133,7 +133,7 @@ class SkisEntityProcessorTest {
             """
             package samples;
             import io.skis.annotations.*;
-            @SkisProjection
+            @ReusableProjection
             public final class NamedSummary {
               public NamedSummary(Long ignored) {}
               @ProjectionConstructor
@@ -147,7 +147,7 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("projection-constructor"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "NamedSummaryProjection.java");
+    String generated = generatedSource(result, "NamedSummaryPro.java");
     assertTrue(generated.contains("NonNullSelectable<java.lang.Long> id"), generated);
     assertTrue(generated.contains("NonNullSelectable<java.lang.String> name"), generated);
     assertFalse(generated.contains("ignored"), generated);
@@ -170,8 +170,8 @@ class SkisEntityProcessorTest {
             "samples.PetLabel",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record PetLabel(String label) {}
             """);
     String processors =
@@ -180,7 +180,7 @@ class SkisEntityProcessorTest {
         process(sources, processors, temporaryDirectory.resolve("renamed-projection-property"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "PetLabelProjection.java");
+    String generated = generatedSource(result, "PetLabelPro.java");
     assertTrue(generated.contains("NonNullSelectable<java.lang.String> label"), generated);
     assertFalse(generated.contains("PetMeta"), generated);
     assertTrue(generated.contains("new samples.PetLabel("), generated);
@@ -194,8 +194,8 @@ class SkisEntityProcessorTest {
             "samples.MappingNameSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record MappingNameSummary(Long MAPPING) {}
             """);
     CompilationResult result =
@@ -205,10 +205,10 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("projection-mapping-field-shadow"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "MappingNameSummaryProjection.java");
+    String generated = generatedSource(result, "MappingNameSummaryPro.java");
     assertTrue(
         generated.contains(
-            "return MappingNameSummaryProjection.MAPPING.bind(MAPPING);"),
+            "return MappingNameSummaryPro.MAPPING.bind(MAPPING);"),
         generated);
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
@@ -240,8 +240,8 @@ class SkisEntityProcessorTest {
             "samples.AnnotatedSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record AnnotatedSummary(@ProjectionValue String name) {}
             """);
     String processors =
@@ -268,8 +268,8 @@ class SkisEntityProcessorTest {
             "samples.InvalidSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record InvalidSummary(String missing) {}
             """);
     CompilationResult result =
@@ -279,7 +279,7 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("missing-projection-property"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "InvalidSummaryProjection.java");
+    String generated = generatedSource(result, "InvalidSummaryPro.java");
     assertTrue(generated.contains("NonNullSelectable<java.lang.String> missing"), generated);
   }
 
@@ -297,8 +297,8 @@ class SkisEntityProcessorTest {
             "samples.InvalidSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record InvalidSummary(String id) {}
             """);
     CompilationResult result =
@@ -308,7 +308,7 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("mismatched-projection-property-type"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "InvalidSummaryProjection.java");
+    String generated = generatedSource(result, "InvalidSummaryPro.java");
     assertTrue(generated.contains("NonNullSelectable<java.lang.String> id"), generated);
   }
 
@@ -326,8 +326,8 @@ class SkisEntityProcessorTest {
             "samples.InvalidSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record InvalidSummary(long weight) {}
             """);
     CompilationResult result =
@@ -337,7 +337,7 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("nullable-primitive-projection-property"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "InvalidSummaryProjection.java");
+    String generated = generatedSource(result, "InvalidSummaryPro.java");
     assertTrue(generated.contains("NonNullSelectable<java.lang.Long> weight"), generated);
     assertTrue(generated.contains("(long) $skisValue0.read("), generated);
   }
@@ -350,8 +350,8 @@ class SkisEntityProcessorTest {
             "samples.PrimitiveRecord",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record PrimitiveRecord(long value) {
               public PrimitiveRecord(Long value) { this(value.longValue()); }
             }
@@ -360,8 +360,8 @@ class SkisEntityProcessorTest {
             """
             package samples;
             import io.skis.annotations.ProjectionConstructor;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public final class PrimitiveClass {
               @ProjectionConstructor
               public PrimitiveClass(long value) {}
@@ -376,10 +376,10 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertTrue(
-        generatedSource(result, "PrimitiveRecordProjection.java")
+        generatedSource(result, "PrimitiveRecordPro.java")
             .contains("(long) $skisValue0.read("));
     assertTrue(
-        generatedSource(result, "PrimitiveClassProjection.java")
+        generatedSource(result, "PrimitiveClassPro.java")
             .contains("(long) $skisValue0.read("));
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
@@ -393,9 +393,9 @@ class SkisEntityProcessorTest {
             "samples.NullableSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
+            import io.skis.annotations.ReusableProjection;
             import org.jspecify.annotations.Nullable;
-            @SkisProjection
+            @ReusableProjection
             public record NullableSummary(long id, @Nullable String name) {}
             """);
     CompilationResult result =
@@ -405,16 +405,16 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("nullable-projection-contract"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "NullableSummaryProjection.java");
+    String generated = generatedSource(result, "NullableSummaryPro.java");
     assertTrue(generated.contains("NonNullSelectable<java.lang.Long> id"), generated);
     assertTrue(generated.contains("Nullability.NULLABLE, 1"), generated);
     assertTrue(generated.contains("Selectable<java.lang.String> name)"), generated);
     assertTrue(
         generated.contains(
-            "skis-projection:5:samples.NullableSummary:(JLjava/lang/String;)V:"
+            "skis-projection:6:samples.NullableSummary:(JLjava/lang/String;)V:"
                 + "id=java.lang.Long!:name=java.lang.String?"),
         generated);
-    assertGeneratedEquals(result, "NullableSummaryProjection.java");
+    assertGeneratedEquals(result, "NullableSummaryPro.java");
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -427,8 +427,8 @@ class SkisEntityProcessorTest {
             "samples.BinarySummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record BinarySummary(byte[] payload) {}
             """);
     CompilationResult result =
@@ -438,7 +438,7 @@ class SkisEntityProcessorTest {
             temporaryDirectory.resolve("binary-projection-contract"));
 
     assertTrue(result.success(), result.diagnosticsText());
-    String generated = generatedSource(result, "BinarySummaryProjection.java");
+    String generated = generatedSource(result, "BinarySummaryPro.java");
     assertTrue(generated.contains("NonNullSelectable<byte[]> payload"), generated);
     assertTrue(generated.contains("byte[].class"), generated);
 
@@ -453,8 +453,8 @@ class SkisEntityProcessorTest {
             "samples.InvalidProjection",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public final class InvalidProjection {
               public InvalidProjection(Long id) {}
               public InvalidProjection(Long id, String name) {}
@@ -477,8 +477,8 @@ class SkisEntityProcessorTest {
             "samples.GenericConstructorSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public final class GenericConstructorSummary {
               public <T> GenericConstructorSummary(T value) {}
             }
@@ -525,8 +525,8 @@ class SkisEntityProcessorTest {
             "samples.DeferredProjection",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record DeferredProjection(GeneratedMoney amount) {}
             """);
     String processors =
@@ -542,7 +542,7 @@ class SkisEntityProcessorTest {
         "the collaborating processor did not generate the deferred type");
     assertTrue(
         Files.exists(
-            result.generatedSources().resolve("samples/skis/DeferredProjectionProjection.java")),
+            result.generatedSources().resolve("samples/skis/DeferredProjectionPro.java")),
         "SKIS did not retry the deferred projection");
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -562,8 +562,8 @@ class SkisEntityProcessorTest {
             "samples.UnresolvedProjection",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record UnresolvedProjection(MissingProjectionValue value) {}
             """);
     CompilationResult result =
@@ -595,8 +595,8 @@ class SkisEntityProcessorTest {
             "samples.InaccessibleProjection",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record InaccessibleProjection(HiddenProjectionValue value) {}
             """);
     CompilationResult result =
@@ -607,6 +607,302 @@ class SkisEntityProcessorTest {
 
     assertFalse(result.success(), "processing unexpectedly succeeded");
     assertTrue(result.diagnosticsText().contains("[SKIS218]"), result.diagnosticsText());
+  }
+
+  @Test
+  void generatesASpecialProjectionSingletonWithDirectMetadataSources() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id long id, @Column(nullable = false) String name) {}
+            """,
+            "samples.PetView",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public record PetView(
+                @PropertyFrom(PetTable.ID) long id,
+                @PropertyFrom(value = PetTable.NAME, alias = "pet") String name) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("special-projection"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String generated = generatedSource(result, "PetViewPro.java");
+    assertTrue(
+        generated.contains("implements ProjectionType<samples.PetView>"), generated);
+    assertTrue(generated.contains("ProjectionSource.of(samples.skis.PetMeta.ID)"), generated);
+    assertTrue(
+        generated.contains("ProjectionSource.of(samples.skis.PetMeta.NAME, \"pet\")"), generated);
+    assertTrue(generated.contains("private static final PetViewPro INSTANCE"), generated);
+    assertTrue(generated.contains("public static PetViewPro all()"), generated);
+    assertFalse(generated.contains(" ProjectionSelection<"), generated);
+    assertGeneratedEquals(result, "PetViewPro.java");
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void rejectsConflictingRecordComponentAndCanonicalParameterSources() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id long id, @Column(nullable = false) long ownerId) {}
+            """,
+            "samples.PetView",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public record PetView(@PropertyFrom(PetTable.ID) long id) {
+              public PetView(@PropertyFrom(PetTable.OWNER_ID) long id) {
+                this.id = id;
+              }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("SKIS232-record-source-conflict"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS232]"), result.diagnosticsText());
+    assertTrue(
+        result.diagnosticsText().contains("conflicting @PropertyFrom"),
+        result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsANonPortableSpecialProjectionAlias() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id long id) {}
+            """,
+            "samples.PetView",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public record PetView(
+                @PropertyFrom(value = PetTable.ID, alias = "bad alias") long id) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("SKIS230-projection-alias"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS230]"), result.diagnosticsText());
+    assertTrue(
+        result.diagnosticsText().contains("[A-Za-z_][A-Za-z0-9_]*"),
+        result.diagnosticsText());
+  }
+
+  @Test
+  void mapsSpecialProjectionClassFieldsToTheSelectedConstructor() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id long id, @Column(nullable = false) String name) {}
+            """,
+            "samples.PetView",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public final class PetView {
+              @PropertyFrom(PetTable.ID) private final long id;
+              @PropertyFrom(PetTable.NAME) private final String name;
+              public PetView(long id, String name) {
+                this.id = id;
+                this.name = name;
+              }
+            }
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("special-projection-fields"));
+
+    assertTrue(result.success(), result.diagnosticsText());
+    String generated = generatedSource(result, "PetViewPro.java");
+    assertTrue(generated.contains("ProjectionSource.of(samples.skis.PetMeta.ID)"), generated);
+    assertTrue(generated.contains("ProjectionSource.of(samples.skis.PetMeta.NAME)"), generated);
+
+    CompilationResult generatedCompilation = compileGenerated(sources, result);
+    assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
+  }
+
+  @Test
+  void rejectsStaticMismatchedTypeAndMismatchedNullabilitySourceFields() throws Exception {
+    String entity =
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity(readOnly = true)
+        public record Pet(@Id long id, @Column(nullable = false) String name) {}
+        """;
+    Map<String, String> invalidProjections =
+        Map.of(
+            "static",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public final class PetView {
+              @PropertyFrom(PetTable.ID) private static long id;
+              public PetView(long id) {}
+            }
+            """,
+            "type",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public final class PetView {
+              @PropertyFrom(PetTable.ID) private final String id;
+              public PetView(long id) { this.id = Long.toString(id); }
+            }
+            """,
+            "nullability",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import org.jspecify.annotations.Nullable;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public final class PetView {
+              @PropertyFrom(PetTable.NAME) private final @Nullable String name;
+              public PetView(String name) { this.name = name; }
+            }
+            """);
+
+    for (Map.Entry<String, String> invalid : invalidProjections.entrySet()) {
+      CompilationResult result =
+          process(
+              Map.of("samples.Pet", entity, "samples.PetView", invalid.getValue()),
+              SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+              temporaryDirectory.resolve("SKIS232-source-field-" + invalid.getKey()));
+
+      assertFalse(result.success(), invalid.getKey() + " processing unexpectedly succeeded");
+      assertTrue(result.diagnosticsText().contains("[SKIS232]"), result.diagnosticsText());
+    }
+  }
+
+  @Test
+  void rejectsASpecialProjectionPropertyTypeMismatch() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id long id, @Column(nullable = false) String name) {}
+            """,
+            "samples.InvalidProjection",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public record InvalidProjection(@PropertyFrom(PetTable.NAME) Long name) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("SKIS228-projection"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS228]"), result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsANonNullSpecialProjectionParameterForANullableProperty() throws Exception {
+    Map<String, String> sources =
+        Map.of(
+            "samples.Pet",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            @SkisEntity(readOnly = true)
+            public record Pet(@Id long id, String name) {}
+            """,
+            "samples.InvalidProjection",
+            """
+            package samples;
+            import io.skis.annotations.*;
+            import samples.skis.PetTable;
+            @SpecialProjection
+            public record InvalidProjection(@PropertyFrom(PetTable.NAME) String name) {}
+            """);
+    CompilationResult result =
+        process(
+            sources,
+            SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve("SKIS229-projection"));
+
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[SKIS229]"), result.diagnosticsText());
+  }
+
+  @Test
+  void rejectsMutuallyExclusiveProjectionModes() throws Exception {
+    String source =
+        """
+        package samples;
+        import io.skis.annotations.*;
+        @ReusableProjection
+        @SpecialProjection
+        public record InvalidProjection(Long id) {}
+        """;
+
+    assertProjectionProcessingError("SKIS225", source);
+  }
+
+  @Test
+  void rejectsASpecialProjectionWithoutAPropertySource() throws Exception {
+    String source =
+        """
+        package samples;
+        import io.skis.annotations.SpecialProjection;
+        @SpecialProjection
+        public record InvalidProjection(Long id) {}
+        """;
+
+    assertProjectionProcessingError("SKIS226", source);
   }
 
   @Test
@@ -1556,7 +1852,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=5\n"
+        ("# skis-generated-abi=6\n"
                 + "samples.skis.AlphaRuntimeModel\n"
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
@@ -1577,15 +1873,15 @@ class SkisEntityProcessorTest {
             "samples.ZuluSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record ZuluSummary(String name) {}
             """,
             "samples.AlphaSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record AlphaSummary(Long id) {}
             """);
     String processors =
@@ -1620,15 +1916,15 @@ class SkisEntityProcessorTest {
             "samples.ZuluSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record ZuluSummary(String name) {}
             """,
             "samples.AlphaSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record AlphaSummary(String label) {}
             """);
     String normalProcessors =
@@ -1653,8 +1949,8 @@ class SkisEntityProcessorTest {
     assertTrue(reversed.success(), reversed.diagnosticsText());
     assertEquals(outputSnapshot(normal), outputSnapshot(reversed));
     assertTrue(
-        generatedSource(normal, "AlphaSummaryProjection.java")
-            .contains("comments = \"Projection ABI 5\""));
+        generatedSource(normal, "AlphaSummaryPro.java")
+            .contains("comments = \"Projection ABI 6\""));
   }
 
   @Test
@@ -1717,8 +2013,8 @@ class SkisEntityProcessorTest {
             "samples.LombokPetSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record LombokPetSummary(Long id) {}
             """);
     String processors =
@@ -1733,7 +2029,7 @@ class SkisEntityProcessorTest {
     assertTrue(result.success(), result.diagnosticsText());
     assertTrue(
         Files.exists(
-            result.generatedSources().resolve("samples/skis/LombokPetSummaryProjection.java")));
+            result.generatedSources().resolve("samples/skis/LombokPetSummaryPro.java")));
   }
 
   @Test
@@ -1793,8 +2089,8 @@ class SkisEntityProcessorTest {
             "samples.RealLombokPetSummary",
             """
             package samples;
-            import io.skis.annotations.SkisProjection;
-            @SkisProjection
+            import io.skis.annotations.ReusableProjection;
+            @ReusableProjection
             public record RealLombokPetSummary(Long id, boolean isActive) {}
             """);
     String lombokProcessor = "lombok.launch.AnnotationProcessorHider$AnnotationProcessor";
@@ -1827,7 +2123,7 @@ class SkisEntityProcessorTest {
           Files.exists(
               result
                   .generatedSources()
-                  .resolve("samples/skis/RealLombokPetSummaryProjection.java")));
+                  .resolve("samples/skis/RealLombokPetSummaryPro.java")));
     }
   }
 
@@ -1837,6 +2133,17 @@ class SkisEntityProcessorTest {
             Map.of("samples.Invalid", source),
             SkisEntityProcessor.class.getName(),
             temporaryDirectory.resolve(code));
+    assertFalse(result.success(), "processing unexpectedly succeeded");
+    assertTrue(result.diagnosticsText().contains("[" + code + "]"), result.diagnosticsText());
+    assertTrue(result.diagnosticsText().contains("Fix:"), result.diagnosticsText());
+  }
+
+  private void assertProjectionProcessingError(String code, String source) throws Exception {
+    CompilationResult result =
+        process(
+            Map.of("samples.InvalidProjection", source),
+            SkisProjectionProcessor.class.getName(),
+            temporaryDirectory.resolve(code + "-projection"));
     assertFalse(result.success(), "processing unexpectedly succeeded");
     assertTrue(result.diagnosticsText().contains("[" + code + "]"), result.diagnosticsText());
     assertTrue(result.diagnosticsText().contains("Fix:"), result.diagnosticsText());

@@ -4,6 +4,7 @@ import io.skis.mapping.EntityRuntimeModel;
 import io.skis.mapping.EntityRuntimeRegistry;
 import io.skis.mapping.JdbcTypeCodec;
 import io.skis.mapping.PropertyRuntime;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.Nullability;

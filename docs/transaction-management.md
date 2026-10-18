@@ -17,9 +17,9 @@ unchecked application or SKIS failure requests a rollback.
 Pet stored =
     executor.inTransaction(
         session -> {
-          session.insert(PetTable.PET, pet);
+          session.insert(PetTable.petTable, pet);
           session.afterCommit(() -> publishPetCreated(pet.id()));
-          return session.findById(PetTable.PET, pet.id()).orElseThrow();
+          return session.findById(PetTable.petTable, pet.id()).orElseThrow();
         });
 ```
 
@@ -34,7 +34,7 @@ Use an explicit session only when the application needs a visible completion bou
 
 ```java
 try (SkisSession session = executor.beginTransaction()) {
-  session.insert(PetTable.PET, pet);
+  session.insert(PetTable.petTable, pet);
   session.commit();
 }
 ```
@@ -57,7 +57,7 @@ ExecutionOptions sessionDefaults =
 
 executor.inTransaction(
     sessionDefaults,
-    session -> session.selectFrom(PetTable.PET).fetchList());
+    session -> session.selectFrom(PetTable.petTable).fetchList());
 ```
 
 Unset Session fields inherit executor defaults; per-statement `withOptions` values override the
@@ -101,7 +101,7 @@ Application services use the normal Spring boundary:
 ```java
 @Transactional
 public void renamePet(Pet changedPet) {
-  skisExecutor.updateById(PetTable.PET, changedPet);
+  skisExecutor.updateById(PetTable.petTable, changedPet);
 }
 ```
 

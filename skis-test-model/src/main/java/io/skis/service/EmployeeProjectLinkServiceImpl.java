@@ -13,7 +13,7 @@ import java.util.Optional;
 public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkService {
 
   private static final EmployeeProjectLinkTable LINK =
-      EmployeeProjectLinkTable.EMPLOYEE_PROJECT_LINK;
+      EmployeeProjectLinkTable.employeeProjectLinkTable;
 
   private final SkisExecutor skisExecutor;
 

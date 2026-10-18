@@ -1,9 +1,9 @@
 package io.skis.projection;
 
-import io.skis.annotations.SkisProjection;
+import io.skis.annotations.ReusableProjection;
 
 /** Employee and project data selected through the link table. */
-@SkisProjection
+@ReusableProjection
 public record EmployeeProjectView(
     long employeeId,
     String employeeName,

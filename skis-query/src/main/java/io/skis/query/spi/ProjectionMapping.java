@@ -1,8 +1,11 @@
-package io.skis.query;
+package io.skis.query.spi;
 
 import io.skis.mapping.RowDecoder;
 import io.skis.mapping.RowReadContext;
 import io.skis.metadata.GeneratedModelAbi;
+import io.skis.query.ProjectionSelection;
+import io.skis.query.QueryValidationException;
+import io.skis.query.Selectable;
 import io.skis.sql.ast.Nullability;
 import java.lang.reflect.Modifier;
 import java.sql.ResultSet;
@@ -19,8 +22,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>A mapping contains no table, expression, codec, alias, or runtime parameter value. Its decoder
  * factory is part of the executable result contract and therefore participates in shared-plan
- * identity. Generated companion classes keep their mapping private and expose fixed-arity {@code
- * of(...)} methods that bind it to one query's selections.
+ * identity. Generated reusable companions bind it through fixed-arity {@code of(...)} methods;
+ * special companions expose it through {@code ProjectionType} for final-query-block source binding.
  */
 public final class ProjectionMapping<R> {
 
@@ -46,28 +49,32 @@ public final class ProjectionMapping<R> {
     }
     List<Parameter> copy = new ArrayList<>(parameters.size());
     for (int ordinal = 0; ordinal < parameters.size(); ordinal++) {
-      Parameter parameter = Objects.requireNonNull(parameters.get(ordinal), "parameter");
-      if (parameter.ordinal() != ordinal) {
-        throw new QueryValidationException(
-            "projection parameter ordinals must be dense from zero; expected "
-                + ordinal
-                + " but found "
-                + parameter.ordinal());
-      }
-      if (parameter.constructorPosition() != ordinal) {
-        throw new QueryValidationException(
-            "projection parameter '"
-                + parameter.name()
-                + "' has constructor position "
-                + parameter.constructorPosition()
-                + " but expected "
-                + ordinal);
-      }
-      copy.add(parameter);
+      copy.add(requireParameter(parameters.get(ordinal), ordinal));
     }
     this.parameters = List.copyOf(copy);
     this.decoderFactory = Objects.requireNonNull(decoderFactory, "decoderFactory");
     this.statefulDecoderToken = statefulDecoderToken(decoderFactory);
+  }
+
+  private static Parameter requireParameter(Parameter parameter, int expectedOrdinal) {
+    Objects.requireNonNull(parameter, "parameter");
+    if (parameter.ordinal() != expectedOrdinal) {
+      throw new QueryValidationException(
+          "projection parameter ordinals must be dense from zero; expected "
+              + expectedOrdinal
+              + " but found "
+              + parameter.ordinal());
+    }
+    if (parameter.constructorPosition() != expectedOrdinal) {
+      throw new QueryValidationException(
+          "projection parameter '"
+              + parameter.name()
+              + "' has constructor position "
+              + parameter.constructorPosition()
+              + " but expected "
+              + expectedOrdinal);
+    }
+    return parameter;
   }
 
   /**
@@ -92,7 +99,7 @@ public final class ProjectionMapping<R> {
   /** Binds the generated constructor contract to one query's ordered selection expressions. */
   public ProjectionSelection<R> bind(Selectable<?>... selections) {
     Objects.requireNonNull(selections, "selections");
-    return new ProjectionSelection<>(this, Arrays.asList(selections.clone()));
+    return ProjectionSelection.generated(this, Arrays.asList(selections.clone()));
   }
 
   /** Returns the user result type constructed by this mapping. */
@@ -110,15 +117,18 @@ public final class ProjectionMapping<R> {
     return parameters;
   }
 
-  DecoderFactory<R> decoderFactory() {
+  /** Returns the generated decoder factory consumed by the query compiler. */
+  public DecoderFactory<R> decoderFactory() {
     return decoderFactory;
   }
 
-  Class<?> decoderFactoryType() {
+  /** Returns the executable decoder-factory type used for stable plan identity. */
+  public Class<?> decoderFactoryType() {
     return decoderFactory.getClass();
   }
 
-  long statefulDecoderToken() {
+  /** Returns zero for stateless factories or this mapping's process-local stateful identity. */
+  public long statefulDecoderToken() {
     return statefulDecoderToken;
   }
 

@@ -34,6 +34,9 @@ public interface QueryOperations {
   /** Selects one APT-generated result-row shape before choosing an independent root. */
   <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection);
 
+  /** Selects one APT-generated special result whose sources bind in the final query block. */
+  <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection);
+
   /** Adapts one reusable query structure; call {@link SelectQuery#bind} for its values. */
   <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description);
 }

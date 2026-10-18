@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.mapping.RowDecoder;
 import io.skis.mapping.RowLayout;
 import io.skis.metadata.PropertyMeta;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;

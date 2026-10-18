@@ -9,8 +9,8 @@ import io.skis.entity.skis.EmployeeTable;
 import io.skis.entity.skis.ProjectTable;
 import io.skis.projection.EmployeeDepartmentView;
 import io.skis.projection.EmployeeProjectView;
-import io.skis.projection.skis.EmployeeDepartmentViewProjection;
-import io.skis.projection.skis.EmployeeProjectViewProjection;
+import io.skis.projection.skis.EmployeeDepartmentViewPro;
+import io.skis.projection.skis.EmployeeProjectViewPro;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.runtime.SkisExecutor;
@@ -28,11 +28,11 @@ import java.util.Optional;
  */
 public class EmployeeServiceImpl implements EmployeeService {
 
-  private static final DepartmentTable DEPARTMENT = DepartmentTable.DEPARTMENT;
-  private static final EmployeeTable EMPLOYEE = EmployeeTable.EMPLOYEE;
+  private static final DepartmentTable DEPARTMENT = DepartmentTable.departmentTable;
+  private static final EmployeeTable EMPLOYEE = EmployeeTable.employeeTable;
   private static final EmployeeProjectLinkTable LINK =
-      EmployeeProjectLinkTable.EMPLOYEE_PROJECT_LINK;
-  private static final ProjectTable PROJECT = ProjectTable.PROJECT;
+      EmployeeProjectLinkTable.employeeProjectLinkTable;
+  private static final ProjectTable PROJECT = ProjectTable.projectTable;
 
   private final SkisExecutor skisExecutor;
 
@@ -133,7 +133,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   public Optional<EmployeeDepartmentView> findDepartmentView(long employeeId) {
     return skisExecutor
         .select(
-            EmployeeDepartmentViewProjection.of(
+            EmployeeDepartmentViewPro.of(
                 EMPLOYEE.id(),
                 EMPLOYEE.code(),
                 EMPLOYEE.name(),
@@ -151,7 +151,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   public List<EmployeeDepartmentView> findDepartmentViews(long departmentId) {
     return skisExecutor
         .select(
-            EmployeeDepartmentViewProjection.of(
+            EmployeeDepartmentViewPro.of(
                 EMPLOYEE.id(),
                 EMPLOYEE.code(),
                 EMPLOYEE.name(),
@@ -181,7 +181,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   public List<EmployeeProjectView> findProjectViews(long employeeId) {
     return skisExecutor
         .select(
-            EmployeeProjectViewProjection.of(
+            EmployeeProjectViewPro.of(
                 EMPLOYEE.id(), EMPLOYEE.name(), PROJECT.id(), PROJECT.name(), PROJECT.status()))
         .from(EMPLOYEE)
         .innerJoin(LINK)

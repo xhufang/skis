@@ -24,8 +24,8 @@ import io.skis.testmodel.join.PetOwnerPairView;
 import io.skis.testmodel.join.PetOwnerView;
 import io.skis.testmodel.join.skis.JoinPetTable;
 import io.skis.testmodel.join.skis.OwnerTable;
-import io.skis.testmodel.join.skis.PetOwnerPairViewProjection;
-import io.skis.testmodel.join.skis.PetOwnerViewProjection;
+import io.skis.testmodel.join.skis.PetOwnerPairViewPro;
+import io.skis.testmodel.join.skis.PetOwnerViewPro;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -44,8 +44,8 @@ abstract class AbstractSkisJoinContractTest {
 
   protected DataSource dataSource;
   protected SkisExecutor executor;
-  protected final JoinPetTable pet = JoinPetTable.JOIN_PET;
-  protected final OwnerTable owner = OwnerTable.OWNER;
+  protected final JoinPetTable pet = JoinPetTable.joinPetTable;
+  protected final OwnerTable owner = OwnerTable.ownerTable;
   protected long ownerAdaId;
   protected long ownerGraceId;
   protected long ownerWithoutPetId;
@@ -225,7 +225,7 @@ abstract class AbstractSkisJoinContractTest {
     List<PetOwnerPairView> rows =
         executor
             .select(
-                PetOwnerPairViewProjection.of(
+                PetOwnerPairViewPro.of(
                     pet.id(), primaryOwner.name(), reviewer.name()))
             .from(pet)
             .leftJoin(primaryOwner)
@@ -540,7 +540,7 @@ abstract class AbstractSkisJoinContractTest {
 
     List<PetOwnerView> result =
         executor
-            .select(PetOwnerViewProjection.of(pet.id(), pet.name(), ownerName))
+            .select(PetOwnerViewPro.of(pet.id(), pet.name(), ownerName))
             .from(pet)
             .where(pet.id().in(petIds()))
             .orderBy(pet.id().asc())
@@ -716,7 +716,7 @@ abstract class AbstractSkisJoinContractTest {
 
   protected SelectQuery<PetOwnerView> projectionQuery() {
     return executor
-        .select(PetOwnerViewProjection.of(pet.id(), pet.name(), owner.name()))
+        .select(PetOwnerViewPro.of(pet.id(), pet.name(), owner.name()))
         .from(pet)
         .leftJoin(owner)
         .on(pet.ownerId().eq(owner.id()))

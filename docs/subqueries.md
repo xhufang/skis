@@ -13,8 +13,8 @@ the complete selected values and query tree: it does not prune selections, add `
 subquery into Java, or rewrite the predicate as a Join.
 
 ```java
-OwnerTable owner = OwnerTable.OWNER;
-PetTable pet = PetTable.PET.as("matching_pet");
+OwnerTable owner = OwnerTable.ownerTable;
+PetTable pet = PetTable.petTable.as("matching_pet");
 
 var petsOfOwner =
     Sql.select(pet.id())
@@ -44,7 +44,7 @@ The overload is separate from collection membership: the child remains a SELECT 
 one final SQL statement and is never read into a Java collection.
 
 ```java
-PetTable candidate = PetTable.PET.as("candidate_pet");
+PetTable candidate = PetTable.petTable.as("candidate_pet");
 var ownerIds =
     Sql.select(candidate.ownerId())
         .from(candidate);
@@ -83,7 +83,7 @@ generated-projection parameter. It remains part of the outer SQL statement and i
 itself.
 
 ```java
-OwnerTable lookup = OwnerTable.OWNER.as("owner_lookup");
+OwnerTable lookup = OwnerTable.ownerTable.as("owner_lookup");
 var ownerName =
     Sql.scalar(
         Sql.select(lookup.name())
@@ -128,8 +128,8 @@ query parameters cannot be treated as the same selected expression.
 For the employee/department model in `skis-test-model`:
 
 ```java
-var employee = EmployeeTable.EMPLOYEE.as("e");
-var department = DepartmentTable.DEPARTMENT.as("d");
+var employee = EmployeeTable.employeeTable.as("e");
+var department = DepartmentTable.departmentTable.as("d");
 var pattern = Sql.parameter(String.class, "departmentPattern");
 var departmentId = Sql.scalar(
     Sql.select(department.id()).from(department)
@@ -156,7 +156,7 @@ acquiring JDBC resources, regardless of page size or whether the data would fill
 Join relation. Every visible selection needs an explicitly aliased output handle in the same order:
 
 ```java
-OwnerTable inner = OwnerTable.OWNER.as("inner_owner");
+OwnerTable inner = OwnerTable.ownerTable.as("inner_owner");
 var ownerId = Sql.output(inner.id(), "owner_id");
 var ownerName = Sql.output(inner.name(), "owner_name");
 DerivedRelation owners =

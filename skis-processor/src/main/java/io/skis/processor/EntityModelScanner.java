@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
@@ -32,8 +31,6 @@ import javax.lang.model.util.Types;
 
 final class EntityModelScanner {
 
-  private static final Set<String> RESERVED_META_FIELDS =
-      Set.of("TABLE", "ENTITY", "VERSION", "PRIMARY_KEY", "GENERATED_ABI");
   private static final Set<String> RESERVED_TABLE_METHODS = Set.of("as", "alias", "entity");
 
   private final Elements elements;
@@ -93,7 +90,7 @@ final class EntityModelScanner {
     List<PropertyModel> properties = new ArrayList<>(type.getRecordComponents().size());
     List<EntityInstantiationModel.ConstructorArgument> arguments =
         new ArrayList<>(type.getRecordComponents().size());
-    Set<String> usedFieldNames = new HashSet<>(RESERVED_META_FIELDS);
+    Set<String> usedFieldNames = new HashSet<>();
     for (RecordComponentElement component : type.getRecordComponents()) {
       requireResolvedType(component.asType(), component.getSimpleName().toString());
       PropertyAnnotations annotations = annotations(component, null);
@@ -140,7 +137,7 @@ final class EntityModelScanner {
     List<ExecutableElement> methods = ElementFilter.methodsIn(type.getEnclosedElements());
     List<PropertyModel> properties = new ArrayList<>(fields.size());
     Set<String> fieldPropertyNames = new HashSet<>();
-    Set<String> usedFieldNames = new HashSet<>(RESERVED_META_FIELDS);
+    Set<String> usedFieldNames = new HashSet<>();
     for (VariableElement field : fields) {
       String propertyName = field.getSimpleName().toString();
       fieldPropertyNames.add(propertyName);
@@ -224,7 +221,7 @@ final class EntityModelScanner {
             annotation == null ? 0 : annotation.scale(),
             annotation == null ? "" : annotation.comment());
     TypeDescriptor descriptor = describe(propertyType);
-    String fieldName = constantName(propertyName);
+    String fieldName = SourceText.propertyFieldName(propertyName);
     if (usedFieldNames.contains(fieldName)) {
       fieldName += "_PROPERTY";
     }
@@ -705,10 +702,6 @@ final class EntityModelScanner {
       result.append(Character.toLowerCase(current));
     }
     return result.toString();
-  }
-
-  private static String constantName(String value) {
-    return snakeCase(value).toUpperCase(Locale.ROOT);
   }
 
   private static boolean isExplicitlyNullable(Element element) {

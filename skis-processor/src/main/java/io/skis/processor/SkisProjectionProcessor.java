@@ -1,6 +1,7 @@
 package io.skis.processor;
 
-import io.skis.annotations.SkisProjection;
+import io.skis.annotations.ReusableProjection;
+import io.skis.annotations.SpecialProjection;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,7 +20,10 @@ import javax.lang.model.element.TypeElement;
 import javax.tools.Diagnostic;
 
 /** Generates one strongly typed, reflection-free mapper for each user projection type. */
-@SupportedAnnotationTypes("io.skis.annotations.SkisProjection")
+@SupportedAnnotationTypes({
+  "io.skis.annotations.ReusableProjection",
+  "io.skis.annotations.SpecialProjection"
+})
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public final class SkisProjectionProcessor extends AbstractProcessor {
 
@@ -40,7 +44,10 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
   @Override
   public boolean process(
       Set<? extends TypeElement> annotations, RoundEnvironment roundEnvironment) {
-    roundEnvironment.getElementsAnnotatedWith(SkisProjection.class).stream()
+    Set<Element> projectionElements = new HashSet<>();
+    projectionElements.addAll(roundEnvironment.getElementsAnnotatedWith(ReusableProjection.class));
+    projectionElements.addAll(roundEnvironment.getElementsAnnotatedWith(SpecialProjection.class));
+    projectionElements.stream()
         .filter(TypeElement.class::isInstance)
         .map(TypeElement.class::cast)
         .map(type -> type.getQualifiedName().toString())

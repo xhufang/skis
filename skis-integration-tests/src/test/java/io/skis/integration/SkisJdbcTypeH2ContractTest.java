@@ -24,16 +24,16 @@ class SkisJdbcTypeH2ContractTest {
     JdbcTypes nulls = JdbcTypeContractSupport.nullValues(2L);
     JdbcTypes emptyBytes = JdbcTypeContractSupport.emptyBytesValue(3L);
 
-    assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, expected));
-    assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, nulls));
-    assertEquals(1, executor.insert(JdbcTypesTable.JDBC_TYPES, emptyBytes));
+    assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, expected));
+    assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, nulls));
+    assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, emptyBytes));
 
     JdbcTypeContractSupport.assertNonNullValues(
-        expected, executor.findById(JdbcTypesTable.JDBC_TYPES, expected.id()).orElseThrow());
+        expected, executor.findById(JdbcTypesTable.jdbcTypesTable, expected.id()).orElseThrow());
     JdbcTypeContractSupport.assertNullValues(
-        executor.findById(JdbcTypesTable.JDBC_TYPES, nulls.id()).orElseThrow());
+        executor.findById(JdbcTypesTable.jdbcTypesTable, nulls.id()).orElseThrow());
     JdbcTypeContractSupport.assertNonNullValues(
-        emptyBytes, executor.findById(JdbcTypesTable.JDBC_TYPES, emptyBytes.id()).orElseThrow());
+        emptyBytes, executor.findById(JdbcTypesTable.jdbcTypesTable, emptyBytes.id()).orElseThrow());
     JdbcTypeContractSupport.assertInvalidReadsFail(dataSource);
   }
 

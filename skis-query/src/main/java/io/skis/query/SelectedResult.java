@@ -14,31 +14,40 @@ final class SelectedResult<R extends @Nullable Object> {
   private final @Nullable QueryTable<?> table;
   private final @Nullable Selectable<?> scalar;
   private final @Nullable ProjectionSelection<?> projection;
+  private final @Nullable ProjectionType<?> projectionType;
   private final Kind kind;
 
   private SelectedResult(
       @Nullable QueryTable<?> table,
       @Nullable Selectable<?> scalar,
       @Nullable ProjectionSelection<?> projection,
+      @Nullable ProjectionType<?> projectionType,
       Kind kind) {
     this.table = table;
     this.scalar = scalar;
     this.projection = projection;
+    this.projectionType = projectionType;
     this.kind = Objects.requireNonNull(kind, "kind");
     if (kind == Kind.REQUIRED_ENTITY || kind == Kind.NULLABLE_ENTITY) {
       Objects.requireNonNull(table, "table");
-      if (scalar != null || projection != null) {
+      if (scalar != null || projection != null || projectionType != null) {
         throw new IllegalArgumentException("an entity result must not carry scalar selections");
       }
     } else if (kind == Kind.GENERATED_PROJECTION) {
       Objects.requireNonNull(projection, "projection");
-      if (table != null || scalar != null) {
+      if (table != null || scalar != null || projectionType != null) {
         throw new IllegalArgumentException(
             "a generated projection result must not be bound to one selected table");
       }
+    } else if (kind == Kind.SPECIAL_PROJECTION) {
+      Objects.requireNonNull(projectionType, "projectionType");
+      if (table != null || scalar != null || projection != null) {
+        throw new IllegalArgumentException(
+            "a special projection result must not carry pre-bound selections");
+      }
     } else {
       Objects.requireNonNull(scalar, "scalar");
-      if (table != null || projection != null) {
+      if (table != null || projection != null || projectionType != null) {
         throw new IllegalArgumentException(
             "a scalar result must not be bound to one physical table mapping");
       }
@@ -46,26 +55,49 @@ final class SelectedResult<R extends @Nullable Object> {
   }
 
   static <E> SelectedResult<E> entity(QueryTable<E> table) {
-    return new SelectedResult<>(table, null, null, Kind.REQUIRED_ENTITY);
+    return new SelectedResult<>(table, null, null, null, Kind.REQUIRED_ENTITY);
   }
 
   static <E> SelectedResult<@Nullable E> nullableEntity(QueryTable<E> table) {
-    return new SelectedResult<>(table, null, null, Kind.NULLABLE_ENTITY);
+    return new SelectedResult<>(table, null, null, null, Kind.NULLABLE_ENTITY);
   }
 
   static <R> SelectedResult<R> requiredScalar(NonNullSelectable<R> selectable) {
     return new SelectedResult<>(
-        null, Objects.requireNonNull(selectable, "selectable"), null, Kind.REQUIRED_SCALAR);
+        null, Objects.requireNonNull(selectable, "selectable"), null, null, Kind.REQUIRED_SCALAR);
   }
 
   static <R> SelectedResult<@Nullable R> nullableScalar(Selectable<R> selectable) {
     return new SelectedResult<>(
-        null, Objects.requireNonNull(selectable, "selectable"), null, Kind.NULLABLE_SCALAR);
+        null, Objects.requireNonNull(selectable, "selectable"), null, null, Kind.NULLABLE_SCALAR);
   }
 
   static <R> SelectedResult<R> projection(ProjectionSelection<R> selection) {
     return new SelectedResult<>(
-        null, null, Objects.requireNonNull(selection, "selection"), Kind.GENERATED_PROJECTION);
+        null,
+        null,
+        Objects.requireNonNull(selection, "selection"),
+        null,
+        Kind.GENERATED_PROJECTION);
+  }
+
+  static <R> SelectedResult<R> specialProjection(ProjectionType<R> projection) {
+    return new SelectedResult<>(
+        null,
+        null,
+        null,
+        Objects.requireNonNull(projection, "projection"),
+        Kind.SPECIAL_PROJECTION);
+  }
+
+  @SuppressWarnings("unchecked")
+  SelectedResult<R> resolveSources(QueryRelation root, List<QueryJoin> joins) {
+    if (kind != Kind.SPECIAL_PROJECTION) {
+      return this;
+    }
+    SelectedResult<?> resolved =
+        projection(ProjectionSourceBinder.bind(requireProjectionType(), root, joins));
+    return (SelectedResult<R>) resolved;
   }
 
   /** Derives the cache result contract from the authoritative selected-result variant. */
@@ -78,6 +110,7 @@ final class SelectedResult<R extends @Nullable Object> {
       case NULLABLE_SCALAR -> QueryPlanKey.ResultShape.nullableScalar(identities, requireScalar());
       case GENERATED_PROJECTION ->
           QueryPlanKey.ResultShape.projection(identities, requireProjection());
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -91,6 +124,7 @@ final class SelectedResult<R extends @Nullable Object> {
       case REQUIRED_SCALAR -> scalarShape(scope, compiledExpressions, false);
       case NULLABLE_SCALAR -> scalarShape(scope, compiledExpressions, true);
       case GENERATED_PROJECTION -> projectionShape(scope, compiledExpressions);
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -103,6 +137,7 @@ final class SelectedResult<R extends @Nullable Object> {
           requireProjection().selections().stream()
               .<SqlExpression<?>>map(SelectableSupport::expression)
               .toList();
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -119,6 +154,7 @@ final class SelectedResult<R extends @Nullable Object> {
         }
         yield List.copyOf(expressions);
       }
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -134,6 +170,7 @@ final class SelectedResult<R extends @Nullable Object> {
           requireProjection().selections().stream()
               .map(SelectableSupport::expressionIdentity)
               .toList();
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -157,6 +194,7 @@ final class SelectedResult<R extends @Nullable Object> {
               && ordinal < requireProjection().selections().size()
               && SelectableSupport.sameOccurrence(
                   requireProjection().selections().get(ordinal), candidate);
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -186,6 +224,7 @@ final class SelectedResult<R extends @Nullable Object> {
       case REQUIRED_SCALAR -> scalarIdentity("scalar:");
       case NULLABLE_SCALAR -> scalarIdentity("nullable-scalar:");
       case GENERATED_PROJECTION -> "projection:" + requireProjection().mappingId();
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -223,6 +262,7 @@ final class SelectedResult<R extends @Nullable Object> {
         }
         yield compiledExpressions.getFirst();
       }
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }
 
@@ -308,6 +348,15 @@ final class SelectedResult<R extends @Nullable Object> {
     return Objects.requireNonNull(projection, "projection selection");
   }
 
+  private ProjectionType<?> requireProjectionType() {
+    return Objects.requireNonNull(projectionType, "special projection type");
+  }
+
+  private static IllegalStateException unresolvedSpecialProjection() {
+    return new IllegalStateException(
+        "special projection sources must be resolved against a complete query block");
+  }
+
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static <R> CompiledQueryPlan<R, Object> entityFastPlan(
       EntityPlanSet<?> plans, QueryTable<?> table, CompiledQueryStructure structure) {
@@ -321,6 +370,7 @@ final class SelectedResult<R extends @Nullable Object> {
     NULLABLE_ENTITY,
     REQUIRED_SCALAR,
     NULLABLE_SCALAR,
-    GENERATED_PROJECTION
+    GENERATED_PROJECTION,
+    SPECIAL_PROJECTION
   }
 }

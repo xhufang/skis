@@ -13,6 +13,12 @@ class SourceTextTest {
   }
 
   @Test
+  void derivesTheTableSingletonFromOnlyTheEntitySimpleName() {
+    assertEquals("petTable", SourceText.tableSingletonName("Pet"));
+    assertEquals("uRLTable", SourceText.tableSingletonName("URL"));
+  }
+
+  @Test
   void escapesJavaStringSyntaxAndNamedControlCharacters() {
     assertEquals("\"\\\\\\\"\\b\\t\\n\\f\\r\"", SourceText.string("\\\"\b\t\n\f\r"));
   }

@@ -16,8 +16,8 @@ import java.util.Optional;
 /** Department CRUD and employee lookup examples. */
 public class DepartmentServiceImpl implements DepartmentService {
 
-  private static final DepartmentTable DEPARTMENT = DepartmentTable.DEPARTMENT;
-  private static final EmployeeTable EMPLOYEE = EmployeeTable.EMPLOYEE;
+  private static final DepartmentTable DEPARTMENT = DepartmentTable.departmentTable;
+  private static final EmployeeTable EMPLOYEE = EmployeeTable.employeeTable;
 
   private final SkisExecutor skisExecutor;
 

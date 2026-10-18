@@ -23,6 +23,7 @@ import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import java.io.IOException;
 import java.io.InputStream;

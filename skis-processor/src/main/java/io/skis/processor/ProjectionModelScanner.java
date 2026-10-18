@@ -1,9 +1,14 @@
 package io.skis.processor;
 
 import io.skis.annotations.ProjectionConstructor;
-import io.skis.annotations.SkisProjection;
+import io.skis.annotations.PropertyFrom;
+import io.skis.annotations.ReusableProjection;
+import io.skis.annotations.SpecialProjection;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -27,6 +32,10 @@ import javax.lang.model.util.Types;
 final class ProjectionModelScanner {
 
   private static final String NULLABLE = "org.jspecify.annotations.Nullable";
+  private static final String PROPERTY_META = "io.skis.metadata.PropertyMeta";
+  private static final String SELECTABLE = "io.skis.query.Selectable";
+  private static final String NON_NULL_SELECTABLE = "io.skis.query.NonNullSelectable";
+  private static final Set<String> RESERVED_TABLE_METHODS = Set.of("as", "alias", "entity");
 
   private final Elements elements;
   private final Types types;
@@ -38,8 +47,17 @@ final class ProjectionModelScanner {
 
   ProjectionModel scan(TypeElement type, boolean deferLombokSettlement)
       throws ProjectionScanException, ProjectionScanDeferredException {
-    if (type.getAnnotation(SkisProjection.class) == null) {
-      throw failure("SKIS201", "a projection type must be annotated with @SkisProjection", type);
+    boolean reusable = type.getAnnotation(ReusableProjection.class) != null;
+    boolean special = type.getAnnotation(SpecialProjection.class) != null;
+    if (!reusable && !special) {
+      throw failure(
+          "SKIS201",
+          "a projection type must be annotated with @ReusableProjection or @SpecialProjection",
+          type);
+    }
+    if (reusable && special) {
+      throw failure(
+          "SKIS225", "@ReusableProjection and @SpecialProjection are mutually exclusive", type);
     }
     if (type.getKind() != ElementKind.CLASS && type.getKind() != ElementKind.RECORD) {
       throw failure("SKIS202", "a projection must be a class or record", type);
@@ -84,6 +102,12 @@ final class ProjectionModelScanner {
               descriptor.constructorTypeName(),
               acceptsNull(parameter)));
     }
+    ProjectionModel.ProjectionKind kind =
+        reusable ? ProjectionModel.ProjectionKind.REUSABLE : ProjectionModel.ProjectionKind.SPECIAL;
+    List<ProjectionModel.ProjectionSource> sources =
+        kind == ProjectionModel.ProjectionKind.SPECIAL
+            ? scanSources(type, constructor)
+            : rejectSourcesOnReusable(type);
     return new ProjectionModel(
         type,
         generatedPackage,
@@ -91,7 +115,376 @@ final class ProjectionModelScanner {
         type.getQualifiedName().toString(),
         elements.getBinaryName(type).toString(),
         constructorDescriptor(constructor),
-        parameters);
+        kind,
+        parameters,
+        sources);
+  }
+
+  private List<ProjectionModel.ProjectionSource> rejectSourcesOnReusable(TypeElement type)
+      throws ProjectionScanException {
+    for (RecordComponentElement component : type.getRecordComponents()) {
+      if (component.getAnnotation(PropertyFrom.class) != null) {
+        throw failure("SKIS226", "@PropertyFrom is only valid on a @SpecialProjection", component);
+      }
+    }
+    for (Element element : type.getEnclosedElements()) {
+      if (element.getAnnotation(PropertyFrom.class) != null) {
+        throw failure("SKIS226", "@PropertyFrom is only valid on a @SpecialProjection", element);
+      }
+      if (element instanceof ExecutableElement executable) {
+        for (VariableElement parameter : executable.getParameters()) {
+          if (parameter.getAnnotation(PropertyFrom.class) != null) {
+            throw failure(
+                "SKIS226", "@PropertyFrom is only valid on a @SpecialProjection", parameter);
+          }
+        }
+      }
+    }
+    return List.of();
+  }
+
+  private List<ProjectionModel.ProjectionSource> scanSources(
+      TypeElement type, ExecutableElement constructor)
+      throws ProjectionScanException, ProjectionScanDeferredException {
+    Map<String, VariableElement> annotatedFields = new LinkedHashMap<>();
+    if (type.getKind() == ElementKind.CLASS) {
+      for (VariableElement field : ElementFilter.fieldsIn(type.getEnclosedElements())) {
+        if (field.getAnnotation(PropertyFrom.class) != null) {
+          annotatedFields.put(field.getSimpleName().toString(), field);
+        }
+      }
+    }
+    List<? extends RecordComponentElement> recordComponents =
+        type.getKind() == ElementKind.RECORD ? type.getRecordComponents() : List.of();
+    List<ProjectionModel.ProjectionSource> result =
+        new ArrayList<>(constructor.getParameters().size());
+    for (int index = 0; index < constructor.getParameters().size(); index++) {
+      VariableElement parameter = constructor.getParameters().get(index);
+      PropertyFrom direct = parameter.getAnnotation(PropertyFrom.class);
+      Element declaration = parameter;
+      if (type.getKind() == ElementKind.RECORD) {
+        RecordComponentElement recordComponent = recordComponents.get(index);
+        PropertyFrom component = recordComponent.getAnnotation(PropertyFrom.class);
+        if (direct != null
+            && component != null
+            && !sameSourceDeclaration(direct, parameter, component, recordComponent)) {
+          throw failure(
+              "SKIS232",
+              "special projection parameter '"
+                  + parameter.getSimpleName()
+                  + "' declares conflicting @PropertyFrom values on the record component "
+                  + "and canonical constructor parameter",
+              parameter);
+        }
+        if (direct == null) {
+          direct = component;
+          declaration = recordComponent;
+        }
+      } else {
+        VariableElement field = annotatedFields.remove(parameter.getSimpleName().toString());
+        if (direct != null && field != null) {
+          throw failure(
+              "SKIS232",
+              "special projection parameter '"
+                  + parameter.getSimpleName()
+                  + "' declares @PropertyFrom on both the parameter and matching field",
+              parameter);
+        }
+        if (direct == null && field != null) {
+          validateSourceField(parameter, field);
+          direct = field.getAnnotation(PropertyFrom.class);
+          declaration = field;
+        }
+      }
+      if (direct == null) {
+        throw failure(
+            "SKIS226",
+            "special projection parameter '"
+                + parameter.getSimpleName()
+                + "' must declare @PropertyFrom",
+            parameter);
+      }
+      result.add(resolveSource(parameter, direct, declaration));
+    }
+    if (!annotatedFields.isEmpty()) {
+      VariableElement field = annotatedFields.values().iterator().next();
+      throw failure(
+          "SKIS232",
+          "@PropertyFrom field '"
+              + field.getSimpleName()
+              + "' does not correspond to a selected constructor parameter",
+          field);
+    }
+    rejectUnusedParameterSources(type, constructor);
+    return List.copyOf(result);
+  }
+
+  private boolean sameSourceDeclaration(
+      PropertyFrom parameterSource,
+      Element parameter,
+      PropertyFrom componentSource,
+      Element component)
+      throws ProjectionScanDeferredException {
+    return annotationValue(parameterSource, parameter)
+            .equals(annotationValue(componentSource, component))
+        && annotationAlias(parameterSource, parameter)
+            .equals(annotationAlias(componentSource, component));
+  }
+
+  private void validateSourceField(VariableElement parameter, VariableElement field)
+      throws ProjectionScanException {
+    if (field.getModifiers().contains(Modifier.STATIC)) {
+      throw failure(
+          "SKIS232",
+          "@PropertyFrom field '" + field.getSimpleName() + "' must not be static",
+          field);
+    }
+    if (!types.isSameType(parameter.asType(), field.asType())) {
+      throw failure(
+          "SKIS232",
+          "@PropertyFrom field '"
+              + field.getSimpleName()
+              + "' has type '"
+              + field.asType()
+              + "' but its constructor parameter has type '"
+              + parameter.asType()
+              + "'",
+          field);
+    }
+    if (acceptsNull(parameter) != acceptsNull(field)) {
+      throw failure(
+          "SKIS232",
+          "@PropertyFrom field '"
+              + field.getSimpleName()
+              + "' and its constructor parameter must declare the same nullability",
+          field);
+    }
+  }
+
+  private void rejectUnusedParameterSources(TypeElement type, ExecutableElement constructor)
+      throws ProjectionScanException {
+    for (ExecutableElement executable : ElementFilter.methodsIn(type.getEnclosedElements())) {
+      rejectParameterSources(executable);
+    }
+    for (ExecutableElement candidate : ElementFilter.constructorsIn(type.getEnclosedElements())) {
+      if (!candidate.equals(constructor)) {
+        rejectParameterSources(candidate);
+      }
+    }
+  }
+
+  private void rejectParameterSources(ExecutableElement executable) throws ProjectionScanException {
+    for (VariableElement parameter : executable.getParameters()) {
+      if (parameter.getAnnotation(PropertyFrom.class) != null) {
+        throw failure(
+            "SKIS232",
+            "@PropertyFrom parameter '"
+                + parameter.getSimpleName()
+                + "' does not belong to the selected projection constructor",
+            parameter);
+      }
+    }
+  }
+
+  private ProjectionModel.ProjectionSource resolveSource(
+      VariableElement parameter, PropertyFrom annotation, Element declaration)
+      throws ProjectionScanException, ProjectionScanDeferredException {
+    String encodedSource = annotationValue(annotation, declaration);
+    ParsedPropertyIdentity identity = parsePropertyIdentity(encodedSource, declaration);
+    String alias = annotationAlias(annotation, declaration);
+    if (!alias.isEmpty() && !isPortableIdentifier(alias)) {
+      throw failure(
+          "SKIS230",
+          "@PropertyFrom alias '" + alias + "' must match [A-Za-z_][A-Za-z0-9_]*",
+          declaration);
+    }
+    TypeElement entityType = elements.getTypeElement(identity.entityTypeName());
+    if (entityType == null) {
+      throw new ProjectionScanDeferredException(
+          "@PropertyFrom entity type '" + identity.entityTypeName() + "' is not available yet");
+    }
+    String entityPackage = elements.getPackageOf(entityType).getQualifiedName().toString();
+    String generatedPrefix = entityPackage + ".skis." + entityType.getSimpleName();
+    String metaTypeName = generatedPrefix + "Meta";
+    String tableTypeName = generatedPrefix + "Table";
+    TypeElement metaType = elements.getTypeElement(metaTypeName);
+    TypeElement tableType = elements.getTypeElement(tableTypeName);
+    if (metaType == null || tableType == null) {
+      throw new ProjectionScanDeferredException(
+          "generated entity metadata for '" + identity.entityTypeName() + "' is not available yet");
+    }
+    VariableElement sourceConstant =
+        ElementFilter.fieldsIn(tableType.getEnclosedElements()).stream()
+            .filter(field -> encodedSource.equals(field.getConstantValue()))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    failure(
+                        "SKIS231",
+                        "@PropertyFrom references unknown persistent property '"
+                            + identity.propertyName()
+                            + "' on entity '"
+                            + identity.entityTypeName()
+                            + "'",
+                        declaration));
+    String metaFieldName = sourceConstant.getSimpleName().toString();
+    VariableElement metaField =
+        ElementFilter.fieldsIn(metaType.getEnclosedElements()).stream()
+            .filter(field -> field.getSimpleName().contentEquals(metaFieldName))
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    failure(
+                        "SKIS231",
+                        "@PropertyFrom references unknown persistent property '"
+                            + identity.propertyName()
+                            + "' on entity '"
+                            + identity.entityTypeName()
+                            + "'",
+                        declaration));
+    validatePropertyType(parameter, entityType, metaField, declaration);
+    validatePropertyNullability(parameter, tableType, identity.propertyName(), declaration);
+    return new ProjectionModel.ProjectionSource(metaTypeName, metaFieldName, alias);
+  }
+
+  private static boolean isPortableIdentifier(String value) {
+    if (value.isEmpty() || !isIdentifierInitial(value.charAt(0))) {
+      return false;
+    }
+    for (int index = 1; index < value.length(); index++) {
+      if (!isIdentifierSubsequent(value.charAt(index))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private static boolean isIdentifierInitial(char character) {
+    return character == '_'
+        || character >= 'A' && character <= 'Z'
+        || character >= 'a' && character <= 'z';
+  }
+
+  private static boolean isIdentifierSubsequent(char character) {
+    return isIdentifierInitial(character) || character >= '0' && character <= '9';
+  }
+
+  private static String annotationValue(PropertyFrom annotation, Element declaration)
+      throws ProjectionScanDeferredException {
+    try {
+      String value = annotation.value();
+      if (value.contains("<error>")) {
+        throw new ProjectionScanDeferredException(
+            "@PropertyFrom value on '" + declaration.getSimpleName() + "' is not resolved yet");
+      }
+      return value;
+    } catch (RuntimeException unresolved) {
+      throw new ProjectionScanDeferredException(
+          "@PropertyFrom value on '" + declaration.getSimpleName() + "' is not resolved yet");
+    }
+  }
+
+  private static String annotationAlias(PropertyFrom annotation, Element declaration)
+      throws ProjectionScanDeferredException {
+    try {
+      return annotation.alias();
+    } catch (RuntimeException unresolved) {
+      throw new ProjectionScanDeferredException(
+          "@PropertyFrom alias on '" + declaration.getSimpleName() + "' is not resolved yet");
+    }
+  }
+
+  private ParsedPropertyIdentity parsePropertyIdentity(String value, Element declaration)
+      throws ProjectionScanException {
+    int separator = value.indexOf('#');
+    if (separator <= 0 || separator != value.lastIndexOf('#') || separator + 1 == value.length()) {
+      throw failure(
+          "SKIS227",
+          "@PropertyFrom value must use the complete '<entity-type>#<property-name>' format",
+          declaration);
+    }
+    return new ParsedPropertyIdentity(
+        value.substring(0, separator), value.substring(separator + 1));
+  }
+
+  private void validatePropertyType(
+      VariableElement parameter,
+      TypeElement entityType,
+      VariableElement metaField,
+      Element declaration)
+      throws ProjectionScanException, ProjectionScanDeferredException {
+    if (!(metaField.asType() instanceof DeclaredType declared)
+        || !types.erasure(declared).toString().equals(PROPERTY_META)
+        || declared.getTypeArguments().size() != 2) {
+      throw failure(
+          "SKIS231", "generated property metadata has an unsupported declaration", declaration);
+    }
+    TypeMirror sourceEntityType = declared.getTypeArguments().get(0);
+    TypeMirror propertyType = declared.getTypeArguments().get(1);
+    if (containsUnresolvedType(sourceEntityType) || containsUnresolvedType(propertyType)) {
+      throw new ProjectionScanDeferredException("generated property metadata is not resolved yet");
+    }
+    if (!types.isSameType(types.erasure(sourceEntityType), types.erasure(entityType.asType()))) {
+      throw failure(
+          "SKIS227",
+          "@PropertyFrom metadata does not match its encoded entity identity",
+          declaration);
+    }
+    TypeMirror parameterType = parameter.asType();
+    if (parameterType.getKind().isPrimitive()) {
+      parameterType = types.boxedClass((PrimitiveType) parameterType).asType();
+    }
+    if (!types.isSameType(parameterType, propertyType)) {
+      throw failure(
+          "SKIS228",
+          "special projection parameter '"
+              + parameter.getSimpleName()
+              + "' has type '"
+              + parameter.asType()
+              + "' but its property source has type '"
+              + propertyType
+              + "'",
+          declaration);
+    }
+  }
+
+  private void validatePropertyNullability(
+      VariableElement parameter, TypeElement tableType, String propertyName, Element declaration)
+      throws ProjectionScanException, ProjectionScanDeferredException {
+    String methodName =
+        RESERVED_TABLE_METHODS.contains(propertyName) ? propertyName + "Column" : propertyName;
+    ExecutableElement method =
+        ElementFilter.methodsIn(tableType.getEnclosedElements()).stream()
+            .filter(candidate -> candidate.getSimpleName().contentEquals(methodName))
+            .filter(candidate -> candidate.getParameters().isEmpty())
+            .findFirst()
+            .orElseThrow(
+                () ->
+                    failure(
+                        "SKIS231",
+                        "generated table has no accessor for persistent property '"
+                            + propertyName
+                            + "'",
+                        declaration));
+    if (containsUnresolvedType(method.getReturnType())) {
+      throw new ProjectionScanDeferredException(
+          "generated table property type is not resolved yet");
+    }
+    String returnType = types.erasure(method.getReturnType()).toString();
+    if (!returnType.equals(SELECTABLE) && !returnType.equals(NON_NULL_SELECTABLE)) {
+      throw failure(
+          "SKIS231",
+          "generated table property accessor has an unsupported return type",
+          declaration);
+    }
+    if (returnType.equals(SELECTABLE) && !acceptsNull(parameter)) {
+      throw failure(
+          "SKIS229",
+          "special projection parameter '"
+              + parameter.getSimpleName()
+              + "' must accept null because its property source is nullable",
+          declaration);
+    }
   }
 
   private void validateConstructor(ExecutableElement constructor) throws ProjectionScanException {
@@ -417,4 +810,6 @@ final class ProjectionModelScanner {
       String classLiteral,
       boolean primitive,
       String constructorTypeName) {}
+
+  private record ParsedPropertyIdentity(String entityTypeName, String propertyName) {}
 }

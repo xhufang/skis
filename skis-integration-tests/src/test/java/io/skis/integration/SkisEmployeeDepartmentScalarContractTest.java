@@ -89,8 +89,8 @@ class SkisEmployeeDepartmentScalarContractTest {
                   })
               .dialect(dialect)
               .build();
-      EmployeeTable employee = EmployeeTable.EMPLOYEE.as("e");
-      DepartmentTable department = DepartmentTable.DEPARTMENT.as("d");
+      EmployeeTable employee = EmployeeTable.employeeTable.as("e");
+      DepartmentTable department = DepartmentTable.departmentTable.as("d");
       QueryParameter<String> pattern = Sql.parameter(String.class, "departmentPattern");
       QueryParameter<Long> minimumEmployeeId = Sql.parameter(Long.class, "minimumEmployeeId");
       Selectable<Long> departmentId =
@@ -143,7 +143,7 @@ class SkisEmployeeDepartmentScalarContractTest {
       assertFalse(nullableSlice.hasNext());
 
       // The same description also has to be laid out correctly when embedded in another block.
-      DepartmentTable outerDepartment = DepartmentTable.DEPARTMENT.as("outer_d");
+      DepartmentTable outerDepartment = DepartmentTable.departmentTable.as("outer_d");
       var nested =
           Sql.select(outerDepartment.id())
               .from(outerDepartment)

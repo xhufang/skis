@@ -247,15 +247,15 @@ The root is occurrence 0 and joined tables receive dense occurrence ordinals. Al
 table-expression objects, including two aliases of the same entity. ON, WHERE, ordering, visible
 selections, and hidden pagination selections are all validated against this final scope.
 
-`@SkisProjection` now describes only how to construct one result row. Its generated companion has
+`@ReusableProjection` now describes only how to construct one result row. Its generated companion has
 a fixed-arity, typed `of(...)` method:
 
 ```java
-@SkisProjection
+@ReusableProjection
 public record PetOwnerView(Long petId, @Nullable String ownerName) {}
 
 executor
-    .select(PetOwnerViewProjection.of(pet.id(), owner.name()))
+    .select(PetOwnerViewPro.of(pet.id(), owner.name()))
     .from(pet)
     .leftJoin(owner)
     .on(pet.ownerId().eq(owner.id()))

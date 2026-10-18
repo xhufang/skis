@@ -6,6 +6,7 @@ import io.skis.jdbc.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
+import io.skis.query.ProjectionType;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
 import io.skis.query.SelectDescription;
@@ -84,6 +85,12 @@ final class DefaultSkisSession implements SkisSession {
 
   @Override
   public <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
+    requireActive();
+    return queries.select(projection);
+  }
+
+  @Override
+  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection) {
     requireActive();
     return queries.select(projection);
   }

@@ -2,22 +2,22 @@
 package samples.skis;
 
 import io.skis.query.NonNullSelectable;
-import io.skis.query.ProjectionMapping;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.Selectable;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import java.util.List;
 
 @javax.annotation.processing.Generated(
     value = "io.skis.processor.SkisProjectionProcessor",
-    comments = "Projection ABI 5")
-public final class NullableSummaryProjection {
+    comments = "Projection ABI 6")
+public final class NullableSummaryPro {
 
   private static final ProjectionMapping<samples.NullableSummary> MAPPING =
       ProjectionMapping.generated(
-          5,
+          6,
           samples.NullableSummary.class,
-          "skis-projection:5:samples.NullableSummary:(JLjava/lang/String;)V:id=java.lang.Long!:name=java.lang.String?",
+          "skis-projection:6:samples.NullableSummary:(JLjava/lang/String;)V:id=java.lang.Long!:name=java.lang.String?",
           List.of(
               new ProjectionMapping.Parameter(0, "id", java.lang.Long.class, Nullability.NON_NULL, 0),
               new ProjectionMapping.Parameter(1, "name", java.lang.String.class, Nullability.NULLABLE, 1)),
@@ -32,11 +32,11 @@ public final class NullableSummaryProjection {
                     $skisValue1.read($skisResultSet, $skisContext));
           });
 
-  private NullableSummaryProjection() {}
+  private NullableSummaryPro() {}
 
   public static ProjectionSelection<samples.NullableSummary> of(
       NonNullSelectable<java.lang.Long> id,
       Selectable<java.lang.String> name) {
-    return NullableSummaryProjection.MAPPING.bind(id, name);
+    return NullableSummaryPro.MAPPING.bind(id, name);
   }
 }

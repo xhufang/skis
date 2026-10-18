@@ -34,28 +34,28 @@ class SkisMutationTransactionTest {
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     Pet inserted = new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
 
-    assertEquals(1, executor.insert(PetTable.PET, inserted));
-    Pet stored = executor.findById(PetTable.PET, 7L).orElseThrow();
+    assertEquals(1, executor.insert(PetTable.petTable, inserted));
+    Pet stored = executor.findById(PetTable.petTable, 7L).orElseThrow();
     assertEquals(Long.valueOf(0L), stored.version());
 
     Pet update = new Pet(7L, "Mimi", new BigDecimal("13.25"), true, 0L, "ignored");
-    assertEquals(1, executor.updateById(PetTable.PET, update));
-    Pet updated = executor.findById(PetTable.PET, 7L).orElseThrow();
+    assertEquals(1, executor.updateById(PetTable.petTable, update));
+    Pet updated = executor.findById(PetTable.petTable, 7L).orElseThrow();
     assertEquals(new BigDecimal("13.25"), updated.weight());
     assertTrue(updated.adopted());
     assertEquals(Long.valueOf(1L), updated.version());
 
     assertThrows(
-        OptimisticLockException.class, () -> executor.updateById(PetTable.PET, update));
-    assertEquals(1, executor.deleteById(PetTable.PET, 7L));
-    assertTrue(executor.findById(PetTable.PET, 7L).isEmpty());
+        OptimisticLockException.class, () -> executor.updateById(PetTable.petTable, update));
+    assertEquals(1, executor.deleteById(PetTable.petTable, 7L));
+    assertTrue(executor.findById(PetTable.petTable, 7L).isEmpty());
   }
 
   @Test
   void aliasesKeepTheCanonicalEntityCrudTarget() throws Exception {
     DataSource dataSource = database();
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
-    PetTable alias = PetTable.PET.as("crud_pet");
+    PetTable alias = PetTable.petTable.as("crud_pet");
     Pet inserted = new Pet(70L, "Alias", new BigDecimal("7.00"), false, null, "ignored");
 
     assertEquals(1, executor.insert(alias, inserted));
@@ -84,14 +84,14 @@ class SkisMutationTransactionTest {
     Pet visibleInside =
         executor.inTransaction(
             session -> {
-              session.insert(PetTable.PET, pet);
+              session.insert(PetTable.petTable, pet);
               session.afterCommit(callbacks::incrementAndGet);
-              return session.findById(PetTable.PET, 8L).orElseThrow();
+              return session.findById(PetTable.petTable, 8L).orElseThrow();
             });
 
     assertEquals("Fifi", visibleInside.name());
     assertEquals(1, callbacks.get());
-    assertTrue(executor.findById(PetTable.PET, 8L).isPresent());
+    assertTrue(executor.findById(PetTable.petTable, 8L).isPresent());
   }
 
   @Test
@@ -99,12 +99,12 @@ class SkisMutationTransactionTest {
     DataSource dataSource = database();
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     Pet inserted = new Pet(11L, "Lulu", new BigDecimal("4.00"), false, null, "ignored");
-    executor.insert(PetTable.PET, inserted);
+    executor.insert(PetTable.petTable, inserted);
     Pet update = new Pet(11L, "Lulu", new BigDecimal("4.25"), true, null, "ignored");
 
-    assertEquals(1, executor.updateById(PetTable.PET, update));
+    assertEquals(1, executor.updateById(PetTable.petTable, update));
 
-    Pet stored = executor.findById(PetTable.PET, 11L).orElseThrow();
+    Pet stored = executor.findById(PetTable.petTable, 11L).orElseThrow();
     assertEquals(Long.valueOf(1L), stored.version());
     assertTrue(stored.adopted());
   }
@@ -121,13 +121,13 @@ class SkisMutationTransactionTest {
         () ->
             executor.inTransaction(
                 session -> {
-                  session.insert(PetTable.PET, pet);
+                  session.insert(PetTable.petTable, pet);
                   session.afterCommit(callbacks::incrementAndGet);
                   throw new IllegalStateException("force rollback");
                 }));
 
     assertEquals(0, callbacks.get());
-    assertFalse(executor.findById(PetTable.PET, 9L).isPresent());
+    assertFalse(executor.findById(PetTable.petTable, 9L).isPresent());
   }
 
   @Test
@@ -143,7 +143,7 @@ class SkisMutationTransactionTest {
             () ->
                 executor.inTransaction(
                     session -> {
-                      session.insert(PetTable.PET, pet);
+                      session.insert(PetTable.petTable, pet);
                       session.afterCommit(
                           () -> {
                             callbacks.incrementAndGet();
@@ -155,7 +155,7 @@ class SkisMutationTransactionTest {
 
     assertTrue(failure.getMessage().contains("transaction committed"));
     assertEquals(2, callbacks.get());
-    assertTrue(executor.findById(PetTable.PET, 10L).isPresent());
+    assertTrue(executor.findById(PetTable.petTable, 10L).isPresent());
   }
 
   @Test
@@ -174,30 +174,30 @@ class SkisMutationTransactionTest {
             .executionOptions(defaults)
             .build();
     executor.insert(
-        PetTable.PET,
+        PetTable.petTable,
         new Pet(21L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
     executor.insert(
-        PetTable.PET,
+        PetTable.petTable,
         new Pet(22L, "Fifi", new BigDecimal("8.00"), false, null, "ignored"));
     ExecutionOptions unlimited =
         ExecutionOptions.builder().maxRows(0).clearQueryTag().build();
 
-    assertEquals(1, executor.selectFrom(PetTable.PET).fetchList().size());
+    assertEquals(1, executor.selectFrom(PetTable.petTable).fetchList().size());
     assertEquals(
         2,
         executor
-            .selectFrom(PetTable.PET)
+            .selectFrom(PetTable.petTable)
             .withOptions(unlimited)
             .fetchList()
             .size());
 
     executor.inTransaction(
         session -> {
-          assertEquals(1, session.selectFrom(PetTable.PET).fetchList().size());
+          assertEquals(1, session.selectFrom(PetTable.petTable).fetchList().size());
           assertEquals(
               2,
               session
-                  .selectFrom(PetTable.PET)
+                  .selectFrom(PetTable.petTable)
                   .withOptions(unlimited)
                   .fetchList()
                   .size());
@@ -210,11 +210,11 @@ class SkisMutationTransactionTest {
     executor.inTransaction(
         sessionDefaults,
         session -> {
-          assertEquals(2, session.selectFrom(PetTable.PET).fetchList().size());
+          assertEquals(2, session.selectFrom(PetTable.petTable).fetchList().size());
           assertEquals(
               1,
               session
-                  .selectFrom(PetTable.PET)
+                  .selectFrom(PetTable.petTable)
                   .withOptions(oneRow)
                   .fetchList()
                   .size());
@@ -227,10 +227,10 @@ class SkisMutationTransactionTest {
     DataSource dataSource = database();
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     Pet pet = new Pet(31L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
-    executor.insert(PetTable.PET, pet);
+    executor.insert(PetTable.petTable, pet);
 
     MutationException failure =
-        assertThrows(MutationException.class, () -> executor.insert(PetTable.PET, pet));
+        assertThrows(MutationException.class, () -> executor.insert(PetTable.petTable, pet));
 
     SQLException sqlFailure = (SQLException) failure.getCause();
     assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());
