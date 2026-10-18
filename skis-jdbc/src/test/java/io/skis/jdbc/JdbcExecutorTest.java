@@ -916,13 +916,7 @@ class JdbcExecutorTest {
           statement.setLong(firstIndex, value);
           return firstIndex + 1;
         },
-        (resultSet, context) -> {
-          String value = resultSet.getString(1);
-          if (value == null) {
-            throw new SQLException("non-null query decoder returned null");
-          }
-          return value;
-        });
+        (resultSet, context) -> resultSet.getString(1));
   }
 
   private static CompiledQueryPlan<@Nullable String, Long> nullablePlan() {
