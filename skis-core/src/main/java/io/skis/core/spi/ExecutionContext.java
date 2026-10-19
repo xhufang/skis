@@ -1,6 +1,7 @@
 package io.skis.core.spi;
 
 import io.skis.core.ExecutionOptions;
+import java.util.Objects;
 
 /**
  * Services and execution-scoped options made available while SKIS performs JDBC work.
@@ -20,8 +21,7 @@ public interface ExecutionContext {
 
   /** Creates a context that exposes the supplied immutable statement options. */
   static ExecutionContext of(ExecutionOptions executionOptions) {
-    ExecutionOptions options =
-        java.util.Objects.requireNonNull(executionOptions, "executionOptions");
+    ExecutionOptions options = Objects.requireNonNull(executionOptions, "executionOptions");
     return options.isEmpty() ? EMPTY : options;
   }
 }

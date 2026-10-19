@@ -505,7 +505,7 @@ class QueryPaginationCompilationTest {
             DialectFeature.NULLS_FIRST_LAST,
             DialectFeature.COUNT_DISTINCT);
     private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+        new StandardSqlRenderer(this);
 
     @Override
     public String id() {

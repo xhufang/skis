@@ -5,6 +5,9 @@ import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.ResolvedStatement;
+import io.skis.dialect.support.SqlCompiler;
+import io.skis.dialect.support.SqlTemplate;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -94,7 +97,7 @@ final class QueryPlanCompiler {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope sourceScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-    QueryCompilationContext sourceContext =
+    ResolvedStatement sourceContext =
         validateSelectionSource(selected, structure, distinct, sourceScope);
     TableRuntimeScope runtimeScope = sourceScope.forFromClause(structure.fromClause());
     SqlExpression<?> distinctExpression = null;
@@ -111,7 +114,7 @@ final class QueryPlanCompiler {
 
   private QueryCompilation<Long> compileResolvedCount(
       SelectedResult<?> selected,
-      QueryCompilationContext sourceContext,
+      ResolvedStatement sourceContext,
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       QueryArguments statementArguments,
@@ -132,14 +135,14 @@ final class QueryPlanCompiler {
         structure.parameterSlots().size(),
         parameters.size(),
         QueryPaginationShape.none());
-    QueryCompilationContext compilationContext = prepareContext(count);
+    ResolvedStatement compilationContext = prepareContext(count);
     return plans.resolve(
-        sourceContext.analysis(),
+        sourceContext,
+        compilationContext.statement(),
         selected,
         QueryPlanKey.PlanVariant.count(),
         parameters,
         inputs.parameterSources,
-        compilationContext.statement(),
         statementArguments.planArgument(),
         () ->
             renderPlan(
@@ -319,14 +322,14 @@ final class QueryPlanCompiler {
         structure.parameterSlots().size(),
         parameters.size(),
         variant.pagination());
-    QueryCompilationContext compilationContext = prepareContext(statement);
+    ResolvedStatement compilationContext = prepareContext(statement);
     return plans.resolve(
-        compilationContext.analysis(),
+        compilationContext,
+        compilationContext.statement(),
         selected,
         variant,
         parameters,
         inputs.parameterSources,
-        compilationContext.statement(),
         statementArguments.planArgument(),
         () -> renderPlan(compilationContext, parameters, selection.decoder()));
   }
@@ -339,7 +342,7 @@ final class QueryPlanCompiler {
   /**
    * Validates original scopes before count, empty-IN pruning, or selected scalar ordering reuse.
    */
-  private QueryCompilationContext validateSelectionSource(
+  private ResolvedStatement validateSelectionSource(
       SelectedResult<?> selected,
       CompiledQueryStructure structure,
       boolean distinct,
@@ -361,7 +364,11 @@ final class QueryPlanCompiler {
                     source.having(),
                     source.orderBy(),
                     null));
-    return prepareContext(statement);
+    ResolvedStatement resolved = prepareContext(statement);
+    // The original description keeps its complete dialect capability validation even when the
+    // final numbered/ordered/count statement prunes an operand or reuses a selected output.
+    dialect.validate(resolved);
+    return resolved;
   }
 
   private static List<OrderByItem> orderItems(
@@ -407,16 +414,18 @@ final class QueryPlanCompiler {
   }
 
   private <R extends @Nullable Object> CompiledQueryPlan<R, Object> renderPlan(
-      QueryCompilationContext compilationContext,
+      ResolvedStatement compilationContext,
       List<LogicalParameter> logicalParameters,
       RowDecoder<R> rowDecoder) {
-    RenderedSql rendered;
+    SqlTemplate template;
     try {
-      rendered = compilationContext.render(dialect);
+      template = SqlCompiler.compile(compilationContext, dialect);
     } catch (IllegalArgumentException failure) {
       throw QueryValidationException.ofCause(
           SkisErrorCode.QUERY_COMPILED_SHAPE, failure, "SQL rendering failed");
     }
+    RenderedSql rendered =
+        new RenderedSql(template.sql(), template.parameterLayout().slots());
     List<RenderedBinding> renderedBindings = renderedBindings(logicalParameters, rendered);
     int logicalParameterCount = logicalParameters.size();
     return new CompiledQueryPlan<>(
@@ -440,9 +449,9 @@ final class QueryPlanCompiler {
         rowDecoder);
   }
 
-  private QueryCompilationContext prepareContext(StatementAst statement) {
+  private ResolvedStatement prepareContext(StatementAst statement) {
     try {
-      return QueryCompilationContext.prepare(statement, dialect);
+      return ResolvedStatement.analyze(statement);
     } catch (IllegalArgumentException failure) {
       throw QueryValidationException.ofCause(
           SkisErrorCode.QUERY_COMPILED_SHAPE, failure, "query compilation context is invalid");
@@ -451,7 +460,6 @@ final class QueryPlanCompiler {
 
   private List<RenderedBinding> renderedBindings(
       List<LogicalParameter> logicalParameters, RenderedSql rendered) {
-    boolean[] seen = new boolean[logicalParameters.size()];
     List<RenderedBinding> bindings = new ArrayList<>(rendered.parameterCount());
     for (ParameterSlot<?> renderedSlot : rendered.parameters()) {
       int ordinal = renderedSlot.ordinal();
@@ -462,13 +470,7 @@ final class QueryPlanCompiler {
       if (!logical.matches(renderedSlot)) {
         throw unexpectedParameterShape();
       }
-      seen[ordinal] = true;
       bindings.add(new RenderedBinding(logical, ordinal));
-    }
-    for (boolean present : seen) {
-      if (!present) {
-        throw unexpectedParameterShape();
-      }
     }
     return List.copyOf(bindings);
   }

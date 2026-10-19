@@ -36,12 +36,10 @@ class H2DerivedTableDialectTest {
             reference);
 
     RenderedSql rendered =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    List.of(new DerivedColumnExpression<Long>(reference, 0)),
-                    FromClause.of(source)));
+        H2TestRendering.render(
+            new SelectStatement(
+                List.of(new DerivedColumnExpression<Long>(reference, 0)),
+                FromClause.of(source)));
 
     assertTrue(H2Dialect.INSTANCE.capabilities().supports(DialectFeature.DERIVED_TABLE));
     assertEquals(

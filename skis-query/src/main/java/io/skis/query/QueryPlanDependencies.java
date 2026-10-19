@@ -1,7 +1,7 @@
 package io.skis.query;
 
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.metadata.EntityMeta;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.ResolvedSourceIdentity;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -30,11 +30,17 @@ final class QueryPlanDependencies {
     this.entities = List.copyOf(entities);
   }
 
-  /** Collects root, Join, subquery, and derived-table entity sources from resolved query blocks. */
-  static QueryPlanDependencies from(QueryBlockAnalysis analysis) {
-    Objects.requireNonNull(analysis, "analysis");
+  /** Collects root, Join, subquery, and derived-table entity sources from resolved occurrences. */
+  static QueryPlanDependencies from(ResolvedStatement resolved) {
+    Objects.requireNonNull(resolved, "resolved");
     List<SourceDependency> sources = new ArrayList<>();
-    collect(analysis, sources);
+    for (ResolvedStatement.SourceOccurrence occurrence : resolved.sourceOccurrences()) {
+      occurrence
+          .source()
+          .entityTable()
+          .ifPresent(
+              table -> sources.add(new SourceDependency(occurrence.identity(), table.entity())));
+    }
     return new QueryPlanDependencies(sources);
   }
 
@@ -61,19 +67,6 @@ final class QueryPlanDependencies {
       }
     }
     return true;
-  }
-
-  private static void collect(QueryBlockAnalysis analysis, List<SourceDependency> sources) {
-    for (QueryBlockAnalysis.SourceOccurrence occurrence : analysis.sourceOccurrences()) {
-      occurrence
-          .source()
-          .entityTable()
-          .ifPresent(
-              table -> sources.add(new SourceDependency(occurrence.identity(), table.entity())));
-    }
-    for (QueryBlockAnalysis.NestedBlock nested : analysis.nestedBlocks()) {
-      collect(nested.analysis(), sources);
-    }
   }
 
   record SourceDependency(ResolvedSourceIdentity source, EntityMeta<?> entity) {

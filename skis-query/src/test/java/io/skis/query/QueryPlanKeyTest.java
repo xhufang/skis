@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
@@ -40,7 +41,6 @@ import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.ResolvedStructureKey;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
@@ -372,7 +372,7 @@ class QueryPlanKeyTest {
     SelectedResult<Pet> selected = SelectedResult.entity(KEY_TABLE);
     QueryPagination pagination = new QueryPagination.LimitOnly(11);
     List<QueryCompilation<OrderedRow<Pet>>> compiled = new ArrayList<>();
-    List<QueryBlockAnalysis> analyses = new ArrayList<>();
+    List<ResolvedStatement> analyses = new ArrayList<>();
     List<QueryPlanDependencies> dependencies = new ArrayList<>();
     List<QueryPlanKey> keys = new ArrayList<>();
     for (boolean swap : List.of(false, true)) {
@@ -392,15 +392,14 @@ class QueryPlanKeyTest {
               false,
               pagination,
               QueryTestSupport.arguments(state.structure()).withPagination(pagination));
-      QueryBlockAnalysis analysis =
-          SemanticValidator.analyzeComplete((SelectStatement) query.ast());
+      ResolvedStatement analysis = ResolvedStatement.analyze(query.ast());
       QueryPlanDependencies sources = QueryPlanDependencies.from(analysis);
       compiled.add(query);
       analyses.add(analysis);
       dependencies.add(sources);
       keys.add(
           new QueryPlanKey(
-              analysis.structureKey(),
+              analysis.structureKey().orElseThrow(),
               QueryPlanKey.Dependencies.from(sources),
               result(identities, selected),
               QueryPlanKey.PlanVariant.orderedContent(QueryPaginationShape.from(pagination)),
@@ -408,7 +407,8 @@ class QueryPlanKeyTest {
               QueryPlanKey.DialectIdentity.from(OrderedDialect.INSTANCE).orElseThrow(),
               Map.of()));
     }
-    assertEquals(analyses.get(0).structureKey(), analyses.get(1).structureKey());
+    assertEquals(
+        analyses.get(0).structureKey().orElseThrow(), analyses.get(1).structureKey().orElseThrow());
     assertTrue(dependencies.get(0).sameEntities(dependencies.get(1)));
     assertNotEquals(keys.get(0), keys.get(1));
     assertThrows(
@@ -854,8 +854,8 @@ class QueryPlanKeyTest {
 
   private static void assertDependencyOnlyLoaderIsolation(
       SelectStatement first, SelectStatement second) {
-    QueryBlockAnalysis firstAnalysis = SemanticValidator.analyzeComplete(first);
-    QueryBlockAnalysis secondAnalysis = SemanticValidator.analyzeComplete(second);
+    ResolvedStatement firstAnalysis = ResolvedStatement.analyze(first);
+    ResolvedStatement secondAnalysis = ResolvedStatement.analyze(second);
     QueryPlanKey.Dependencies firstDependencies =
         QueryPlanKey.Dependencies.from(QueryPlanDependencies.from(firstAnalysis));
     QueryPlanKey.Dependencies secondDependencies =
@@ -864,8 +864,8 @@ class QueryPlanKeyTest {
     assertEquals(firstAnalysis.structureKey(), secondAnalysis.structureKey());
     assertNotEquals(firstDependencies, secondDependencies);
     assertNotEquals(
-        key(firstAnalysis.structureKey(), firstDependencies),
-        key(secondAnalysis.structureKey(), secondDependencies));
+        key(firstAnalysis.structureKey().orElseThrow(), firstDependencies),
+        key(secondAnalysis.structureKey().orElseThrow(), secondDependencies));
   }
 
   private static QueryPlanKey key(
@@ -1109,7 +1109,7 @@ class QueryPlanKeyTest {
 
     @Override
     public SqlRenderer renderer() {
-      return new StandardSqlRenderer(id(), identifierRules(), capabilities());
+      return new StandardSqlRenderer(this);
     }
   }
 

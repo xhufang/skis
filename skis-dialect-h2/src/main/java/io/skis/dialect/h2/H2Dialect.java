@@ -3,11 +3,13 @@ package io.skis.dialect.h2;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.ExceptionClassifier;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.spi.StatementParameterLimit;
 import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlLowering;
 import io.skis.dialect.support.StandardSqlRenderer;
 
 /** H2 development-and-test dialect composition root. */
@@ -34,11 +36,12 @@ public final class H2Dialect implements Dialect {
   // No stable dialect-level maximum has been accepted for the supported H2 contract.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.unknown();
-  private static final SqlRenderer RENDERER =
-      new StandardSqlRenderer(ID, StandardIdentifierRules.INSTANCE, CAPABILITIES);
+  private static final DialectLowering LOWERING = StandardSqlLowering.of(CAPABILITIES);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();
+
+  private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
   private H2Dialect() {}
 
@@ -63,18 +66,18 @@ public final class H2Dialect implements Dialect {
   }
 
   @Override
-  public boolean supportsResolvedQueryValidation() {
-    return true;
-  }
-
-  @Override
   public StatementParameterLimit maxStatementParameters() {
     return MAX_STATEMENT_PARAMETERS;
   }
 
   @Override
+  public DialectLowering lowering() {
+    return LOWERING;
+  }
+
+  @Override
   public SqlRenderer renderer() {
-    return RENDERER;
+    return renderer;
   }
 
   @Override

@@ -2,17 +2,17 @@ package io.skis.dialect.support;
 
 import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
-import io.skis.dialect.internal.DialectJoinFeatures;
-import io.skis.dialect.internal.DialectQueryFeatures;
+import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
-import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.RenderInput;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
+import io.skis.sql.ast.BooleanPredicate;
 import io.skis.sql.ast.CaseExpression;
 import io.skis.sql.ast.CaseWhen;
 import io.skis.sql.ast.CastExpression;
@@ -50,11 +50,10 @@ import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
-import io.skis.sql.ast.SemanticValidator;
+import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -63,7 +62,6 @@ import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.TableOccurrence;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -72,92 +70,60 @@ import org.jspecify.annotations.Nullable;
 /**
  * Renderer for the portable SELECT/Join and single-table mutation subset shared by dialects.
  *
- * <p>The renderer still performs defensive semantic and dialect validation for direct callers and
- * currently owns NULL-order fallback, nullable distinct-count compensation, selected-output reuse,
- * and empty-membership normalization. The 0.2.7 T07 compilation pipeline will move those structural
- * decisions and final parameter layout ahead of rendering, leaving this type responsible only for
- * serializing target-bound input.
+ * <p>This type only serializes a target-bound {@link RenderInput}: capability validation, lowering,
+ * normalization, post-validation, and final parameter layout have already completed. It never
+ * reanalyzes a statement, infers nullability or types, rewrites structure, or decides parameter
+ * positions.
  */
 public final class StandardSqlRenderer implements SqlRenderer {
 
+  private final Dialect dialect;
   private final String dialectId;
   private final IdentifierRules identifierRules;
   private final DialectCapabilities capabilities;
 
-  /**
-   * Creates a renderer with explicit dialect identity, identifier rules, and capabilities.
-   *
-   * <p>These values must be exactly the stable values exposed by the owning dialect. Supplying an
-   * independently configured tuple can make diagnostics, validation, and plan-cache identity
-   * disagree; T07 replaces this temporary composition seam with a target-bound input.
-   */
-  public StandardSqlRenderer(
-      String dialectId, IdentifierRules identifierRules, DialectCapabilities capabilities) {
-    Objects.requireNonNull(dialectId, "dialectId");
-    if (dialectId.isBlank()) {
-      throw new IllegalArgumentException("dialectId must not be blank");
+  /** Creates a renderer bound to exactly one dialect composition root. */
+  public StandardSqlRenderer(Dialect dialect) {
+    this.dialect = Objects.requireNonNull(dialect, "dialect");
+    String id = Objects.requireNonNull(dialect.id(), "dialect.id");
+    if (id.isBlank() || !id.equals(id.toLowerCase(Locale.ROOT))) {
+      throw new IllegalArgumentException("dialect id must be lowercase and non-blank");
     }
-    if (!dialectId.equals(dialectId.toLowerCase(Locale.ROOT))) {
-      throw new IllegalArgumentException("dialectId must be lowercase");
-    }
-    this.dialectId = dialectId;
-    this.identifierRules = Objects.requireNonNull(identifierRules, "identifierRules");
-    this.capabilities = Objects.requireNonNull(capabilities, "capabilities");
+    this.dialectId = id;
+    this.identifierRules =
+        Objects.requireNonNull(dialect.identifierRules(), "dialect.identifierRules");
+    this.capabilities = Objects.requireNonNull(dialect.capabilities(), "dialect.capabilities");
   }
 
   @Override
-  public RenderedSql render(StatementAst statement) {
-    Objects.requireNonNull(statement, "statement");
-    if (statement instanceof SelectStatement select) {
-      QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(select);
-      DialectQueryFeatures.validate(dialectId, capabilities, statement, analysis);
-      return renderValidatedStatement(statement);
-    }
-    if (statement instanceof CountAst count) {
-      QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(count);
-      DialectQueryFeatures.validate(dialectId, capabilities, statement, analysis);
-      return renderValidatedStatement(statement);
-    }
-    if (statement instanceof InsertStatement
-        || statement instanceof UpdateStatement
-        || statement instanceof DeleteStatement) {
-      SemanticValidator.validateComplete(statement);
-    }
-    DialectQueryFeatures.validate(dialectId, capabilities, statement);
-    return renderValidatedStatement(statement);
+  public String render(RenderInput input) {
+    Objects.requireNonNull(input, "input");
+    input.requireTarget(dialect);
+    RenderContext context = contextFor(input.statement());
+    renderStatement(input.statement(), context);
+    return context.sql.toString();
   }
 
-  @Override
-  public RenderedSql renderValidated(StatementAst statement, QueryBlockAnalysis analysis) {
-    Objects.requireNonNull(statement, "statement");
-    Objects.requireNonNull(analysis, "analysis");
-    if (!(statement instanceof SelectStatement) && !(statement instanceof CountAst)) {
-      throw new IllegalArgumentException(
-          "validated query rendering does not support statement node "
-              + statement.getClass().getName());
-    }
-    if (!analysis.path().locations().isEmpty()) {
-      throw new IllegalArgumentException(
-          "complete statement analysis must use the root query path");
-    }
-    return renderValidatedStatement(statement);
-  }
-
-  private RenderedSql renderValidatedStatement(StatementAst statement) {
+  private RenderContext contextFor(StatementAst statement) {
     return switch (statement) {
-      case SelectStatement select -> renderSelect(select);
-      case CountAst count -> renderCount(count);
-      case InsertStatement insert -> renderInsert(insert);
-      case UpdateStatement update -> renderUpdate(update);
-      case DeleteStatement delete -> renderDelete(delete);
+      case SelectStatement select -> new RenderContext(select.fromClause());
+      case CountAst count -> new RenderContext(count.fromClause());
+      case InsertStatement insert -> new RenderContext(insert.target());
+      case UpdateStatement update -> new RenderContext(update.target());
+      case DeleteStatement delete -> new RenderContext(delete.target());
       default -> throw unsupported("statement", statement);
     };
   }
 
-  private RenderedSql renderSelect(SelectStatement statement) {
-    RenderContext context = new RenderContext(statement.fromClause());
-    renderSelect(statement, context);
-    return new RenderedSql(context.sql.toString(), context.parameters);
+  private void renderStatement(StatementAst statement, RenderContext context) {
+    switch (statement) {
+      case SelectStatement select -> renderSelect(select, context);
+      case CountAst count -> renderCount(count, context);
+      case InsertStatement insert -> renderInsert(insert, context);
+      case UpdateStatement update -> renderUpdate(update, context);
+      case DeleteStatement delete -> renderDelete(delete, context);
+      default -> throw unsupported("statement", statement);
+    }
   }
 
   private void renderSelect(SelectStatement statement, RenderContext context) {
@@ -167,10 +133,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderSelect(
       SelectStatement statement, RenderContext context, List<Identifier> outputAliases) {
     if (!outputAliases.isEmpty() && outputAliases.size() != statement.selections().size()) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-          dialectId,
-          "derived SELECT alias count does not match its visible output count");
+      throw invalid("derived SELECT alias count does not match its visible output count");
     }
     if (!statement.groupBy().isEmpty() || statement.having().isPresent()) {
       throw SqlRenderException.of(
@@ -179,8 +142,9 @@ public final class StandardSqlRenderer implements SqlRenderer {
           "GROUP BY/HAVING",
           "dialect '"
               + dialectId
-              + "' cannot render reserved GROUP BY/HAVING structure before that capability "
-              + "is enabled");
+              + "' cannot render reserved "
+              + "GROUP BY/HAVING"
+              + " before that capability is enabled");
     }
     context.sql.append("SELECT ");
     if (statement.distinct()) {
@@ -234,35 +198,30 @@ public final class StandardSqlRenderer implements SqlRenderer {
         if (index > 0) {
           context.sql.append(", ");
         }
-        OrderByItem item = statement.orderBy().get(index);
-        renderOrderByItem(item, selectedScalarOrderIndex(statement, item), context);
+        renderOrderByItem(statement.orderBy().get(index), context);
       }
     }
     statement
         .pagination()
         .ifPresent(
             pagination -> {
-              require(DialectFeature.PARAMETERIZED_LIMIT, "parameterized LIMIT");
               context.sql.append(" LIMIT ");
               renderExpression(pagination.limit(), context);
               if (pagination instanceof OffsetLimit offset) {
-                require(DialectFeature.PARAMETERIZED_OFFSET, "parameterized OFFSET");
                 context.sql.append(" OFFSET ");
                 renderExpression(offset.offset(), context);
               }
             });
   }
 
-  private RenderedSql renderCount(CountAst statement) {
-    RenderContext context = new RenderContext(statement.fromClause());
+  private void renderCount(CountAst statement, RenderContext context) {
     context.sql.append("SELECT ");
     if (statement.distinctExpression().isPresent()) {
-      require(DialectFeature.COUNT_DISTINCT, "distinct count");
       SqlExpression<?> expression = statement.distinctExpression().orElseThrow();
       context.sql.append("COUNT(DISTINCT ");
       renderExpression(expression, context);
       context.sql.append(')');
-      if (statement.fromClause().effectiveNullability(expression).isNullable()) {
+      if (statement.nullCompensated()) {
         context.sql.append(" + CASE WHEN COUNT(*) > COUNT(");
         renderExpression(expression, context);
         context.sql.append(") THEN 1 ELSE 0 END");
@@ -279,61 +238,26 @@ public final class StandardSqlRenderer implements SqlRenderer {
               context.sql.append(" WHERE ");
               renderPredicate(predicate, context);
             });
-    return new RenderedSql(context.sql.toString(), context.parameters);
   }
 
-  private int selectedScalarOrderIndex(SelectStatement statement, OrderByItem item) {
-    if (!statement.distinct() || !(item.expression() instanceof ScalarSubqueryExpression<?>)) {
-      return 0;
-    }
-    int index = statement.selections().indexOf(item.expression());
-    if (index < 0) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-          dialectId,
-          "DISTINCT scalar ORDER BY must reference a selected expression with the same logical "
-              + "parameters");
-    }
-    // Referring to the selected output avoids a second JDBC placeholder for the same value.
-    return index + 1;
-  }
-
-  private void renderOrderByItem(OrderByItem item, int selectedIndex, RenderContext context) {
+  private void renderOrderByItem(OrderByItem item, RenderContext context) {
     NullOrder nullOrder = item.nullOrder();
     if (nullOrder != NullOrder.DIALECT_DEFAULT
         && !capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
-      if (selectedIndex > 0) {
-        throw SqlRenderException.of(
-            SkisErrorCode.DIALECT_NULLS_ORDERING_UNSUPPORTED,
-            dialectId,
-            "NULLS_FIRST_LAST",
-            "dialect '"
-                + dialectId
-                + "' requires native NULLS FIRST/LAST for DISTINCT scalar output ordering");
-      }
-      context.sql.append("CASE WHEN ");
-      renderExpression(item.expression(), context);
-      context.sql.append(" IS NULL THEN ");
-      context.sql.append(nullOrder == NullOrder.FIRST ? '0' : '1');
-      context.sql.append(" ELSE ");
-      context.sql.append(nullOrder == NullOrder.FIRST ? '1' : '0');
-      context.sql.append(" END ASC, ");
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_NULLS_ORDERING_UNSUPPORTED,
+          dialectId,
+          "NULLS_FIRST_LAST",
+          "dialect '" + dialectId + "' received an unlowered NULLS FIRST/LAST ordering");
     }
-    if (selectedIndex > 0) {
-      context.sql.append(selectedIndex);
-    } else {
-      renderExpression(item.expression(), context);
-    }
+    renderExpression(item.expression(), context);
     context.sql.append(item.direction() == OrderDirection.ASC ? " ASC" : " DESC");
-    if (nullOrder != NullOrder.DIALECT_DEFAULT
-        && capabilities.supports(DialectFeature.NULLS_FIRST_LAST)) {
+    if (nullOrder != NullOrder.DIALECT_DEFAULT) {
       context.sql.append(nullOrder == NullOrder.FIRST ? " NULLS FIRST" : " NULLS LAST");
     }
   }
 
-  private RenderedSql renderInsert(InsertStatement statement) {
-    requireUnaliasedMutationTarget(statement.target());
-    RenderContext context = new RenderContext(statement.target());
+  private void renderInsert(InsertStatement statement, RenderContext context) {
     context.sql.append("INSERT INTO ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" (");
@@ -351,12 +275,9 @@ public final class StandardSqlRenderer implements SqlRenderer {
       renderExpression(statement.values().get(index), context);
     }
     context.sql.append(')');
-    return new RenderedSql(context.sql.toString(), context.parameters);
   }
 
-  private RenderedSql renderUpdate(UpdateStatement statement) {
-    requireUnaliasedMutationTarget(statement.target());
-    RenderContext context = new RenderContext(statement.target());
+  private void renderUpdate(UpdateStatement statement, RenderContext context) {
     context.sql.append("UPDATE ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" SET ");
@@ -375,17 +296,13 @@ public final class StandardSqlRenderer implements SqlRenderer {
     }
     context.sql.append(" WHERE ");
     renderPredicate(statement.where(), context);
-    return new RenderedSql(context.sql.toString(), context.parameters);
   }
 
-  private RenderedSql renderDelete(DeleteStatement statement) {
-    requireUnaliasedMutationTarget(statement.target());
-    RenderContext context = new RenderContext(statement.target());
+  private void renderDelete(DeleteStatement statement, RenderContext context) {
     context.sql.append("DELETE FROM ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" WHERE ");
     renderPredicate(statement.where(), context);
-    return new RenderedSql(context.sql.toString(), context.parameters);
   }
 
   private void renderPredicate(SqlPredicate predicate, RenderContext context) {
@@ -426,6 +343,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
         renderNot(not, context);
         return;
       }
+      case BooleanPredicate booleanPredicate -> {
+        context.sql.append(booleanPredicate.value() ? "TRUE" : "FALSE");
+        return;
+      }
       default -> {}
     }
     throw unsupported("predicate", predicate);
@@ -435,10 +356,9 @@ public final class StandardSqlRenderer implements SqlRenderer {
     switch (expression) {
       case ColumnExpression<?, ?> column -> renderColumn(column, context);
       case DerivedColumnExpression<?> column -> renderDerivedColumn(column, context);
-      case ParameterSlot<?> parameter -> {
-        context.sql.append('?');
-        context.parameters.add(parameter);
-      }
+      case ParameterSlot<?> ignored -> context.sql.append('?');
+      case SelectedOutputReference<?> reference -> context.sql.append(reference.position());
+      case BooleanPredicate predicate -> context.sql.append(predicate.value() ? "TRUE" : "FALSE");
       case LiteralExpression<?> literal -> renderLiteral(literal, context);
       case ArithmeticExpression<?> arithmetic -> renderArithmetic(arithmetic, context);
       case ConcatExpression concat -> renderConcat(concat, context);
@@ -617,8 +537,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void renderIn(InPredicate<?> predicate, RenderContext context) {
     if (predicate.candidates().isEmpty()) {
-      context.sql.append(predicate.negated() ? "1 = 1" : "1 = 0");
-      return;
+      throw invalid("empty IN/NOT IN reached the renderer without portable normalization");
     }
     renderExpression(predicate.value(), context);
     context.sql.append(predicate.negated() ? " NOT IN (" : " IN (");
@@ -632,7 +551,6 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderInSubquery(InSubqueryPredicate<?> predicate, RenderContext context) {
-    require(DialectFeature.IN_SUBQUERY, "IN subquery");
     renderExpression(predicate.value(), context);
     context.sql.append(predicate.negated() ? " NOT IN (" : " IN (");
     renderSelect(predicate.subquery(), context.child(predicate.subquery().fromClause()));
@@ -640,14 +558,12 @@ public final class StandardSqlRenderer implements SqlRenderer {
   }
 
   private void renderExists(ExistsPredicate predicate, RenderContext context) {
-    require(DialectFeature.EXISTS_SUBQUERY, "EXISTS subquery");
     context.sql.append(predicate.negated() ? "NOT EXISTS (" : "EXISTS (");
     renderSelect(predicate.subquery(), context.child(predicate.subquery().fromClause()));
     context.sql.append(')');
   }
 
   private void renderScalarSubquery(ScalarSubqueryExpression<?> expression, RenderContext context) {
-    require(DialectFeature.SCALAR_SUBQUERY, "scalar subquery");
     context.sql.append('(');
     renderSelect(expression.subquery(), context.child(expression.subquery().fromClause()));
     context.sql.append(')');
@@ -667,6 +583,16 @@ public final class StandardSqlRenderer implements SqlRenderer {
       case GREATER_THAN_OR_EQUAL -> ">=";
       case LESS_THAN -> "<";
       case LESS_THAN_OR_EQUAL -> "<=";
+    };
+  }
+
+  private String renderJoinKeyword(io.skis.sql.ast.JoinType type) {
+    return switch (type) {
+      case INNER -> "INNER JOIN";
+      case LEFT -> "LEFT JOIN";
+      case RIGHT -> "RIGHT JOIN";
+      case FULL -> "FULL JOIN";
+      case CROSS -> "CROSS JOIN";
     };
   }
 
@@ -703,21 +629,14 @@ public final class StandardSqlRenderer implements SqlRenderer {
       case TIME_WITH_TIME_ZONE -> "TIME WITH TIME ZONE";
       case TIMESTAMP -> "TIMESTAMP";
       case TIMESTAMP_WITH_TIME_ZONE -> "TIMESTAMP WITH TIME ZONE";
-      case VARBINARY, OTHER ->
-          throw SqlRenderException.of(
-              SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-              dialectId,
-              "cannot render CAST target " + type);
+      case VARBINARY, OTHER -> throw invalid("cannot render CAST target " + type);
     };
   }
 
   private void renderColumn(ColumnExpression<?, ?> column, RenderContext context) {
     TableExpression<?> table = context.resolve(column.table());
     if (table == null) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-          dialectId,
-          "cannot render a column outside the FROM scope");
+      throw invalid("cannot render a column outside the FROM scope");
     }
     if (context.qualifyColumns) {
       String qualifier = table.alias().map(Identifier::value).orElse(table.entity().table().name());
@@ -730,10 +649,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderDerivedColumn(DerivedColumnExpression<?> column, RenderContext context) {
     DerivedRelationReference relation = context.resolve(column.relation());
     if (relation == null) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-          dialectId,
-          "cannot render a derived column outside the FROM scope");
+      throw invalid("cannot render a derived column outside the FROM scope");
     }
     context.sql.append(identifierRules.quote(relation.alias().value()));
     context.sql.append('.');
@@ -742,10 +658,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void renderColumnName(ColumnExpression<?, ?> column, RenderContext context) {
     if (context.resolve(column.table()) == null) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-          dialectId,
-          "cannot render a mutation column outside its target table");
+      throw invalid("cannot render a mutation column outside its target table");
     }
     context.sql.append(identifierRules.quote(column.property().column().name()));
   }
@@ -753,11 +666,9 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderTable(TableExpression<?> table, StringBuilder sql) {
     TableMeta metadata = table.entity().table();
     if (metadata.hasCatalog()) {
-      require(DialectFeature.CATALOG_QUALIFIED_TABLES, "catalog-qualified table");
       sql.append(identifierRules.quote(metadata.catalog())).append('.');
     }
     if (metadata.hasSchema()) {
-      require(DialectFeature.SCHEMA_QUALIFIED_TABLES, "schema-qualified table");
       sql.append(identifierRules.quote(metadata.schema())).append('.');
     }
     sql.append(identifierRules.quote(metadata.name()));
@@ -769,7 +680,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderFromClause(FromClause fromClause, RenderContext context) {
     renderRelation(fromClause.root(), context);
     for (JoinClause join : fromClause.joins()) {
-      context.sql.append(' ').append(DialectJoinFeatures.keyword(join.type())).append(' ');
+      context.sql.append(' ').append(renderJoinKeyword(join.type())).append(' ');
       renderRelation(join.right(), context);
       join.on()
           .ifPresent(
@@ -784,7 +695,6 @@ public final class StandardSqlRenderer implements SqlRenderer {
     switch (source) {
       case EntityRelationSource entity -> renderTable(entity.table(), context.sql);
       case DerivedRelationSource derived -> {
-        require(DialectFeature.DERIVED_TABLE, "derived tables");
         context.sql.append('(');
         List<Identifier> aliases =
             derived.reference().outputs().stream().map(DerivedOutputColumn::name).toList();
@@ -798,29 +708,8 @@ public final class StandardSqlRenderer implements SqlRenderer {
     }
   }
 
-  private void require(DialectFeature feature, String description) {
-    if (!capabilities.supports(feature)) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
-          dialectId,
-          feature.name(),
-          "dialect '"
-              + dialectId
-              + "' does not support "
-              + description
-              + " (missing "
-              + feature
-              + ")");
-    }
-  }
-
-  private void requireUnaliasedMutationTarget(TableExpression<?> target) {
-    if (target.alias().isPresent()) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_INVALID_STRUCTURE,
-          dialectId,
-          "does not support aliases on mutation target tables");
-    }
+  private SqlRenderException invalid(String detail) {
+    return SqlRenderException.of(SkisErrorCode.DIALECT_INVALID_STRUCTURE, dialectId, detail);
   }
 
   private SqlRenderException unsupported(String nodeKind, Object node) {
@@ -836,7 +725,6 @@ public final class StandardSqlRenderer implements SqlRenderer {
     private final @Nullable RenderContext parent;
     private final boolean qualifyColumns;
     private final StringBuilder sql;
-    private final List<ParameterSlot<?>> parameters;
 
     private RenderContext(FromClause fromClause) {
       this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
@@ -844,7 +732,6 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.parent = null;
       this.qualifyColumns = true;
       this.sql = new StringBuilder();
-      this.parameters = new ArrayList<>();
     }
 
     private RenderContext(FromClause fromClause, RenderContext parent) {
@@ -853,17 +740,14 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.parent = Objects.requireNonNull(parent, "parent");
       this.qualifyColumns = true;
       this.sql = parent.sql;
-      this.parameters = parent.parameters;
     }
 
-    private RenderContext(
-        FromClause fromClause, StringBuilder sql, List<ParameterSlot<?>> parameters) {
+    private RenderContext(FromClause fromClause, StringBuilder sql) {
       this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
       this.mutationTarget = null;
       this.parent = null;
       this.qualifyColumns = true;
       this.sql = Objects.requireNonNull(sql, "sql");
-      this.parameters = Objects.requireNonNull(parameters, "parameters");
     }
 
     private RenderContext(TableExpression<?> mutationTarget) {
@@ -872,7 +756,6 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.parent = null;
       this.qualifyColumns = false;
       this.sql = new StringBuilder();
-      this.parameters = new ArrayList<>();
     }
 
     private RenderContext child(FromClause childFromClause) {
@@ -880,7 +763,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     }
 
     private RenderContext relationChild(FromClause childFromClause) {
-      return new RenderContext(childFromClause, sql, parameters);
+      return new RenderContext(childFromClause, sql);
     }
 
     private @Nullable TableExpression<?> resolve(TableExpression<?> table) {

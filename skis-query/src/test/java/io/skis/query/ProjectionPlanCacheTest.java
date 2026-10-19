@@ -1159,7 +1159,7 @@ class ProjectionPlanCacheTest {
     return new Dialect() {
       private final IdentifierRules identifiers = identifier -> identifier;
       private final SqlRenderer renderer =
-          new StandardSqlRenderer("test", identifiers, capabilities);
+          new StandardSqlRenderer(this);
 
       @Override
       public String id() {

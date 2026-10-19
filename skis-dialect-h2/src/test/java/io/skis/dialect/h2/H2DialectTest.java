@@ -58,7 +58,7 @@ class H2DialectTest {
     assertSame(H2ExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());
-    assertTrue(dialect.supportsResolvedQueryValidation());
+    assertTrue(dialect.lowering() != null);
     assertSame(StatementParameterLimit.unknown(), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_LIMIT));
@@ -88,7 +88,7 @@ class H2DialectTest {
             List.of(new OrderByItem(pet.name(), OrderDirection.DESC, NullOrder.LAST)),
             new OffsetLimit(limit, offset));
 
-    RenderedSql renderedPage = H2Dialect.INSTANCE.renderer().render(page);
+    RenderedSql renderedPage = H2TestRendering.render(page);
 
     assertEquals(
         "SELECT DISTINCT \"pet\".\"pet_name\" "
@@ -100,40 +100,34 @@ class H2DialectTest {
     ParameterSlot<Long> anchor = new ParameterSlot<>(0, Long.class, false);
     ParameterSlot<Integer> keysetLimit = new ParameterSlot<>(1, Integer.class, false);
     RenderedSql renderedKeyset =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    false,
-                    List.of(pet.id()),
-                    List.of(),
-                    pet,
-                    null,
-                    List.of(
-                        new OrderByItem(
-                            pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
-                    new KeysetSeek(pet.id().lt(anchor), keysetLimit)));
+        H2TestRendering.render(
+            new SelectStatement(
+                false,
+                List.of(pet.id()),
+                List.of(),
+                pet,
+                null,
+                List.of(
+                    new OrderByItem(pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
+                new KeysetSeek(pet.id().lt(anchor), keysetLimit)));
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" "
             + "WHERE \"pet\".\"id\" < ? ORDER BY \"pet\".\"id\" DESC LIMIT ?",
         renderedKeyset.sql());
     assertEquals(List.of(anchor, keysetLimit), renderedKeyset.parameters());
 
-    RenderedSql renderedCount =
-        H2Dialect.INSTANCE.renderer().render(new CountAst(pet, null, pet.name()));
+    RenderedSql renderedCount = H2TestRendering.render(new CountAst(pet, null, pet.name()));
     assertEquals(
         "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"",
         renderedCount.sql());
 
     RenderedSql renderedNullableCount =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(
-                new CountAst(
-                    pet,
-                    null,
-                    new CaseExpression<>(
-                        List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
+        H2TestRendering.render(
+            new CountAst(
+                pet,
+                null,
+                new CaseExpression<>(
+                    List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
     assertEquals(
         "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL "
             + "THEN \"pet\".\"pet_name\" END) + CASE WHEN COUNT(*) > "
@@ -189,7 +183,7 @@ class H2DialectTest {
     SelectStatement statement =
         new SelectStatement(List.of(pet.id(), pet.name()), pet, pet.id().eq(id));
 
-    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = H2TestRendering.render(statement);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
@@ -215,7 +209,7 @@ class H2DialectTest {
             LogicalPredicate.or(
                 List.of(new ExistsPredicate(child, false), new ExistsPredicate(child, true))));
 
-    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = H2TestRendering.render(statement);
 
     assertEquals(
         "SELECT \"outer_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"outer_pet\" WHERE "
@@ -251,7 +245,7 @@ class H2DialectTest {
                     new InSubqueryPredicate<>(outer.id(), child, false),
                     new InSubqueryPredicate<>(outer.id(), child, true))));
 
-    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = H2TestRendering.render(statement);
 
     assertEquals(
         "SELECT \"outer_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"outer_pet\" WHERE "
@@ -288,7 +282,7 @@ class H2DialectTest {
             List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
             null);
 
-    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = H2TestRendering.render(statement);
 
     assertEquals(
         "SELECT \"outer_pet\".\"id\", (SELECT \"inner_pet\".\"pet_name\" "
@@ -320,7 +314,7 @@ class H2DialectTest {
             List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
             null);
 
-    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = H2TestRendering.render(statement);
 
     assertEquals(
         "SELECT DISTINCT \"outer_pet\".\"id\", (SELECT \"inner_pet\".\"pet_name\" "
@@ -342,22 +336,20 @@ class H2DialectTest {
     ParameterSlot<Long> excludedMaximum = new ParameterSlot<>(6, Long.class, false);
 
     RenderedSql rendered =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    List.of(pet.id()),
-                    pet,
-                    LogicalPredicate.and(
-                        List.of(
-                            pet.name().isNotNull(),
-                            new BetweenPredicate<>(pet.id(), minimum, maximum),
-                            LogicalPredicate.or(
-                                List.of(
-                                    new LikePredicate(pet.name(), firstPattern),
-                                    new LikePredicate(pet.name(), secondPattern))),
-                            new InPredicate<>(pet.id(), List.of(first, second), false),
-                            new NotPredicate(pet.id().le(excludedMaximum))))));
+        H2TestRendering.render(
+            new SelectStatement(
+                List.of(pet.id()),
+                pet,
+                LogicalPredicate.and(
+                    List.of(
+                        pet.name().isNotNull(),
+                        new BetweenPredicate<>(pet.id(), minimum, maximum),
+                        LogicalPredicate.or(
+                            List.of(
+                                new LikePredicate(pet.name(), firstPattern),
+                                new LikePredicate(pet.name(), secondPattern))),
+                        new InPredicate<>(pet.id(), List.of(first, second), false),
+                        new NotPredicate(pet.id().le(excludedMaximum))))));
 
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
@@ -381,19 +373,16 @@ class H2DialectTest {
     ParameterSlot<String> fallback = new ParameterSlot<>(4, String.class, false);
 
     RenderedSql rendered =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    List.of(
-                        new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
-                        new ConcatExpression(List.of(pet.name(), suffix)),
-                        new CaseExpression<>(
-                            List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())),
-                            otherwise),
-                        new CastExpression<>(pet.id(), String.class),
-                        new CoalesceExpression<>(List.of(pet.name(), fallback))),
-                    pet));
+        H2TestRendering.render(
+            new SelectStatement(
+                List.of(
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
+                    new ConcatExpression(List.of(pet.name(), suffix)),
+                    new CaseExpression<>(
+                        List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())), otherwise),
+                    new CastExpression<>(pet.id(), String.class),
+                    new CoalesceExpression<>(List.of(pet.name(), fallback))),
+                pet));
 
     assertEquals(
         "SELECT (\"pet\".\"id\" + ?), (\"pet\".\"pet_name\" || ?), "
@@ -414,9 +403,7 @@ class H2DialectTest {
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
 
     RenderedSql rendered =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(new SelectStatement(List.of(pet.name()), pet, pet.id().eq(id)));
+        H2TestRendering.render(new SelectStatement(List.of(pet.name()), pet, pet.id().eq(id)));
 
     assertEquals(
         "SELECT \"p\".\"pet_name\" FROM \"shelter\".\"pet\" AS \"p\" WHERE \"p\".\"id\" = ?",
@@ -432,17 +419,15 @@ class H2DialectTest {
     ParameterSlot<Long> version = new ParameterSlot<>(2, Long.class, false);
 
     RenderedSql rendered =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(
-                new UpdateStatement(
-                    pet,
-                    List.of(
-                        new UpdateAssignment<>(pet.name(), name),
-                        new UpdateAssignment<>(
-                            pet.version(), new IncrementExpression<>(pet.version()))),
-                    LogicalPredicate.and(
-                        List.of(pet.id().eq(id), pet.version().eq(version)))));
+        H2TestRendering.render(
+            new UpdateStatement(
+                pet,
+                List.of(
+                    new UpdateAssignment<>(pet.name(), name),
+                    new UpdateAssignment<>(
+                        pet.version(), new IncrementExpression<>(pet.version()))),
+                LogicalPredicate.and(
+                    List.of(pet.id().eq(id), pet.version().eq(version)))));
 
     assertEquals(
         "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",

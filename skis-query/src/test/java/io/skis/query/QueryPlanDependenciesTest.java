@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
@@ -19,9 +20,7 @@ import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.Nullability;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.SelectStatement;
-import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlType;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -63,7 +62,7 @@ class QueryPlanDependenciesTest {
     SelectStatement statement =
         new SelectStatement(
             root.selections(), outerSources, new ExistsPredicate(nestedStatement, false));
-    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    ResolvedStatement analysis = ResolvedStatement.analyze(statement);
 
     QueryPlanDependencies dependencies = QueryPlanDependencies.from(analysis);
 
@@ -87,7 +86,7 @@ class QueryPlanDependenciesTest {
                 new SelectStatement(nested.selections(), nested.tableExpression()), false));
 
     QueryPlanDependencies dependencies =
-        QueryPlanDependencies.from(SemanticValidator.analyzeComplete(statement));
+        QueryPlanDependencies.from(ResolvedStatement.analyze(statement));
 
     assertEquals(List.of(ROOT), dependencies.entities());
     assertEquals(2, dependencies.sources().size());

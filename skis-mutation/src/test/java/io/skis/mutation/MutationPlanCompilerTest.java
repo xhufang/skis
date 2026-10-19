@@ -1,7 +1,7 @@
 package io.skis.mutation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.MutationException;
 import io.skis.dialect.spi.Dialect;
@@ -44,16 +44,16 @@ class MutationPlanCompilerTest {
           false);
 
   @Test
-  void rejectsDialectOutputWhoseParameterSlotsDoNotMatchTheMutationAst() {
-    MutationException failure =
+  void rejectsLoweringWhoseParameterIdentityDoesNotMatchTheMutationAst() {
+    io.skis.dialect.SqlRenderException failure =
         assertThrows(
-            MutationException.class,
+            io.skis.dialect.SqlRenderException.class,
             () ->
                 MutationRuntime.compile(
                     EntityRuntimeRegistry.of(List.of(runtimeModel())),
                     ReorderingDialect.INSTANCE));
 
-    assertTrue(failure.getMessage().contains("unexpected insert parameter shape"));
+    assertEquals(io.skis.core.SkisErrorCode.DIALECT_PARAMETER_SHAPE, failure.code());
   }
 
   private static EntityRuntimeModel<Pet> runtimeModel() {
@@ -79,8 +79,28 @@ class MutationPlanCompilerTest {
 
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer delegate =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
+
+    @Override
+    public io.skis.dialect.spi.DialectLowering lowering() {
+      return input -> {
+        if (input.statement() instanceof io.skis.sql.ast.InsertStatement insert) {
+          List<io.skis.sql.ast.SqlExpression<?>> values = new ArrayList<>(insert.values().size());
+          for (io.skis.sql.ast.SqlExpression<?> value : insert.values()) {
+            if (value instanceof ParameterSlot<?> slot) {
+              int swapped = slot.ordinal() == 0 ? 1 : 0;
+              values.add(
+                  new ParameterSlot<>(
+                      swapped, slot.javaType(), slot.sqlType(), slot.nullability()));
+            } else {
+              values.add(value);
+            }
+          }
+          return new io.skis.sql.ast.InsertStatement(insert.target(), insert.columns(), values);
+        }
+        return input.statement();
+      };
+    }
 
     @Override
     public String id() {
@@ -99,12 +119,7 @@ class MutationPlanCompilerTest {
 
     @Override
     public SqlRenderer renderer() {
-      return statement -> {
-        RenderedSql rendered = delegate.render(statement);
-        List<ParameterSlot<?>> reordered = new ArrayList<>(rendered.parameters());
-        Collections.reverse(reordered);
-        return new RenderedSql(rendered.sql(), reordered);
-      };
+      return renderer;
     }
   }
 }

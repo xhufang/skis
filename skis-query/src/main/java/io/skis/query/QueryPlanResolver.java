@@ -1,7 +1,7 @@
 package io.skis.query;
 
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.jdbc.internal.CompiledQueryPlan;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.StatementAst;
 import java.util.List;
 import java.util.Objects;
@@ -22,16 +22,16 @@ final class QueryPlanResolver {
   }
 
   <R extends @Nullable Object> QueryCompilation<R> resolve(
-      QueryBlockAnalysis analysis,
+      ResolvedStatement keyContext,
+      StatementAst invocationAst,
       SelectedResult<?> selected,
       QueryPlanKey.PlanVariant variant,
       List<QueryPlanCompiler.LogicalParameter> parameters,
       List<@Nullable Selectable<?>> sources,
-      StatementAst ast,
       Object argument,
       Supplier<CompiledQueryPlan<R, Object>> compiler) {
     CachedQueryPlan<R> plan =
-        switch (keys.assemble(analysis, selected, variant, parameters, sources)) {
+        switch (keys.assemble(keyContext, selected, variant, parameters, sources)) {
           case QueryPlanKeyAssembler.Cacheable eligible ->
               cache.getOrCompile(
                   eligible.key(),
@@ -39,6 +39,6 @@ final class QueryPlanResolver {
                   () -> new CachedQueryPlan<>(compiler.get()));
           case QueryPlanKeyAssembler.Bypass ignored -> new CachedQueryPlan<>(compiler.get());
         };
-    return plan.bind(argument, ast);
+    return plan.bind(argument, invocationAst);
   }
 }

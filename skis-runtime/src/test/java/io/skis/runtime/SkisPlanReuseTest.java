@@ -177,8 +177,7 @@ class SkisPlanReuseTest {
     private final AtomicInteger renders = new AtomicInteger();
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer delegate =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+    private final SqlRenderer delegate = new StandardSqlRenderer(this);
 
     @Override
     public String id() {
@@ -197,9 +196,9 @@ class SkisPlanReuseTest {
 
     @Override
     public SqlRenderer renderer() {
-      return statement -> {
+      return input -> {
         renders.incrementAndGet();
-        return delegate.render(statement);
+        return delegate.render(input);
       };
     }
   }

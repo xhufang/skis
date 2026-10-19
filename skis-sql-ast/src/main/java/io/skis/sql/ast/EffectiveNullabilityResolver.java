@@ -26,6 +26,8 @@ final class EffectiveNullabilityResolver {
       case DerivedColumnExpression<?> column ->
           derivedColumnNullability(column, nullExtendedDerivedRelations);
       case ParameterSlot<?> parameter -> parameter.nullability();
+      case BooleanPredicate ignored -> Nullability.NON_NULL;
+      case SelectedOutputReference<?> reference -> reference.nullability();
       case LiteralExpression<?> literal -> literal.nullability();
       case ArithmeticExpression<?> arithmetic ->
           resolve(arithmetic.left(), nullExtendedTables, nullExtendedDerivedRelations)

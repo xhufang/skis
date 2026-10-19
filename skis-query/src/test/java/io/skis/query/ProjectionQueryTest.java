@@ -712,7 +712,7 @@ class ProjectionQueryTest {
             DialectFeature.SCALAR_SUBQUERY,
             DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+        new StandardSqlRenderer(this);
 
     @Override
     public String id() {
