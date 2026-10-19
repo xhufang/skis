@@ -13,8 +13,9 @@ import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
-import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.spi.SqlRenderer;
+import io.skis.dialect.support.SqlCompiler;
+import io.skis.dialect.support.SqlTemplate;
 import io.skis.dialect.support.StandardIdentifierRules;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.jdbc.spi.ConnectionProvider;
@@ -54,14 +55,15 @@ class SupportedSpiConsumerTest {
 
     PetAstTable pet = PetAstTable.PET;
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
-    RenderedSql rendered =
-        dialect.renderer().render(new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id)));
-    assertEquals("SELECT \"pet\".\"id\" FROM \"pet\" WHERE \"pet\".\"id\" = ?", rendered.sql());
-    assertEquals(List.of(id), rendered.parameters());
+    SqlTemplate template =
+        SqlCompiler.compile(
+            new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id)), dialect);
+    assertEquals("SELECT \"pet\".\"id\" FROM \"pet\" WHERE \"pet\".\"id\" = ?", template.sql());
+    assertEquals(List.of(id), template.parameterLayout().slots());
     SqlRenderException unsupported =
         assertThrows(
             SqlRenderException.class,
-            () -> dialect.renderer().render(new CountAst(pet, null, pet.id())));
+            () -> SqlCompiler.compile(new CountAst(pet, null, pet.id()), dialect));
     assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, unsupported.code());
     assertEquals("external", unsupported.diagnostics().dialect().dialectId());
     assertEquals(
@@ -92,8 +94,7 @@ class SupportedSpiConsumerTest {
             DialectFeature.SCHEMA_QUALIFIED_TABLES,
             DialectFeature.PARAMETERIZED_LIMIT,
             DialectFeature.PARAMETERIZED_OFFSET);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), StandardIdentifierRules.INSTANCE, CAPABILITIES);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

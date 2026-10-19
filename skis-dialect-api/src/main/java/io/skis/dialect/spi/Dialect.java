@@ -1,8 +1,5 @@
 package io.skis.dialect.spi;
 
-import io.skis.dialect.internal.DialectQueryFeatures;
-import io.skis.sql.ast.QueryBlockAnalysis;
-import io.skis.sql.ast.StatementAst;
 import java.util.Objects;
 
 /** Small composition root for database-specific SQL behavior. */
@@ -58,45 +55,27 @@ public interface Dialect {
   SqlRenderer renderer();
 
   /**
-   * Performs pre-render dialect validation for the supplied portable statement.
+   * Performs pre-lowering dialect validation for the exact controlled resolved stage.
    *
-   * <p>The preflight recursively validates query-block capabilities. Renderers must retain their
-   * own defensive validation for direct callers.
+   * <p>The default recursively validates capabilities and qualified-table use against the stage's
+   * own analysis. A dialect with additional custom rules overrides this method and must preserve
+   * the same controlled input contract; it must not accept a bare statement/analysis pair.
    */
-  default void validate(StatementAst statement) {
-    DialectQueryFeatures.validate(id(), capabilities(), statement);
+  default void validate(ResolvedStatement statement) {
+    Objects.requireNonNull(statement, "statement");
+    statement.validateCapabilities(id(), capabilities());
   }
 
   /**
-   * Returns whether the default resolved-validation entry point may consume an existing analysis.
+   * Structural conversion for this dialect.
    *
-   * <p>The temporary T05-to-T07 bridge default is {@code false}: a dialect that overrides {@link
-   * #validate(StatementAst)} keeps that behavior, even though it may resolve the query again.
-   * Dialects whose validation is completely represented by {@link #capabilities()} may return
-   * {@code true} to use the single-analysis path. T07 removes this opt-in after validation is
-   * represented by a target-bound stage input.
+   * <p>The default returns the exact input statement, meaning that portable normalization alone
+   * expresses the final structure. Dialects that need native syntax differences override this
+   * method; the controlled pipeline always runs portable normalization and post-lowering validation
+   * after it.
    */
-  default boolean supportsResolvedQueryValidation() {
-    return false;
-  }
-
-  /**
-   * Performs dialect validation using the semantic analysis already produced for this statement.
-   *
-   * <p>This pipeline entry point avoids resolving the same query-block tree again between semantic
-   * validation and dialect capability validation. The analysis must belong to the supplied complete
-   * SELECT or COUNT statement; the caller currently owns that pairing because this temporary bridge
-   * signature does not carry a provenance token. Dialects retain their validation override unless
-   * they explicitly opt in through {@link #supportsResolvedQueryValidation()} or override this
-   * method. T07 replaces the raw pair with a provenance-safe stage input.
-   */
-  default void validate(StatementAst statement, QueryBlockAnalysis analysis) {
-    Objects.requireNonNull(analysis, "analysis");
-    if (!supportsResolvedQueryValidation()) {
-      validate(statement);
-      return;
-    }
-    DialectQueryFeatures.validate(id(), capabilities(), statement, analysis);
+  default DialectLowering lowering() {
+    return DialectLowering.identity();
   }
 
   /** JDBC error classifier; returned instances must be thread-safe. */

@@ -16,8 +16,10 @@ import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
 import io.skis.dialect.support.StandardSqlRenderer;
@@ -38,7 +40,10 @@ import io.skis.metadata.TableMeta;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.LogicalOperator;
+import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.StatementAst;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -93,9 +98,9 @@ class EntityPlanSetTest {
           private final DialectCapabilities capabilities =
               DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
           private final SqlRenderer renderer =
-              statement -> {
+              input -> {
                 laterPhases.add("renderer");
-                return new RenderedSql("SELECT 1", List.of());
+                return "SELECT 1";
               };
 
           @Override
@@ -119,7 +124,7 @@ class EntityPlanSetTest {
           }
 
           @Override
-          public void validate(StatementAst statement) {
+          public void validate(ResolvedStatement resolved) {
             laterPhases.add("dialect");
           }
         };
@@ -342,7 +347,7 @@ class EntityPlanSetTest {
   }
 
   @Test
-  void followsRendererParameterOrderWhenDialectReordersPlaceholders() throws Exception {
+  void followsLoweredParameterOrderWhenDialectReordersPredicates() throws Exception {
     EntityRuntimeModel<Pet> runtimeModel = model();
     EntityPlanSet<Pet> plans =
         new EntityPlanSet<>(
@@ -414,10 +419,10 @@ class EntityPlanSetTest {
     QueryCondition emptyNotIn = TABLE.id().notIn(List.of());
 
     assertEquals(
-        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE 1 = 0",
+        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE FALSE",
         selectPlan(plans, TABLE, emptyIn).sql());
     assertEquals(
-        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE 1 = 1",
+        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE TRUE",
         selectPlan(plans, TABLE, emptyNotIn).sql());
     assertSame(NoParameters.INSTANCE, argument(TABLE, emptyIn));
     assertSame(NoParameters.INSTANCE, argument(TABLE, emptyNotIn));
@@ -599,8 +604,7 @@ class EntityPlanSetTest {
 
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {
@@ -626,26 +630,33 @@ class EntityPlanSetTest {
   private enum ReorderedParameterDialect implements Dialect {
     INSTANCE;
 
-    private static final String ORIGINAL_SQL =
-        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" "
-            + "WHERE \"pet\".\"pet_name\" LIKE ? AND \"pet\".\"id\" >= ?";
-    private static final String REORDERED_SQL =
-        "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" "
-            + "WHERE \"pet\".\"id\" >= ? AND \"pet\".\"pet_name\" LIKE ?";
-
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer standardRenderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
-    private final SqlRenderer renderer =
-        statement -> {
-          RenderedSql rendered = standardRenderer.render(statement);
-          if (!rendered.sql().equals(ORIGINAL_SQL)) {
-            return rendered;
-          }
-          return new RenderedSql(
-              REORDERED_SQL, List.of(rendered.parameters().get(1), rendered.parameters().get(0)));
-        };
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
+
+    @Override
+    public DialectLowering lowering() {
+      return input -> {
+        if (input.statement() instanceof SelectStatement select
+            && select.where().orElse(null) instanceof LogicalPredicate logical
+            && logical.operator() == LogicalOperator.AND
+            && logical.operands().size() == 2) {
+          return new SelectStatement(
+              select.distinct(),
+              select.selections(),
+              select.hiddenSelections(),
+              select.fromClause(),
+              new LogicalPredicate(
+                  LogicalOperator.AND,
+                  List.of(logical.operands().get(1), logical.operands().get(0))),
+              select.groupBy(),
+              select.having().orElse(null),
+              select.orderBy(),
+              select.pagination().orElse(null));
+        }
+        return input.statement();
+      };
+    }
 
     @Override
     public String id() {

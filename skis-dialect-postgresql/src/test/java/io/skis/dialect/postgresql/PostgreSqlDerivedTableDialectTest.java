@@ -36,12 +36,10 @@ class PostgreSqlDerivedTableDialectTest {
             reference);
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    List.of(new DerivedColumnExpression<Long>(reference, 0)),
-                    FromClause.of(source)));
+        PostgreSqlTestRendering.render(
+            new SelectStatement(
+                List.of(new DerivedColumnExpression<Long>(reference, 0)),
+                FromClause.of(source)));
 
     assertTrue(
         PostgreSqlDialect.INSTANCE.capabilities().supports(DialectFeature.DERIVED_TABLE));

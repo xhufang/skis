@@ -44,7 +44,7 @@ class DialectValueTypesTest {
   }
 
   @Test
-  void customDialectUsesBridgeDefaults() {
+  void customDialectUsesControlledStageDefaults() {
     DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
     Dialect dialect =
@@ -66,7 +66,7 @@ class DialectValueTypesTest {
 
           @Override
           public SqlRenderer renderer() {
-            return statement -> {
+            return input -> {
               throw new AssertionError("renderer must not be used by dialect identity defaults");
             };
           }
@@ -74,7 +74,7 @@ class DialectValueTypesTest {
 
     assertEquals(capabilities.version(), dialect.capabilityVersion());
     assertFalse(dialect.hasStablePlanCacheIdentity());
-    assertFalse(dialect.supportsResolvedQueryValidation());
+    assertTrue(dialect.lowering() != null);
     assertSame(StatementParameterLimit.unknown(), dialect.maxStatementParameters());
   }
 

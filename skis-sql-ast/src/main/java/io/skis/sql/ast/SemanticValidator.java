@@ -373,6 +373,12 @@ public final class SemanticValidator {
     }
   }
 
+  static void validateSelectedOutputReference(SelectedOutputReference<?> reference) {
+    Objects.requireNonNull(reference, "reference");
+    requireJavaSqlDescriptor(
+        reference.javaType(), reference.sqlType(), "selected output reference");
+  }
+
   static void validateConcat(List<? extends SqlExpression<String>> operands) {
     for (SqlExpression<String> operand : operands) {
       if (operand.javaType() != String.class || !operand.sqlType().supportsLike()) {
@@ -623,6 +629,10 @@ public final class SemanticValidator {
         case ColumnExpression<?, ?> column -> validateColumn(column, clause);
         case DerivedColumnExpression<?> column -> validateDerivedColumn(column, clause);
         case ParameterSlot<?> parameter -> validateParameter(parameter);
+        case BooleanPredicate ignored -> {
+          // A deterministic boolean predicate has no operand, parameter, or source dependency.
+        }
+        case SelectedOutputReference<?> reference -> validateSelectedOutputReference(reference);
         case LiteralExpression<?> literal ->
             validateLiteral(
                 literal.kind(), literal.javaType(), literal.sqlType(), literal.nullability());

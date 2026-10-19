@@ -285,6 +285,16 @@ final class QueryScopeAnalyzer {
         case ParameterSlot<?> parameter -> resolveParameter(parameter, position);
         case LiteralExpression<?> literal ->
             leafLiteral(List.of(literal.kind().name()), expression, literal.nullability());
+        case BooleanPredicate predicate ->
+            leafLiteral(
+                List.of("BOOLEAN", Boolean.toString(predicate.value())),
+                expression,
+                Nullability.NON_NULL);
+        case SelectedOutputReference<?> reference ->
+            leafLiteral(
+                List.of("SELECTED_OUTPUT", Integer.toString(reference.position())),
+                expression,
+                reference.nullability());
         case ArithmeticExpression<?> arithmetic ->
             binaryUnion(
                 "ARITHMETIC",
@@ -1042,9 +1052,7 @@ final class QueryScopeAnalyzer {
       children.add(orderByKey());
       children.add(paginationKey());
       return new ResolvedStructureKey.Node(
-          "SELECT_BLOCK",
-          List.of(path.toString(), Boolean.toString(distinct())),
-          children);
+          "SELECT_BLOCK", List.of(path.toString(), Boolean.toString(distinct())), children);
     }
 
     private ResolvedStructureKey sourceKey(MutableSource source) {
@@ -1073,22 +1081,30 @@ final class QueryScopeAnalyzer {
                     + derived.reference().alias().value()
                     + "' has no resolved child query block");
           }
-          List<String> attributes = new ArrayList<>();
-          attributes.add(source.identity.blockPath().toString());
-          attributes.add(Integer.toString(source.identity.occurrenceOrdinal()));
-          attributes.add(derived.reference().alias().value());
-          for (int index = 0; index < derived.reference().outputs().size(); index++) {
-            DerivedOutputColumn output = derived.reference().outputs().get(index);
-            attributes.add(Integer.toString(index));
-            attributes.add(output.name().value());
-            attributes.add(output.javaType().getName());
-            attributes.add(output.sqlType().name());
-            attributes.add(output.nullability().name());
-          }
           yield new ResolvedStructureKey.Node(
-              "DERIVED_SOURCE", attributes, List.of(child.structureKey()));
+              "DERIVED_SOURCE",
+              derivedSourceAttributes(source.identity, derived.reference()),
+              List.of(child.structureKey()));
         }
       };
+    }
+
+    private static List<String> derivedSourceAttributes(
+        ResolvedSourceIdentity identity, DerivedRelationReference reference) {
+      List<DerivedOutputColumn> outputs = reference.outputs();
+      List<String> attributes = new ArrayList<>(3 + outputs.size() * 5);
+      attributes.add(identity.blockPath().toString());
+      attributes.add(Integer.toString(identity.occurrenceOrdinal()));
+      attributes.add(reference.alias().value());
+      for (int index = 0; index < outputs.size(); index++) {
+        DerivedOutputColumn output = outputs.get(index);
+        attributes.add(Integer.toString(index));
+        attributes.add(output.name().value());
+        attributes.add(output.javaType().getName());
+        attributes.add(output.sqlType().name());
+        attributes.add(output.nullability().name());
+      }
+      return attributes;
     }
 
     private ResolvedStructureKey sectionKeyOffset0(QueryClause clause, int size) {
@@ -1161,9 +1177,7 @@ final class QueryScopeAnalyzer {
       }
       return new ResolvedStructureKey.Node(
           "PAGINATION",
-          pagination()
-              .map(value -> List.of(value.getClass().getSimpleName()))
-              .orElse(List.of()),
+          pagination().map(value -> List.of(value.getClass().getSimpleName())).orElse(List.of()),
           items);
     }
 
@@ -1230,8 +1244,7 @@ final class QueryScopeAnalyzer {
 
     private IllegalStateException unsupportedStatement() {
       return new IllegalStateException(
-          "query-block analysis does not support statement node "
-              + statement.getClass().getName());
+          "query-block analysis does not support statement node " + statement.getClass().getName());
     }
   }
 

@@ -317,7 +317,7 @@ class CachedQueryPlanRetentionTest {
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
     private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+        new StandardSqlRenderer(this);
 
     @Override
     public String id() {

@@ -8,7 +8,6 @@ import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.RenderedSql;
-import io.skis.dialect.spi.SqlRenderer;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
@@ -46,7 +45,7 @@ class DerivedTableSqlRendererTest {
           List.of(ID, NAME),
           new PrimaryKeyMeta<>(List.of(ID)),
           false);
-  private static final SqlRenderer RENDERER =
+  private static final RendererHarness RENDERER =
       renderer(
           "derived-test",
           DialectFeature.SCHEMA_QUALIFIED_TABLES,
@@ -130,7 +129,7 @@ class DerivedTableSqlRendererTest {
     DerivedRelationSource source =
         new DerivedRelationSource(
             new SelectStatement(List.of(inner.id(), inner.name()), inner), reference);
-    SqlRenderer limited =
+    RendererHarness limited =
         renderer("limited", DialectFeature.SCHEMA_QUALIFIED_TABLES);
 
     SqlRenderException failure =
@@ -146,9 +145,8 @@ class DerivedTableSqlRendererTest {
     assertTrue(failure.getMessage().contains("$/JOIN source[0]#0"));
   }
 
-  private static SqlRenderer renderer(String id, DialectFeature... features) {
-    return new StandardSqlRenderer(
-        id, StandardIdentifierRules.INSTANCE, DialectCapabilities.of(features));
+  private static RendererHarness renderer(String id, DialectFeature... features) {
+    return RendererHarness.of(id, DialectCapabilities.of(features));
   }
 
   private static DerivedRelationReference reference(String alias) {

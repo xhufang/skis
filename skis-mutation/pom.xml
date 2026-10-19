@@ -51,7 +51,6 @@
     <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-support</artifactId>
-      <scope>test</scope>
     </dependency>
   </dependencies>
 </project>

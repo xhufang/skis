@@ -6,6 +6,19 @@
 
 ### Changed
 
+- 0.2.7 T07 完成受控编译、`DialectLowering` 与最终渲染管线：dialect-api 新增无公开构造的
+  `ResolvedStatement`、`RenderInput`、`Occurrence`、`ExpressionInfo` 和值无关 `ParameterLayout`；完整分析保持内部，
+  方言只通过 occurrence 读取类型/nullability/来源。`RenderInput.prepare` 固定执行能力/自定义校验、方言 lowering、
+  可移植规范化、identity 复用分析或新结构重新分析的后校验、最终布局；`SqlCompiler` 从 `skis-dialect-support`
+  提供 `StatementAst` 和已有 `ResolvedStatement` 两个入口，返回只含 SQL 与布局的 `SqlTemplate`。
+  删除 `supportsResolvedQueryValidation()`、裸 `StatementAst`/`QueryBlockAnalysis` 配对、`renderValidated` 和标准
+  Renderer 的 ID/规则/能力三元组构造；Renderer 只接受目标绑定的 `RenderInput`，只序列化已接受结构。NULL 排序
+  CASE、可空 DISTINCT count 补偿、DISTINCT 标量子查询选择位置引用和空 IN/NOT IN 规范化已移到布局前结构，
+  最终占位顺序由 lowered AST 决定；合法裁剪/重复/重排从当前参数环境按最终布局绑定，错目标或非法 lowering 在
+  JDBC 前失败。query、mutation 和独立 `SqlCompiler` 共用同一阶段入口；support 生产代码不再 import
+  `io.skis.dialect.internal`。ADR-0006/0015/0016、合同明细 §7.2.0/§7.2.1 和任务表已同步；本地 reactor 编译、
+  单测与 H2/PostgreSQL golden 通过，新增阶段顺序、identity 后校验、非法 lowering、错方言和最终槽位测试；
+  CI 与真实 PostgreSQL 驱动结论仍按 T09/T10 登记。
 - 0.2.7 T06 完成运行时错误码与安全诊断收口：core 新增 `SkisErrorFamily`、`SkisDiagnosticStage`、
   `SkisOperation`、`SkisStatementKind`、84 个显式 `SkisErrorCode`、不可变分组 `SkisDiagnostics`，并把
   `QueryValidationException` 与 `MutationException` 迁入 core；取消仅 message 的框架异常构造，改为受约束模块工厂与公开 SPI 工厂。

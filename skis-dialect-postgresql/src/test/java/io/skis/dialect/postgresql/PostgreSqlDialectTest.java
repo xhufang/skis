@@ -58,7 +58,7 @@ class PostgreSqlDialectTest {
     assertSame(PostgreSqlExceptionClassifier.INSTANCE, dialect.exceptionClassifier());
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());
-    assertTrue(dialect.supportsResolvedQueryValidation());
+    assertTrue(dialect.lowering() != null);
     assertEquals(
         StatementParameterLimit.explicit(65_535), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
@@ -80,20 +80,17 @@ class PostgreSqlDialectTest {
     ParameterSlot<Integer> limit = new ParameterSlot<>(0, Integer.class, false);
     ParameterSlot<Long> offset = new ParameterSlot<>(1, Long.class, false);
     RenderedSql renderedPage =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    false,
-                    List.of(pet.id(), pet.name()),
-                    List.of(),
-                    pet,
-                    null,
-                    List.of(
-                        new OrderByItem(pet.name(), OrderDirection.DESC, NullOrder.LAST),
-                        new OrderByItem(
-                            pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
-                    new OffsetLimit(limit, offset)));
+        PostgreSqlTestRendering.render(
+            new SelectStatement(
+                false,
+                List.of(pet.id(), pet.name()),
+                List.of(),
+                pet,
+                null,
+                List.of(
+                    new OrderByItem(pet.name(), OrderDirection.DESC, NullOrder.LAST),
+                    new OrderByItem(pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
+                new OffsetLimit(limit, offset)));
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" "
             + "ORDER BY \"pet\".\"pet_name\" DESC NULLS LAST, \"pet\".\"id\" DESC "
@@ -104,19 +101,16 @@ class PostgreSqlDialectTest {
     ParameterSlot<Long> anchor = new ParameterSlot<>(0, Long.class, false);
     ParameterSlot<Integer> keysetLimit = new ParameterSlot<>(1, Integer.class, false);
     RenderedSql renderedKeyset =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    false,
-                    List.of(pet.id()),
-                    List.of(),
-                    pet,
-                    null,
-                    List.of(
-                        new OrderByItem(
-                            pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
-                    new KeysetSeek(pet.id().gt(anchor), keysetLimit)));
+        PostgreSqlTestRendering.render(
+            new SelectStatement(
+                false,
+                List.of(pet.id()),
+                List.of(),
+                pet,
+                null,
+                List.of(
+                    new OrderByItem(pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+                new KeysetSeek(pet.id().gt(anchor), keysetLimit)));
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" "
             + "WHERE \"pet\".\"id\" > ? ORDER BY \"pet\".\"id\" ASC LIMIT ?",
@@ -124,20 +118,18 @@ class PostgreSqlDialectTest {
     assertEquals(List.of(anchor, keysetLimit), renderedKeyset.parameters());
 
     RenderedSql renderedCount =
-        PostgreSqlDialect.INSTANCE.renderer().render(new CountAst(pet, null, pet.name()));
+        PostgreSqlTestRendering.render(new CountAst(pet, null, pet.name()));
     assertEquals(
         "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"",
         renderedCount.sql());
 
     RenderedSql renderedNullableCount =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new CountAst(
-                    pet,
-                    null,
-                    new CaseExpression<>(
-                        List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
+        PostgreSqlTestRendering.render(
+            new CountAst(
+                pet,
+                null,
+                new CaseExpression<>(
+                    List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
     assertEquals(
         "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL "
             + "THEN \"pet\".\"pet_name\" END) + CASE WHEN COUNT(*) > "
@@ -156,19 +148,16 @@ class PostgreSqlDialectTest {
     ParameterSlot<Integer> limit = new ParameterSlot<>(3, Integer.class, false);
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    false,
-                    List.of(pet.id()),
-                    List.of(),
-                    pet,
-                    LogicalPredicate.or(List.of(pet.id().lt(lower), pet.id().gt(upper))),
-                    List.of(
-                        new OrderByItem(
-                            pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
-                    new KeysetSeek(pet.id().gt(anchor), limit)));
+        PostgreSqlTestRendering.render(
+            new SelectStatement(
+                false,
+                List.of(pet.id()),
+                List.of(),
+                pet,
+                LogicalPredicate.or(List.of(pet.id().lt(lower), pet.id().gt(upper))),
+                List.of(
+                    new OrderByItem(pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+                new KeysetSeek(pet.id().gt(anchor), limit)));
 
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
@@ -230,7 +219,7 @@ class PostgreSqlDialectTest {
     SelectStatement statement =
         new SelectStatement(List.of(pet.id(), pet.name()), pet, pet.id().eq(id));
 
-    RenderedSql rendered = PostgreSqlDialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = PostgreSqlTestRendering.render(statement);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"pet_name\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
@@ -256,7 +245,7 @@ class PostgreSqlDialectTest {
             LogicalPredicate.or(
                 List.of(new ExistsPredicate(child, false), new ExistsPredicate(child, true))));
 
-    RenderedSql rendered = PostgreSqlDialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = PostgreSqlTestRendering.render(statement);
 
     assertEquals(
         "SELECT \"outer_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"outer_pet\" WHERE "
@@ -292,7 +281,7 @@ class PostgreSqlDialectTest {
                     new InSubqueryPredicate<>(outer.id(), child, false),
                     new InSubqueryPredicate<>(outer.id(), child, true))));
 
-    RenderedSql rendered = PostgreSqlDialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = PostgreSqlTestRendering.render(statement);
 
     assertEquals(
         "SELECT \"outer_pet\".\"id\" FROM \"shelter\".\"pet\" AS \"outer_pet\" WHERE "
@@ -329,7 +318,7 @@ class PostgreSqlDialectTest {
             List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
             null);
 
-    RenderedSql rendered = PostgreSqlDialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = PostgreSqlTestRendering.render(statement);
 
     assertEquals(
         "SELECT \"outer_pet\".\"id\", (SELECT \"inner_pet\".\"pet_name\" "
@@ -361,7 +350,7 @@ class PostgreSqlDialectTest {
             List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
             null);
 
-    RenderedSql rendered = PostgreSqlDialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = PostgreSqlTestRendering.render(statement);
 
     assertEquals(
         "SELECT DISTINCT \"outer_pet\".\"id\", (SELECT \"inner_pet\".\"pet_name\" "
@@ -383,22 +372,20 @@ class PostgreSqlDialectTest {
     ParameterSlot<Long> excludedMaximum = new ParameterSlot<>(6, Long.class, false);
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    List.of(pet.id()),
-                    pet,
-                    LogicalPredicate.and(
-                        List.of(
-                            pet.name().isNotNull(),
-                            new BetweenPredicate<>(pet.id(), minimum, maximum),
-                            LogicalPredicate.or(
-                                List.of(
-                                    new LikePredicate(pet.name(), firstPattern),
-                                    new LikePredicate(pet.name(), secondPattern))),
-                            new InPredicate<>(pet.id(), List.of(first, second), false),
-                            new NotPredicate(pet.id().le(excludedMaximum))))));
+        PostgreSqlTestRendering.render(
+            new SelectStatement(
+                List.of(pet.id()),
+                pet,
+                LogicalPredicate.and(
+                    List.of(
+                        pet.name().isNotNull(),
+                        new BetweenPredicate<>(pet.id(), minimum, maximum),
+                        LogicalPredicate.or(
+                            List.of(
+                                new LikePredicate(pet.name(), firstPattern),
+                                new LikePredicate(pet.name(), secondPattern))),
+                        new InPredicate<>(pet.id(), List.of(first, second), false),
+                        new NotPredicate(pet.id().le(excludedMaximum))))));
 
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE "
@@ -422,19 +409,16 @@ class PostgreSqlDialectTest {
     ParameterSlot<String> fallback = new ParameterSlot<>(4, String.class, false);
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new SelectStatement(
-                    List.of(
-                        new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
-                        new ConcatExpression(List.of(pet.name(), suffix)),
-                        new CaseExpression<>(
-                            List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())),
-                            otherwise),
-                        new CastExpression<>(pet.id(), String.class),
-                        new CoalesceExpression<>(List.of(pet.name(), fallback))),
-                    pet));
+        PostgreSqlTestRendering.render(
+            new SelectStatement(
+                List.of(
+                    new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, addend),
+                    new ConcatExpression(List.of(pet.name(), suffix)),
+                    new CaseExpression<>(
+                        List.of(new CaseWhen<>(pet.id().gt(threshold), pet.name())), otherwise),
+                    new CastExpression<>(pet.id(), String.class),
+                    new CoalesceExpression<>(List.of(pet.name(), fallback))),
+                pet));
 
     assertEquals(
         "SELECT (\"pet\".\"id\" + ?), (\"pet\".\"pet_name\" || ?), "
@@ -454,7 +438,7 @@ class PostgreSqlDialectTest {
     PetAstTable pet = PetAstTable.PET.as("p");
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE.renderer().render(new SelectStatement(List.of(pet.name()), pet));
+        PostgreSqlTestRendering.render(new SelectStatement(List.of(pet.name()), pet));
 
     assertEquals("SELECT \"p\".\"pet_name\" FROM \"shelter\".\"pet\" AS \"p\"", rendered.sql());
   }
@@ -467,17 +451,15 @@ class PostgreSqlDialectTest {
     ParameterSlot<Long> version = new ParameterSlot<>(2, Long.class, false);
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(
-                new UpdateStatement(
-                    pet,
-                    List.of(
-                        new UpdateAssignment<>(pet.name(), name),
-                        new UpdateAssignment<>(
-                            pet.version(), new IncrementExpression<>(pet.version()))),
-                    LogicalPredicate.and(
-                        List.of(pet.id().eq(id), pet.version().eq(version)))));
+        PostgreSqlTestRendering.render(
+            new UpdateStatement(
+                pet,
+                List.of(
+                    new UpdateAssignment<>(pet.name(), name),
+                    new UpdateAssignment<>(
+                        pet.version(), new IncrementExpression<>(pet.version()))),
+                LogicalPredicate.and(
+                    List.of(pet.id().eq(id), pet.version().eq(version)))));
 
     assertEquals(
         "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",

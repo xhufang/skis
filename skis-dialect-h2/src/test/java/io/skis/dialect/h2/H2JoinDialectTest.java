@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.sql.ast.ColumnExpression;
@@ -56,9 +57,7 @@ class H2JoinDialectTest {
                 new JoinClause(JoinType.CROSS, cross, null)));
 
     RenderedSql rendered =
-        H2Dialect.INSTANCE
-            .renderer()
-            .render(new SelectStatement(List.of(root.id(), cross.name()), from));
+        H2TestRendering.render(new SelectStatement(List.of(root.id(), cross.name()), from));
 
     assertEquals(
         "SELECT \"root_pet\".\"id\", \"cross_pet\".\"pet_name\" "
@@ -87,12 +86,11 @@ class H2JoinDialectTest {
                 new JoinClause(JoinType.FULL, full, left.id().eq(full.id()))));
 
     SelectStatement statement = new SelectStatement(List.of(root.id()), from);
+    ResolvedStatement resolved = ResolvedStatement.analyze(statement);
     SqlRenderException validationFailure =
-        assertThrows(SqlRenderException.class, () -> H2Dialect.INSTANCE.validate(statement));
+        assertThrows(SqlRenderException.class, () -> H2Dialect.INSTANCE.validate(resolved));
     SqlRenderException renderingFailure =
-        assertThrows(
-            SqlRenderException.class,
-            () -> H2Dialect.INSTANCE.renderer().render(statement));
+        assertThrows(SqlRenderException.class, () -> H2TestRendering.render(statement));
 
     assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, validationFailure.code());
     assertEquals("h2", validationFailure.diagnostics().dialect().dialectId());
@@ -136,7 +134,7 @@ class H2JoinDialectTest {
                 new OrderByItem(reviewer.name(), OrderDirection.DESC, NullOrder.LAST)),
             new OffsetLimit(limit, offset));
 
-    RenderedSql rendered = H2Dialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = H2TestRendering.render(statement);
 
     assertEquals(
         "SELECT DISTINCT \"root_pet\".\"id\", \"reviewer_pet\".\"pet_name\" "

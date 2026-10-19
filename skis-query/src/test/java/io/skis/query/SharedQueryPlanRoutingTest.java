@@ -12,6 +12,7 @@ import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
 import io.skis.dialect.support.StandardSqlRenderer;
@@ -31,7 +32,6 @@ import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.Nullability;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.StatementAst;
@@ -95,7 +95,7 @@ class SharedQueryPlanRoutingTest {
     assertEquals(List.of(2L), bindings(b));
     assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
     assertEquals(1, fixture.dialect().renders.get());
-    assertEquals(2, fixture.dialect().validations.get());
+    assertEquals(1, fixture.dialect().validations.get());
     assertEquals(0, fixture.dialect().legacyRenders.get());
     assertEquals(0, fixture.dialect().legacyValidations.get());
   }
@@ -248,7 +248,7 @@ class SharedQueryPlanRoutingTest {
     QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
 
     assertEquals(
-        "SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" WHERE 1 = 0",
+        "SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" WHERE FALSE",
         compilation.plan().sql());
     assertEquals(2, fixture.dialect().validations.get());
     assertEquals(1, fixture.dialect().renders.get());
@@ -434,6 +434,32 @@ class SharedQueryPlanRoutingTest {
   }
 
   @Test
+  void nullableDistinctCountBindsEveryFinalPositionOfAParameterizedExpression()
+      throws Exception {
+    Fixture fixture = fixture(16, true);
+    PetTable outer = new PetTable().as("p");
+    OwnerTable owner = new OwnerTable().as("o");
+    QueryParameter<Long> parameter = Sql.parameter(Long.class);
+    var lookup = Sql.select(owner.id).from(owner).where(owner.id.ge(parameter));
+    DefaultSelectQuery<Long> query =
+        (DefaultSelectQuery<Long>)
+            fixture
+                .operations()
+                .query(Sql.select(Sql.scalar(lookup)).from(outer))
+                .bind(parameter, 7L);
+
+    QueryCompilation<Long> count = query.distinct().countCompilation();
+
+    assertEquals(
+        "SELECT COUNT(DISTINCT (SELECT \"o\".\"id\" FROM \"owner\" AS \"o\" "
+            + "WHERE \"o\".\"id\" >= ?)) + CASE WHEN COUNT(*) > "
+            + "COUNT((SELECT \"o\".\"id\" FROM \"owner\" AS \"o\" "
+            + "WHERE \"o\".\"id\" >= ?)) THEN 1 ELSE 0 END FROM \"pet\" AS \"p\"",
+        count.plan().sql());
+    assertEquals(List.of(7L, 7L), bindings(count));
+  }
+
+  @Test
   void countVariantsShareTheirSingleResolvedAnalysisAcrossValidationAndRendering()
       throws Exception {
     List<String> expectedSql =
@@ -442,7 +468,7 @@ class SharedQueryPlanRoutingTest {
             "SELECT COUNT(DISTINCT \"p\".\"id\") FROM \"pet\" AS \"p\" "
                 + "WHERE \"p\".\"id\" >= ?",
             "SELECT COUNT(*) FROM \"pet\" AS \"p\"",
-            "SELECT COUNT(*) FROM \"pet\" AS \"p\" WHERE 1 = 0");
+            "SELECT COUNT(*) FROM \"pet\" AS \"p\" WHERE FALSE");
     List<List<?>> expectedBindings =
         List.of(List.of(7L), List.of(7L), List.of(), List.of());
     for (int shape = 0; shape < 4; shape++) {
@@ -700,7 +726,7 @@ class SharedQueryPlanRoutingTest {
     var assembler = new QueryPlanKeyAssembler(REGISTRY, new QueryPlanKey.IdentityScope(REGISTRY),
         QueryPlanKey.DialectIdentity.from(new CountingDialect(true)), true);
     var variant = QueryPlanKey.PlanVariant.content(QueryPaginationShape.none());
-    var resultAnalysis = SemanticValidator.analyzeComplete(
+    var resultAnalysis = ResolvedStatement.analyze(
         new SelectStatement(
             List.of(SelectableSupport.expression(literal)), table.tableExpression()));
     assertEquals(QueryPlanKeyAssembler.Bypass.UNSAFE_RESULT_IDENTITY,
@@ -710,7 +736,7 @@ class SharedQueryPlanRoutingTest {
     SelectedResult<Long> selected = SelectedResult.requiredScalar(table.id);
     CompiledQueryStructure structure =
         QueryTestSupport.compile(selected, table, List.of(), literal.eq(1L));
-    var parameterAnalysis = SemanticValidator.analyzeComplete(
+    var parameterAnalysis = ResolvedStatement.analyze(
         new SelectStatement(structure.selections(), structure.fromClause(), structure.where()));
     assertEquals(QueryPlanKeyAssembler.Bypass.UNSAFE_PARAMETER_IDENTITY,
         assembler.assemble(parameterAnalysis, selected, variant,
@@ -731,7 +757,7 @@ class SharedQueryPlanRoutingTest {
   void assemblerReturnsExplicitDisabledUnstableAndForeignMetadataReasons() {
     PetTable table = new PetTable();
     var analysis =
-        SemanticValidator.analyzeComplete(
+        ResolvedStatement.analyze(
             new SelectStatement(table.selections(), table.tableExpression()));
     var identities = new QueryPlanKey.IdentityScope(REGISTRY);
     var dialect = QueryPlanKey.DialectIdentity.from(new CountingDialect(true));
@@ -855,8 +881,6 @@ class SharedQueryPlanRoutingTest {
     dialect.validations.set(0);
     dialect.legacyRenders.set(0);
     dialect.legacyValidations.set(0);
-    dialect.validatedAnalyses.clear();
-    dialect.renderedAnalyses.clear();
     return new Fixture(catalog, operations, dialect);
   }
 
@@ -925,13 +949,9 @@ class SharedQueryPlanRoutingTest {
     private final AtomicInteger validations = new AtomicInteger();
     private final AtomicInteger legacyRenders = new AtomicInteger();
     private final AtomicInteger legacyValidations = new AtomicInteger();
-    private final Map<StatementAst, QueryBlockAnalysis> validatedAnalyses =
-        Collections.synchronizedMap(new IdentityHashMap<>());
-    private final Map<StatementAst, QueryBlockAnalysis> renderedAnalyses =
-        Collections.synchronizedMap(new IdentityHashMap<>());
     private final boolean stable;
     private final DialectCapabilities capabilities = DialectCapabilities.of(DialectFeature.values());
-    private final SqlRenderer delegate = new StandardSqlRenderer(id(), identifierRules(), capabilities);
+    private final SqlRenderer delegate = new StandardSqlRenderer(this);
     private volatile boolean failNext;
     private volatile @Nullable CountDownLatch entered;
     private volatile @Nullable CountDownLatch release;
@@ -952,11 +972,6 @@ class SharedQueryPlanRoutingTest {
     }
 
     @Override
-    public boolean supportsResolvedQueryValidation() {
-      return true;
-    }
-
-    @Override
     public IdentifierRules identifierRules() {
       return StandardIdentifierRules.INSTANCE;
     }
@@ -967,46 +982,23 @@ class SharedQueryPlanRoutingTest {
     }
 
     @Override
-    public void validate(StatementAst statement) {
-      legacyValidations.incrementAndGet();
-      Dialect.super.validate(statement);
-    }
-
-    @Override
-    public void validate(StatementAst statement, QueryBlockAnalysis analysis) {
+    public void validate(io.skis.dialect.spi.ResolvedStatement resolved) {
       validations.incrementAndGet();
-      QueryBlockAnalysis previous = validatedAnalyses.put(statement, analysis);
-      assertTrue(previous == null, "the same statement was resolved more than once");
-      Dialect.super.validate(statement, analysis);
+      Dialect.super.validate(resolved);
     }
 
     @Override
     public SqlRenderer renderer() {
-      return new SqlRenderer() {
-        @Override
-        public io.skis.dialect.spi.RenderedSql render(StatementAst statement) {
-          legacyRenders.incrementAndGet();
-          beforeRender();
-          return delegate.render(statement);
-        }
-
-        @Override
-        public io.skis.dialect.spi.RenderedSql renderValidated(
-            StatementAst statement, QueryBlockAnalysis analysis) {
-          renders.incrementAndGet();
-          assertSame(validatedAnalyses.get(statement), analysis);
-          QueryBlockAnalysis previous = renderedAnalyses.put(statement, analysis);
-          assertTrue(previous == null, "the same statement was rendered more than once");
-          beforeRender();
-          return delegate.renderValidated(statement, analysis);
-        }
+      return input -> {
+        renders.incrementAndGet();
+        beforeRender();
+        return delegate.render(input);
       };
     }
 
     private void assertAnalysisHandoff(StatementAst statement) {
-      assertTrue(validatedAnalyses.containsKey(statement));
-      assertTrue(renderedAnalyses.containsKey(statement));
-      assertSame(validatedAnalyses.get(statement), renderedAnalyses.get(statement));
+      assertTrue(renders.get() > 0);
+      assertTrue(validations.get() > 0);
     }
 
     private void beforeRender() {

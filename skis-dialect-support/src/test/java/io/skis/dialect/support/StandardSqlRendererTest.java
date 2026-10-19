@@ -6,12 +6,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
-import io.skis.dialect.internal.DialectQueryFeatures;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
@@ -48,10 +48,8 @@ import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
-import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
@@ -74,35 +72,21 @@ class StandardSqlRendererTest {
   private static final EntityMeta<Pet> OTHER_PET = metadata(TableMeta.of("other_pet"));
   private static final EntityMeta<Pet> SQL_LOOKING_PET =
       metadata(TableMeta.of("pet; DROP TABLE audit; --"));
-  private static final SqlRenderer RENDERER =
-      new StandardSqlRenderer(
-          "test",
-          StandardIdentifierRules.INSTANCE,
-          DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
+  private static final RendererHarness RENDERER =
+      RendererHarness.of(
+          "test", DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
 
   @Test
-  void rejectsInvalidOrIncompleteRendererIdentity() {
+  void rejectsInvalidDialectIdentityBeforeRendering() {
     assertThrows(
         NullPointerException.class,
-        () ->
-            new StandardSqlRenderer(
-                null, StandardIdentifierRules.INSTANCE, DialectCapabilities.none()));
+        () -> RendererHarness.of("test", null));
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            new StandardSqlRenderer(
-                " ", StandardIdentifierRules.INSTANCE, DialectCapabilities.none()));
+        () -> RendererHarness.of(" ", DialectCapabilities.none()));
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            new StandardSqlRenderer(
-                "PostgreSQL", StandardIdentifierRules.INSTANCE, DialectCapabilities.none()));
-    assertThrows(
-        NullPointerException.class,
-        () -> new StandardSqlRenderer("test", null, DialectCapabilities.none()));
-    assertThrows(
-        NullPointerException.class,
-        () -> new StandardSqlRenderer("test", StandardIdentifierRules.INSTANCE, null));
+        () -> RendererHarness.of("PostgreSQL", DialectCapabilities.none()));
   }
 
   @Test
@@ -150,14 +134,13 @@ class StandardSqlRendererTest {
     ParameterSlot<String> value = new ParameterSlot<>(0, String.class, true);
     CaseExpression<String> nullable =
         new CaseExpression<>(List.of(new CaseWhen<>(pet.id().isNotNull(), value)));
-    SqlRenderer renderer =
-        new StandardSqlRenderer(
+    RendererHarness renderer =
+        RendererHarness.of(
             "test",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.COUNT_DISTINCT));
 
-    RenderedSql rendered = renderer.render(new CountAst(pet, null, nullable));
+    RenderedSql rendered = renderer.render(new CountAst(pet, null, nullable, true));
 
     assertEquals(
         "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL THEN ? END) "
@@ -168,25 +151,19 @@ class StandardSqlRendererTest {
   }
 
   @Test
-  void validatedRenderingReusesAnalysisAndPreservesDirectGoldenOutput() {
+  void compiledResolvedStagePreservesDirectGoldenOutputWithoutReparsing() {
     PetTable pet = new PetTable(PET);
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
     SelectStatement statement =
         new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
-    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
-    DialectQueryFeatures.validate(
-        "test",
-        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES),
-        statement,
-        analysis);
 
     RenderedSql direct = RENDERER.render(statement);
-    RenderedSql validated = RENDERER.renderValidated(statement, analysis);
+    SqlTemplate compiled =
+        SqlCompiler.compile(ResolvedStatement.analyze(statement), RENDERER.dialect());
 
-    assertEquals(direct, validated);
     assertEquals(
-        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?",
-        validated.sql());
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE \"pet\".\"id\" = ?", compiled.sql());
+    assertEquals(direct.parameters(), compiled.parameterLayout().slots());
   }
 
   @Test
@@ -198,19 +175,14 @@ class StandardSqlRendererTest {
             List.of(outer.id()),
             outer,
             new ExistsPredicate(new SelectStatement(List.of(inner.id()), inner), false));
-    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
-
     SqlRenderException direct =
         assertThrows(SqlRenderException.class, () -> RENDERER.render(statement));
     SqlRenderException resolved =
         assertThrows(
             SqlRenderException.class,
             () ->
-                DialectQueryFeatures.validate(
-                    "test",
-                    DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES),
-                    statement,
-                    analysis));
+                SqlCompiler.compile(
+                    ResolvedStatement.analyze(statement), RENDERER.dialect()));
 
     assertEquals(direct.code(), resolved.code());
     assertEquals(
@@ -219,43 +191,47 @@ class StandardSqlRendererTest {
   }
 
   @Test
-  void resolvedDialectValidationBridgeKeepsDirectValidationOverrideUntilT07() {
+  void customDialectValidationConsumesTheControlledResolvedStage() {
     PetTable pet = new PetTable(PET);
     SelectStatement statement = new SelectStatement(List.of(pet.id()), pet);
-    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
-    AtomicInteger directValidations = new AtomicInteger();
-    Dialect dialect =
-        new Dialect() {
-          @Override
-          public String id() {
-            return "bridge-test";
-          }
+    AtomicInteger validations = new AtomicInteger();
+    RendererHarness harness =
+        RendererHarness.of(
+            new Dialect() {
+              private final DialectCapabilities capabilities =
+                  DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+              private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
-          @Override
-          public IdentifierRules identifierRules() {
-            return StandardIdentifierRules.INSTANCE;
-          }
+              @Override
+              public String id() {
+                return "custom-stage";
+              }
 
-          @Override
-          public DialectCapabilities capabilities() {
-            return DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-          }
+              @Override
+              public IdentifierRules identifierRules() {
+                return StandardIdentifierRules.INSTANCE;
+              }
 
-          @Override
-          public SqlRenderer renderer() {
-            return RENDERER;
-          }
+              @Override
+              public DialectCapabilities capabilities() {
+                return capabilities;
+              }
 
-          @Override
-          public void validate(StatementAst candidate) {
-            directValidations.incrementAndGet();
-            Dialect.super.validate(candidate);
-          }
-        };
+              @Override
+              public SqlRenderer renderer() {
+                return renderer;
+              }
 
-    dialect.validate(statement, analysis);
+              @Override
+              public void validate(ResolvedStatement resolved) {
+                validations.incrementAndGet();
+                Dialect.super.validate(resolved);
+              }
+            });
 
-    assertEquals(1, directValidations.get());
+    harness.render(statement);
+
+    assertEquals(1, validations.get());
   }
 
   @Test
@@ -275,9 +251,9 @@ class StandardSqlRendererTest {
     PetTable pet = new PetTable(PET);
     PetTable other = new PetTable(OTHER_PET);
 
-    IllegalArgumentException failure =
+    SqlRenderException failure =
         assertThrows(
-            IllegalArgumentException.class,
+            SqlRenderException.class,
             () -> RENDERER.render(new SelectStatement(List.of(other.name()), pet)));
 
     assertTrue(failure.getMessage().contains("$ SELECT item #0"));
@@ -299,10 +275,9 @@ class StandardSqlRendererTest {
     assertTrue(missingExists.getMessage().contains("EXISTS_SUBQUERY"));
     assertTrue(missingExists.getMessage().contains("$/WHERE[0]#0"));
 
-    SqlRenderer existsOnly =
-        new StandardSqlRenderer(
+    RendererHarness existsOnly =
+        RendererHarness.of(
             "exists-only",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES,
                 DialectFeature.EXISTS_SUBQUERY));
@@ -333,10 +308,9 @@ class StandardSqlRendererTest {
     assertTrue(missingIn.getMessage().contains("IN_SUBQUERY"));
     assertTrue(missingIn.getMessage().contains("$/WHERE[0]#0"));
 
-    SqlRenderer inOnly =
-        new StandardSqlRenderer(
+    RendererHarness inOnly =
+        RendererHarness.of(
             "in-only",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.IN_SUBQUERY));
     assertTrue(inOnly.render(statement).sql().contains(" IN (SELECT "));
@@ -367,10 +341,9 @@ class StandardSqlRendererTest {
     assertTrue(missingScalar.getMessage().contains("SCALAR_SUBQUERY"));
     assertTrue(missingScalar.getMessage().contains("$/SELECT[1]#0"));
 
-    SqlRenderer scalarOnly =
-        new StandardSqlRenderer(
+    RendererHarness scalarOnly =
+        RendererHarness.of(
             "scalar-only",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES,
                 DialectFeature.SCALAR_SUBQUERY));
@@ -412,16 +385,15 @@ class StandardSqlRendererTest {
             null,
             List.of(new OrderByItem(ordered, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
             null);
-    SqlRenderer renderer =
-        new StandardSqlRenderer(
+    RendererHarness renderer =
+        RendererHarness.of(
             "scalar-only",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
 
     SqlRenderException failure =
         assertThrows(SqlRenderException.class, () -> renderer.render(statement));
-    assertTrue(failure.getMessage().contains("same logical parameters"));
+    assertTrue(failure.getMessage().contains("must reference a selected expression"));
   }
 
   @Test
@@ -439,10 +411,9 @@ class StandardSqlRendererTest {
             null,
             List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
             null);
-    SqlRenderer renderer =
-        new StandardSqlRenderer(
+    RendererHarness renderer =
+        RendererHarness.of(
             "scalar-only",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
 
@@ -466,10 +437,9 @@ class StandardSqlRendererTest {
     SelectStatement statement =
         new SelectStatement(
             List.of(outer.id()), outer, new ExistsPredicate(child, false));
-    SqlRenderer existsOnly =
-        new StandardSqlRenderer(
+    RendererHarness existsOnly =
+        RendererHarness.of(
             "exists-only",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES,
                 DialectFeature.EXISTS_SUBQUERY));
@@ -545,10 +515,12 @@ class StandardSqlRendererTest {
                 List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), true)));
 
     assertEquals(
-        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE 1 = 0", emptyIn.sql());
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE FALSE", emptyIn.sql());
     assertEquals(
-        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE 1 = 1",
+        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE TRUE",
         emptyNotIn.sql());
+    assertEquals(0, emptyIn.parameterCount());
+    assertEquals(0, emptyNotIn.parameterCount());
   }
 
   @Test
@@ -674,9 +646,9 @@ class StandardSqlRendererTest {
     SqlRenderException failure =
         assertThrows(SqlRenderException.class, () -> RENDERER.render(unknown));
 
-    assertEquals(SkisErrorCode.DIALECT_RENDER_FAILURE, failure.code());
+    assertEquals(SkisErrorCode.DIALECT_INVALID_STRUCTURE, failure.code());
     assertEquals("test", failure.diagnostics().dialect().dialectId());
-    assertTrue(failure.diagnostics().facts().detail().contains(unknown.getClass().getName()));
+    assertTrue(failure.diagnostics().facts().detail().contains("controlled statement analysis"));
   }
 
   private static EntityMeta<Pet> metadata(TableMeta table) {

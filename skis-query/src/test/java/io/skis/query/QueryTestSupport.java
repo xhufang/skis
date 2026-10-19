@@ -2,6 +2,7 @@ package io.skis.query;
 
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.jdbc.internal.JdbcExecutor;
@@ -11,7 +12,6 @@ import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
-import io.skis.sql.ast.SemanticValidator;
 import java.sql.Connection;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -85,7 +85,7 @@ final class QueryTestSupport {
       joins.add(new JoinClause(JoinType.CROSS, joined.tableExpression(), null));
     }
     return QueryPlanDependencies.from(
-        SemanticValidator.analyzeComplete(
+        ResolvedStatement.analyze(
             new SelectStatement(
                 root.selections(), new FromClause(root.tableExpression(), joins), null)));
   }

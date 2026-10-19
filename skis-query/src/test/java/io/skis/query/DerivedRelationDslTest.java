@@ -541,7 +541,7 @@ class DerivedRelationDslTest {
             DialectFeature.CROSS_JOIN,
             DialectFeature.DERIVED_TABLE);
     private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+        new StandardSqlRenderer(this);
 
     @Override
     public String id() {

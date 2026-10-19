@@ -1263,7 +1263,7 @@ class JoinQueryDslTest {
 
       QueryCompilation<Pet> content = query.compilation(QueryPagination.None.INSTANCE);
       QueryCompilation<Long> count = query.countCompilation();
-      String predicate = (negated ? "1 = 1" : "1 = 0") + " AND \"pet\".\"id\" = ?";
+      String predicate = (negated ? "TRUE" : "FALSE") + " AND \"pet\".\"id\" = ?";
       assertEquals(
           "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
               + "FROM \"shelter\".\"pet\" WHERE "
@@ -2091,7 +2091,7 @@ class JoinQueryDslTest {
             DialectFeature.SCALAR_SUBQUERY,
             DialectFeature.CORRELATED_SUBQUERY);
     private final SqlRenderer renderer =
-        new StandardSqlRenderer(id(), identifierRules(), capabilities);
+        new StandardSqlRenderer(this);
 
     @Override
     public String id() {

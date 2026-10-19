@@ -54,9 +54,7 @@ class PostgreSqlJoinDialectTest {
                 new JoinClause(JoinType.CROSS, cross, null)));
 
     RenderedSql rendered =
-        PostgreSqlDialect.INSTANCE
-            .renderer()
-            .render(new SelectStatement(List.of(root.id(), cross.name()), from));
+        PostgreSqlTestRendering.render(new SelectStatement(List.of(root.id(), cross.name()), from));
 
     assertEquals(
         "SELECT \"root_pet\".\"id\", \"cross_pet\".\"pet_name\" "
@@ -106,7 +104,7 @@ class PostgreSqlJoinDialectTest {
                 new OrderByItem(reviewer.name(), OrderDirection.DESC, NullOrder.LAST)),
             new OffsetLimit(limit, offset));
 
-    RenderedSql rendered = PostgreSqlDialect.INSTANCE.renderer().render(statement);
+    RenderedSql rendered = PostgreSqlTestRendering.render(statement);
 
     assertEquals(
         "SELECT DISTINCT \"root_pet\".\"id\", \"reviewer_pet\".\"pet_name\" "

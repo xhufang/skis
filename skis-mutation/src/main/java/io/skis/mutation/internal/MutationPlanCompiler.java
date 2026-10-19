@@ -1,9 +1,12 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.MutationException;
 import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderedSql;
+import io.skis.dialect.support.SqlCompiler;
+import io.skis.dialect.support.SqlTemplate;
 import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -11,7 +14,6 @@ import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PropertyMeta;
-import io.skis.core.MutationException;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DeleteStatement;
@@ -82,7 +84,7 @@ final class MutationPlanCompiler {
     for (int index = 0; index < properties.size(); index++) {
       addInsertProperty(table, properties.get(index), index, columns, values, expectedParameters);
     }
-    RenderedSql rendered = dialect.renderer().render(new InsertStatement(table, columns, values));
+    RenderedSql rendered = render(new InsertStatement(table, columns, values));
     requireParameterShape(entity, "insert", rendered, expectedParameters);
     return new CompiledMutationPlan<>("insert", dialect.id(), rendered, binders.insert());
   }
@@ -124,8 +126,7 @@ final class MutationPlanCompiler {
     }
     SqlPredicate where =
         predicates.size() == 1 ? predicates.getFirst() : LogicalPredicate.and(predicates);
-    RenderedSql rendered =
-        dialect.renderer().render(new UpdateStatement(table, assignments, where));
+    RenderedSql rendered = render(new UpdateStatement(table, assignments, where));
     requireParameterShape(entity, "updateById", rendered, expectedParameters);
     return new CompiledMutationPlan<>("updateById", dialect.id(), rendered, binder);
   }
@@ -134,10 +135,7 @@ final class MutationPlanCompiler {
       EntityRuntimeModel<E> model, RuntimeMutationTable<E> table, PropertyMeta<E, ?> id) {
     List<ParameterSlot<?>> expectedParameters = new ArrayList<>(1);
     RenderedSql rendered =
-        dialect
-            .renderer()
-            .render(
-                new DeleteStatement(table, equalityPredicate(table, id, 0, expectedParameters)));
+        render(new DeleteStatement(table, equalityPredicate(table, id, 0, expectedParameters)));
     requireParameterShape(model.entity(), "deleteById", rendered, expectedParameters);
     PropertyRuntime<E, ?> idRuntime = model.property(id);
     return new CompiledMutationPlan<>(
@@ -189,6 +187,11 @@ final class MutationPlanCompiler {
     ParameterSlot<V> parameter = new ParameterSlot<>(parameterOrdinal, property.javaType(), false);
     expectedParameters.add(parameter);
     return table.expression(property).eq(parameter);
+  }
+
+  private RenderedSql render(io.skis.sql.ast.StatementAst statement) {
+    SqlTemplate template = SqlCompiler.compile(statement, dialect);
+    return new RenderedSql(template.sql(), template.parameterLayout().slots());
   }
 
   private static <E> PropertyMeta<E, ?> requireSinglePrimaryKey(EntityMeta<E> entity) {

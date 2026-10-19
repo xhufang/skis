@@ -8,7 +8,6 @@ import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.RenderedSql;
-import io.skis.dialect.spi.SqlRenderer;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
@@ -41,10 +40,9 @@ class JoinSqlRendererTest {
           List.of(ID, NAME),
           new PrimaryKeyMeta<>(List.of(ID)),
           false);
-  private static final SqlRenderer JOIN_RENDERER =
-      new StandardSqlRenderer(
+  private static final RendererHarness JOIN_RENDERER =
+      RendererHarness.of(
           "join-test",
-          StandardIdentifierRules.INSTANCE,
           DialectCapabilities.of(
               DialectFeature.SCHEMA_QUALIFIED_TABLES,
               DialectFeature.INNER_JOIN,
@@ -130,10 +128,9 @@ class JoinSqlRendererTest {
 
   @Test
   void rejectsAnUnsupportedJoinBeforeRenderingWithDialectAndPosition() {
-    SqlRenderer innerOnly =
-        new StandardSqlRenderer(
+    RendererHarness innerOnly =
+        RendererHarness.of(
             "limited",
-            StandardIdentifierRules.INSTANCE,
             DialectCapabilities.of(
                 DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.INNER_JOIN));
     PetTable root = new PetTable();

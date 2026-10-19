@@ -3,11 +3,13 @@ package io.skis.dialect.postgresql;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.ExceptionClassifier;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.spi.StatementParameterLimit;
 import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlLowering;
 import io.skis.dialect.support.StandardSqlRenderer;
 
 /** PostgreSQL dialect composition root for the currently supported SQL subset. */
@@ -36,11 +38,12 @@ public final class PostgreSqlDialect implements Dialect {
   // Use the connection-independent value as the conservative framework cap.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.explicit(65_535);
-  private static final SqlRenderer RENDERER =
-      new StandardSqlRenderer(ID, StandardIdentifierRules.INSTANCE, CAPABILITIES);
+  private static final DialectLowering LOWERING = StandardSqlLowering.of(CAPABILITIES);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();
+
+  private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
   private PostgreSqlDialect() {}
 
@@ -65,18 +68,18 @@ public final class PostgreSqlDialect implements Dialect {
   }
 
   @Override
-  public boolean supportsResolvedQueryValidation() {
-    return true;
-  }
-
-  @Override
   public StatementParameterLimit maxStatementParameters() {
     return MAX_STATEMENT_PARAMETERS;
   }
 
   @Override
+  public DialectLowering lowering() {
+    return LOWERING;
+  }
+
+  @Override
   public SqlRenderer renderer() {
-    return RENDERER;
+    return renderer;
   }
 
   @Override

@@ -1,7 +1,7 @@
 package io.skis.query;
 
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
-import io.skis.sql.ast.QueryBlockAnalysis;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +30,7 @@ final class QueryPlanKeyAssembler {
   }
 
   Decision assemble(
-      QueryBlockAnalysis analysis,
+      ResolvedStatement resolved,
       SelectedResult<?> selected,
       QueryPlanKey.PlanVariant variant,
       List<QueryPlanCompiler.LogicalParameter> parameters,
@@ -41,7 +41,7 @@ final class QueryPlanKeyAssembler {
     if (dialect.isEmpty()) {
       return Bypass.UNSTABLE_DIALECT;
     }
-    QueryPlanDependencies dependencies = QueryPlanDependencies.from(analysis);
+    QueryPlanDependencies dependencies = QueryPlanDependencies.from(resolved);
     for (var entity : dependencies.entities()) {
       if (registry.find(entity).isEmpty()) {
         return Bypass.UNREGISTERED_DEPENDENCY;
@@ -74,7 +74,12 @@ final class QueryPlanKeyAssembler {
     }
     return new Cacheable(
         new QueryPlanKey(
-            analysis.structureKey(),
+            resolved
+                .structureKey()
+                .orElseThrow(
+                    () ->
+                        new IllegalArgumentException(
+                            "shared query plan requires a complete query structure key")),
             QueryPlanKey.Dependencies.from(dependencies),
             result.orElseThrow(),
             variant,
