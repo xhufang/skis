@@ -237,10 +237,10 @@ There is no child decoder, child query, connection, transaction, or resource own
 
 An empty child result makes EXISTS false. One row whose selected value is SQL `NULL` makes it true,
 as do duplicate rows. NOT EXISTS negates only row existence. Aggregate interoperability remains an
-explicit cross-slice acceptance item: step 10 must verify that a global aggregate without HAVING
-produces one row even when its input is empty, and step 12 must verify that HAVING can remove that
-row. The base EXISTS implementation deliberately performs no transformation that could change
-either behavior; complete T06 closure waits for those contracts.
+explicit `0.2.9` acceptance item: a global aggregate without HAVING must produce one row even when
+its input is empty, and HAVING can remove that row. The current EXISTS implementation performs no
+transformation that could change either behavior; the `0.2.7` closure covers the implemented
+non-aggregate subquery contracts.
 
 PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, `SCALAR_SUBQUERY`,
 `CORRELATED_SUBQUERY`, and `DERIVED_TABLE`. A dialect
@@ -248,4 +248,4 @@ missing one syntax capability rejects only that nested construct; a dialect miss
 support accepts an independent child but rejects a child that depends on an ancestor. Validation
 is recursive and reports the stable nested query-block path.
 
-Aggregate expressions remain assigned to their subsequent `0.2.5` slice.
+Aggregate expressions, GROUP BY/HAVING and grouped count remain assigned to `0.2.9`.

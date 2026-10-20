@@ -1,1 +1,68 @@
-Developing...
+# SKIS
+
+SKIS is an independent, type-safe Java ORM built on JDBC, immutable SQL structures and
+annotation-processor-generated metadata, binders and row decoders. The technical baseline is
+Java 21 and Maven 3.9+.
+
+## Version and availability
+
+The latest public release is **0.2.0**. This working tree remains **0.2.7-SNAPSHOT**; its internal
+API/SPI milestone closed on 2026-10-21. Internal `0.2.x-SNAPSHOT` milestones accumulate toward
+the next public **0.3.0** release and do not create standalone releases or tags.
+
+The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
+and H2 contracts have passed CI with their real JDBC drivers. Aggregates and GROUP BY/HAVING,
+generated keys, batch writes, raw SQL and Spring Boot integration retain their later milestone
+assignments. See [CHANGELOG](CHANGELOG.md) for the published and unreleased boundaries.
+
+## Query and write
+
+Applications declare entities with `@SkisEntity`. APT generates `PetTable`, `PetMeta`, binders,
+decoders and runtime models; a `Pet` entity has the table singleton `PetTable.petTable`.
+Create one thread-safe executor with an explicit dialect:
+
+```java
+SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
+PetTable pet = PetTable.petTable;
+
+executor.insert(pet, new Pet(7L, "Mimi", null));
+Optional<Pet> byId = executor.findById(pet, 7L);
+SingleRow<Pet> selected = executor.selectFrom(pet).where(pet.id().eq(7L)).fetchOne();
+List<Pet> pets = executor.selectFrom(pet).orderBy(pet.id().asc()).fetchList();
+```
+
+This example uses the three-field `Pet` in the
+[independent PostgreSQL consumer](skis-integration-tests/src/consumer/minimal-postgresql/src/main/java/example/Pet.java).
+The [consumer projects](skis-integration-tests/src/consumer/README.md) show complete BOM, APT,
+runtime, dialect and explicit driver dependency configuration without a SKIS parent POM.
+
+`SelectQuery<R>` describes the selected result. `SingleRow<R>` preserves no row, a SQL NULL row
+and a non-null row; `findById` retains its `Optional<E>` contract. Values are bound separately
+from SQL structure. Shared plans have bounded ownership, real cache statistics and explicit clear
+operations. Streams and cursors must be consumed sequentially and closed on their creating thread.
+
+## Documentation
+
+| Topic | Guide |
+| --- | --- |
+| Runtime assembly, entities and reads | [Executor and generated models](docs/0.0.6-read-slice.md) |
+| Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md) |
+| User records and classes | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md) |
+| SQL queries | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md) |
+| Resource ownership and observation | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md) |
+| Extensions | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md) |
+| Diagnostics | [Runtime errors](docs/runtime-error-codes.md), [APT errors](docs/apt-error-codes.md), [execution options and Spring translation](docs/execution-options-and-exception-translation.md) |
+
+The historical numeric filenames above remain stable links; their examples describe the current
+snapshot. Public application and extension contracts use API/SPI packages. `*.internal` packages
+and infrastructure assembly classes are outside the application extension contract.
+
+## Development and release
+
+See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md) and the
+[release checklist](docs/release-checklist.md). Performance benchmarks remain frozen throughout
+`0.2.x` development. A separate reviewed verification task must establish and execute performance
+measurements after feature freeze and before public `0.3.0`; structural tests are not performance
+measurements.
+
+Licensed under [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).

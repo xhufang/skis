@@ -5,7 +5,12 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.jspecify.annotations.Nullable;
 
-/** Unified immutable query for entities, scalar values, and generated projections. */
+/**
+ * Unified immutable query for entities, scalar values, and generated projections.
+ *
+ * <p>The result type includes legal SQL nullability. Single-row terminals preserve the difference
+ * between no database row and a present row whose selected value is null.
+ */
 public interface SelectQuery<R extends @Nullable Object> {
 
   SelectQuery<R> where(QueryCondition condition);
@@ -67,10 +72,13 @@ public interface SelectQuery<R extends @Nullable Object> {
   /** Creates an independent count descriptor from this query's structural clauses. */
   CountQuery countQuery();
 
+  /** Returns zero or one row, preserving a present SQL null; fails when multiple rows are read. */
   SingleRow<R> fetchOne();
 
+  /** Limits SQL to the first row and preserves both row presence and result nullability. */
   SingleRow<R> fetchFirst();
 
+  /** Materializes all rows, retaining legal null result elements in their original positions. */
   List<R> fetchList();
 
   Page<R> fetchPage(PageRequest request);
@@ -80,8 +88,14 @@ public interface SelectQuery<R extends @Nullable Object> {
 
   Slice<R> fetchSlice(SliceRequest request);
 
+  /** Opens a cursor that must be read and closed sequentially on its creating thread. */
   QueryCursor<R> cursor();
 
-  /** Opens a sequential JDBC-backed stream that the caller must close. */
+  /**
+   * Opens a JDBC-backed stream for sequential consumption and closure on its creating thread.
+   *
+   * <p>Use try-with-resources even for short-circuit terminals. Observed exhaustion completes the
+   * resource lifecycle immediately; closing afterward does not emit duplicate completion events.
+   */
   Stream<R> stream();
 }

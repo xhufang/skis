@@ -16,7 +16,9 @@ either publication as a cross-version API/ABI baseline.
 - Confirm `CHANGELOG.md` has a dated section matching that version.
 - Confirm the exact tag commit passes CI, PostgreSQL integration, release-boundary metadata,
   and compliance.
-- Confirm the independent H2 consumer passes with the release version and no reactor parent.
+- Confirm the dialect-api-only, core-only listener, H2 and real PostgreSQL independent consumers
+  pass with the release version and no reactor parent. Required reports must be non-empty with
+  zero failures, errors and skipped tests.
 - Confirm every `0.2.x` development milestone is complete and the `0.3.0` candidate is under feature
   freeze before recreating or executing any benchmark.
 - Confirm the reviewed performance-verification task has deliberately replaced the temporary `0.2.x`
@@ -62,6 +64,6 @@ allowlist.
 3. Inspect the validated deployment in Central Portal against the component list above.
 4. Publish the validated Central deployment manually.
 5. After Central reports `PUBLISHED`, inspect and publish the draft GitHub Release.
-6. Move development to `0.2.1-SNAPSHOT` and restore the Unreleased comparison link. Later internal
-   `0.2.x-SNAPSHOT` milestones remain unpublished until their accumulated capabilities ship in
-   `0.3.0`.
+6. Move development to the planned next snapshot and restore the Unreleased comparison link.
+   The `0.2.0` release began the internal `0.2.x-SNAPSHOT` line; after public `0.3.0`, the next
+   internal line is `0.3.1-SNAPSHOT`. Internal milestones do not create release tags.
