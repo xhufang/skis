@@ -24,8 +24,7 @@ class SkisDiagnosticsTest {
       assertFalse(code.description().isBlank());
       if (code.isDatabaseCategory()) {
         assertEquals(SkisErrorFamily.EXECUTION, code.family());
-        assertEquals(
-            code.name().replace("DB_", ""), code.databaseCategory(), code::name);
+        assertEquals(code.name().replace("DB_", ""), code.databaseCategory(), code::name);
       } else {
         assertNull(code.databaseCategory());
       }
@@ -146,30 +145,22 @@ class SkisDiagnosticsTest {
     SkisDiagnostics missingQueryDetail =
         SkisDiagnostics.of(SkisErrorCode.QUERY_WHERE_CONTRACT.defaultStage());
     SkisDiagnostics missingObservedCount =
-        SkisDiagnostics.of(
-            SkisErrorCode.QUERY_MULTIPLE_ROWS.defaultStage(), "more than one row");
+        SkisDiagnostics.of(SkisErrorCode.QUERY_MULTIPLE_ROWS.defaultStage(), "more than one row");
 
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            QueryValidationException.of(
-                SkisErrorCode.QUERY_WHERE_CONTRACT, wrongQueryStage));
+        () -> QueryValidationException.of(SkisErrorCode.QUERY_WHERE_CONTRACT, wrongQueryStage));
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            QueryValidationException.of(
-                SkisErrorCode.QUERY_WHERE_CONTRACT, missingQueryDetail));
+        () -> QueryValidationException.of(SkisErrorCode.QUERY_WHERE_CONTRACT, missingQueryDetail));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> NonUniqueResultException.of(missingObservedCount));
+        IllegalArgumentException.class, () -> NonUniqueResultException.of(missingObservedCount));
   }
 
   @Test
   void detailIsAdditiveWithoutLosingExistingGroups() {
     SkisDiagnostics base =
-        SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
-            .observedCount(2)
-            .build();
+        SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING).observedCount(2).build();
     SkisDiagnostics detailed = base.withDetail("query expected at most one row");
 
     assertEquals(2, detailed.facts().observedCount());
@@ -181,8 +172,7 @@ class SkisDiagnosticsTest {
 
     private static void verify() {
       // The fixed mapping is owned by the dialect SPI; this guard keeps the core table deliberate.
-      assertEquals(
-          "DUPLICATE_KEY", SkisErrorCode.DB_DUPLICATE_KEY.databaseCategory());
+      assertEquals("DUPLICATE_KEY", SkisErrorCode.DB_DUPLICATE_KEY.databaseCategory());
       assertEquals(
           "FOREIGN_KEY_VIOLATION", SkisErrorCode.DB_FOREIGN_KEY_VIOLATION.databaseCategory());
       assertEquals(

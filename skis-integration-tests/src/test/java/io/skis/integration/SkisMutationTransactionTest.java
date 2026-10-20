@@ -169,38 +169,22 @@ class SkisMutationTransactionTest {
             .queryTag("h2.contract")
             .build();
     SkisExecutor executor =
-        Skis.builder(dataSource)
-            .dialect(H2Dialect.INSTANCE)
-            .executionOptions(defaults)
-            .build();
+        Skis.builder(dataSource).dialect(H2Dialect.INSTANCE).executionOptions(defaults).build();
     executor.insert(
-        PetTable.petTable,
-        new Pet(21L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
+        PetTable.petTable, new Pet(21L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
     executor.insert(
-        PetTable.petTable,
-        new Pet(22L, "Fifi", new BigDecimal("8.00"), false, null, "ignored"));
-    ExecutionOptions unlimited =
-        ExecutionOptions.builder().maxRows(0).clearQueryTag().build();
+        PetTable.petTable, new Pet(22L, "Fifi", new BigDecimal("8.00"), false, null, "ignored"));
+    ExecutionOptions unlimited = ExecutionOptions.builder().maxRows(0).clearQueryTag().build();
 
     assertEquals(1, executor.selectFrom(PetTable.petTable).fetchList().size());
     assertEquals(
-        2,
-        executor
-            .selectFrom(PetTable.petTable)
-            .withOptions(unlimited)
-            .fetchList()
-            .size());
+        2, executor.selectFrom(PetTable.petTable).withOptions(unlimited).fetchList().size());
 
     executor.inTransaction(
         session -> {
           assertEquals(1, session.selectFrom(PetTable.petTable).fetchList().size());
           assertEquals(
-              2,
-              session
-                  .selectFrom(PetTable.petTable)
-                  .withOptions(unlimited)
-                  .fetchList()
-                  .size());
+              2, session.selectFrom(PetTable.petTable).withOptions(unlimited).fetchList().size());
           return null;
         });
 
@@ -212,12 +196,7 @@ class SkisMutationTransactionTest {
         session -> {
           assertEquals(2, session.selectFrom(PetTable.petTable).fetchList().size());
           assertEquals(
-              1,
-              session
-                  .selectFrom(PetTable.petTable)
-                  .withOptions(oneRow)
-                  .fetchList()
-                  .size());
+              1, session.selectFrom(PetTable.petTable).withOptions(oneRow).fetchList().size());
           return null;
         });
   }
@@ -242,7 +221,9 @@ class SkisMutationTransactionTest {
   private static DataSource database() throws Exception {
     JdbcDataSource dataSource = new JdbcDataSource();
     dataSource.setURL(
-        "jdbc:h2:mem:skis_" + UUID.randomUUID().toString().replace('-', '_') + ";DB_CLOSE_DELAY=-1");
+        "jdbc:h2:mem:skis_"
+            + UUID.randomUUID().toString().replace('-', '_')
+            + ";DB_CLOSE_DELAY=-1");
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
       statement.execute("CREATE SCHEMA \"shelter\"");

@@ -9,7 +9,8 @@ import org.jspecify.annotations.Nullable;
  * cannot be satisfied.
  *
  * <p>The exception is deliberately shared by all query-family failures. The specific reason is the
- * {@link SkisErrorCode}; creating one exception class per validation point would add no capture value.
+ * {@link SkisErrorCode}; creating one exception class per validation point would add no capture
+ * value.
  */
 public final class QueryValidationException extends SkisException {
 

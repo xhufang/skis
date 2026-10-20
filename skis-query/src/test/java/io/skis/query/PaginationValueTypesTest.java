@@ -233,8 +233,7 @@ class PaginationValueTypesTest {
   @Test
   void queryStreamDoesNotSplitAndItsSpliteratorRetainsCursorThreadOwnership() throws Exception {
     CountingJdbcCursor delegate = new CountingJdbcCursor();
-    Stream<String> stream =
-        QueryStreams.open(new DefaultQueryCursor<>(delegate, false)).parallel();
+    Stream<String> stream = QueryStreams.open(new DefaultQueryCursor<>(delegate, false)).parallel();
     AtomicReference<Throwable> failure = new AtomicReference<>();
 
     assertTrue(stream.isParallel());

@@ -75,12 +75,6 @@ public final class Occurrence {
 
   @Override
   public String toString() {
-    return "Occurrence["
-        + blockPath
-        + ' '
-        + clause.displayName()
-        + " item #"
-        + itemOrdinal
-        + ']';
+    return "Occurrence[" + blockPath + ' ' + clause.displayName() + " item #" + itemOrdinal + ']';
   }
 }

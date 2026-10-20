@@ -44,14 +44,11 @@ final class MutationTypeSafetyCompilationTest {
         }
         """;
     String invalidInsertTarget =
-        invalidDerivedTargetSource(
-            "InvalidDerivedInsert", "operations.insert(derived, value)");
+        invalidDerivedTargetSource("InvalidDerivedInsert", "operations.insert(derived, value)");
     String invalidUpdateTarget =
-        invalidDerivedTargetSource(
-            "InvalidDerivedUpdate", "operations.updateById(derived, value)");
+        invalidDerivedTargetSource("InvalidDerivedUpdate", "operations.updateById(derived, value)");
     String invalidDeleteTarget =
-        invalidDerivedTargetSource(
-            "InvalidDerivedDelete", "operations.deleteById(derived, 1L)");
+        invalidDerivedTargetSource("InvalidDerivedDelete", "operations.deleteById(derived, 1L)");
 
     assertTrue(
         compile(

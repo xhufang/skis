@@ -247,7 +247,8 @@ The root is occurrence 0 and joined tables receive dense occurrence ordinals. Al
 table-expression objects, including two aliases of the same entity. ON, WHERE, ordering, visible
 selections, and hidden pagination selections are all validated against this final scope.
 
-`@ReusableProjection` now describes only how to construct one result row. Its generated companion has
+`@ReusableProjection` now describes only how to construct one result row. Its generated companion
+has
 a fixed-arity, typed `of(...)` method:
 
 ```java
@@ -317,7 +318,8 @@ another identifier rule must provide its corresponding normalized collision sema
 introduced.
 
 Ordinary derived FROM/Join relation children use a non-correlated boundary. Their child analysis
-retains a stable path but receives no parent scope, preventing an accidental LATERAL contract. EXISTS, IN,
+retains a stable path but receives no parent scope, preventing an accidental LATERAL contract.
+EXISTS, IN,
 and scalar-subquery AST nodes use this shared machinery and record every child occurrence at its
 exact clause location. The scalar result is conservatively nullable even when the child's selected
 column is non-null. Derived columns resolve by concrete source occurrence plus public output

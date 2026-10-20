@@ -169,8 +169,7 @@ final class GeneratedIndexReader {
     return SkisConfigurationException.of(SkisErrorCode.ASSEMBLY_INDEX_INVALID, detail);
   }
 
-  private static SkisConfigurationException indexFailure(
-      String detail, @Nullable Throwable cause) {
+  private static SkisConfigurationException indexFailure(String detail, @Nullable Throwable cause) {
     return SkisConfigurationException.of(SkisErrorCode.ASSEMBLY_INDEX_INVALID, detail, cause);
   }
 

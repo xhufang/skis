@@ -1,6 +1,7 @@
 package io.skis.dialect.support;
 
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderInput;
@@ -23,6 +24,7 @@ public final class SqlCompiler {
 
   /** Analyzes a raw statement and compiles it for the supplied dialect. */
   public static SqlTemplate compile(StatementAst statement, Dialect dialect) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(dialect, "dialect");
     ResolvedStatement resolved;
@@ -46,6 +48,7 @@ public final class SqlCompiler {
    * the same pipeline. Returning raw AST text as a second compiler path is not supported.
    */
   public static SqlTemplate compile(ResolvedStatement resolved, Dialect dialect) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     Objects.requireNonNull(resolved, "resolved");
     Objects.requireNonNull(dialect, "dialect");
     RenderInput input = RenderInput.prepare(resolved, dialect);

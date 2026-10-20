@@ -199,8 +199,7 @@ class SqlAstStructureTest {
     SelectStatement names = new SelectStatement(List.of(inner.name()), inner);
 
     InSubqueryPredicate<Long> in = new InSubqueryPredicate<>(outer.id(), ids, false);
-    InSubqueryPredicate<String> notIn =
-        new InSubqueryPredicate<>(outer.name(), names, true);
+    InSubqueryPredicate<String> notIn = new InSubqueryPredicate<>(outer.name(), names, true);
 
     assertEquals(Nullability.NON_NULL, in.nullability());
     assertFalse(in.nullable());
@@ -211,8 +210,7 @@ class SqlAstStructureTest {
     assertNotEquals(in, new InSubqueryPredicate<>(inner.id(), ids, false));
 
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new InSubqueryPredicate<>(outer.id(), names, false));
+        IllegalArgumentException.class, () -> new InSubqueryPredicate<>(outer.id(), names, false));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -421,7 +419,8 @@ class SqlAstStructureTest {
                 new SelectStatement(
                     List.of(
                         new CaseExpression<>(
-                            List.of(new CaseWhen<>(table.id().eq(id), other.name())), table.name())),
+                            List.of(new CaseWhen<>(table.id().eq(id), other.name())),
+                            table.name())),
                     table)));
     assertThrows(
         IllegalArgumentException.class,
@@ -486,15 +485,7 @@ class SqlAstStructureTest {
 
     SelectStatement grouped =
         new SelectStatement(
-            false,
-            List.of(table.name()),
-            List.of(),
-            table,
-            null,
-            groupBy,
-            having,
-            List.of(),
-            null);
+            false, List.of(table.name()), List.of(), table, null, groupBy, having, List.of(), null);
     groupBy.add(table.id());
 
     assertEquals(List.of(table.name()), grouped.groupBy());
@@ -694,8 +685,7 @@ class SqlAstStructureTest {
         new SelectStatement(List.of(table.id()), table, table.id().eq(gappedId));
 
     assertThrows(
-        IllegalArgumentException.class,
-        () -> SemanticValidator.validateComplete(gappedSelect));
+        IllegalArgumentException.class, () -> SemanticValidator.validateComplete(gappedSelect));
     assertThrows(
         IllegalArgumentException.class,
         () -> new InsertStatement(table, List.of(table.id()), List.of(gappedId)));

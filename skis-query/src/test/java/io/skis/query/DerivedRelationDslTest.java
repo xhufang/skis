@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -81,15 +82,13 @@ class DerivedRelationDslTest {
     NonNullSelectable<Long> secondId = second.column(id);
     assertSame(firstId, first.column(id));
     assertNotSame(firstId, secondId);
-    SingleColumnSelect<Long> combined =
-        Sql.select(firstId).from(first).crossJoin(second);
+    SingleColumnSelect<Long> combined = Sql.select(firstId).from(first).crossJoin(second);
     CompiledQueryStructure structure = combined.state().structure();
     DerivedRelationSource root =
         assertInstanceOf(DerivedRelationSource.class, structure.fromClause().root());
     DerivedRelationSource joined =
         assertInstanceOf(
-            DerivedRelationSource.class,
-            structure.fromClause().joins().getFirst().right());
+            DerivedRelationSource.class, structure.fromClause().joins().getFirst().right());
     assertSame(first.reference(), root.reference());
     assertSame(second.reference(), joined.reference());
     assertSame(
@@ -98,8 +97,7 @@ class DerivedRelationDslTest {
             .relation());
     SemanticValidator.validateComplete(
         new SelectStatement(structure.selections(), structure.fromClause()));
-    assertNotSame(
-        SelectableSupport.expression(firstId), SelectableSupport.expression(secondId));
+    assertNotSame(SelectableSupport.expression(firstId), SelectableSupport.expression(secondId));
 
     NonNullDerivedOutput<Long> copiedHandle = Sql.output(inner.id(), "pet_id");
     QueryValidationException membershipFailure =
@@ -107,19 +105,16 @@ class DerivedRelationDslTest {
     assertTrue(membershipFailure.getMessage().contains("handle identity"));
 
     assertThrows(
-        QueryValidationException.class,
-        () -> Sql.derived(description, "missing_output", id));
+        QueryValidationException.class, () -> Sql.derived(description, "missing_output", id));
     assertThrows(
-        QueryValidationException.class,
-        () -> Sql.derived(description, "wrong_order", name, id));
+        QueryValidationException.class, () -> Sql.derived(description, "wrong_order", name, id));
     DerivedOutput<String> duplicateAlias = Sql.output(inner.name(), "pet_id");
     assertThrows(
         QueryValidationException.class,
         () -> Sql.derived(description, "duplicate_output", id, duplicateAlias));
     String sensitiveAlias = "secret-invalid-alias;delete";
     QueryValidationException invalidOutputAlias =
-        assertThrows(
-            QueryValidationException.class, () -> Sql.output(inner.id(), sensitiveAlias));
+        assertThrows(QueryValidationException.class, () -> Sql.output(inner.id(), sensitiveAlias));
     assertEquals(SkisErrorCode.QUERY_DERIVED_SHAPE, invalidOutputAlias.code());
     assertTrue(invalidOutputAlias.getCause() instanceof IllegalArgumentException);
     assertFalse(invalidOutputAlias.getMessage().contains(sensitiveAlias));
@@ -145,9 +140,7 @@ class DerivedRelationDslTest {
     PetTable outer = new PetTable().as("outer_pet");
     QueryParameter<Long> shared = Sql.parameter(Long.class, "shared");
     SingleColumnSelect<Long> child =
-        Sql.select(scalarSource.id())
-            .from(scalarSource)
-            .where(scalarSource.id().eq(shared));
+        Sql.select(scalarSource.id()).from(scalarSource).where(scalarSource.id().eq(shared));
     Selectable<Long> selectedScalar = Sql.scalar(child);
     Selectable<Long> rebuiltScalar = Sql.scalar(child);
     DerivedOutput<Long> output = Sql.output(rebuiltScalar, "scalar_id");
@@ -160,9 +153,7 @@ class DerivedRelationDslTest {
 
     QueryParameter<Long> independent = Sql.parameter(Long.class, "shared");
     SingleColumnSelect<Long> independentChild =
-        Sql.select(scalarSource.id())
-            .from(scalarSource)
-            .where(scalarSource.id().eq(independent));
+        Sql.select(scalarSource.id()).from(scalarSource).where(scalarSource.id().eq(independent));
     DerivedOutput<Long> wrong = Sql.output(Sql.scalar(independentChild), "scalar_id");
 
     QueryValidationException failure =
@@ -177,12 +168,8 @@ class DerivedRelationDslTest {
     PetTable root = new PetTable().as("inner_root");
     PetTable optional = new PetTable().as("inner_optional");
     SingleColumnSelect<Long> leftJoined =
-        Sql.select(optional.id())
-            .from(root)
-            .leftJoin(optional)
-            .on(root.id().eq(optional.id()));
-    NonNullDerivedOutput<Long> incorrectlyRequired =
-        Sql.output(optional.id(), "optional_id");
+        Sql.select(optional.id()).from(root).leftJoin(optional).on(root.id().eq(optional.id()));
+    NonNullDerivedOutput<Long> incorrectlyRequired = Sql.output(optional.id(), "optional_id");
 
     QueryValidationException failure =
         assertThrows(
@@ -221,8 +208,7 @@ class DerivedRelationDslTest {
   void rejectsOuterAccessToAnUnpublishedInnerPhysicalColumn() {
     PetTable inner = new PetTable().as("inner_pet");
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "pet_id");
-    DerivedRelation relation =
-        Sql.derived(Sql.select(inner.id()).from(inner), "published_pet", id);
+    DerivedRelation relation = Sql.derived(Sql.select(inner.id()).from(inner), "published_pet", id);
     SingleColumnSelect<String> invalid = Sql.select(inner.name()).from(relation);
     CompiledQueryStructure structure = invalid.state().structure();
 
@@ -238,8 +224,7 @@ class DerivedRelationDslTest {
 
     QueryValidationException compilationFailure =
         assertThrows(
-            QueryValidationException.class,
-            () -> compile(invalid, QueryParameters.empty()));
+            QueryValidationException.class, () -> compile(invalid, QueryParameters.empty()));
     assertTrue(compilationFailure.getMessage().contains("not visible in the final query scope"));
   }
 
@@ -272,10 +257,7 @@ class DerivedRelationDslTest {
     assertEquals(List.of(10L, 50L), (QueryArguments) compilation.argument());
     assertEquals(
         42L,
-        compilation
-            .plan()
-            .rowDecoder()
-            .decode(resultSet(Map.of(1, 42L)), RowReadContext.EMPTY));
+        compilation.plan().rowDecoder().decode(resultSet(Map.of(1, 42L)), RowReadContext.EMPTY));
 
     TableRuntimeScope scope = TableRuntimeScope.resolve(registry(), structure.fromClause());
     ResolvedValueMapping<Long> mapping = ResolvedValueMapping.resolve(derivedId, scope);
@@ -293,8 +275,8 @@ class DerivedRelationDslTest {
     JdbcTypeCodec<Long> customCodec =
         new JdbcTypeCodec<>() {
           @Override
-          public @Nullable Long read(
-              ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
+          public @Nullable Long read(ResultSet resultSet, int index, JdbcReadContext context)
+              throws SQLException {
             codecReads.incrementAndGet();
             return JdbcCodecs.LONG.read(resultSet, index, context);
           }
@@ -332,9 +314,7 @@ class DerivedRelationDslTest {
             GeneratedModelAbi.CURRENT,
             InnerIdView.class,
             "derived-inner-id",
-            List.of(
-                new ProjectionMapping.Parameter(
-                    0, "id", Long.class, Nullability.NON_NULL, 0)),
+            List.of(new ProjectionMapping.Parameter(0, "id", Long.class, Nullability.NON_NULL, 0)),
             readers -> {
               projectionDecoderCreations.incrementAndGet();
               ProjectionMapping.ValueReader<Long> id = readers.reader(0, Long.class);
@@ -345,9 +325,7 @@ class DerivedRelationDslTest {
     NonNullDerivedOutput<Long> firstOutput = Sql.output(inner.id(), "pet_id");
     DerivedRelation first =
         Sql.derived(
-            Sql.select(innerMapping.bind(inner.id())).from(inner),
-            "first_level",
-            firstOutput);
+            Sql.select(innerMapping.bind(inner.id())).from(inner), "first_level", firstOutput);
     NonNullSelectable<Long> firstColumn = first.column(firstOutput);
     SingleColumnSelect<Long> oneLevel = Sql.select(firstColumn).from(first);
     CompiledQueryStructure oneLevelStructure = oneLevel.state().structure();
@@ -369,10 +347,7 @@ class DerivedRelationDslTest {
         compile(twoLevels, QueryParameters.empty(), customRegistry);
     assertEquals(
         42L,
-        compilation
-            .plan()
-            .rowDecoder()
-            .decode(resultSet(Map.of(1, 42L)), RowReadContext.EMPTY));
+        compilation.plan().rowDecoder().decode(resultSet(Map.of(1, 42L)), RowReadContext.EMPTY));
     assertEquals(1, codecReads.get());
     assertEquals(1, entityDecoderCreations.get());
     assertEquals(0, entityDecoderInvocations.get());
@@ -401,17 +376,10 @@ class DerivedRelationDslTest {
     assertSame(JdbcCodecs.LONG, mapping.codec());
     assertEquals(1, mapping.sourceOccurrenceOrdinal());
     QueryCompilation<Long> compilation = compile(nullableDescription, QueryParameters.empty());
-    assertNull(
-        compilation
-            .plan()
-            .rowDecoder()
-            .decode(resultSet(Map.of()), RowReadContext.EMPTY));
+    assertNull(compilation.plan().rowDecoder().decode(resultSet(Map.of()), RowReadContext.EMPTY));
 
     SingleColumnSelect<Long> incorrectlyRequired =
-        Sql.select(derivedValue)
-            .from(outer)
-            .leftJoin(relation)
-            .on(outer.id().eq(derivedValue));
+        Sql.select(derivedValue).from(outer).leftJoin(relation).on(outer.id().eq(derivedValue));
     QueryValidationException failure =
         assertThrows(
             QueryValidationException.class,
@@ -439,7 +407,9 @@ class DerivedRelationDslTest {
             state.distinct(),
             QueryPagination.None.INSTANCE,
             List.of(),
-            structure.arguments(parameters));
+            structure.arguments(parameters),
+            null,
+            StatementPurpose.PRIMARY);
   }
 
   private static EntityRuntimeRegistry registry() {
@@ -540,8 +510,7 @@ class DerivedRelationDslTest {
             DialectFeature.FULL_JOIN,
             DialectFeature.CROSS_JOIN,
             DialectFeature.DERIVED_TABLE);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(this);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

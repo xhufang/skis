@@ -13,6 +13,7 @@ import io.skis.core.ExecutionOptions;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -138,7 +139,9 @@ class EntityPlanSetTest {
     QueryValidationException failure =
         assertThrows(
             QueryValidationException.class,
-            () -> compiler.compileQuery(runtimeModel, TABLE, structure));
+            () ->
+                compiler.compileQuery(
+                    runtimeModel, TABLE, structure, null, StatementPurpose.PRIMARY));
 
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
@@ -175,8 +178,7 @@ class EntityPlanSetTest {
     assertEquals(List.of("Fifi"), (QueryArguments) argument(TABLE, fifi));
     QueryCondition firstComplex = TABLE.name().like("Mi%").and(TABLE.id().between(1L, 9L));
     QueryCondition secondComplex = TABLE.name().like("Mo%").and(TABLE.id().between(2L, 10L));
-    CompiledQueryStructure firstCompiled =
-        QueryTestSupport.compile(TABLE, List.of(), firstComplex);
+    CompiledQueryStructure firstCompiled = QueryTestSupport.compile(TABLE, List.of(), firstComplex);
     CompiledQueryStructure secondCompiled =
         QueryTestSupport.compile(TABLE, List.of(), secondComplex);
     assertEquals(firstCompiled.where(), secondCompiled.where());
@@ -235,8 +237,7 @@ class EntityPlanSetTest {
     EntityPlanSet<Pet> plans = plans();
     QueryCondition oneReference = TABLE.name().eq("Mimi");
     QueryCondition repeated = oneReference.and(oneReference);
-    CompiledQueryStructure compiled =
-        QueryTestSupport.compile(TABLE, List.of(), repeated);
+    CompiledQueryStructure compiled = QueryTestSupport.compile(TABLE, List.of(), repeated);
     CompiledQueryPlan<Pet, Object> plan = selectPlan(plans, TABLE, repeated);
     List<List<Object>> bindings = new ArrayList<>();
     PreparedStatement statement =
@@ -280,14 +281,11 @@ class EntityPlanSetTest {
     assertEquals(1, secondOccurrence.ordinal());
     assertEquals(List.of(parameter, parameter), layout.parameterReferences());
     assertEquals(
-        List.of(9L, 9L),
-        QueryParameters.of(parameter, 9L).valuesFor(layout.parameterReferences()));
+        List.of(9L, 9L), QueryParameters.of(parameter, 9L).valuesFor(layout.parameterReferences()));
     assertThrows(
-        QueryValidationException.class,
-        () -> registerWithWrongJavaType(firstBlock, parameter));
+        QueryValidationException.class, () -> registerWithWrongJavaType(firstBlock, parameter));
     assertThrows(
-        QueryValidationException.class,
-        () -> firstBlock.parameter(OTHER_TABLE.id(), parameter));
+        QueryValidationException.class, () -> firstBlock.parameter(OTHER_TABLE.id(), parameter));
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -320,7 +318,8 @@ class EntityPlanSetTest {
             layout.parameterSlots(),
             parameters,
             null);
-    CompiledQueryPlan<Pet, Object> plan = compiler.compileQuery(runtimeModel, TABLE, structure);
+    CompiledQueryPlan<Pet, Object> plan =
+        compiler.compileQuery(runtimeModel, TABLE, structure, null, StatementPurpose.PRIMARY);
     AtomicReference<List<Object>> binding = new AtomicReference<>();
     PreparedStatement statement =
         (PreparedStatement)
@@ -336,11 +335,7 @@ class EntityPlanSetTest {
 
     int nextIndex =
         plan.parameterBinder()
-            .bind(
-                statement,
-                1,
-                arguments(structure).planArgument(),
-                JdbcWriteContext.EMPTY);
+            .bind(statement, 1, arguments(structure).planArgument(), JdbcWriteContext.EMPTY);
 
     assertEquals(2, nextIndex);
     assertEquals(List.of("setNull", 1, Types.BIGINT), binding.get());

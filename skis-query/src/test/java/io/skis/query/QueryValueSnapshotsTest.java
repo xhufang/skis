@@ -21,8 +21,7 @@ class QueryValueSnapshotsTest {
   private static final PropertyMeta<SnapshotRow, byte[]> BYTES =
       new PropertyMeta<>(0, "bytes", byte[].class, ColumnMeta.of("bytes_value", false));
   private static final PropertyMeta<SnapshotRow, Timestamp> TIMESTAMP =
-      new PropertyMeta<>(
-          1, "timestamp", Timestamp.class, ColumnMeta.of("timestamp_value", false));
+      new PropertyMeta<>(1, "timestamp", Timestamp.class, ColumnMeta.of("timestamp_value", false));
   private static final PropertyMeta<SnapshotRow, Date> DATE =
       new PropertyMeta<>(2, "date", Date.class, ColumnMeta.of("date_value", false));
   private static final PropertyMeta<SnapshotRow, Time> TIME =
@@ -106,8 +105,7 @@ class QueryValueSnapshotsTest {
   private static final class SnapshotTable extends QueryTable<SnapshotRow> {
 
     private final NonNullSelectable<byte[]> bytes = nonNullQueryColumn(BYTES);
-    private final NonNullSelectable<Timestamp> timestamp =
-        nonNullQueryColumn(TIMESTAMP);
+    private final NonNullSelectable<Timestamp> timestamp = nonNullQueryColumn(TIMESTAMP);
     private final NonNullSelectable<Date> date = nonNullQueryColumn(DATE);
     private final NonNullSelectable<Time> time = nonNullQueryColumn(TIME);
 

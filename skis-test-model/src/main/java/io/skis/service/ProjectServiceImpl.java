@@ -63,11 +63,7 @@ public class ProjectServiceImpl implements ProjectService {
 
   @Override
   public Optional<Project> findOneByCode(String code) {
-    return skisExecutor
-        .selectFrom(PROJECT)
-        .where(PROJECT.code().eq(code))
-        .fetchOne()
-        .toOptional();
+    return skisExecutor.selectFrom(PROJECT).where(PROJECT.code().eq(code)).fetchOne().toOptional();
   }
 
   @Override

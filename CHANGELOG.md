@@ -7,110 +7,152 @@
 ### Changed
 
 - 0.2.7 T07 完成受控编译、`DialectLowering` 与最终渲染管线：dialect-api 新增无公开构造的
-  `ResolvedStatement`、`RenderInput`、`Occurrence`、`ExpressionInfo` 和值无关 `ParameterLayout`；完整分析保持内部，
-  方言只通过 occurrence 读取类型/nullability/来源。`RenderInput.prepare` 固定执行能力/自定义校验、方言 lowering、
-  可移植规范化、identity 复用分析或新结构重新分析的后校验、最终布局；`SqlCompiler` 从 `skis-dialect-support`
+  `ResolvedStatement`、`RenderInput`、`Occurrence`、`ExpressionInfo` 和值无关 `ParameterLayout`
+  ；完整分析保持内部，
+  方言只通过 occurrence 读取类型/nullability/来源。`RenderInput.prepare` 固定执行能力/自定义校验、方言
+  lowering、
+  可移植规范化、identity 复用分析或新结构重新分析的后校验、最终布局；`SqlCompiler` 从
+  `skis-dialect-support`
   提供 `StatementAst` 和已有 `ResolvedStatement` 两个入口，返回只含 SQL 与布局的 `SqlTemplate`。
-  删除 `supportsResolvedQueryValidation()`、裸 `StatementAst`/`QueryBlockAnalysis` 配对、`renderValidated` 和标准
-  Renderer 的 ID/规则/能力三元组构造；Renderer 只接受目标绑定的 `RenderInput`，只序列化已接受结构。NULL 排序
+  删除 `supportsResolvedQueryValidation()`、裸 `StatementAst`/`QueryBlockAnalysis` 配对、
+  `renderValidated` 和标准
+  Renderer 的 ID/规则/能力三元组构造；Renderer 只接受目标绑定的 `RenderInput`，只序列化已接受结构。NULL
+  排序
   CASE、可空 DISTINCT count 补偿、DISTINCT 标量子查询选择位置引用和空 IN/NOT IN 规范化已移到布局前结构，
-  最终占位顺序由 lowered AST 决定；合法裁剪/重复/重排从当前参数环境按最终布局绑定，错目标或非法 lowering 在
+  最终占位顺序由 lowered AST 决定；合法裁剪/重复/重排从当前参数环境按最终布局绑定，错目标或非法
+  lowering 在
   JDBC 前失败。query、mutation 和独立 `SqlCompiler` 共用同一阶段入口；support 生产代码不再 import
-  `io.skis.dialect.internal`。ADR-0006/0015/0016、合同明细 §7.2.0/§7.2.1 和任务表已同步；本地 reactor 编译、
+  `io.skis.dialect.internal`。ADR-0006/0015/0016、合同明细 §7.2.0/§7.2.1 和任务表已同步；本地 reactor
+  编译、
   单测与 H2/PostgreSQL golden 通过，新增阶段顺序、identity 后校验、非法 lowering、错方言和最终槽位测试；
   CI 与真实 PostgreSQL 驱动结论仍按 T09/T10 登记。
 - 0.2.7 T06 完成运行时错误码与安全诊断收口：core 新增 `SkisErrorFamily`、`SkisDiagnosticStage`、
   `SkisOperation`、`SkisStatementKind`、84 个显式 `SkisErrorCode`、不可变分组 `SkisDiagnostics`，并把
-  `QueryValidationException` 与 `MutationException` 迁入 core；取消仅 message 的框架异常构造，改为受约束模块工厂与公开 SPI 工厂。
-  JDBC 以 `JdbcPhase` 取代字符串 phase/operation 临时入口，数据库分类只在边界执行一次并固定映射到 SKISX，
+  `QueryValidationException` 与 `MutationException` 迁入 core；取消仅 message 的框架异常构造，改为受约束模块工厂与公开
+  SPI 工厂。
+  JDBC 以 `JdbcPhase` 取代字符串 phase/operation 临时入口，数据库分类只在边界执行一次并固定映射到
+  SKISX，
   Spring 直接消费分类并补充多行到 `IncorrectResultSizeDataAccessException`、乐观锁和资源失败映射；执行失败为主异常、
-  关闭/释放失败进入 suppressed，写入触发的数据库错误不再重复包装。接入查询 DSL/语义、分页/continuation、缓存配置、
-  运行时装配、JDBC 资源、mutation、事务/会话和游标线程边界；默认 message/diagnostics 仅含结构信息，不保存完整 SQL、
-  参数/结果值、AST 或 JDBC 资源，也不调用值对象 `toString()`。完整码表和字段见 `docs/runtime-error-codes.md`，
-  ADR-0014、合同明细 §7.3 和指南 §25 已同步。查询模块单测已运行并据失败修正断言；完整 reactor 构建、CI、独立消费者与真实数据库验证仍待补；
+  关闭/释放失败进入 suppressed，写入触发的数据库错误不再重复包装。接入查询
+  DSL/语义、分页/continuation、缓存配置、
+  运行时装配、JDBC 资源、mutation、事务/会话和游标线程边界；默认 message/diagnostics 仅含结构信息，不保存完整
+  SQL、
+  参数/结果值、AST 或 JDBC 资源，也不调用值对象 `toString()`。完整码表和字段见
+  `docs/runtime-error-codes.md`，
+  ADR-0014、合同明细 §7.3 和指南 §25 已同步。查询模块单测已运行并据失败修正断言；完整 reactor
+  构建、CI、独立消费者与真实数据库验证仍待补；
   `ParameterRedactor` 与全仓日志治理仍归 0.2.8。
 - 0.2.7 T05 完成 API/SPI/internal 与模块边界重排：扩展和生成合同迁入 `.spi`，mapping registry、JDBC
-  计划/执行状态及 mutation 装配迁入 `.internal`；新增并发布 `skis-dialect-support`，PG/H2 直接组合标准 Renderer，
+  计划/执行状态及 mutation 装配迁入 `.internal`；新增并发布 `skis-dialect-support`，PG/H2 直接组合标准
+  Renderer，
   删除旧 core ID 工具并由 test-model 使用局部序列。Reactor、BOM、发布白名单与 Javadoc internal 排除已同步；
   新增只依赖 `skis-dialect-api` 的独立方言消费者，并保留完整 H2 外部消费者验证 Codec/连接装配。普通查询公共类型为
-  30 项，另列两个生成 SPI 和经确认暂留的 `QueryPlanCatalog`/`QueryRuntime` 装配例外；受控编译和过渡渲染入口退出归 T07。
+  30 项，另列两个生成 SPI 和经确认暂留的 `QueryPlanCatalog`/`QueryRuntime` 装配例外；受控编译和过渡渲染入口退出归
+  T07。
   按项目约定未在本地编译运行，待 CI、独立消费者与真实数据库验证。
-- 0.2.7 T04 完成生成式映射与命名收口：以互斥的 `@ReusableProjection`/`@SpecialProjection` 统一生成 `XxxPro`，
+- 0.2.7 T04 完成生成式映射与命名收口：以互斥的 `@ReusableProjection`/`@SpecialProjection` 统一生成
+  `XxxPro`，
   可复用投影使用 `of(...)`，专用投影使用不可变 `all()` 单例；`@PropertyFrom` 生成完整元模型引用并在最终查询块绑定。
-  实体表单例按 `petTable` 规则生成，旧大写字段删除；生成 ABI 提升到 7，投影/来源生成合同迁入 query SPI，增量处理、
+  实体表单例按 `petTable` 规则生成，旧大写字段删除；生成 ABI 提升到 7，投影/来源生成合同迁入 query
+  SPI，增量处理、
   冲突和 nullability 相关 golden/消费者源码同步。按项目约定未在本地编译运行，待 CI 与真实数据库验证。
-- 0.2.7 T03 完成调用入口收口：新增 `Skis.create(DataSource, Dialect)` 与 `Skis.builder(DataSource)`，删除
-  `SkisExecutorFactory`、无参数 builder 及同义 DataSource setter；Builder 保留显式 ConnectionProvider、方言、
+- 0.2.7 T03 完成调用入口收口：新增 `Skis.create(DataSource, Dialect)` 与 `Skis.builder(DataSource)`
+  ，删除
+  `SkisExecutorFactory`、无参数 builder 及同义 DataSource setter；Builder 保留显式
+  ConnectionProvider、方言、
   ClassLoader、运行时注册表、执行选项和有界计划缓存配置，缺少方言时拒绝构建。查询与写入 Fast Path 全部改用
   `QueryTable<E>` 表参数，别名仍解析到规范实体元数据，执行器与 Session 保持一致；执行选项和事务选项入口改为必实现合同，
   不再保留默认抛 `UnsupportedOperationException` 的虚假能力。现有 `Sql` 静态构造职责、当前消费者、示例、合同测试和
-  现存专题文档已同步；根目录 README 收敛为 `Developing...` 占位说明，删除无法准确表达当前能力的 Getting Started，
+  现存专题文档已同步；根目录 README 收敛为 `Developing...` 占位说明，删除无法准确表达当前能力的
+  Getting Started，
   并同步调整相关规范引用。按项目约定未在本地编译运行，待 CI、独立消费者与真实数据库验证。
-- 0.2.7 T02 完成查询 API 收敛：`SelectQuery` 只保留结果泛型，以统一的 `SelectFromStep`/`JoinOnStep` 承接构建阶段；
-  可空与非空查询描述合并，具体列类和 `QueryParameters` 内部化，参数改由不可变 `SelectQuery.bind` 捕获并在 JDBC 前完整校验。
-  单行终止操作统一返回保留“无行/有行且 null/有行且有值”三态的 `SingleRow`；查询流直接返回同线程、不可拆分的 JDK
-  `Stream`，保留游标所有权并删除 `fetch` 同义入口与公共流包装类型。`QueryTable` 不再继承 AST，公开/protected 签名和
+- 0.2.7 T02 完成查询 API 收敛：`SelectQuery` 只保留结果泛型，以统一的 `SelectFromStep`/`JoinOnStep`
+  承接构建阶段；
+  可空与非空查询描述合并，具体列类和 `QueryParameters` 内部化，参数改由不可变 `SelectQuery.bind` 捕获并在
+  JDBC 前完整校验。
+  单行终止操作统一返回保留“无行/有行且 null/有行且有值”三态的 `SingleRow`；查询流直接返回同线程、不可拆分的
+  JDK
+  `Stream`，保留游标所有权并删除 `fetch` 同义入口与公共流包装类型。`QueryTable` 不再继承
+  AST，公开/protected 签名和
   APT 生成 getter 只使用公共查询接口；内部表节点复用、派生关系仅在构造时创建一次内部关系节点，逐行解码和计划命中路径
-  未增加反射、动态查找或包装分配。源码、当前消费者、静态类型契约和文档已同步，按项目约定未在本地编译运行，待 CI 与
+  未增加反射、动态查找或包装分配。源码、当前消费者、静态类型契约和文档已同步，按项目约定未在本地编译运行，待
+  CI 与
   真实数据库验证。
-- 0.2.7 T02 已先取消 `1.0.0` 前的跨版本 API/ABI 兼容门禁：根 POM 删除 japicmp 版本、插件管理、旧工件比较 profile
-  及兼容排除清单，删除仅承担目标分支基线构建、模块删除阻断和差异报告上传的 `API Compatibility` workflow；贡献指南、
+- 0.2.7 T02 已先取消 `1.0.0` 前的跨版本 API/ABI 兼容门禁：根 POM 删除 japicmp 版本、插件管理、旧工件比较
+  profile
+  及兼容排除清单，删除仅承担目标分支基线构建、模块删除阻断和差异报告上传的 `API Compatibility`
+  workflow；贡献指南、
   发布清单改为验证当前版本源码、功能、APT 生成装配、独立消费者与发布边界。远端 `main` 的 required
-  status checks 当前关闭且为空，启用的 `Protect main` ruleset 不包含 required status checks，因此无需远端配置变更。
-- T10 完成文档同步与 0.2.6 内部里程碑收口：T01—T10 全部完成，T07、T08、T09 已分别随 PR #55、#57、#58 通过 CI 并合入 `main`；
+  status checks 当前关闭且为空，启用的 `Protect main` ruleset 不包含 required status
+  checks，因此无需远端配置变更。
+- T10 完成文档同步与 0.2.6 内部里程碑收口：T01—T10 全部完成，T07、T08、T09 已分别随 PR #55、#57、#58 通过
+  CI 并合入 `main`；
   README、开发指南、路线图、任务表、评审报告和 ADR 状态已统一，新增 ADR 索引并复核计划缓存公共 Javadoc。
   架构、正确性、文档与兼容退出标准均已满足。Reactor、全部子模块 parent、示例和独立消费者现已统一切换到
   `0.2.7-SNAPSHOT`，进入 API/SPI 与方言管线收口；T02 已完成，benchmark 开发期冻结守卫继续跨里程碑生效。
 - T09 完成 0.2.6 键、缓存、编译、参数、并发、资源、公共入口、API/生成 ABI 和 ClassLoader 生命周期测试矩阵总复核。
   既有合同已经覆盖相等/隔离、容量/过期/失效、并发 miss/clear、不同值并发、快照和分页追加；本轮进一步为
   `JdbcExecutorTest` 的 prepare、Binder、execute、Decoder 及 cursor 读取/关闭失败补充实际资源关闭事件顺序，确保
-  ResultSet → Statement → Connection 的所有权顺序与 primary/suppressed 顺序同时受约束。没有修改生产 API、生成 ABI
+  ResultSet → Statement → Connection 的所有权顺序与 primary/suppressed 顺序同时受约束。没有修改生产
+  API、生成 ABI
   或缓存实现；CI、真实数据库合同和 API compatibility 已通过（PR #58 已合入 `main`）。本地开发过程未编译运行，
   也未执行 benchmark。
 - T08 将查询参数路径收敛为包内最终槽位载体：`QueryParameters` 在 ADR-0005 捕获边界完成一次快照后直接投影到
   `QueryArguments`，content、ordered、count 各自只携带最终语句保留的值；limit/offset/keyset 使用独立尾段，
   不再复制普通参数整表，null keyset anchor 不占逻辑槽。载体同时保存值无关 `QueryPaginationShape`，
-  `QueryPlanCompiler` 在 resolver 前校验普通段、最终总数及分页 mode/null-marker provenance，拒绝同长度但 marker 位置
+  `QueryPlanCompiler` 在 resolver 前校验普通段、最终总数及分页 mode/null-marker provenance，拒绝同长度但
+  marker 位置
   错配的 keyset 载体；编译器只构造结构布局，不再维护第二份值 List；content/count 最终引用顺序一致时复用基础载体，
   恢复 continuation 时只读取一次防御性 anchor 快照，首次 L0/count 编译也不再重包参数。
   有序 Decoder 新建的 row-local anchor List 直接移交不可变包装，不再为每一行二次复制。
   当前未引入共享或可复用对象缓冲，`ParameterBinder` 文档明确调用期所有权和异常清理要求；删除仅供测试调用的
   `QueryArguments.empty()/values()`，测试改走真实参数投影或只读 List 合同。新增 ADR-0008 独立记录最终载体、分页
-  provenance 与 Binder 所有权；公共参数 API/生成 ABI 未扩大。对应快照、最终槽位、分页顺序、同长度 marker 错配和
-  并发值隔离合同已通过 CI（PR #57 已合入 `main`）；按项目约定未在本地编译运行，也未执行 benchmark 或报告性能数字。
+  provenance 与 Binder 所有权；公共参数 API/生成 ABI 未扩大。对应快照、最终槽位、分页顺序、同长度 marker
+  错配和
+  并发值隔离合同已通过 CI（PR #57 已合入 `main`）；按项目约定未在本地编译运行，也未执行 benchmark
+  或报告性能数字。
 - T07 以不可变 `QueryCompilationContext` 收敛 SELECT/COUNT 编译阶段：同一最终语句只产生一次完整查询块分析，
   resolved 方言能力校验与标准 Renderer 直接消费该结果，H2/PostgreSQL Renderer 委托层同步转发，计划编译不再重复解析。
   PostgreSQL/H2 显式 opt-in；旧第三方
   方言默认继续调用原 `validate(StatementAst)`，不绕过自定义校验，第三方 Renderer 的兼容默认也保留旧行为。
   完整原描述与改写后最终语句仍使用
-  独立 context；runtime scope 仅在来源 occurrence/ordinal 一致时复用映射，并按各自 FROM 保留外连接 nullability。
+  独立 context；runtime scope 仅在来源 occurrence/ordinal 一致时复用映射，并按各自 FROM 保留外连接
+  nullability。
   新增阶段调用计数、直接/resolved SQL golden 与失败诊断对照，以及嵌套、相关、派生、LEFT JOIN 和分页变体合同测试；
-  review 后将 `CountAst` 构造边界收窄为局部不变量校验，完整 COUNT 直接进入 query-block 分析，删除构造时被丢弃的完整分析和
-  分析专用临时 SELECT；补普通/distinct/裁剪嵌套选择/空集合改写 COUNT 的 analysis 同一性交接断言，以及 runtime scope
-  来源身份、ordinal、数量和派生引用不一致时的回退合同。首轮测试反馈进一步修复普通列空集合 membership 未触发二次
+  review 后将 `CountAst` 构造边界收窄为局部不变量校验，完整 COUNT 直接进入 query-block
+  分析，删除构造时被丢弃的完整分析和
+  分析专用临时 SELECT；补普通/distinct/裁剪嵌套选择/空集合改写 COUNT 的 analysis 同一性交接断言，以及
+  runtime scope
+  来源身份、ordinal、数量和派生引用不一致时的回退合同。首轮测试反馈进一步修复普通列空集合 membership
+  未触发二次
   lowering 的缺口，所有空集合 membership 现在都保留原始校验结构并生成独立的最终常量谓词结构。当前裸
   `StatementAst + QueryBlockAnalysis` 公共 SPI 的 provenance
-  决策登记到 0.2.7，不能通过 Renderer 重分析规避。编译阶段、COUNT、runtime scope 和空集合 membership 合同已通过 CI
+  决策登记到 0.2.7，不能通过 Renderer 重分析规避。编译阶段、COUNT、runtime scope 和空集合 membership
+  合同已通过 CI
   （PR #55 已合入 `main`）；按项目约定未在本地编译运行，也未执行 benchmark。
 - T06 已接入普通查询 L0/L1/L2：统一键组装显式返回可缓存键或旁路原因，content/ordered/count、分页、Join、子查询和
   派生表按完整身份共享；命中后使用当前 AST/参数，别名单表与复杂谓词回退进入 L1，实体 Fast Path 槽保持独立。
-  分页 L0 改为每种结果模式的最近计划引用，删除 `synchronized LinkedHashMap`。接线及单元/H2/PostgreSQL 合同测试
+  分页 L0 改为每种结果模式的最近计划引用，删除 `synchronized LinkedHashMap`。接线及单元/H2/PostgreSQL
+  合同测试
   已通过 CI（2026-10-09 用户确认，未提供作业链接）；按项目约定未在本地编译运行。审查后补强不同实体的嵌套依赖失效、
   count 裁剪依赖、同对象分页反序发布、H2 逐终止操作命中统计和生成式投影跨值解码，以及真实 L1 并发解码与
   catalog/ClassLoader 生命周期测试。
 - T05 第二轮复核修复：共享键保留查询块/来源位置与 loader-aware 实体身份的对应关系，隔离同名类型交换来源后的
   ordered reader；活跃编译中的同缓存嵌套 miss 立即失败，clear/实体失效不丢失 owner 记录，嵌套命中仍可用；
-  admission 等待可直接返回已发布计划，不再等待无关 key 的编译名额。相应回归测试已通过 CI（2026-10-08 用户确认）。
+  admission 等待可直接返回已发布计划，不再等待无关 key 的编译名额。相应回归测试已通过 CI（2026-10-08
+  用户确认）。
 - `0.2.5` 已按子查询与派生表的重切范围收口；原步骤 10—18 的未完成项已迁移到明确里程碑，聚合语义归属
   `0.2.9`。Reactor、子模块 parent、独立消费者和示例基线统一进入 `0.2.6-SNAPSHOT`，开始计划缓存与
   编译路径架构内部里程碑；不创建 `0.2.5` tag、Maven Central 发布或 GitHub Release。
 
 ### Removed
 
-- 清理仅测试使用的 `EntityPlanSet` 条件封装、`QueryStructureCompiler` 旧入口、`CompiledQueryStructure` 简化构造器和
+- 清理仅测试使用的 `EntityPlanSet` 条件封装、`QueryStructureCompiler` 旧入口、`CompiledQueryStructure`
+  简化构造器和
   无参参数读取方法，以及无调用的 `EntityPlanSet.entity()`、`ResolvedValueMapping.read/bind`；测试组装移入
   `src/test`，通过真实 `SelectQueryState` 编译路径构造结构。T06 审查后进一步删除
-  `QueryPlanCatalog.sharedPlan/planIdentities/dialectIdentity` 三个已无生产用途的预留入口，catalog 治理及 loader 测试
+  `QueryPlanCatalog.sharedPlan/planIdentities/dialectIdentity` 三个已无生产用途的预留入口，catalog
+  治理及 loader 测试
   改经真实查询接线；身份字段缩为构造器局部变量，公共统计/清理/失效签名不变。
 - 删除 benchmark 框架子模块、runner、源码、脚本、历史结果和执行工作流；`skis-benchmark` 保留为无子模块、
   无依赖、无源码的空 POM。整个 `0.2.x` 开发阶段不实现或执行 benchmark；全部 `0.2.x` 里程碑完成并进入
@@ -120,34 +162,48 @@
 
 - `Dialect` 新增兼容默认的 `capabilityVersion()`、`hasStablePlanCacheIdentity()` 与
   `maxStatementParameters()` 合同；`DialectIdentity` 同时保存完整不可变能力集合和能力集合之外的行为版本，不把
-  32 位派生版本单独当作语义等价依据。PostgreSQL/H2 显式提供稳定计划身份，旧第三方方言默认旁路未来共享 L1；
-  `StatementParameterLimit` 明确区分 unknown、unbounded 和正数 explicit limit，允许 `Integer.MAX_VALUE` 表示已确认的
+  32 位派生版本单独当作语义等价依据。PostgreSQL/H2 显式提供稳定计划身份，旧第三方方言默认旁路未来共享
+  L1；
+  `StatementParameterLimit` 明确区分 unknown、unbounded 和正数 explicit limit，允许
+  `Integer.MAX_VALUE` 表示已确认的
   有限上限但禁止将其用作状态哨兵；PostgreSQL 为当前 PgJDBC 基线声明跨模式保守上限 65535，H2 与未覆写的自定义方言
   保守返回 unknown。
-- 新增 ADR-0007，固定执行器级共享查询计划的结构身份、catalog 所有权、per-key single-flight、有界编译 admission、
+- 新增 ADR-0007，固定执行器级共享查询计划的结构身份、catalog 所有权、per-key single-flight、有界编译
+  admission、
   generation 失效、统计、旁路与 ClassLoader 生命周期合同；新增内部不可变 `QueryPlanKey`，显式隔离完整实体依赖、
   结果 DecoderFactory 合同、content/ordered/count 与分页变体、最终参数 Binder、完整方言身份和未来策略结构签名，
   普通值及执行资源不入键。
-- 结果形状由 `SelectedResult` 权威种类派生；结果和参数 Binder 身份绑定当前 runtime registry，并用不持有 `Class` 的
+- 结果形状由 `SelectedResult` 权威种类派生；结果和参数 Binder 身份绑定当前 runtime registry，并用不持有
+  `Class` 的
   ClassLoader 感知类型令牌隔离同名类型。派生列与标量子查询递归解析原始属性来源；外部元数据或无安全来源返回
-  “无安全身份”，由 T06 统一键组装器显式旁路；L0 与 L1 共用唯一的值无关 `QueryPaginationShape`，避免两套分页身份协议。
+  “无安全身份”，由 T06 统一键组装器显式旁路；L0 与 L1 共用唯一的值无关 `QueryPaginationShape`
+  ，避免两套分页身份协议。
 - 计划缓存容量零固定为关闭共享 L1、保留 L0/L2 且全部 L1 活动计数为零；负数仍拒绝。新增/扩展键与配置合同测试，
   覆盖不同查询对象和不同参数值的等价键、registry 所有权、同名 ClassLoader 隔离、全部计划维度、分页空值形状、
   上下文规范化、防御性复制、预计算 hash 以及 hash 碰撞下的完整 `equals`；T06 接线已通过 CI。
-- `QueryPlanCatalog` 所有的动态计划占位对象已替换为真实有界 L1：同键 miss 使用 per-key single-flight，不同键仍可并行
-  但同时注册的 flight/编译工作受容量 admission 约束；正常完成的 `FlightOutcome` 让 owner/waiter 对普通异常、
-  `CompletionException` 与 `Error` 观察同一失败，失败不缓存且可重试。global/entity generation 防止 clear 或实体失效前
+- `QueryPlanCatalog` 所有的动态计划占位对象已替换为真实有界 L1：同键 miss 使用 per-key
+  single-flight，不同键仍可并行
+  但同时注册的 flight/编译工作受容量 admission 约束；正常完成的 `FlightOutcome` 让 owner/waiter
+  对普通异常、
+  `CompletionException` 与 `Error` 观察同一失败，失败不缓存且可重试。global/entity generation 防止
+  clear 或实体失效前
   启动的编译重新发布旧条目，命中不获取全缓存维护锁；miss 在 owner/waiter 注册后计数。
-- 缓存使用单调访问过期、严格容量发布和累计 hit/miss/eviction/invalidation 统计，零容量完全旁路 L1 活动。容量合同测试
+- 缓存使用单调访问过期、严格容量发布和累计 hit/miss/eviction/invalidation 统计，零容量完全旁路 L1
+  活动。容量合同测试
   在编译阻塞期间直接检查 active compilation 上限，不再只检查结束后的最终 size。
-- 新增值无关 `CachedQueryPlan` 与显式 `QueryPlanDependencies`；共享值只保存不可变 `CompiledQueryPlan`，不保存本次参数、
+- 新增值无关 `CachedQueryPlan` 与显式 `QueryPlanDependencies`；共享值只保存不可变 `CompiledQueryPlan`
+  ，不保存本次参数、
   AST、查询表或 mapping/selection/order 对象图，命中后重新附着当前参数与 AST。依赖从完整查询块分析递归覆盖根、Join、
-  子查询和派生表内部实体，其来源位置与不持有 `Class` 的 loader-aware 值身份一并进入 key，去重规范元数据集合用于精确失效。
+  子查询和派生表内部实体，其来源位置与不持有 `Class` 的 loader-aware 值身份一并进入
+  key，去重规范元数据集合用于精确失效。
 - 投影和有序 Decoder 已拆出只含 Codec、JDBC 下标、稳定参数合同及安全诊断值的 reader；生成式结果身份包含实际
-  DecoderFactory 的 loader-aware 类型与完整投影参数合同，有状态 factory 使用 mapping-instance 令牌隔离同 ID
+  DecoderFactory 的 loader-aware 类型与完整投影参数合同，有状态 factory 使用 mapping-instance 令牌隔离同
+  ID
   异构实现。
-- 确定性测试源码补充同名 ClassLoader 的 JOIN/EXISTS/派生依赖、真实 scalar/ordered/projection 计划并发绑定与解码、
-  调用期 AST/table/mapping/argument 弱引用、clear 后结果 ClassLoader 回收、失败/旧代 waiter 交错及递归编译。卸载结果
+- 确定性测试源码补充同名 ClassLoader 的 JOIN/EXISTS/派生依赖、真实 scalar/ordered/projection
+  计划并发绑定与解码、
+  调用期 AST/table/mapping/argument 弱引用、clear 后结果 ClassLoader 回收、失败/旧代 waiter
+  交错及递归编译。卸载结果
   类型或插件 ClassLoader 前必须先停稳受影响查询再显式清空计划缓存；T05、T06 CI 已通过。
 - 新增 `DerivedOutput<V>`/`NonNullDerivedOutput<V>`、`DerivedRelation` 与派生列 AST；派生关系使用显式唯一输出
   别名和有序强类型形状，可作为根来源或任意 Join 右来源，并保留实体根原有泛型入口。
@@ -166,7 +222,8 @@
   `SingleRow.NoRow`/`Present(null)`、SQLState/vendor code/cause 和资源关闭 suppressed 顺序。
 - 标量切片评审修复：count 在裁剪前校验原查询选择和作用域，并复用查询局部参数对象；空集合 IN/NOT IN
   保留原操作数校验，但从最终语句移除其无用参数并重新布局；排序表达式比较保留独立参数引用身份。
-  Slice 的标量排序在获取 JDBC 资源前明确拒绝，等待后续 continuation 身份支持；普通排序和稳定 offset Page 继续可用。
+  Slice 的标量排序在获取 JDBC 资源前明确拒绝，等待后续 continuation 身份支持；普通排序和稳定 offset
+  Page 继续可用。
 - 修复带参数 scalar 同时用于 DISTINCT 选择和排序时 PostgreSQL 无法匹配排序表达式的问题：排序引用选择项序号，
   复用其最终参数槽并保留原作用域校验；补充员工/部门模型的 PostgreSQL/H2 回归测试，覆盖 NULL、去重、分页与嵌套。
 - 新增独立 `InSubqueryPredicate`，以及不变泛型的
@@ -192,10 +249,12 @@
   `query(description, QueryParameters)` 适配入口；静态描述使用显式 `QueryParameter<V>` 条件，
   缺失或额外绑定在 JDBC 前失败，旧 `select(...).from(...)` 与 `selectFrom(...)` 复用同一内部
   SELECT 状态和计划编译路径。
-- 新增不可变查询块作用域分析：查询块使用由嵌入子句和确定遍历位置组成的稳定结构路径，列解析为“查询块路径 +
-  来源 occurrence + 属性”身份，参数解析为块局部逻辑槽身份；分析同时产出表达式依赖、有效 nullability 和不含
-  参数值/对象地址的解析后结构键。
-- `SemanticValidator.analyzeComplete(...)` 返回顶层 `QueryBlockAnalysis`；同一 SELECT 片段在 SELECT、Join ON、
+-
+新增不可变查询块作用域分析：查询块使用由嵌入子句和确定遍历位置组成的稳定结构路径，列解析为“查询块路径 +
+来源 occurrence + 属性”身份，参数解析为块局部逻辑槽身份；分析同时产出表达式依赖、有效 nullability 和不含
+参数值/对象地址的解析后结构键。
+- `SemanticValidator.analyzeComplete(...)` 返回顶层 `QueryBlockAnalysis`；同一 SELECT 片段在
+  SELECT、Join ON、
   WHERE、GROUP BY、HAVING、ORDER BY 或分页位置嵌入时使用各自的不可变父作用域快照，分析结果不写回 AST。
   ON 快照只包含当时左侧来源与当前右来源，并保留外连接 null 扩展在 ON 校验后生效的顺序。
 - 作用域校验新增跨层重复表实例、未来 Join、兄弟块、未解析顶层外层引用、有害有效限定名遮蔽和普通关系来源
@@ -223,7 +282,8 @@
   继续由集中规则验证，ON 与 WHERE 的普通参数按语句顺序统一分配稠密 ordinal。
 - 新增 `select(QueryTable<R>)` 完整实体选择入口；非空标量和完整实体的 FROM 阶段允许选择目标与根表解耦，
   最终表可见性延迟到完整 Join 建立后的查询编译阶段验证。
-- 新增 `selectNullable(table/nonNullColumn)` 与统一 `NullableSelectQuery<F, R>`；外连接按 Join 顺序传播查询局部
+- 新增 `selectNullable(table/nonNullColumn)` 与统一 `NullableSelectQuery<F, R>`；外连接按 Join
+  顺序传播查询局部
   有效 nullability，nullable entity 通过完整非空主键按列下标区分目标缺失、存在和复合键部分 NULL。
 - 新增查询局部 `TableRuntimeScope`，按稳定 occurrence 解析全部表的规范 RuntimeModel、PropertyRuntime 与
   Codec；ON、WHERE、keyset、limit、offset 共用稠密逻辑参数序号，计划仅保存值无关绑定描述。
@@ -240,7 +300,8 @@
   continuation 结构/参数/类型/ABI 校验。
 - 新增 `QueryCursor` 与 `CloseableQueryStream`，固定 ResultSet → Statement → Connection release 关闭顺序，
   保留读取、关闭和 release 失败的主异常/suppressed 关系，并安全检测和告警未关闭游标。
-- 新增 Page/Slice 与 Cursor/Stream 指南，并扩展 SQL DSL 指南说明 SELECT 排序、分页、隐藏选择和独立 count AST。
+- 新增 Page/Slice 与 Cursor/Stream 指南，并扩展 SQL DSL 指南说明 SELECT 排序、分页、隐藏选择和独立
+  count AST。
 - 新增框架控制的 `Selectable`/`NonNullSelectable` 结果表达式契约，以及查询无关的
   `ProjectionMapping<R>`、查询绑定的 `ProjectionSelection<R>` 和内部统一 `ResolvedResultShape<R>`。
 - 投影 APT 生成固定参数数量和具体 Java 泛型的 `*Projection.of(...)`；结果可按顺序组合任意最终可见表的列，
@@ -288,8 +349,10 @@
 - 比较、空值判断、集合条件和排序入口统一提升到 sealed `Selectable<V>`；`SortSpecification` 改为保存通用
   选择表达式、方向和 null 顺序，不再携带根实体泛型或属性 ordinal。
 - 删除实体泛型化 `QueryPredicate<E>`、专用 `ProjectionSelectFromStep` 及选择目标实体泛型；所有条件统一为
-  `QueryCondition`，实体、标量和生成投影统一经 `SelectFromStep<R>`/`NullableSelectFromStep<R>` 选择独立 FROM 根。
-- japicmp 精确允许清单与 0.2.5 API 差异记录同步登记上述步骤 3 的破坏性替换；未登记的公共 API 不兼容仍会阻断构建。
+  `QueryCondition`，实体、标量和生成投影统一经 `SelectFromStep<R>`/`NullableSelectFromStep<R>` 选择独立
+  FROM 根。
+- japicmp 精确允许清单与 0.2.5 API 差异记录同步登记上述步骤 3 的破坏性替换；未登记的公共 API
+  不兼容仍会阻断构建。
 - `FromClause.root()`、`JoinClause.right()` 与 `TableOccurrence` 的主结构从实体表改为
   `RelationSource`；直接 AST 调用方应通过来源种类区分实体与后续派生来源。SELECT 构造期不再报告需要完整
   查询块上下文的作用域/参数布局错误，这些错误统一延后到完整校验、查询编译或直接 Renderer，仍早于 JDBC。
@@ -302,20 +365,24 @@
   并增加与非空查询一致的显式 Join 链；这是已批准的内部生成/查询 API 迁移。
 - Reactor 进入 `0.2.4-SNAPSHOT`。删除 `EntitySelectQuery`/`ProjectedSelectQuery`，三个查询入口统一返回
   `SelectQuery` 或 nullable 查询接口；这是已批准的内部开发线破坏性调整。
-- `fetchFirst`、offset/page/keyset 限制进入 SELECT AST；Page 固定执行内容与 count，Slice 明确不执行 count。
+- `fetchFirst`、offset/page/keyset 限制进入 SELECT AST；Page 固定执行内容与 count，Slice 明确不执行
+  count。
 - 相同不可变查询的不同 offset/limit/keyset 值复用值无关计划；实际页位置与锚点只进入绑定参数，
   nullable keyset 的 null 形状变化使用独立且有界的本地计划槽。
 - 无排序、无分页、非 distinct 的实体与投影 `fetchOne/fetchList` 继续直接使用原子缓存的 Fast Path 计划。
 - `RowDecoder.decode` 明确返回可空值；JDBC 列表、分页与 cursor 保留 SQL NULL，非空查询门面在结果边界统一校验。
 - `@SkisProjection` 改为只声明结果行构造，不再绑定实体；查询改用
-  `select(ResultTypeProjection.of(...)).from(root)`。删除 `@ProjectionProperty`、实体绑定 `Projection<E,R>`、
+  `select(ResultTypeProjection.of(...)).from(root)`。删除 `@ProjectionProperty`、实体绑定
+  `Projection<E,R>`、
   `selectProjection(table, type)`、投影 Provider/Registry/Loader 和 `META-INF/skis/projections.idx`。
 - 生成模型 ABI 提升为 5；旧生成代码与新 runtime 不兼容，必须使用匹配版本的 processor 重新生成实体和投影源码。
 
-- `EntitySelectQuery` 与 `ProjectedSelectQuery` 新增抽象 `and/or`，`SqlExpression` 新增 SQL 类型/nullability
+- `EntitySelectQuery` 与 `ProjectedSelectQuery` 新增抽象 `and/or`，`SqlExpression` 新增 SQL
+  类型/nullability
   契约，`ParameterSlot` record 结构扩展；这是为 `0.3.0` SQL DSL 批准的破坏性变更，第三方查询/表达式实现及
   依赖 record 结构的代码需要迁移。
-- 单表查询计划从单个等值参数扩展为按谓词遍历顺序绑定多个参数，同时保留无条件查询和单属性等值 Fast Path。
+- 单表查询计划从单个等值参数扩展为按谓词遍历顺序绑定多个参数，同时保留无条件查询和单属性等值 Fast
+  Path。
 
 - `JdbcExecutor` 在参数绑定后、执行前按固定 timeout → fetch size → max rows 顺序应用选项；普通空选项路径不
   创建合并对象、不生成新 SQL，也不调用 JDBC setter。
@@ -333,7 +400,8 @@
   已编译调用方在类型模型迁移中的无关二进制变化。
 - Statement 选项设置失败现在标记为 `statement-configuration` 阶段，并继续保留 Statement close 与
   Connection release 失败的原始 cause/suppressed 顺序；异常消息不包含 SQL、参数或 query tag。
-- `SpringConnectionProvider` 现在把 Spring 事务剩余时限应用到每个 JDBC Statement；与 SKIS timeout 冲突时取
+- `SpringConnectionProvider` 现在把 Spring 事务剩余时限应用到每个 JDBC Statement；与 SKIS timeout
+  冲突时取
   更短限制，显式零不能取消事务期限，已过期事务在 SQL 执行前失败。
 - 查询谓词现在在创建时快照数组及 `java.sql.Date`/`Time`/`Timestamp`，`IN`/`NOT IN` 的每个元素同样处理；
   continuation 对这些可变锚点也执行输入和输出防御性复制。
@@ -343,7 +411,8 @@
   第二行后绕过非唯一结果检查。
 - H2 显式 null placement 改用原生 `NULLS FIRST/LAST`，避免 distinct 查询因 CASE 排名表达式未进入
   SELECT 列表而被数据库拒绝。
-- Query 编译边界将 SQL AST 语义校验失败统一转换为 `QueryValidationException`，并保留原始异常作为 cause。
+- Query 编译边界将 SQL AST 语义校验失败统一转换为 `QueryValidationException`，并保留原始异常作为
+  cause。
 - 修正 H2 `90067` 与 PostgreSQL `57P01`–`57P05` 连接失败分类，并避免把查询取消、锁不可用误报为超时；
   分类器抛出的运行时异常或 `Error` 现在作为 suppressed 保留，不再覆盖原始 `SQLException`。
 

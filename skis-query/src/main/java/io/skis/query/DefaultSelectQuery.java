@@ -3,7 +3,10 @@ package io.skis.query;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.OperationObservation;
 import io.skis.core.spi.ExecutionContext;
+import io.skis.core.spi.ExecutionOperationKind;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcPageResult;
 import io.skis.jdbc.internal.JdbcRow;
@@ -218,52 +221,140 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
 
   @Override
   public SingleRow<R> fetchOne() {
-    if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      return singleRow(
-          operations.fetchNullableOne(fastPlan().plan(), fastArgument(), executionContext));
+    OperationObservation observation =
+        operations.startObservation(ExecutionOperationKind.FETCH_ONE);
+    try {
+      JdbcRow<R> row;
+      if (isFastPathShape(QueryPagination.None.INSTANCE)) {
+        row =
+            operations.fetchNullableOne(
+                fastPlan(observation, StatementPurpose.PRIMARY).plan(),
+                fastArgument(),
+                executionContext,
+                observation,
+                StatementPurpose.PRIMARY);
+      } else {
+        QueryCompilation<R> query =
+            compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
+        row =
+            operations.fetchNullableOne(
+                query.plan(),
+                query.argument(),
+                executionContext,
+                observation,
+                StatementPurpose.PRIMARY);
+      }
+      SingleRow<R> result = singleRow(row);
+      operations.completeSucceeded(observation);
+      return result;
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
     }
-    QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
-    return singleRow(operations.fetchNullableOne(query.plan(), query.argument(), executionContext));
   }
 
   @Override
   public SingleRow<R> fetchFirst() {
-    QueryCompilation<R> query = compilation(new QueryPagination.LimitOnly(1));
-    return singleRow(
-        operations.fetchNullableFirst(query.plan(), query.argument(), executionContext));
+    OperationObservation observation =
+        operations.startObservation(ExecutionOperationKind.FETCH_FIRST);
+    try {
+      QueryCompilation<R> query =
+          compilation(new QueryPagination.LimitOnly(1), observation, StatementPurpose.PRIMARY);
+      SingleRow<R> result =
+          singleRow(
+              operations.fetchNullableFirst(
+                  query.plan(),
+                  query.argument(),
+                  executionContext,
+                  observation,
+                  StatementPurpose.PRIMARY));
+      operations.completeSucceeded(observation);
+      return result;
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
+    }
   }
 
   @Override
   public List<R> fetchList() {
-    List<R> values;
-    if (isFastPathShape(QueryPagination.None.INSTANCE)) {
-      values = operations.fetchList(fastPlan().plan(), fastArgument(), executionContext);
-    } else {
-      QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
-      values = operations.fetchList(query.plan(), query.argument(), executionContext);
+    OperationObservation observation =
+        operations.startObservation(ExecutionOperationKind.FETCH_LIST);
+    try {
+      List<R> values;
+      if (isFastPathShape(QueryPagination.None.INSTANCE)) {
+        values =
+            operations.fetchList(
+                fastPlan(observation, StatementPurpose.PRIMARY).plan(),
+                fastArgument(),
+                executionContext,
+                observation,
+                StatementPurpose.PRIMARY);
+      } else {
+        QueryCompilation<R> query =
+            compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
+        values =
+            operations.fetchList(
+                query.plan(),
+                query.argument(),
+                executionContext,
+                observation,
+                StatementPurpose.PRIMARY);
+      }
+      requireAllowedNulls(values, "non-null query produced a null list item");
+      operations.completeSucceeded(observation);
+      return values;
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
     }
-    requireAllowedNulls(values, "non-null query produced a null list item");
-    return values;
   }
 
   @Override
   public Page<R> fetchPage(PageRequest request) {
-    validatePageRequest(request);
-    return fetchPageResult(request, countCompilation());
+    OperationObservation observation =
+        operations.startObservation(ExecutionOperationKind.FETCH_PAGE);
+    try {
+      validatePageRequest(request);
+      Page<R> result = fetchPageResult(request, countCompilation(observation), observation);
+      operations.completeSucceeded(observation);
+      return result;
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
+    }
   }
 
   @Override
   public Page<R> fetchPage(PageRequest request, CountQuery explicitCountQuery) {
-    validatePageRequest(request);
-    return fetchPageResult(
-        request,
-        requireExplicitCount(Objects.requireNonNull(explicitCountQuery, "explicitCountQuery")));
+    OperationObservation observation =
+        operations.startObservation(ExecutionOperationKind.FETCH_PAGE);
+    try {
+      validatePageRequest(request);
+      Page<R> result =
+          fetchPageResult(
+              request,
+              requireExplicitCount(
+                  Objects.requireNonNull(explicitCountQuery, "explicitCountQuery"), observation),
+              observation);
+      operations.completeSucceeded(observation);
+      return result;
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
+    }
   }
 
-  private Page<R> fetchPageResult(PageRequest request, QueryCompilation<Long> count) {
+  private Page<R> fetchPageResult(
+      PageRequest request,
+      QueryCompilation<Long> count,
+      @Nullable OperationObservation observation) {
     QueryCompilation<R> content =
-        compilation(new QueryPagination.Offset(request.pageSize(), request.offset()));
-    JdbcPageResult<R> result = operations.fetchPage(content, count, executionContext);
+        compilation(
+            new QueryPagination.Offset(request.pageSize(), request.offset()),
+            observation,
+            StatementPurpose.PAGE_CONTENT);
+    JdbcPageResult<R> result = operations.fetchPage(content, count, executionContext, observation);
     requireAllowedNulls(result.items(), "non-null query produced a null page item");
     return Page.of(result.items(), request, result.totalElements());
   }
@@ -276,36 +367,69 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
 
   @Override
   public Slice<R> fetchSlice(SliceRequest request) {
-    Objects.requireNonNull(request, "request");
-    validatePaginationOrder(false);
-    // Every Slice may need a continuation, including its first offset page.
-    for (SortSpecification item : state.orderBy()) {
-      requirePhysicalPaginationColumn(item);
+    OperationObservation observation =
+        operations.startObservation(ExecutionOperationKind.FETCH_SLICE);
+    try {
+      Objects.requireNonNull(request, "request");
+      validatePaginationOrder(false);
+      // Every Slice may need a continuation, including its first offset page.
+      for (SortSpecification item : state.orderBy()) {
+        requirePhysicalPaginationColumn(item);
+      }
+      operations.validateRequestedRows(request.pageSize(), executionContext);
+      Slice<R> result =
+          switch (request.mode()) {
+            case OFFSET -> fetchOffsetSlice(request.offset(), request.pageSize(), observation);
+            case KEYSET_FIRST -> fetchKeysetSlice(null, request.pageSize(), observation);
+            case RESUME -> resumeSlice(request.continuation(), request.pageSize(), observation);
+          };
+      operations.completeSucceeded(observation);
+      return result;
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
     }
-    operations.validateRequestedRows(request.pageSize(), executionContext);
-    return switch (request.mode()) {
-      case OFFSET -> fetchOffsetSlice(request.offset(), request.pageSize());
-      case KEYSET_FIRST -> fetchKeysetSlice(null, request.pageSize());
-      case RESUME -> resumeSlice(request.continuation(), request.pageSize());
-    };
   }
 
   @Override
   public QueryCursor<R> cursor() {
-    QueryCompilation<R> query = compilation(QueryPagination.None.INSTANCE);
-    return operations.cursor(
-        query.plan(), query.argument(), executionContext, state.selected().nullableResult());
+    return openResource(ExecutionOperationKind.CURSOR);
   }
 
   @Override
   public Stream<R> stream() {
-    return QueryStreams.open(cursor());
+    return QueryStreams.open(openResource(ExecutionOperationKind.STREAM));
+  }
+
+  private QueryCursor<R> openResource(ExecutionOperationKind operationKind) {
+    OperationObservation observation = operations.startObservation(operationKind);
+    try {
+      QueryCompilation<R> query =
+          compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
+      return operations.cursor(
+          query.plan(),
+          query.argument(),
+          executionContext,
+          state.selected().nullableResult(),
+          observation,
+          StatementPurpose.PRIMARY);
+    } catch (RuntimeException | Error failure) {
+      operations.completeFailed(observation, failure);
+      throw failure;
+    }
   }
 
   QueryCompilation<R> compilation(QueryPagination pagination) {
+    return compilation(pagination, null, StatementPurpose.PRIMARY);
+  }
+
+  private QueryCompilation<R> compilation(
+      QueryPagination pagination,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     state.validateDistinctOrdering();
     if (isFastPathShape(pagination)) {
-      return unpaginatedCompilation();
+      return unpaginatedCompilation(observation, purpose);
     }
     SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
@@ -320,7 +444,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 finalState.distinct(),
                 pagination,
                 List.of(),
-                statementArguments),
+                statementArguments,
+                observation,
+                purpose),
         statementArguments.planArgument());
   }
 
@@ -328,7 +454,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     return executionContext;
   }
 
-  private QueryCompilation<OrderedRow<R>> orderedCompilation(QueryPagination pagination) {
+  private QueryCompilation<OrderedRow<R>> orderedCompilation(
+      QueryPagination pagination, @Nullable OperationObservation observation) {
     state.validateDistinctOrdering();
     SelectQueryState<R> finalState = state.withSqlPagination(pagination);
     QueryAnalysis queryAnalysis = analysis();
@@ -342,7 +469,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 finalState.orderBy(),
                 finalState.distinct(),
                 pagination,
-                statementArguments),
+                statementArguments,
+                observation,
+                StatementPurpose.PRIMARY),
         statementArguments.planArgument());
   }
 
@@ -361,14 +490,16 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         && !state.distinct();
   }
 
-  private QueryCompilation<R> unpaginatedCompilation() {
+  private QueryCompilation<R> unpaginatedCompilation(
+      @Nullable OperationObservation observation, StatementPurpose purpose) {
     QueryAnalysis queryAnalysis = analysis();
-    CachedPlan<R> cached = fastPlan();
+    CachedPlan<R> cached = fastPlan(observation, purpose);
     return new QueryCompilation<>(
         cached.plan(), queryAnalysis.arguments().planArgument(), cached.ast());
   }
 
-  private CachedPlan<R> fastPlan() {
+  private CachedPlan<R> fastPlan(
+      @Nullable OperationObservation observation, StatementPurpose purpose) {
     CachedPlan<R> existing = fastPlan.get();
     if (existing != null) {
       return existing;
@@ -376,7 +507,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     QueryAnalysis queryAnalysis = analysis();
     EntityPlanSet<?> entityPlans = Objects.requireNonNull(fastPlans, "fast-path entity plans");
     CompiledQueryPlan<R, Object> plan =
-        state.selected().fastPlan(entityPlans, queryAnalysis.structure());
+        state.selected().fastPlan(entityPlans, queryAnalysis.structure(), observation, purpose);
     SelectStatement ast =
         new SelectStatement(
             state.selected().expressions(),
@@ -388,6 +519,10 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   }
 
   QueryCompilation<Long> countCompilation() {
+    return countCompilation(null);
+  }
+
+  QueryCompilation<Long> countCompilation(@Nullable OperationObservation observation) {
     QueryAnalysis queryAnalysis = countAnalysis();
     CompiledQueryStructure countStructure = queryAnalysis.structure();
     QueryArguments countArguments = queryAnalysis.arguments();
@@ -397,7 +532,13 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       return new QueryCompilation<>(existing.plan(), countArgument, existing.ast());
     }
     QueryCompilation<Long> compiled =
-        compiler.compileCount(state.selected(), countStructure, state.distinct(), countArguments);
+        compiler.compileCount(
+            state.selected(),
+            countStructure,
+            state.distinct(),
+            countArguments,
+            observation,
+            StatementPurpose.PAGE_COUNT);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     if (published == null) {
@@ -406,7 +547,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     return new QueryCompilation<>(published.plan(), countArgument, published.ast());
   }
 
-  private QueryCompilation<Long> requireExplicitCount(CountQuery explicitCountQuery) {
+  private QueryCompilation<Long> requireExplicitCount(
+      CountQuery explicitCountQuery, @Nullable OperationObservation observation) {
     if (!(explicitCountQuery instanceof DefaultCountQuery countQuery)) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_COUNT_CONTRACT,
@@ -425,33 +567,43 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
           SkisErrorCode.QUERY_COUNT_CONTRACT,
           "explicit count must use the same execution options as the content query");
     }
-    return countQuery.compilation();
+    return countQuery.compilation(observation);
   }
 
-  private Slice<R> resumeSlice(SliceContinuation continuation, int pageSize) {
+  private Slice<R> resumeSlice(
+      SliceContinuation continuation, int pageSize, @Nullable OperationObservation observation) {
     List<@Nullable Object> keysetValues =
         continuation.mode() == SliceContinuation.Mode.KEYSET
             ? continuation.keysetValues()
             : List.of();
-    validateContinuation(continuation, keysetValues);
+    validateContinuation(continuation, keysetValues, observation);
     return switch (continuation.mode()) {
-      case OFFSET -> fetchOffsetSlice(continuation.nextOffset(), pageSize);
-      case KEYSET -> fetchKeysetSlice(keysetValues, pageSize);
+      case OFFSET -> fetchOffsetSlice(continuation.nextOffset(), pageSize, observation);
+      case KEYSET -> fetchKeysetSlice(keysetValues, pageSize, observation);
     };
   }
 
-  private Slice<R> fetchOffsetSlice(long offset, int pageSize) {
+  private Slice<R> fetchOffsetSlice(
+      long offset, int pageSize, @Nullable OperationObservation observation) {
     int limit = sizePlusOne(pageSize);
-    QueryCompilation<R> query = compilation(new QueryPagination.Offset(limit, offset));
+    QueryCompilation<R> query =
+        compilation(
+            new QueryPagination.Offset(limit, offset), observation, StatementPurpose.PRIMARY);
     List<R> rows =
-        operations.fetchSliceList(query.plan(), query.argument(), executionContext, pageSize);
+        operations.fetchSliceList(
+            query.plan(),
+            query.argument(),
+            executionContext,
+            pageSize,
+            observation,
+            StatementPurpose.PRIMARY);
     boolean hasNext = rows.size() > pageSize;
     List<R> items = visibleRows(rows, pageSize);
     requireAllowedNulls(items, "non-null query produced a null slice item");
     SliceContinuation continuation =
         hasNext
             ? SliceContinuation.offset(
-                queryFingerprint(),
+                queryFingerprint(observation),
                 orderSignature(),
                 nextOffset(offset, pageSize),
                 parameterDigest())
@@ -459,16 +611,25 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     return Slice.of(items, pageSize, continuation);
   }
 
-  private Slice<R> fetchKeysetSlice(@Nullable List<@Nullable Object> anchors, int pageSize) {
+  private Slice<R> fetchKeysetSlice(
+      @Nullable List<@Nullable Object> anchors,
+      int pageSize,
+      @Nullable OperationObservation observation) {
     validatePaginationOrder(true);
     QueryPagination pagination =
         anchors == null
             ? new QueryPagination.LimitOnly(sizePlusOne(pageSize))
             : new QueryPagination.Keyset(sizePlusOne(pageSize), anchors);
-    QueryCompilation<OrderedRow<R>> query = orderedCompilation(pagination);
+    QueryCompilation<OrderedRow<R>> query = orderedCompilation(pagination, observation);
     List<OrderedRow<R>> rows =
         requireNonNullValues(
-            operations.fetchSliceList(query.plan(), query.argument(), executionContext, pageSize));
+            operations.fetchSliceList(
+                query.plan(),
+                query.argument(),
+                executionContext,
+                pageSize,
+                observation,
+                StatementPurpose.PRIMARY));
     boolean hasNext = rows.size() > pageSize;
     List<R> items = new ArrayList<>(Math.min(rows.size(), pageSize));
     for (int index = 0; index < Math.min(rows.size(), pageSize); index++) {
@@ -481,7 +642,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       List<Boolean> nullMarkers = anchor.orderValues().stream().map(Objects::isNull).toList();
       next =
           SliceContinuation.keyset(
-              queryFingerprint(),
+              queryFingerprint(observation),
               orderSignature(),
               state.orderBy().stream().map(item -> item.selectable().sqlType()).toList(),
               nullMarkers,
@@ -612,18 +773,19 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   }
 
   private void validateContinuation(
-      SliceContinuation continuation, List<@Nullable Object> keysetValues) {
+      SliceContinuation continuation,
+      List<@Nullable Object> keysetValues,
+      @Nullable OperationObservation observation) {
     if (continuation.formatVersion() != SliceContinuation.FORMAT_VERSION) {
       throw QueryValidationException.of(
-          SkisErrorCode.QUERY_CONTINUATION_INVALID,
-          "unsupported continuation format version");
+          SkisErrorCode.QUERY_CONTINUATION_INVALID, "unsupported continuation format version");
     }
     if (continuation.generatedAbi() != GeneratedModelAbi.CURRENT) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_CONTINUATION_INVALID,
           "continuation generated-model ABI is incompatible");
     }
-    if (!continuation.queryFingerprint().equals(queryFingerprint())
+    if (!continuation.queryFingerprint().equals(queryFingerprint(observation))
         || !continuation.orderSignature().equals(orderSignature())
         || !continuation.parameterDigest().equals(parameterDigest())) {
       throw QueryValidationException.of(
@@ -654,7 +816,12 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   }
 
   String queryFingerprint() {
-    QueryCompilation<R> structure = compilation(QueryPagination.None.INSTANCE);
+    return queryFingerprint(null);
+  }
+
+  private String queryFingerprint(@Nullable OperationObservation observation) {
+    QueryCompilation<R> structure =
+        compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
     FromClause fromClause = analysis().structure().fromClause();
     MessageDigest digest = sha256();
     updateDigest(digest, "join-query-fingerprint-v1");

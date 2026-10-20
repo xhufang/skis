@@ -109,18 +109,16 @@ class ExecutionOptionsTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            ExecutionOptions.builder()
-                .statementTimeout(Duration.ofSeconds(Integer.MAX_VALUE, 1)));
-    assertThrows(
-        IllegalArgumentException.class, () -> ExecutionOptions.builder().fetchSize(-1));
-    assertThrows(
-        IllegalArgumentException.class, () -> ExecutionOptions.builder().maxRows(-1));
+            ExecutionOptions.builder().statementTimeout(Duration.ofSeconds(Integer.MAX_VALUE, 1)));
+    assertThrows(IllegalArgumentException.class, () -> ExecutionOptions.builder().fetchSize(-1));
+    assertThrows(IllegalArgumentException.class, () -> ExecutionOptions.builder().maxRows(-1));
   }
 
   @Test
   void queryTagsUseASmallInjectionSafeAlphabet() {
     assertEquals("orders/read:batch_1", QueryTag.of("orders/read:batch_1").value());
-    assertEquals(QueryTag.MAX_LENGTH, QueryTag.of("x".repeat(QueryTag.MAX_LENGTH)).value().length());
+    assertEquals(
+        QueryTag.MAX_LENGTH, QueryTag.of("x".repeat(QueryTag.MAX_LENGTH)).value().length());
     assertThrows(IllegalArgumentException.class, () -> QueryTag.of(""));
     assertThrows(IllegalArgumentException.class, () -> QueryTag.of(" leading"));
     assertThrows(IllegalArgumentException.class, () -> QueryTag.of("trailing "));
@@ -128,7 +126,6 @@ class ExecutionOptionsTest {
     assertThrows(IllegalArgumentException.class, () -> QueryTag.of("first; DELETE"));
     assertThrows(IllegalArgumentException.class, () -> QueryTag.of("line\nbreak"));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> QueryTag.of("x".repeat(QueryTag.MAX_LENGTH + 1)));
+        IllegalArgumentException.class, () -> QueryTag.of("x".repeat(QueryTag.MAX_LENGTH + 1)));
   }
 }

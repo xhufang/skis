@@ -94,8 +94,7 @@ class H2JoinDialectTest {
 
     assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, validationFailure.code());
     assertEquals("h2", validationFailure.diagnostics().dialect().dialectId());
-    assertEquals(
-        "FULL_JOIN", validationFailure.diagnostics().dialect().missingCapability());
+    assertEquals("FULL_JOIN", validationFailure.diagnostics().dialect().missingCapability());
     assertEquals(validationFailure.code(), renderingFailure.code());
     assertEquals(
         validationFailure.diagnostics().dialect().missingCapability(),
@@ -120,8 +119,7 @@ class H2JoinDialectTest {
                     owner,
                     LogicalPredicate.and(
                         List.of(root.id().eq(owner.id()), owner.name().eq(onName)))),
-                new JoinClause(
-                    JoinType.INNER, reviewer, owner.id().eq(reviewer.id()))));
+                new JoinClause(JoinType.INNER, reviewer, owner.id().eq(reviewer.id()))));
     SelectStatement statement =
         new SelectStatement(
             true,

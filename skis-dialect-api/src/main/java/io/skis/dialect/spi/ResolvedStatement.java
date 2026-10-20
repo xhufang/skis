@@ -1,5 +1,6 @@
 package io.skis.dialect.spi;
 
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.internal.DialectQueryFeatures;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
@@ -63,6 +64,7 @@ public final class ResolvedStatement {
    * query analysis. Unsupported or incomplete nodes fail before any stage object exists.
    */
   public static ResolvedStatement analyze(StatementAst statement) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     Objects.requireNonNull(statement, "statement");
     return switch (statement) {
       case SelectStatement select ->
@@ -166,10 +168,6 @@ public final class ResolvedStatement {
       return;
     }
     DialectQueryFeatures.validate(dialectId, capabilities, statement, analysis);
-  }
-
-  @Nullable QueryBlockAnalysis analysisOrNull() {
-    return analysis;
   }
 
   /** Relation occurrence exposed as a restricted read-only source view. */

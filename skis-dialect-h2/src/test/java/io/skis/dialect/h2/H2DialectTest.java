@@ -107,8 +107,7 @@ class H2DialectTest {
                 List.of(),
                 pet,
                 null,
-                List.of(
-                    new OrderByItem(pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
+                List.of(new OrderByItem(pet.id(), OrderDirection.DESC, NullOrder.DIALECT_DEFAULT)),
                 new KeysetSeek(pet.id().lt(anchor), keysetLimit)));
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" "
@@ -126,8 +125,7 @@ class H2DialectTest {
             new CountAst(
                 pet,
                 null,
-                new CaseExpression<>(
-                    List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
+                new CaseExpression<>(List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
     assertEquals(
         "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL "
             + "THEN \"pet\".\"pet_name\" END) + CASE WHEN COUNT(*) > "
@@ -200,8 +198,7 @@ class H2DialectTest {
         new SelectStatement(
             List.of(inner.name(), inner.id()),
             inner,
-            LogicalPredicate.and(
-                List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
+            LogicalPredicate.and(List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
     SelectStatement statement =
         new SelectStatement(
             List.of(outer.id()),
@@ -234,8 +231,7 @@ class H2DialectTest {
         new SelectStatement(
             List.of(inner.id()),
             inner,
-            LogicalPredicate.and(
-                List.of(inner.name().eq(outer.name()), inner.id().gt(minimum))));
+            LogicalPredicate.and(List.of(inner.name().eq(outer.name()), inner.id().gt(minimum))));
     SelectStatement statement =
         new SelectStatement(
             List.of(outer.id()),
@@ -269,8 +265,7 @@ class H2DialectTest {
         new SelectStatement(
             List.of(inner.name()),
             inner,
-            LogicalPredicate.and(
-                List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
+            LogicalPredicate.and(List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
     ScalarSubqueryExpression<String> scalar = new ScalarSubqueryExpression<>(child);
     SelectStatement statement =
         new SelectStatement(
@@ -426,8 +421,7 @@ class H2DialectTest {
                     new UpdateAssignment<>(pet.name(), name),
                     new UpdateAssignment<>(
                         pet.version(), new IncrementExpression<>(pet.version()))),
-                LogicalPredicate.and(
-                    List.of(pet.id().eq(id), pet.version().eq(version)))));
+                LogicalPredicate.and(List.of(pet.id().eq(id), pet.version().eq(version)))));
 
     assertEquals(
         "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",

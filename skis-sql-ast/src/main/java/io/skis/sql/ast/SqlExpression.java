@@ -4,8 +4,8 @@ package io.skis.sql.ast;
  * A typed, immutable SQL value expression.
  *
  * <p>This low-level interface is public for AST interoperability, not as an unchecked expression
- * extension SPI. Semantic analysis and rendering fail closed for implementations the framework
- * does not explicitly support.
+ * extension SPI. Semantic analysis and rendering fail closed for implementations the framework does
+ * not explicitly support.
  *
  * @param <T> Java representation of the SQL value
  */

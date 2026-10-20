@@ -66,7 +66,8 @@ class CachedQueryPlanRetentionTest {
 
     assertCollected(fixture.references());
 
-    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
+    assertEquals(
+        new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
         fixture.catalog().projectionPlanCacheStatistics());
     Reference.reachabilityFence(fixture.catalog());
     Reference.reachabilityFence(fixture.cachedPlan());
@@ -106,11 +107,11 @@ class CachedQueryPlanRetentionTest {
     ProjectionMapping<RetentionView> mapping = projectionMapping();
     ProjectionSelection<RetentionView> selection = mapping.bind(table.id(), table.name());
     DefaultSelectQuery<RetentionView> query =
-        (DefaultSelectQuery<RetentionView>) QueryTestSupport.operations(catalog)
-            .select(selection).from(table).where(condition);
-    QueryCompilation<RetentionView> compilation =
-        query.compilation(QueryPagination.None.INSTANCE);
-    references.addAll(List.of(
+        (DefaultSelectQuery<RetentionView>)
+            QueryTestSupport.operations(catalog).select(selection).from(table).where(condition);
+    QueryCompilation<RetentionView> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    references.addAll(
+        List.of(
             tracked("query " + label, query),
             tracked("compilation " + label, compilation),
             tracked("AST", compilation.ast()),
@@ -153,9 +154,7 @@ class CachedQueryPlanRetentionTest {
             GeneratedModelAbi.CURRENT,
             resultType,
             "loader-scoped-retention",
-            List.of(
-                new ProjectionMapping.Parameter(
-                    0, "id", Long.class, Nullability.NON_NULL, 0)),
+            List.of(new ProjectionMapping.Parameter(0, "id", Long.class, Nullability.NON_NULL, 0)),
             ignored -> decoder);
     ProjectionSelection<Object> selection = mapping.bind(KEY_TABLE.id());
     QueryPlanCatalog catalog =
@@ -165,10 +164,11 @@ class CachedQueryPlanRetentionTest {
         (DefaultSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
     DefaultSelectQuery<Object> second =
         (DefaultSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
-    assertSame(first.compilation(QueryPagination.None.INSTANCE).plan(),
+    assertSame(
+        first.compilation(QueryPagination.None.INSTANCE).plan(),
         second.compilation(QueryPagination.None.INSTANCE).plan());
-    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
-        catalog.projectionPlanCacheStatistics());
+    assertEquals(
+        new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4), catalog.projectionPlanCacheStatistics());
     // Only catalog and weak references leave this method: no query L0 survives the clear barrier.
     List<TrackedReference> references =
         List.of(
@@ -194,8 +194,7 @@ class CachedQueryPlanRetentionTest {
           ProjectionMapping.ValueReader<Long> id = readers.reader(0, Long.class);
           ProjectionMapping.ValueReader<String> name = readers.reader(1, String.class);
           return (resultSet, context) ->
-              new RetentionView(
-                  id.read(resultSet, context), name.read(resultSet, context));
+              new RetentionView(id.read(resultSet, context), name.read(resultSet, context));
         });
   }
 
@@ -252,7 +251,8 @@ class CachedQueryPlanRetentionTest {
   }
 
   private record InvocationFixture(
-      QueryPlanCatalog catalog, CachedQueryPlan<RetentionView> cachedPlan,
+      QueryPlanCatalog catalog,
+      CachedQueryPlan<RetentionView> cachedPlan,
       List<TrackedReference> references) {}
 
   private record LoaderFixture(QueryPlanCatalog catalog, List<TrackedReference> references) {
@@ -275,6 +275,7 @@ class CachedQueryPlanRetentionTest {
 
     @SuppressWarnings("unused")
     private final Object marker;
+
     private final NonNullSelectable<Long> id = nonNullQueryColumn(ID);
     private final NonNullSelectable<String> name = nonNullQueryColumn(NAME);
 
@@ -295,6 +296,7 @@ class CachedQueryPlanRetentionTest {
     private NonNullSelectable<String> name() {
       return name;
     }
+
     public RetentionTable as(String alias) {
       return new RetentionTable(marker, alias);
     }
@@ -316,8 +318,7 @@ class CachedQueryPlanRetentionTest {
 
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(this);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

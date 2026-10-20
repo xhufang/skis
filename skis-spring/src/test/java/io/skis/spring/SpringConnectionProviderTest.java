@@ -207,8 +207,7 @@ class SpringConnectionProviderTest {
     SpringConnectionProvider failingProvider = new SpringConnectionProvider(failingDataSource);
 
     SQLException acquired =
-        assertThrows(
-            SQLException.class, () -> failingProvider.acquire(ExecutionContext.EMPTY));
+        assertThrows(SQLException.class, () -> failingProvider.acquire(ExecutionContext.EMPTY));
     assertSame(acquireFailure, acquired);
 
     SQLException releaseFailure = new SQLException("release failed", "08006", 18);
@@ -257,8 +256,7 @@ class SpringConnectionProviderTest {
             + ";DB_CLOSE_DELAY=-1");
     try (Connection connection = dataSource.getConnection();
         Statement statement = connection.createStatement()) {
-      statement.execute(
-          "CREATE TABLE pet (id BIGINT PRIMARY KEY, pet_name VARCHAR(200) NOT NULL)");
+      statement.execute("CREATE TABLE pet (id BIGINT PRIMARY KEY, pet_name VARCHAR(200) NOT NULL)");
     }
     return dataSource;
   }

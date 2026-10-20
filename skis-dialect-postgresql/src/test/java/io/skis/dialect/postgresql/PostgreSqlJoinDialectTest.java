@@ -90,8 +90,7 @@ class PostgreSqlJoinDialectTest {
                     owner,
                     LogicalPredicate.and(
                         List.of(root.id().eq(owner.id()), owner.name().eq(onName)))),
-                new JoinClause(
-                    JoinType.INNER, reviewer, owner.id().eq(reviewer.id()))));
+                new JoinClause(JoinType.INNER, reviewer, owner.id().eq(reviewer.id()))));
     SelectStatement statement =
         new SelectStatement(
             true,

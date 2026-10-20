@@ -56,8 +56,7 @@ class SupportedSpiConsumerTest {
     PetAstTable pet = PetAstTable.PET;
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
     SqlTemplate template =
-        SqlCompiler.compile(
-            new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id)), dialect);
+        SqlCompiler.compile(new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id)), dialect);
     assertEquals("SELECT \"pet\".\"id\" FROM \"pet\" WHERE \"pet\".\"id\" = ?", template.sql());
     assertEquals(List.of(id), template.parameterLayout().slots());
     SqlRenderException unsupported =
@@ -66,8 +65,7 @@ class SupportedSpiConsumerTest {
             () -> SqlCompiler.compile(new CountAst(pet, null, pet.id()), dialect));
     assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, unsupported.code());
     assertEquals("external", unsupported.diagnostics().dialect().dialectId());
-    assertEquals(
-        "COUNT_DISTINCT", unsupported.diagnostics().dialect().missingCapability());
+    assertEquals("COUNT_DISTINCT", unsupported.diagnostics().dialect().missingCapability());
 
     SqlRenderException constructed =
         SqlRenderException.of(
@@ -127,10 +125,7 @@ class SupportedSpiConsumerTest {
 
     @Override
     public void bind(
-        PreparedStatement statement,
-        int index,
-        @Nullable String value,
-        JdbcWriteContext context)
+        PreparedStatement statement, int index, @Nullable String value, JdbcWriteContext context)
         throws SQLException {
       statement.setString(index, value);
     }

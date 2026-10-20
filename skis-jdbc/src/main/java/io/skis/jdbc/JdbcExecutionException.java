@@ -34,8 +34,7 @@ public final class JdbcExecutionException extends SkisPersistenceException {
         cause);
   }
 
-  static JdbcExecutionException create(
-      JdbcFailureDiagnostics diagnostics, SQLException cause) {
+  static JdbcExecutionException create(JdbcFailureDiagnostics diagnostics, SQLException cause) {
     return new JdbcExecutionException(diagnostics, cause);
   }
 }

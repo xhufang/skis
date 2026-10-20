@@ -51,12 +51,7 @@ public final class PetService {
 
   /** Add a predicate to a scalar projection and require at most one matching row. */
   public Optional<String> findNameById(long id) {
-    return skisExecutor
-        .select(PET.name())
-        .from(PET)
-        .where(PET.id().eq(id))
-        .fetchOne()
-        .toOptional();
+    return skisExecutor.select(PET.name()).from(PET).where(PET.id().eq(id)).fetchOne().toOptional();
   }
 
   /** Map several selected columns to a user-owned record through generated projection metadata. */
@@ -86,9 +81,7 @@ public final class PetService {
     return skisExecutor.selectFrom(pet).where(pet.name().eq(name)).fetchList();
   }
 
-  /**
-   * Bind the generated result shape to the same aliased table expression used by the predicate.
-   */
+  /** Bind the generated result shape to the same aliased table expression used by the predicate. */
   public List<PetSummary> findSummariesByNameUsingAlias(String name) {
     PetTable pet = PET.as("p");
     return skisExecutor
@@ -179,9 +172,7 @@ public final class PetService {
             session.insert(PET, pet);
           }
           List<Pet> stored =
-              values.stream()
-                  .map(pet -> session.findById(PET, pet.id()).orElseThrow())
-                  .toList();
+              values.stream().map(pet -> session.findById(PET, pet.id()).orElseThrow()).toList();
           session.afterCommit(afterCommit);
           return stored;
         });

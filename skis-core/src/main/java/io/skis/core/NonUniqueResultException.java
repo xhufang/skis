@@ -7,8 +7,8 @@ import org.jspecify.annotations.Nullable;
 /**
  * Reports that an operation requiring at most one row observed more than one.
  *
- * <p>The diagnostic records only the observed lower bound of two rows. It never claims a precise total
- * row count when the remaining result set has not been consumed.
+ * <p>The diagnostic records only the observed lower bound of two rows. It never claims a precise
+ * total row count when the remaining result set has not been consumed.
  */
 public final class NonUniqueResultException extends SkisException {
 
@@ -18,11 +18,7 @@ public final class NonUniqueResultException extends SkisException {
   @Serial private static final long serialVersionUID = 1L;
 
   private NonUniqueResultException(SkisDiagnostics diagnostics, @Nullable Throwable cause) {
-    super(
-        SkisErrorCode.QUERY_MULTIPLE_ROWS,
-        diagnostics,
-        cause,
-        SkisErrorFamily.QUERY);
+    super(SkisErrorCode.QUERY_MULTIPLE_ROWS, diagnostics, cause, SkisErrorFamily.QUERY);
   }
 
   /** Creates a non-unique-result failure with a safe structural detail. */

@@ -306,8 +306,7 @@ class MutationExecutionDiagnosticsTest {
 
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(this);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

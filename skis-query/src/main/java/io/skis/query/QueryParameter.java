@@ -29,8 +29,7 @@ public final class QueryParameter<V> {
     }
     if (diagnosticName != null && diagnosticName.isBlank()) {
       throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PARAMETER_VALUE,
-          "query parameter diagnostic name must not be blank");
+          SkisErrorCode.QUERY_PARAMETER_VALUE, "query parameter diagnostic name must not be blank");
     }
     this.diagnosticName = diagnosticName;
   }

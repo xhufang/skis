@@ -105,8 +105,7 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
     assertEquals(2, ownerIds.stream().filter(id -> Long.valueOf(ownerAdaId).equals(id)).count());
     assertEquals(1, ownerIds.stream().filter(id -> Long.valueOf(ownerGraceId).equals(id)).count());
     assertEquals(
-        1,
-        ownerIds.stream().filter(id -> Long.valueOf(ownerWithoutPetId).equals(id)).count());
+        1, ownerIds.stream().filter(id -> Long.valueOf(ownerWithoutPetId).equals(id)).count());
   }
 
   private static String environmentOrDefault(String name, String defaultValue) {
@@ -186,8 +185,7 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> T proxy(
-        Class<T> type, T delegate, ThrowingInvocation invocation) {
+    private static <T> T proxy(Class<T> type, T delegate, ThrowingInvocation invocation) {
       return (T)
           Proxy.newProxyInstance(
               type.getClassLoader(),

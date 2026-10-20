@@ -87,10 +87,7 @@ record ResolvedValueMapping<V>(
       if (value == null && requireNonNull) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_NON_NULL_RESULT,
-            "required selection '"
-                + selectionSummary
-                + "' is null at JDBC index "
-                + resultIndex);
+            "required selection '" + selectionSummary + "' is null at JDBC index " + resultIndex);
       }
       return value;
     };

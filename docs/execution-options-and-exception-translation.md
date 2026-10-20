@@ -166,18 +166,18 @@ PersistenceExceptionTranslator skisExceptionTranslator() {
 The JDBC boundary performs the only SQLState/vendor-code classification and records it in the SKIS
 exception. The Spring adapter consumes that result and never parses a message or reclassifies:
 
-| SKIS database category / code | Spring exception |
-| --- | --- |
-| duplicate key (`DB_DUPLICATE_KEY`) | `DuplicateKeyException` |
-| foreign key / other constraint (`DB_FOREIGN_KEY_VIOLATION`, `DB_CONSTRAINT_VIOLATION`) | `DataIntegrityViolationException` |
-| timeout (`DB_TIMEOUT`) | `QueryTimeoutException` |
-| query canceled (`DB_QUERY_CANCELED`) | `UncategorizedDataAccessException` |
-| lock not available (`DB_LOCK_NOT_AVAILABLE`) | `CannotAcquireLockException` |
-| connection failure (`DB_CONNECTION_FAILURE`, `JDBC_CONNECTION_ACQUIRE_FAILED`) | `DataAccessResourceFailureException` |
-| deadlock / serialization failure (`DB_DEADLOCK`, `DB_SERIALIZATION_FAILURE`) | `ConcurrencyFailureException` |
-| unknown (`DB_UNCATEGORIZED`) | `UncategorizedDataAccessException` |
-| optimistic version conflict (`MUTATION_OPTIMISTIC_LOCK_CONFLICT`) | `OptimisticLockingFailureException` |
-| more than one row (`QUERY_MULTIPLE_ROWS`) | `IncorrectResultSizeDataAccessException` (expected 1, observed 2) |
+| SKIS database category / code                                                          | Spring exception                                                  |
+|----------------------------------------------------------------------------------------|-------------------------------------------------------------------|
+| duplicate key (`DB_DUPLICATE_KEY`)                                                     | `DuplicateKeyException`                                           |
+| foreign key / other constraint (`DB_FOREIGN_KEY_VIOLATION`, `DB_CONSTRAINT_VIOLATION`) | `DataIntegrityViolationException`                                 |
+| timeout (`DB_TIMEOUT`)                                                                 | `QueryTimeoutException`                                           |
+| query canceled (`DB_QUERY_CANCELED`)                                                   | `UncategorizedDataAccessException`                                |
+| lock not available (`DB_LOCK_NOT_AVAILABLE`)                                           | `CannotAcquireLockException`                                      |
+| connection failure (`DB_CONNECTION_FAILURE`, `JDBC_CONNECTION_ACQUIRE_FAILED`)         | `DataAccessResourceFailureException`                              |
+| deadlock / serialization failure (`DB_DEADLOCK`, `DB_SERIALIZATION_FAILURE`)           | `ConcurrencyFailureException`                                     |
+| unknown (`DB_UNCATEGORIZED`)                                                           | `UncategorizedDataAccessException`                                |
+| optimistic version conflict (`MUTATION_OPTIMISTIC_LOCK_CONFLICT`)                      | `OptimisticLockingFailureException`                               |
+| more than one row (`QUERY_MULTIPLE_ROWS`)                                              | `IncorrectResultSizeDataAccessException` (expected 1, observed 2) |
 
 Query cancellation maps conservatively to `UncategorizedDataAccessException`: H2 and some drivers
 reuse the cancellation state when the database enforces a timeout, so the state alone cannot prove
@@ -192,6 +192,7 @@ tags. Execution failure is primary; later resource close/release failures are ad
 Only a release failure without a previous primary failure becomes the primary exception; an existing
 SKIS exception is never wrapped again.
 
-`SkisExceptionTranslator` returns `null` for unrelated runtime exceptions and for SKIS configuration,
+`SkisExceptionTranslator` returns `null` for unrelated runtime exceptions and for SKIS
+configuration,
 query-semantic, dialect and non-optimistic mutation failures, allowing a Spring translator chain to
 continue.

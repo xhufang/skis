@@ -3,6 +3,8 @@ package io.skis.runtime;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
+import io.skis.core.spi.ExecutionListener;
 import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.DataSourceConnectionProvider;
 import io.skis.jdbc.internal.JdbcExecutor;
@@ -18,7 +20,9 @@ import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCatalog;
 import io.skis.query.QueryRuntime;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
@@ -49,6 +53,7 @@ public final class Skis {
     private int planCacheMaximumSize = QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE;
     private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
     private ExecutionOptions executionOptions = ExecutionOptions.NONE;
+    private @Nullable List<ExecutionListener> listeners;
 
     private Builder(ConnectionProvider connectionProvider) {
       this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
@@ -97,6 +102,16 @@ public final class Skis {
       return this;
     }
 
+    /** Appends one synchronous read-only execution listener in registration order. */
+    public Builder listener(ExecutionListener listener) {
+      ExecutionListener required = Objects.requireNonNull(listener, "listener");
+      if (listeners == null) {
+        listeners = new ArrayList<>();
+      }
+      listeners.add(required);
+      return this;
+    }
+
     /**
      * Configures the maximum number of shared dynamic plans retained by the catalog-owned L1 and
      * the admission bound for concurrent distinct-key plan compilations.
@@ -106,8 +121,7 @@ public final class Skis {
     public Builder planCacheMaximumSize(int maximumSize) {
       if (maximumSize < 0) {
         throw SkisConfigurationException.of(
-            SkisErrorCode.CACHE_CONFIGURATION_INVALID,
-            "planCacheMaximumSize must not be negative");
+            SkisErrorCode.CACHE_CONFIGURATION_INVALID, "planCacheMaximumSize must not be negative");
       }
       this.planCacheMaximumSize = maximumSize;
       return this;
@@ -127,6 +141,7 @@ public final class Skis {
 
     /** Loads any unspecified generated registries and creates the thread-safe executor. */
     public SkisExecutor build() {
+      ExecutionListenerDispatcher.rejectReentrantCall();
       Dialect selectedDialect = dialect;
       if (selectedDialect == null) {
         throw SkisConfigurationException.of(
@@ -143,11 +158,19 @@ public final class Skis {
               RowReadContext.EMPTY,
               executionOptions,
               selectedDialect.exceptionClassifier());
+      ExecutionListenerDispatcher listenerDispatcher =
+          listeners == null
+              ? ExecutionListenerDispatcher.NONE
+              : ExecutionListenerDispatcher.of(listeners);
       QueryPlanCatalog queryPlans =
           QueryRuntime.compile(
-              selectedRegistry, selectedDialect, planCacheMaximumSize, planCacheExpireAfterAccess);
+              selectedRegistry,
+              selectedDialect,
+              planCacheMaximumSize,
+              planCacheExpireAfterAccess,
+              listenerDispatcher);
       MutationPlanCatalog mutationPlans =
-          MutationRuntime.compile(selectedRegistry, selectedDialect);
+          MutationRuntime.compile(selectedRegistry, selectedDialect, listenerDispatcher);
       QueryOperations queries = queryPlans.bind(jdbcExecutor);
       MutationOperations mutations = mutationPlans.bind(jdbcExecutor);
       return new DefaultSkisExecutor(queries, mutations, jdbcExecutor, queryPlans, mutationPlans);

@@ -108,11 +108,7 @@ class SkisEmployeeDepartmentScalarContractTest {
               .where(employee.id().ge(minimumEmployeeId))
               .distinct()
               .orderBy(departmentId.asc().nullsLast());
-      var query =
-          executor
-              .query(description)
-              .bind(pattern, "%部")
-              .bind(minimumEmployeeId, 1L);
+      var query = executor.query(description).bind(pattern, "%部").bind(minimumEmployeeId, 1L);
 
       // Two employees share department 10; the unmatched department 30 becomes one SQL NULL.
       assertEquals(Arrays.asList(10L, 20L, null), query.fetchList());
@@ -151,19 +147,11 @@ class SkisEmployeeDepartmentScalarContractTest {
               .orderBy(outerDepartment.id().asc());
       assertEquals(
           List.of(10L, 20L),
-          executor
-              .query(nested)
-              .bind(pattern, "%部")
-              .bind(minimumEmployeeId, 1L)
-              .fetchList());
+          executor.query(nested).bind(pattern, "%部").bind(minimumEmployeeId, 1L).fetchList());
 
       assertEquals(
           Arrays.asList(10L, null),
-          executor
-              .query(description)
-              .bind(pattern, "研发%")
-              .bind(minimumEmployeeId, 1L)
-              .fetchList());
+          executor.query(description).bind(pattern, "研发%").bind(minimumEmployeeId, 1L).fetchList());
     }
   }
 

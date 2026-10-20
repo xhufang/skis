@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -105,7 +106,9 @@ class QueryPaginationCompilationTest {
                         false,
                         pagination,
                         List.of(),
-                        QueryTestSupport.arguments(structure)));
+                        QueryTestSupport.arguments(structure),
+                        null,
+                        StatementPurpose.PRIMARY));
 
     assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, failure.code());
     assertEquals(
@@ -129,7 +132,9 @@ class QueryPaginationCompilationTest {
                         false,
                         pagination,
                         List.of(),
-                        wrongSegments));
+                        wrongSegments,
+                        null,
+                        StatementPurpose.PRIMARY));
     assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, segmentFailure.code());
     assertEquals(
         "final statement ordinary parameter value count must be 1 but was 0",
@@ -140,8 +145,7 @@ class QueryPaginationCompilationTest {
   void rejectsKeysetArgumentsWithDifferentNullMarkerPositions() {
     CompilerFixture fixture = compilerFixture();
     CompiledQueryStructure structure = QueryTestSupport.compile(TABLE, List.of(), null);
-    QueryPagination pagination =
-        new QueryPagination.Keyset(20, Arrays.asList(null, "tail"));
+    QueryPagination pagination = new QueryPagination.Keyset(20, Arrays.asList(null, "tail"));
     QueryArguments wrongShape =
         QueryParameters.empty()
             .valuesFor(List.of())
@@ -156,13 +160,13 @@ class QueryPaginationCompilationTest {
                     .compileSelection(
                         SelectedResult.entity(TABLE),
                         structure,
-                        List.of(
-                            TABLE.nickname().asc().nullsFirst(),
-                            TABLE.name().asc()),
+                        List.of(TABLE.nickname().asc().nullsFirst(), TABLE.name().asc()),
                         false,
                         pagination,
                         List.of(),
-                        wrongShape));
+                        wrongShape,
+                        null,
+                        StatementPurpose.PRIMARY));
 
     assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, failure.code());
     assertEquals(
@@ -211,7 +215,9 @@ class QueryPaginationCompilationTest {
                 List.of(TABLE.nickname().asc().nullsFirst(), TABLE.id().asc()),
                 false,
                 pagination,
-                QueryTestSupport.arguments(structure).withPagination(pagination));
+                QueryTestSupport.arguments(structure).withPagination(pagination),
+                null,
+                StatementPurpose.PRIMARY);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"nickname\" AS \"__skis_order_0\" "
@@ -233,12 +239,7 @@ class QueryPaginationCompilationTest {
     QueryPlanCompiler compiler = fixture.compiler();
     QueryCompilation<Long> count =
         compileCount(
-            compiler,
-            TABLE,
-            SelectedResult.requiredScalar(TABLE.name()),
-            List.of(),
-            null,
-            true);
+            compiler, TABLE, SelectedResult.requiredScalar(TABLE.name()), List.of(), null, true);
 
     assertEquals(
         "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"", count.plan().sql());
@@ -370,8 +371,7 @@ class QueryPaginationCompilationTest {
     QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
     QueryCompilation<Pet> repeated = query.compilation(QueryPagination.None.INSTANCE);
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet> unfiltered =
-        (DefaultSelectQuery<Pet>) operations.selectFrom(TABLE);
+    DefaultSelectQuery<Pet> unfiltered = (DefaultSelectQuery<Pet>) operations.selectFrom(TABLE);
     QueryCompilation<Pet> unfilteredCompilation =
         unfiltered.compilation(QueryPagination.None.INSTANCE);
 
@@ -381,7 +381,8 @@ class QueryPaginationCompilationTest {
     assertSame(compilation.ast(), repeated.ast());
     assertSame(compilation.argument(), repeated.argument());
     assertSame(
-        unfilteredCompilation.plan(), QueryTestSupport.selectPlan(catalog.require(PET), TABLE, null));
+        unfilteredCompilation.plan(),
+        QueryTestSupport.selectPlan(catalog.require(PET), TABLE, null));
     assertTrue(((SelectStatement) compilation.ast()).joins().isEmpty());
     assertTrue(((SelectStatement) unfilteredCompilation.ast()).joins().isEmpty());
   }
@@ -398,7 +399,13 @@ class QueryPaginationCompilationTest {
       @Nullable QueryCondition condition,
       boolean distinct) {
     CompiledQueryStructure structure = QueryTestSupport.compile(selected, root, joins, condition);
-    return compiler.compileCount(selected, structure, distinct, QueryTestSupport.arguments(structure));
+    return compiler.compileCount(
+        selected,
+        structure,
+        distinct,
+        QueryTestSupport.arguments(structure),
+        null,
+        StatementPurpose.PAGE_COUNT);
   }
 
   private static QueryCompilation<Pet> compileEntity(
@@ -407,8 +414,7 @@ class QueryPaginationCompilationTest {
       List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination) {
-    CompiledQueryStructure structure =
-        QueryTestSupport.compile(TABLE, List.of(), predicate);
+    CompiledQueryStructure structure = QueryTestSupport.compile(TABLE, List.of(), predicate);
     return fixture
         .compiler()
         .compileSelection(
@@ -418,7 +424,9 @@ class QueryPaginationCompilationTest {
             distinct,
             pagination,
             List.of(),
-            QueryTestSupport.arguments(structure).withPagination(pagination));
+            QueryTestSupport.arguments(structure).withPagination(pagination),
+            null,
+            StatementPurpose.PRIMARY);
   }
 
   private static CompilerFixture compilerFixture() {
@@ -504,8 +512,7 @@ class QueryPaginationCompilationTest {
             DialectFeature.PARAMETERIZED_OFFSET,
             DialectFeature.NULLS_FIRST_LAST,
             DialectFeature.COUNT_DISTINCT);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(this);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

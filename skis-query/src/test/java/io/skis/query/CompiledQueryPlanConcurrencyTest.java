@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -79,14 +80,14 @@ class CompiledQueryPlanConcurrencyTest {
                 false,
                 QueryPagination.None.INSTANCE,
                 List.of(),
-                QueryTestSupport.arguments(structure))
+                QueryTestSupport.arguments(structure),
+                null,
+                StatementPurpose.PRIMARY)
             .plan();
 
     List<Observation<Long>> observations =
         invokeConcurrently(
-            plan,
-            index -> "condition-" + index,
-            index -> Map.of(1, 10_000L + index));
+            plan, index -> "condition-" + index, index -> Map.of(1, 10_000L + index));
 
     for (int index = 0; index < observations.size(); index++) {
       Observation<Long> observed = observations.get(index);
@@ -112,14 +113,14 @@ class CompiledQueryPlanConcurrencyTest {
                 false,
                 QueryPagination.None.INSTANCE,
                 List.of(),
-                QueryTestSupport.arguments(structure))
+                QueryTestSupport.arguments(structure),
+                null,
+                StatementPurpose.PRIMARY)
             .plan();
 
     List<Observation<PetView>> observations =
         invokeConcurrently(
-            plan,
-            index -> 20_000L + index,
-            index -> Map.of(1, 30_000L + index, 2, "pet-" + index));
+            plan, index -> 20_000L + index, index -> Map.of(1, 30_000L + index, 2, "pet-" + index));
 
     IdentityHashMap<PetView, Boolean> decodedInstances = new IdentityHashMap<>();
     for (int index = 0; index < observations.size(); index++) {
@@ -149,7 +150,9 @@ class CompiledQueryPlanConcurrencyTest {
                 List.of(table.id().asc()),
                 false,
                 QueryPagination.None.INSTANCE,
-                QueryTestSupport.arguments(structure))
+                QueryTestSupport.arguments(structure),
+                null,
+                StatementPurpose.PRIMARY)
             .plan();
 
     List<Observation<OrderedRow<String>>> observations =
@@ -178,9 +181,10 @@ class CompiledQueryPlanConcurrencyTest {
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
     QueryCompilation<PetView> warmed = projectionQuery(catalog, 1L);
-    List<Observation<PetView>> observations = invokeConcurrently(
-        index -> new Invocation<>(projectionQuery(catalog, 20_000L + index)),
-        index -> Map.of(1, 30_000L + index, 2, "pet-" + index));
+    List<Observation<PetView>> observations =
+        invokeConcurrently(
+            index -> new Invocation<>(projectionQuery(catalog, 20_000L + index)),
+            index -> Map.of(1, 30_000L + index, 2, "pet-" + index));
 
     IdentityHashMap<PetView, Boolean> instances = new IdentityHashMap<>();
     for (int index = 0; index < observations.size(); index++) {
@@ -192,7 +196,8 @@ class CompiledQueryPlanConcurrencyTest {
       instances.put(observed.decoded(), Boolean.TRUE);
     }
     assertEquals(INVOCATIONS, instances.size());
-    assertEquals(new QueryPlanCacheStatistics(INVOCATIONS, 1, 0, 0, 1, 4),
+    assertEquals(
+        new QueryPlanCacheStatistics(INVOCATIONS, 1, 0, 0, 1, 4),
         catalog.projectionPlanCacheStatistics());
   }
 
@@ -201,9 +206,10 @@ class CompiledQueryPlanConcurrencyTest {
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
     QueryCompilation<OrderedRow<String>> warmed = orderedQuery(catalog, "seed");
-    List<Observation<OrderedRow<String>>> observations = invokeConcurrently(
-        index -> new Invocation<>(orderedQuery(catalog, "condition-" + index)),
-        index -> Map.of(1, "ordered-" + index, 2, 40_000L + index));
+    List<Observation<OrderedRow<String>>> observations =
+        invokeConcurrently(
+            index -> new Invocation<>(orderedQuery(catalog, "condition-" + index)),
+            index -> Map.of(1, "ordered-" + index, 2, 40_000L + index));
 
     IdentityHashMap<OrderedRow<String>, Boolean> instances = new IdentityHashMap<>();
     IdentityHashMap<List<?>, Boolean> buffers = new IdentityHashMap<>();
@@ -219,16 +225,19 @@ class CompiledQueryPlanConcurrencyTest {
     }
     assertEquals(INVOCATIONS, instances.size());
     assertEquals(INVOCATIONS, buffers.size());
-    assertEquals(new QueryPlanCacheStatistics(INVOCATIONS, 1, 0, 0, 1, 4),
+    assertEquals(
+        new QueryPlanCacheStatistics(INVOCATIONS, 1, 0, 0, 1, 4),
         catalog.projectionPlanCacheStatistics());
   }
 
   private static QueryCompilation<PetView> projectionQuery(QueryPlanCatalog catalog, long value) {
     PetTable table = new PetTable();
     DefaultSelectQuery<PetView> query =
-        (DefaultSelectQuery<PetView>) QueryTestSupport.operations(catalog)
-            .select(projectionMapping().bind(table.id(), table.name())).from(table)
-            .where(table.id().eq(value));
+        (DefaultSelectQuery<PetView>)
+            QueryTestSupport.operations(catalog)
+                .select(projectionMapping().bind(table.id(), table.name()))
+                .from(table)
+                .where(table.id().eq(value));
     return query.compilation(QueryPagination.None.INSTANCE);
   }
 
@@ -238,14 +247,24 @@ class CompiledQueryPlanConcurrencyTest {
     SelectedResult<String> selected = SelectedResult.requiredScalar(table.name());
     CompiledQueryStructure structure =
         QueryTestSupport.compile(selected, table, List.of(), table.name().eq(value));
-    return catalog.compiler().compileOrdered(selected, structure, List.of(table.id().asc()),
-        false, QueryPagination.None.INSTANCE, QueryTestSupport.arguments(structure));
+    return catalog
+        .compiler()
+        .compileOrdered(
+            selected,
+            structure,
+            List.of(table.id().asc()),
+            false,
+            QueryPagination.None.INSTANCE,
+            QueryTestSupport.arguments(structure),
+            null,
+            StatementPurpose.PRIMARY);
   }
 
   private static <R> List<Observation<R>> invokeConcurrently(
       CompiledQueryPlan<R, Object> plan,
       IntFunction<Object> parameter,
-      IntFunction<Map<Integer, Object>> row) throws Exception {
+      IntFunction<Map<Integer, Object>> row)
+      throws Exception {
     QueryParameter<Object> reference = Sql.parameter(Object.class, "concurrentValue");
     return invokeConcurrently(
         index ->
@@ -280,8 +299,7 @@ class CompiledQueryPlanConcurrencyTest {
                               current.argument(),
                               JdbcWriteContext.EMPTY);
                   R decoded =
-                      plan.rowDecoder()
-                          .decode(resultSet(row.apply(index)), RowReadContext.EMPTY);
+                      plan.rowDecoder().decode(resultSet(row.apply(index)), RowReadContext.EMPTY);
                   return new Observation<>(plan, next, bound.get(1), decoded);
                 }));
       }
@@ -416,6 +434,7 @@ class CompiledQueryPlanConcurrencyTest {
     private NonNullSelectable<String> name() {
       return name;
     }
+
     public PetTable as(String alias) {
       return new PetTable(alias);
     }
@@ -426,8 +445,7 @@ class CompiledQueryPlanConcurrencyTest {
 
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(this);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

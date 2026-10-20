@@ -2,6 +2,8 @@ package io.skis.query;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.OperationObservation;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
@@ -212,11 +214,14 @@ final class SelectedResult<R extends @Nullable Object> {
   }
 
   CompiledQueryPlan<R, Object> fastPlan(
-      EntityPlanSet<?> rootPlans, CompiledQueryStructure structure) {
+      EntityPlanSet<?> rootPlans,
+      CompiledQueryStructure structure,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     if (!supportsFastPath()) {
       throw new IllegalStateException("only complete non-null entity selections use a Fast Path");
     }
-    return entityFastPlan(rootPlans, requireTable(), structure);
+    return entityFastPlan(rootPlans, requireTable(), structure, observation, purpose);
   }
 
   String structuralIdentity() {
@@ -366,10 +371,17 @@ final class SelectedResult<R extends @Nullable Object> {
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static <R> CompiledQueryPlan<R, Object> entityFastPlan(
-      EntityPlanSet<?> plans, QueryTable<?> table, CompiledQueryStructure structure) {
+      EntityPlanSet<?> plans,
+      QueryTable<?> table,
+      CompiledQueryStructure structure,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     return (CompiledQueryPlan)
         plans.selectPlanForStructure(
-            (QueryTable) table, Objects.requireNonNull(structure, "structure"));
+            (QueryTable) table,
+            Objects.requireNonNull(structure, "structure"),
+            observation,
+            purpose);
   }
 
   private enum Kind {

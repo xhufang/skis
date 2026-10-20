@@ -389,7 +389,9 @@ public final class SkisDiagnostics {
       return this;
     }
 
-    /** Sets the known driver SQLState and vendor code; either may be absent and zero means absent. */
+    /**
+     * Sets the known driver SQLState and vendor code; either may be absent and zero means absent.
+     */
     public Builder driver(@Nullable String sqlState, @Nullable Integer vendorCode) {
       this.sqlState = sqlState;
       this.vendorCode = vendorCode != null && vendorCode == 0 ? null : vendorCode;

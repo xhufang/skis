@@ -46,8 +46,7 @@ class SkisProjectionPostgreSqlContractTest {
 
     try {
       executor.insert(
-          PetTable.petTable,
-          new Pet(id, name, new BigDecimal("12.50"), false, null, "ignored"));
+          PetTable.petTable, new Pet(id, name, new BigDecimal("12.50"), false, null, "ignored"));
       PetTable pet = PetTable.petTable;
       List<String> names =
           executor.select(pet.name()).from(pet).where(pet.name().eq(name)).fetchList();
@@ -77,13 +76,11 @@ class SkisProjectionPostgreSqlContractTest {
 
     try {
       executor.insert(
-          PetTable.petTable,
-          new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
+          PetTable.petTable, new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
       Pet stored = executor.findById(PetTable.petTable, id).orElseThrow();
       assertEquals(Long.valueOf(0L), stored.version());
 
-      Pet update =
-          new Pet(id, "Mimi", new BigDecimal("13.25"), true, stored.version(), "ignored");
+      Pet update = new Pet(id, "Mimi", new BigDecimal("13.25"), true, stored.version(), "ignored");
       assertEquals(1, executor.updateById(PetTable.petTable, update));
       Pet updated = executor.findById(PetTable.petTable, id).orElseThrow();
       assertEquals(new BigDecimal("13.25"), updated.weight());
@@ -170,26 +167,17 @@ class SkisProjectionPostgreSqlContractTest {
         executor.insert(
             PetTable.petTable,
             new Pet(
-                ids.get(index),
-                "page-" + index,
-                new BigDecimal("10.00"),
-                false,
-                null,
-                "ignored"));
+                ids.get(index), "page-" + index, new BigDecimal("10.00"), false, null, "ignored"));
       }
       PetTable pet = PetTable.petTable;
       SelectQuery<Pet> query =
-          executor
-              .selectFrom(pet)
-              .where(pet.id().in(ids))
-              .orderBy(pet.id().asc());
+          executor.selectFrom(pet).where(pet.id().in(ids)).orderBy(pet.id().asc());
 
       Page<Pet> page = query.fetchPage(PageRequest.page(1, 2));
       Slice<Pet> offset = query.fetchSlice(SliceRequest.offset(0, 2));
       Slice<Pet> keysetFirst = query.fetchSlice(SliceRequest.keysetFirst(2));
       Slice<Pet> keysetSecond =
-          query.fetchSlice(
-              SliceRequest.resume(keysetFirst.nextContinuation().orElseThrow(), 2));
+          query.fetchSlice(SliceRequest.resume(keysetFirst.nextContinuation().orElseThrow(), 2));
       List<Long> cursorIds = new java.util.ArrayList<>();
       try (QueryCursor<Pet> cursor = query.cursor()) {
         while (cursor.advance()) {

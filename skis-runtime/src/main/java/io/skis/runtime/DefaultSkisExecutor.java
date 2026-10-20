@@ -1,7 +1,8 @@
 package io.skis.runtime;
 
-import io.skis.core.spi.ExecutionContext;
 import io.skis.core.ExecutionOptions;
+import io.skis.core.internal.ExecutionListenerDispatcher;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
@@ -137,6 +138,7 @@ final class DefaultSkisExecutor implements SkisExecutor {
 
   @Override
   public SkisSession beginTransaction(ExecutionOptions executionOptions) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     JdbcExecutor sessionExecutor =
         jdbcExecutor.withDefaultExecutionOptions(
             Objects.requireNonNull(executionOptions, "executionOptions"));

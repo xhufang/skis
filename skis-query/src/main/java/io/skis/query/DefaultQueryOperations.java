@@ -2,8 +2,14 @@ package io.skis.query;
 
 import io.skis.core.ExecutionOptions;
 import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnosticStage;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
+import io.skis.core.internal.OperationObservation;
 import io.skis.core.spi.ExecutionContext;
+import io.skis.core.spi.ExecutionOperationKind;
+import io.skis.core.spi.ExecutionTermination;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcPageResult;
@@ -20,10 +26,14 @@ final class DefaultQueryOperations implements QueryOperations {
 
   private final JdbcExecutor jdbcExecutor;
   private final QueryPlanCatalog planCatalog;
+  private final ExecutionListenerDispatcher listenerDispatcher;
+  private final String dialectId;
 
   DefaultQueryOperations(QueryPlanCatalog planCatalog, JdbcExecutor jdbcExecutor) {
     this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
     this.jdbcExecutor = Objects.requireNonNull(jdbcExecutor, "jdbcExecutor");
+    this.listenerDispatcher = planCatalog.listenerDispatcher();
+    this.dialectId = planCatalog.dialectId();
   }
 
   @Override
@@ -42,11 +52,21 @@ final class DefaultQueryOperations implements QueryOperations {
 
   private <E> Optional<E> findById(
       QueryTable<E> table, Object id, ExecutionContext executionContext) {
-    EntityMeta<E> entity = Objects.requireNonNull(table, "table").entity();
-    EntityPlanSet<E> plans = requirePlanSet(entity);
-    PropertyMeta<E, ?> idProperty = plans.findByIdProperty();
-    requireValueType(idProperty, id);
-    return jdbcExecutor.fetchOne(plans.findByIdPlan(), id, executionContext);
+    OperationObservation observation = startObservation(ExecutionOperationKind.FIND_BY_ID);
+    try {
+      EntityMeta<E> entity = Objects.requireNonNull(table, "table").entity();
+      EntityPlanSet<E> plans = requirePlanSet(entity);
+      PropertyMeta<E, ?> idProperty = plans.findByIdProperty();
+      requireValueType(idProperty, id);
+      Optional<E> result =
+          jdbcExecutor.fetchOne(
+              plans.findByIdPlan(), id, executionContext, observation, StatementPurpose.PRIMARY);
+      completeSucceeded(observation);
+      return result;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
   }
 
   @Override
@@ -137,25 +157,65 @@ final class DefaultQueryOperations implements QueryOperations {
 
   <R extends @Nullable Object> List<R> fetchList(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return jdbcExecutor.fetchList(plan, argument, executionContext);
+    return fetchList(plan, argument, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  <R extends @Nullable Object> List<R> fetchList(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return jdbcExecutor.fetchList(plan, argument, executionContext, observation, purpose);
   }
 
   <R extends @Nullable Object> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return jdbcExecutor.fetchNullableOne(plan, argument, executionContext);
+    return fetchNullableOne(plan, argument, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  <R extends @Nullable Object> JdbcRow<R> fetchNullableOne(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return jdbcExecutor.fetchNullableOne(plan, argument, executionContext, observation, purpose);
   }
 
   <R extends @Nullable Object> JdbcRow<R> fetchNullableFirst(
       CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return jdbcExecutor.fetchNullableFirst(plan, argument, executionContext);
+    return fetchNullableFirst(plan, argument, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  <R extends @Nullable Object> JdbcRow<R> fetchNullableFirst(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return jdbcExecutor.fetchNullableFirst(plan, argument, executionContext, observation, purpose);
   }
 
   <R extends @Nullable Object> JdbcPageResult<R> fetchPage(
       QueryCompilation<R> content,
       QueryCompilation<Long> count,
       ExecutionContext executionContext) {
+    return fetchPage(content, count, executionContext, null);
+  }
+
+  <R extends @Nullable Object> JdbcPageResult<R> fetchPage(
+      QueryCompilation<R> content,
+      QueryCompilation<Long> count,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation) {
     return jdbcExecutor.fetchPage(
-        content.plan(), content.argument(), count.plan(), count.argument(), executionContext);
+        content.plan(),
+        content.argument(),
+        count.plan(),
+        count.argument(),
+        executionContext,
+        observation);
   }
 
   <R extends @Nullable Object> List<R> fetchSliceList(
@@ -163,7 +223,19 @@ final class DefaultQueryOperations implements QueryOperations {
       Object argument,
       ExecutionContext executionContext,
       int pageSize) {
-    return jdbcExecutor.fetchSliceList(plan, argument, executionContext, pageSize);
+    return fetchSliceList(
+        plan, argument, executionContext, pageSize, null, StatementPurpose.PRIMARY);
+  }
+
+  <R extends @Nullable Object> List<R> fetchSliceList(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      int pageSize,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return jdbcExecutor.fetchSliceList(
+        plan, argument, executionContext, pageSize, observation, purpose);
   }
 
   <R extends @Nullable Object> QueryCursor<R> cursor(
@@ -171,8 +243,38 @@ final class DefaultQueryOperations implements QueryOperations {
       Object argument,
       ExecutionContext executionContext,
       boolean nullableResult) {
+    return cursor(plan, argument, executionContext, nullableResult, null, StatementPurpose.PRIMARY);
+  }
+
+  <R extends @Nullable Object> QueryCursor<R> cursor(
+      CompiledQueryPlan<R, Object> plan,
+      Object argument,
+      ExecutionContext executionContext,
+      boolean nullableResult,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     return new DefaultQueryCursor<>(
-        jdbcExecutor.openCursor(plan, argument, executionContext), nullableResult);
+        jdbcExecutor.openCursor(plan, argument, executionContext, observation, purpose),
+        nullableResult);
+  }
+
+  @Nullable OperationObservation startObservation(ExecutionOperationKind operationKind) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
+    return listenerDispatcher.enabled()
+        ? listenerDispatcher.startOperation(operationKind, dialectId)
+        : null;
+  }
+
+  void completeSucceeded(@Nullable OperationObservation observation) {
+    if (observation != null) {
+      observation.completeSucceeded(ExecutionTermination.COMPLETED);
+    }
+  }
+
+  void completeFailed(@Nullable OperationObservation observation, Throwable failure) {
+    if (observation != null) {
+      observation.completeFailed(failure, SkisDiagnosticStage.EXECUTION);
+    }
   }
 
   void validateRequestedRows(int requestedRows, ExecutionContext executionContext) {

@@ -2,6 +2,7 @@ package io.skis.query;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.jdbc.internal.JdbcCursor;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -21,17 +22,23 @@ final class DefaultQueryCursor<R extends @Nullable Object> implements QueryCurso
 
   @Override
   public boolean advance() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     requireOwner("advance");
     return delegate.advance();
   }
 
   @Override
   public R current() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     requireOwner("current");
     R value = delegate.current();
     if (!nullableResult && value == null) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query cursor decoded a null value");
+      QueryValidationException failure =
+          QueryValidationException.of(
+              SkisErrorCode.QUERY_NON_NULL_RESULT,
+              "non-null query cursor decoded a null value");
+      delegate.fail(failure);
+      throw failure;
     }
     return value;
   }
@@ -43,6 +50,7 @@ final class DefaultQueryCursor<R extends @Nullable Object> implements QueryCurso
 
   @Override
   public void close() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     requireOwner("close");
     delegate.close();
   }

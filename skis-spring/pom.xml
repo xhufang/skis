@@ -9,7 +9,8 @@
   </parent>
   <artifactId>skis-spring</artifactId>
   <name>skis-spring</name>
-  <description>Spring transaction-bound connections and persistence exception translation</description>
+  <description>Spring transaction-bound connections and persistence exception translation
+  </description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>

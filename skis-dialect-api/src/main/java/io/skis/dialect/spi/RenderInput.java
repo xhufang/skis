@@ -1,6 +1,7 @@
 package io.skis.dialect.spi;
 
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.SqlRenderException;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BetweenPredicate;
@@ -78,6 +79,7 @@ public final class RenderInput {
    * statement; any new structure receives a fresh complete analysis before layout.
    */
   public static RenderInput prepare(ResolvedStatement resolved, Dialect dialect) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     Objects.requireNonNull(resolved, "resolved");
     Objects.requireNonNull(dialect, "dialect");
     String dialectId = requireDialectId(dialect);

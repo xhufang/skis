@@ -12,6 +12,11 @@ public interface JdbcCursor<R extends @Nullable Object> extends AutoCloseable {
 
   R current();
 
+  /** Marks a framework-level row-consumption failure and closes owned resources. */
+  default void fail(Throwable failure) {
+    close();
+  }
+
   boolean isClosed();
 
   @Override

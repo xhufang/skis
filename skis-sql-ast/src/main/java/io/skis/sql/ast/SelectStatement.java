@@ -108,16 +108,7 @@ public final class SelectStatement implements StatementAst {
       @Nullable SqlPredicate where,
       List<OrderByItem> orderBy,
       @Nullable SelectPagination pagination) {
-    this(
-        distinct,
-        selections,
-        hiddenSelections,
-        from,
-        where,
-        List.of(),
-        null,
-        orderBy,
-        pagination);
+    this(distinct, selections, hiddenSelections, from, where, List.of(), null, orderBy, pagination);
   }
 
   /** Creates a single-table SELECT statement. */

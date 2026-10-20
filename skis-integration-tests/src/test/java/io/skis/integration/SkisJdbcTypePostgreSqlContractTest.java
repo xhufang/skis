@@ -76,8 +76,7 @@ class SkisJdbcTypePostgreSqlContractTest {
         statement.setLong(1, id);
         try (ResultSet resultSet = statement.executeQuery()) {
           resultSet.next();
-          assertEquals(
-              json, PostgreSqlCodecs.JSON.read(resultSet, 1, JdbcReadContext.EMPTY));
+          assertEquals(json, PostgreSqlCodecs.JSON.read(resultSet, 1, JdbcReadContext.EMPTY));
           assertEquals(
               jsonb,
               PostgreSqlCodecs.JSON
@@ -171,8 +170,8 @@ class SkisJdbcTypePostgreSqlContractTest {
     }
   }
 
-  private static void insertJson(
-      PGSimpleDataSource dataSource, long id, String json, String jsonb) throws Exception {
+  private static void insertJson(PGSimpleDataSource dataSource, long id, String json, String jsonb)
+      throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(
@@ -185,8 +184,8 @@ class SkisJdbcTypePostgreSqlContractTest {
     }
   }
 
-  private static void deleteRows(
-      PGSimpleDataSource dataSource, String table, long... identifiers) throws Exception {
+  private static void deleteRows(PGSimpleDataSource dataSource, String table, long... identifiers)
+      throws Exception {
     try (Connection connection = dataSource.getConnection();
         PreparedStatement statement =
             connection.prepareStatement(

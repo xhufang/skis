@@ -75,7 +75,8 @@ class CompilationPipelineTest {
             ExpressionInfo.class,
             ParameterLayout.class)) {
       assertTrue(Modifier.isFinal(type.getModifiers()), type.getName() + " must be final");
-      assertEquals(0, type.getConstructors().length, type.getName() + " must not expose a constructor");
+      assertEquals(
+          0, type.getConstructors().length, type.getName() + " must not expose a constructor");
     }
   }
 
@@ -87,9 +88,11 @@ class CompilationPipelineTest {
     ResolvedStatement resolved = ResolvedStatement.analyze(statement);
 
     Occurrence first =
-        resolved.occurrenceAt(io.skis.sql.ast.QueryBlockPath.root(), io.skis.sql.ast.QueryClause.SELECT, 0);
+        resolved.occurrenceAt(
+            io.skis.sql.ast.QueryBlockPath.root(), io.skis.sql.ast.QueryClause.SELECT, 0);
     Occurrence second =
-        resolved.occurrenceAt(io.skis.sql.ast.QueryBlockPath.root(), io.skis.sql.ast.QueryClause.SELECT, 1);
+        resolved.occurrenceAt(
+            io.skis.sql.ast.QueryBlockPath.root(), io.skis.sql.ast.QueryClause.SELECT, 1);
 
     assertEquals(0, first.itemOrdinal());
     assertEquals(1, second.itemOrdinal());
@@ -99,11 +102,10 @@ class CompilationPipelineTest {
         IllegalArgumentException.class,
         () ->
             resolved.occurrenceAt(
-                io.skis.sql.ast.QueryBlockPath.root(),
-                io.skis.sql.ast.QueryClause.SELECT,
-                2));
+                io.skis.sql.ast.QueryBlockPath.root(), io.skis.sql.ast.QueryClause.SELECT, 2));
 
-    ResolvedStatement other = ResolvedStatement.analyze(new SelectStatement(List.of(pet.id()), pet));
+    ResolvedStatement other =
+        ResolvedStatement.analyze(new SelectStatement(List.of(pet.id()), pet));
     assertThrows(IllegalArgumentException.class, () -> other.expressionInfo(first));
   }
 
@@ -112,8 +114,7 @@ class CompilationPipelineTest {
     TrackingDialect dialect = new TrackingDialect("order-test", false, false);
     PetTable pet = new PetTable(PET);
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
-    SelectStatement statement =
-        new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
+    SelectStatement statement = new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
 
     SqlTemplate template = SqlCompiler.compile(statement, dialect);
 
@@ -168,9 +169,7 @@ class CompilationPipelineTest {
                   select.selections(),
                   select.fromClause(),
                   new ComparisonPredicate<>(
-                      pet.id(),
-                      io.skis.sql.ast.ComparisonOperator.EQUAL,
-                      introduced));
+                      pet.id(), io.skis.sql.ast.ComparisonOperator.EQUAL, introduced));
             });
 
     SqlRenderException failure =
@@ -231,8 +230,7 @@ class CompilationPipelineTest {
     SelectStatement statement =
         new SelectStatement(
             List.of(joined.id()),
-            new FromClause(
-                root, List.of(new JoinClause(JoinType.INNER, joined, joinPredicate))));
+            new FromClause(root, List.of(new JoinClause(JoinType.INNER, joined, joinPredicate))));
     TrackingDialect dialect =
         new TrackingDialect(
             "result-nullability-test",
@@ -262,8 +260,7 @@ class CompilationPipelineTest {
             new HiddenSelection(pet.id(), Identifier.of("hidden_id")),
             new HiddenSelection(LiteralExpression.one(Long.class), Identifier.of("hidden_one")));
     SelectStatement statement =
-        new SelectStatement(
-            false, List.of(pet.name()), hidden, pet, null, List.of(), null);
+        new SelectStatement(false, List.of(pet.name()), hidden, pet, null, List.of(), null);
     TrackingDialect dialect =
         new TrackingDialect(
             "hidden-order-test",
@@ -274,9 +271,7 @@ class CompilationPipelineTest {
               return new SelectStatement(
                   select.distinct(),
                   select.selections(),
-                  List.of(
-                      select.hiddenSelections().get(1),
-                      select.hiddenSelections().get(0)),
+                  List.of(select.hiddenSelections().get(1), select.hiddenSelections().get(0)),
                   select.fromClause(),
                   select.where().orElse(null),
                   select.orderBy(),
@@ -303,12 +298,9 @@ class CompilationPipelineTest {
             List.of(),
             pet,
             null,
-            List.of(
-                new OrderByItem(
-                    reference, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+            List.of(new OrderByItem(reference, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
             null);
-    TrackingDialect dialect =
-        new TrackingDialect("selected-output-context-test", false, true);
+    TrackingDialect dialect = new TrackingDialect("selected-output-context-test", false, true);
 
     SqlRenderException selectionFailure =
         assertThrows(
@@ -324,20 +316,16 @@ class CompilationPipelineTest {
   @Test
   void selectedOutputReferenceRequiresExactPositionAndNullability() {
     PetTable pet = new PetTable(PET);
-    SelectStatement outOfRange =
-        distinctOrderBy(pet, SelectedOutputReference.of(2, pet.name()));
+    SelectStatement outOfRange = distinctOrderBy(pet, SelectedOutputReference.of(2, pet.name()));
     SelectedOutputReference<String> wrongNullability =
-        new SelectedOutputReference<>(
-            1, String.class, pet.name().sqlType(), Nullability.NON_NULL);
+        new SelectedOutputReference<>(1, String.class, pet.name().sqlType(), Nullability.NON_NULL);
     SelectStatement wrongDescriptor = distinctOrderBy(pet, wrongNullability);
-    TrackingDialect dialect =
-        new TrackingDialect("selected-output-descriptor-test", false, true);
+    TrackingDialect dialect = new TrackingDialect("selected-output-descriptor-test", false, true);
 
     SqlRenderException positionFailure =
         assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(outOfRange, dialect));
     SqlRenderException descriptorFailure =
-        assertThrows(
-            SqlRenderException.class, () -> SqlCompiler.compile(wrongDescriptor, dialect));
+        assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(wrongDescriptor, dialect));
 
     assertEquals(SkisErrorCode.DIALECT_INVALID_STRUCTURE, positionFailure.code());
     assertEquals(SkisErrorCode.DIALECT_INVALID_STRUCTURE, descriptorFailure.code());
@@ -347,15 +335,10 @@ class CompilationPipelineTest {
   void standardLoweringDefersPortableNormalizationToThePipeline() {
     PetTable pet = new PetTable(PET);
     SelectStatement statement =
-        new SelectStatement(
-            List.of(pet.id()),
-            pet,
-            new InPredicate<>(pet.id(), List.of(), false));
+        new SelectStatement(List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), false));
     ResolvedStatement resolved = ResolvedStatement.analyze(statement);
 
-    assertSame(
-        statement,
-        StandardSqlLowering.of(DialectCapabilities.none()).lower(resolved));
+    assertSame(statement, StandardSqlLowering.of(DialectCapabilities.none()).lower(resolved));
   }
 
   @Test
@@ -379,16 +362,10 @@ class CompilationPipelineTest {
     PetTable pet = new PetTable(PET);
     ParameterSlot<Long> pruned = new ParameterSlot<>(0, Long.class, false);
     SelectStatement statement =
-        new SelectStatement(
-            List.of(pet.id()), pet, new InPredicate<>(pruned, List.of(), false));
+        new SelectStatement(List.of(pet.id()), pet, new InPredicate<>(pruned, List.of(), false));
 
     SqlTemplate template =
-        SqlCompiler.compile(
-            statement,
-            new TrackingDialect(
-                "empty-membership-test",
-                false,
-                false));
+        SqlCompiler.compile(statement, new TrackingDialect("empty-membership-test", false, false));
 
     assertEquals("SELECT \"pet\".\"id\" FROM \"pet\" WHERE FALSE", template.sql());
     assertTrue(template.parameterLayout().isEmpty());
@@ -428,9 +405,7 @@ class CompilationPipelineTest {
         template.sql());
     assertEquals(
         List.of(1, 0),
-        template.parameterLayout().slots().stream()
-            .map(slot -> slot.ordinal())
-            .toList());
+        template.parameterLayout().slots().stream().map(slot -> slot.ordinal()).toList());
   }
 
   @Test
@@ -448,9 +423,7 @@ class CompilationPipelineTest {
             null);
 
     SqlTemplate orderedTemplate =
-        SqlCompiler.compile(
-            orderedStatement,
-            new TrackingDialect("null-order-test", false, false));
+        SqlCompiler.compile(orderedStatement, new TrackingDialect("null-order-test", false, false));
 
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"pet\" "
@@ -459,9 +432,7 @@ class CompilationPipelineTest {
     assertEquals(2, orderedTemplate.parameterCount());
     assertEquals(
         List.of(0, 0),
-        orderedTemplate.parameterLayout().slots().stream()
-            .map(slot -> slot.ordinal())
-            .toList());
+        orderedTemplate.parameterLayout().slots().stream().map(slot -> slot.ordinal()).toList());
   }
 
   private static SelectStatement distinctOrderBy(
@@ -472,8 +443,7 @@ class CompilationPipelineTest {
         List.of(),
         pet,
         null,
-        List.of(
-            new OrderByItem(reference, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+        List.of(new OrderByItem(reference, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
         null);
   }
 

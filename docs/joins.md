@@ -21,13 +21,13 @@ SelectQuery<Pet> query =
 
 The current dialect matrix is intentional:
 
-| Join | PostgreSQL | H2 |
-| --- | --- | --- |
-| INNER | supported | supported |
-| LEFT | supported | supported |
-| RIGHT | supported | supported |
-| FULL | supported | rejected before JDBC |
-| CROSS | supported | supported |
+| Join  | PostgreSQL | H2                   |
+|-------|------------|----------------------|
+| INNER | supported  | supported            |
+| LEFT  | supported  | supported            |
+| RIGHT | supported  | supported            |
+| FULL  | supported  | rejected before JDBC |
+| CROSS | supported  | supported            |
 
 An unsupported form fails during dialect validation and identifies the dialect, Join kind, and
 one-based Join position. SKIS does not emit guessed fallback SQL.
@@ -163,11 +163,13 @@ fingerprint and are validated through a separate digest.
 ## Execution boundaries
 
 Single-table unfiltered and single-property equality entity queries retain their bounded Fast Path
-plans. `findById` and single-entity mutation continue to use their precompiled paths and do not build
+plans. `findById` and single-entity mutation continue to use their precompiled paths and do not
+build
 Join structures. Join and generated projection plans stay immutable and query-local; no unbounded
 cache, runtime annotation scan, SQL parser, or per-row reflection is introduced.
 
 Each immutable query object analyzes its FROM/Join/ON/WHERE structure and ordinary parameter layout
-once, on first use. Selection, count, offset and keyset plan shapes reuse that analysis. A local plan
+once, on first use. Selection, count, offset and keyset plan shapes reuse that analysis. A local
+plan
 cache hit only supplies the already captured predicate values plus the current pagination values;
 it does not reconstruct condition or Join AST nodes.

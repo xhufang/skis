@@ -11,9 +11,9 @@ import io.skis.sql.ast.StatementAst;
  * render SQL text. Returning the exact input instance is the identity result; returning any other
  * object is treated as a new structure and is semantically reanalyzed before final layout.
  *
- * <p>Implementations must preserve the statement kind and, for SELECT statements, the DISTINCT
- * flag and ordered visible/hidden output lists. Rewriting clauses outside that public result
- * contract is permitted and is checked again before rendering.
+ * <p>Implementations must preserve the statement kind and, for SELECT statements, the DISTINCT flag
+ * and ordered visible/hidden output lists. Rewriting clauses outside that public result contract is
+ * permitted and is checked again before rendering.
  */
 @FunctionalInterface
 public interface DialectLowering {

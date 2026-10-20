@@ -149,7 +149,8 @@ meanings stable; those milestones are not separately published versions.
 
 ### SKIS020
 
-- Cause: multiple `@Id` properties are ambiguous before an explicit composite-key declaration exists.
+- Cause: multiple `@Id` properties are ambiguous before an explicit composite-key declaration
+  exists.
 - Invalid: both `tenantId` and `petId` are independently annotated `@Id`.
 - Valid: keep one application-assigned `@Id` in the 0.1 line.
 - Fix: use one identifier until composite-key declarations are implemented.
@@ -167,7 +168,8 @@ meanings stable; those milestones are not separately published versions.
 
 - Cause: a persistent property type has no built-in JDBC codec.
 - Invalid: `URI homepage`, an enum property, or an array other than primitive `byte[]`.
-- Valid: map the value to a type in the [JDBC type-mapping matrix](jdbc-type-mappings.md), such as `String` or primitive `byte[]`.
+- Valid: map the value to a type in the [JDBC type-mapping matrix](jdbc-type-mappings.md), such as
+  `String` or primitive `byte[]`.
 - Fix: use a supported Java type; custom converter/codec registration remains outside the 0.1 scope.
 - First public version: `0.1.0`.
 
@@ -503,7 +505,8 @@ meanings stable; those milestones are not separately published versions.
 ### SKIS218
 
 - Cause: a projection parameter type is inaccessible from the generated `.skis` subpackage.
-- Invalid: a public projection constructor uses a package-private parameter type or generic argument.
+- Invalid: a public projection constructor uses a package-private parameter type or generic
+  argument.
 - Valid: use public top-level/nested types and accessible type-use annotations.
 - Fix: make the complete parameter type graph accessible.
 - First public version: `0.1.0`.

@@ -34,8 +34,7 @@ class SkisProjectionIncrementalContractTest {
           declarations.stream()
               .filter(
                   declaration ->
-                      declaration.equals(
-                          SkisProjectionProcessor.class.getName() + ",aggregating"))
+                      declaration.equals(SkisProjectionProcessor.class.getName() + ",aggregating"))
               .count());
     }
   }

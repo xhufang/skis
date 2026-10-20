@@ -113,8 +113,7 @@ abstract class AbstractSkisSpecialProjectionContractTest {
 
     QueryPlanCacheStatistics secondBefore = secondExecutor.queryPlanCacheStatistics();
     assertEquals(
-        expectedWithPrincipal(),
-        findPrincipal(secondExecutor, projection, projectWithPrincipalId));
+        expectedWithPrincipal(), findPrincipal(secondExecutor, projection, projectWithPrincipalId));
     QueryPlanCacheStatistics secondWarm = secondExecutor.queryPlanCacheStatistics();
     assertEquals(secondBefore.missCount() + 1, secondWarm.missCount());
 
@@ -131,14 +130,13 @@ abstract class AbstractSkisSpecialProjectionContractTest {
                           () -> {
                             ready.countDown();
                             if (!release.await(5, TimeUnit.SECONDS)) {
-                              throw new AssertionError("timed out awaiting concurrent projection use");
+                              throw new AssertionError(
+                                  "timed out awaiting concurrent projection use");
                             }
                             assertSame(projection, ProjectPrincipalViewPro.all());
                             SkisExecutor target = index % 2 == 0 ? executor : secondExecutor;
                             long projectId =
-                                index % 4 < 2
-                                    ? projectWithPrincipalId
-                                    : projectWithoutPrincipalId;
+                                index % 4 < 2 ? projectWithPrincipalId : projectWithoutPrincipalId;
                             return findPrincipal(target, projection, projectId);
                           }))
               .toList();

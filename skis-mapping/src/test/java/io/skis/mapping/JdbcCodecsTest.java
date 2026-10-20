@@ -126,14 +126,12 @@ class JdbcCodecsTest {
 
     assertEquals("value", JdbcCodecs.requireReadValue("value", 5));
     QueryValidationException readFailure =
-        assertThrows(
-            QueryValidationException.class, () -> JdbcCodecs.requireReadValue(null, 5));
+        assertThrows(QueryValidationException.class, () -> JdbcCodecs.requireReadValue(null, 5));
     assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, readFailure.code());
 
     assertEquals("value", JdbcCodecs.requireBindValue("value", 6));
     MutationException bindFailure =
-        assertThrows(
-            MutationException.class, () -> JdbcCodecs.requireBindValue(null, 6));
+        assertThrows(MutationException.class, () -> JdbcCodecs.requireBindValue(null, 6));
     assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL, bindFailure.code());
   }
 
@@ -274,8 +272,7 @@ class JdbcCodecsTest {
     byte[] bytes = new byte[] {0, 1, 2, -1};
     InvocationRecorder byteReader = new InvocationRecorder(bytes);
     assertArrayEquals(
-        bytes,
-        JdbcCodecs.readBytes(byteReader.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
+        bytes, JdbcCodecs.readBytes(byteReader.proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
     byteReader.assertInvocation("getBytes", new Object[] {3});
 
     assertBind(

@@ -32,7 +32,9 @@ import org.springframework.dao.support.PersistenceExceptionTranslator;
  */
 public final class SkisExceptionTranslator implements PersistenceExceptionTranslator {
 
-  /** Creates a translator that consumes the classification already attached to each SKIS failure. */
+  /**
+   * Creates a translator that consumes the classification already attached to each SKIS failure.
+   */
   public SkisExceptionTranslator() {}
 
   /**
@@ -59,8 +61,7 @@ public final class SkisExceptionTranslator implements PersistenceExceptionTransl
       case MutationException ignored -> {
         return null;
       }
-      default -> {
-      }
+      default -> {}
     }
     return null;
   }
@@ -72,12 +73,17 @@ public final class SkisExceptionTranslator implements PersistenceExceptionTransl
       case DB_FOREIGN_KEY_VIOLATION, DB_CONSTRAINT_VIOLATION ->
           new DataIntegrityViolationException(message, failure);
       case DB_TIMEOUT -> new QueryTimeoutException(message, failure);
-      case DB_QUERY_CANCELED, DB_UNCATEGORIZED, JDBC_STATEMENT_CONFIGURE_FAILED,
-           JDBC_RESULT_SET_CLOSE_FAILED, JDBC_STATEMENT_CLOSE_FAILED -> uncategorized(message, failure);
+      case DB_QUERY_CANCELED,
+          DB_UNCATEGORIZED,
+          JDBC_STATEMENT_CONFIGURE_FAILED,
+          JDBC_RESULT_SET_CLOSE_FAILED,
+          JDBC_STATEMENT_CLOSE_FAILED ->
+          uncategorized(message, failure);
       case DB_LOCK_NOT_AVAILABLE -> new CannotAcquireLockException(message, failure);
       case DB_CONNECTION_FAILURE, JDBC_CONNECTION_ACQUIRE_FAILED, JDBC_CONNECTION_RELEASE_FAILED ->
           new DataAccessResourceFailureException(message, failure);
-      case DB_DEADLOCK, DB_SERIALIZATION_FAILURE -> new ConcurrencyFailureException(message, failure);
+      case DB_DEADLOCK, DB_SERIALIZATION_FAILURE ->
+          new ConcurrencyFailureException(message, failure);
       // A compiled parameter-layout failure is a framework contract violation, not a data-access
       // failure. Leave it for the caller instead of mislabeling it as a database problem.
       case JDBC_PARAMETER_BINDING_FAILED -> null;

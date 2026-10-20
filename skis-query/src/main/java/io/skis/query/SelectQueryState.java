@@ -290,8 +290,7 @@ final class SelectQueryState<R extends @Nullable Object> {
   private static void validateOrderItems(List<SortSpecification> items) {
     if (items.isEmpty()) {
       throw QueryValidationException.of(
-          SkisErrorCode.QUERY_ORDER_BY_CONTRACT,
-          "orderBy requires at least one ordering item");
+          SkisErrorCode.QUERY_ORDER_BY_CONTRACT, "orderBy requires at least one ordering item");
     }
     Set<SelectableSupport.ExpressionIdentity> expressions = new HashSet<>();
     for (SortSpecification item : items) {

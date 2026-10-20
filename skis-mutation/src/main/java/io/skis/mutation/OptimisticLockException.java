@@ -44,8 +44,7 @@ public final class OptimisticLockException extends MutationException {
   }
 
   /** Creates a conflict from explicit diagnostics and an original cause. */
-  public static OptimisticLockException of(
-      SkisDiagnostics diagnostics, @Nullable Throwable cause) {
+  public static OptimisticLockException of(SkisDiagnostics diagnostics, @Nullable Throwable cause) {
     return new OptimisticLockException(requireDiagnostics(diagnostics), cause);
   }
 
@@ -60,8 +59,7 @@ public final class OptimisticLockException extends MutationException {
     SkisDiagnostics.Facts facts = required.facts();
     if (facts == null || facts.detail() == null || facts.detail().isBlank()) {
       throw new IllegalArgumentException(
-          SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT.code()
-              + " diagnostics require detail");
+          SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT.code() + " diagnostics require detail");
     }
     return required;
   }

@@ -31,10 +31,7 @@ public record PropertyRuntime<E, V>(PropertyMeta<E, V> property, JdbcTypeCodec<V
       if (!property.column().nullable()) {
         throw MutationException.of(
             SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL,
-            "required property '"
-                + property.name()
-                + "' is null at JDBC parameter index "
-                + index);
+            "required property '" + property.name() + "' is null at JDBC parameter index " + index);
       }
       codec.bind(statement, index, null, context);
       return;

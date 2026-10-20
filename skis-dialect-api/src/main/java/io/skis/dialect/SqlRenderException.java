@@ -13,7 +13,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>External dialect implementations construct this exception through the public factories and
  * public {@link SkisDiagnostics} contract; they never need framework-internal helpers. The default
- * message and diagnostics omit complete SQL and never include statement parameters or result values.
+ * message and diagnostics omit complete SQL and never include statement parameters or result
+ * values.
  */
 public final class SqlRenderException extends SkisException {
 
