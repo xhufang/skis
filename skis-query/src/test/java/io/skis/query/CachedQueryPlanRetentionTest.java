@@ -5,6 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.internal.ExecutionListenerDispatcher;
+import io.skis.core.internal.OperationObservation;
+import io.skis.core.spi.CompilationCompletedEvent;
+import io.skis.core.spi.ExecutionListener;
+import io.skis.core.spi.ExecutionOperationKind;
+import io.skis.core.spi.ExecutionTermination;
+import io.skis.core.spi.OperationCompletedEvent;
+import io.skis.core.spi.OperationStartedEvent;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -86,6 +94,78 @@ class CachedQueryPlanRetentionTest {
 
     assertCollected(fixture.references());
     Reference.reachabilityFence(fixture.catalog());
+  }
+
+  @Test
+  void cachedObservedCountDoesNotRetainListenersEventsOrInvocationState() {
+    ObservedFixture fixture = compileObservedFixture();
+
+    assertCollected(fixture.references());
+
+    assertEquals(
+        new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4),
+        fixture.catalog().projectionPlanCacheStatistics());
+    Reference.reachabilityFence(fixture.catalog());
+    Reference.reachabilityFence(fixture.cachedPlan());
+  }
+
+  private static ObservedFixture compileObservedFixture() {
+    QueryPlanCatalog catalog =
+        new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
+    List<TrackedReference> references = new ArrayList<>();
+    CachedQueryPlan<Long> first = compileObservedCount(catalog, "first", references);
+    CachedQueryPlan<Long> second = compileObservedCount(catalog, "second", references);
+    assertSame(first.plan(), second.plan());
+    return new ObservedFixture(catalog, first, List.copyOf(references));
+  }
+
+  private static CachedQueryPlan<Long> compileObservedCount(
+      QueryPlanCatalog catalog, String label, List<TrackedReference> references) {
+    List<Object> events = new ArrayList<>();
+    ExecutionListener listener =
+        new ExecutionListener() {
+          @Override
+          public void operationStarted(OperationStartedEvent event) {
+            events.add(event);
+          }
+
+          @Override
+          public void compilationCompleted(CompilationCompletedEvent event) {
+            events.add(event);
+          }
+
+          @Override
+          public void operationCompleted(OperationCompletedEvent event) {
+            events.add(event);
+          }
+        };
+    ExecutionListenerDispatcher dispatcher = ExecutionListenerDispatcher.of(List.of(listener));
+    OperationObservation observation =
+        dispatcher.startOperation(ExecutionOperationKind.FETCH_PAGE, TestDialect.INSTANCE.id());
+    RetentionTable table = new RetentionTable(new Object());
+    String value = new String("observed-value-" + label);
+    DefaultSelectQuery<RetentionEntity> query =
+        (DefaultSelectQuery<RetentionEntity>)
+            QueryTestSupport.operations(catalog).selectFrom(table).where(table.name().eq(value));
+    QueryCompilation<Long> compilation = query.countCompilation(observation);
+    observation.completeSucceeded(ExecutionTermination.COMPLETED);
+    assertEquals(label.equals("first") ? 3 : 2, events.size());
+    references.addAll(
+        List.of(
+            tracked("listener " + label, listener),
+            tracked("dispatcher " + label, dispatcher),
+            tracked("observation " + label, observation),
+            tracked("event list " + label, events),
+            tracked("observed query " + label, query),
+            tracked("observed compilation " + label, compilation),
+            tracked("observed AST " + label, compilation.ast()),
+            tracked("observed arguments " + label, compilation.argument()),
+            tracked("observed value " + label, value),
+            tracked("observed table " + label, table)));
+    for (Object event : events) {
+      references.add(tracked("event " + label, event));
+    }
+    return CachedQueryPlan.from(compilation);
   }
 
   private static InvocationFixture compileInvocationFixture() {
@@ -253,6 +333,11 @@ class CachedQueryPlanRetentionTest {
   private record InvocationFixture(
       QueryPlanCatalog catalog,
       CachedQueryPlan<RetentionView> cachedPlan,
+      List<TrackedReference> references) {}
+
+  private record ObservedFixture(
+      QueryPlanCatalog catalog,
+      CachedQueryPlan<Long> cachedPlan,
       List<TrackedReference> references) {}
 
   private record LoaderFixture(QueryPlanCatalog catalog, List<TrackedReference> references) {

@@ -60,3 +60,11 @@ parallel.
 
 Nullable scalar queries expose `QueryCursor<@Nullable V>` and `Stream<@Nullable V>`; a row whose
 selected SQL value is `NULL` is still a present cursor row.
+
+## Execution listeners
+
+When a listener is registered, cursor and stream operations remain open until JDBC exhaustion,
+explicit close or an actual failure. Exhaustion reports `EXHAUSTED`; explicit close before exhaustion
+reports `CLOSED_EARLY`. Short-circuit consumption does not report completion until the resource is
+closed. Thread ownership failures and abandoned resources do not manufacture completion events.
+See [read-only execution listeners](execution-listeners.md) for IDs, row counts and failure boundaries.

@@ -6,6 +6,11 @@
 
 ### Changed
 
+- 0.2.7 T09 补充当前合同回归与独立消费者：新增仅依赖 core 的监听消费者、H2 外部监听生命周期用例、
+  PostgreSQL 独立 BOM/APT/runtime/驱动消费者，以及已缓存 count 不留存监听器、事件和调用图的回收测试。
+  CI 接入当前查询类型预算、消费者/internal 边界和旧兼容门禁禁用检查，要求指定 PostgreSQL/消费者套件非空且无跳过，
+  并保存集成与消费者测试报告。类型预算通过 JDK 源码语法树计入子包及公开嵌套声明；PG 失败脱敏验证实际冲突主键，
+  H2/PG 流用例验证读尽时即完成且关闭不重复通知。当前监听使用说明已补充；新增源码与配置仅完成静态核对，待本次 CI 验证。
 - 0.2.7 T07 完成受控编译、`DialectLowering` 与最终渲染管线：dialect-api 新增无公开构造的
   `ResolvedStatement`、`RenderInput`、`Occurrence`、`ExpressionInfo` 和值无关 `ParameterLayout`
   ；完整分析保持内部，
