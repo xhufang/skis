@@ -3,10 +3,10 @@
 SKIS 0.2 supports two deliberately separate transaction ownership models. Choose one model for a
 configured `SkisExecutor`; do not nest one inside the other.
 
-| Environment | Connection provider | Transaction boundary owner | Application entry point |
-| --- | --- | --- | --- |
-| Plain Java | `DataSourceConnectionProvider` | SKIS | `inTransaction` or `beginTransaction` |
-| Spring Framework | `SpringConnectionProvider` | Spring `PlatformTransactionManager` | `@Transactional` or `TransactionTemplate` |
+| Environment      | Connection provider            | Transaction boundary owner          | Application entry point                   |
+|------------------|--------------------------------|-------------------------------------|-------------------------------------------|
+| Plain Java       | `DataSourceConnectionProvider` | SKIS                                | `inTransaction` or `beginTransaction`     |
+| Spring Framework | `SpringConnectionProvider`     | Spring `PlatformTransactionManager` | `@Transactional` or `TransactionTemplate` |
 
 ## Plain Java local transactions
 

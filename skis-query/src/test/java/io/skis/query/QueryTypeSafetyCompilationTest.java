@@ -155,8 +155,7 @@ class QueryTypeSafetyCompilationTest {
   }
 
   @Test
-  void keepsProjectionResultAndFromRootGenericsIndependent()
-      throws Exception {
+  void keepsProjectionResultAndFromRootGenericsIndependent() throws Exception {
     String valid =
         """
         package samples;
@@ -325,8 +324,7 @@ class QueryTypeSafetyCompilationTest {
         """;
 
     assertTrue(compile("samples.ValidChain", valid, temporaryDirectory.resolve("valid-chain")));
-    assertTrue(
-        compile("samples.WideChain", wide, temporaryDirectory.resolve("wide-chain")));
+    assertTrue(compile("samples.WideChain", wide, temporaryDirectory.resolve("wide-chain")));
   }
 
   @Test
@@ -389,10 +387,7 @@ class QueryTypeSafetyCompilationTest {
         """;
 
     assertTrue(
-        compile(
-            "samples.ValidInSubquery",
-            valid,
-            temporaryDirectory.resolve("valid-in-subquery")));
+        compile("samples.ValidInSubquery", valid, temporaryDirectory.resolve("valid-in-subquery")));
     assertFalse(
         compile(
             "samples.WrongInSubqueryType",
@@ -507,8 +502,7 @@ class QueryTypeSafetyCompilationTest {
 
     assertTrue(compile("samples.ValidJoin", valid, temporaryDirectory.resolve("valid-join")));
     assertFalse(
-        compile(
-            "samples.IncompleteJoin", invalid, temporaryDirectory.resolve("incomplete-join")));
+        compile("samples.IncompleteJoin", invalid, temporaryDirectory.resolve("incomplete-join")));
   }
 
   @Test
@@ -539,11 +533,9 @@ class QueryTypeSafetyCompilationTest {
         """;
 
     assertTrue(
-        compile(
-            "samples.CompletedFrom", valid, temporaryDirectory.resolve("completed-from")));
+        compile("samples.CompletedFrom", valid, temporaryDirectory.resolve("completed-from")));
     assertFalse(
-        compile(
-            "samples.IncompleteFrom", invalid, temporaryDirectory.resolve("incomplete-from")));
+        compile("samples.IncompleteFrom", invalid, temporaryDirectory.resolve("incomplete-from")));
   }
 
   @Test
@@ -583,9 +575,7 @@ class QueryTypeSafetyCompilationTest {
             temporaryDirectory.resolve("completed-cross-join")));
     assertFalse(
         compile(
-            "samples.CrossJoinWithOn",
-            invalid,
-            temporaryDirectory.resolve("cross-join-with-on")));
+            "samples.CrossJoinWithOn", invalid, temporaryDirectory.resolve("cross-join-with-on")));
   }
 
   @Test
@@ -630,9 +620,7 @@ class QueryTypeSafetyCompilationTest {
 
     assertTrue(
         compile(
-            "samples.ConsecutiveJoins",
-            valid,
-            temporaryDirectory.resolve("consecutive-joins")));
+            "samples.ConsecutiveJoins", valid, temporaryDirectory.resolve("consecutive-joins")));
     assertFalse(
         compile(
             "samples.IncompleteConsecutiveJoin",
@@ -742,10 +730,7 @@ class QueryTypeSafetyCompilationTest {
         """;
 
     assertTrue(
-        compile(
-            "samples.JoinedOrdering",
-            valid,
-            temporaryDirectory.resolve("joined-ordering")));
+        compile("samples.JoinedOrdering", valid, temporaryDirectory.resolve("joined-ordering")));
   }
 
   @Test

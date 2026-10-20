@@ -50,8 +50,7 @@ class MutationPlanCompilerTest {
             io.skis.dialect.SqlRenderException.class,
             () ->
                 MutationRuntime.compile(
-                    EntityRuntimeRegistry.of(List.of(runtimeModel())),
-                    ReorderingDialect.INSTANCE));
+                    EntityRuntimeRegistry.of(List.of(runtimeModel())), ReorderingDialect.INSTANCE));
 
     assertEquals(io.skis.core.SkisErrorCode.DIALECT_PARAMETER_SHAPE, failure.code());
   }

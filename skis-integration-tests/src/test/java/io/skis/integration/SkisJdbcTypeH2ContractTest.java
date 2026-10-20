@@ -33,7 +33,8 @@ class SkisJdbcTypeH2ContractTest {
     JdbcTypeContractSupport.assertNullValues(
         executor.findById(JdbcTypesTable.jdbcTypesTable, nulls.id()).orElseThrow());
     JdbcTypeContractSupport.assertNonNullValues(
-        emptyBytes, executor.findById(JdbcTypesTable.jdbcTypesTable, emptyBytes.id()).orElseThrow());
+        emptyBytes,
+        executor.findById(JdbcTypesTable.jdbcTypesTable, emptyBytes.id()).orElseThrow());
     JdbcTypeContractSupport.assertInvalidReadsFail(dataSource);
   }
 

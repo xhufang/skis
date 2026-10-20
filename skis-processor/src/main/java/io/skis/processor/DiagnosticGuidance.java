@@ -77,8 +77,7 @@ final class DiagnosticGuidance {
       case "SKIS227" -> "use a generated Table property constant with a complete entity identity";
       case "SKIS228" -> "make the projection parameter and source property types match exactly";
       case "SKIS229" -> "make the projection parameter nullable or choose a non-null property";
-      case "SKIS230" ->
-          "use an empty alias or one matching [A-Za-z_][A-Za-z0-9_]*";
+      case "SKIS230" -> "use an empty alias or one matching [A-Za-z_][A-Za-z0-9_]*";
       case "SKIS231" ->
           "regenerate the referenced entity table and use one of its property constants";
       case "SKIS232" ->

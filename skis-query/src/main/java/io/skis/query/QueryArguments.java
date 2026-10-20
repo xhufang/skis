@@ -10,8 +10,8 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The base segment is projected once from {@link QueryParameters}. Pagination values are kept in
  * a separate tail segment, so changing an offset or keyset does not copy the statement's ordinary
- * parameter table. Values have already crossed their capture boundary and are never snapshot
- * again here.
+ * parameter table. Values have already crossed their capture boundary and are never snapshot again
+ * here.
  */
 final class QueryArguments extends AbstractList<@Nullable Object> implements RandomAccess {
 

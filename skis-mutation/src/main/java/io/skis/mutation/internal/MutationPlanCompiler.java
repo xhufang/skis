@@ -3,11 +3,16 @@ package io.skis.mutation.internal;
 import io.skis.core.MutationException;
 import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.SkisStatementKind;
+import io.skis.core.internal.ExecutionListenerDispatcher;
+import io.skis.core.spi.ExecutionOperationKind;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.support.SqlCompiler;
 import io.skis.dialect.support.SqlTemplate;
 import io.skis.jdbc.internal.CompiledMutationPlan;
+import io.skis.jdbc.internal.JdbcFingerprint;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.PropertyRuntime;
@@ -34,9 +39,11 @@ import org.jspecify.annotations.Nullable;
 final class MutationPlanCompiler {
 
   private final Dialect dialect;
+  private final ExecutionListenerDispatcher listenerDispatcher;
 
-  MutationPlanCompiler(Dialect dialect) {
+  MutationPlanCompiler(Dialect dialect, ExecutionListenerDispatcher listenerDispatcher) {
     this.dialect = Objects.requireNonNull(dialect, "dialect");
+    this.listenerDispatcher = Objects.requireNonNull(listenerDispatcher, "listenerDispatcher");
   }
 
   <E> EntityMutationPlanSet<E> compile(EntityRuntimeModel<E> model) {
@@ -78,15 +85,26 @@ final class MutationPlanCompiler {
     if (properties.isEmpty()) {
       return null;
     }
-    List<ColumnExpression<?, ?>> columns = new ArrayList<>(properties.size());
-    List<SqlExpression<?>> values = new ArrayList<>(properties.size());
-    List<ParameterSlot<?>> expectedParameters = new ArrayList<>(properties.size());
-    for (int index = 0; index < properties.size(); index++) {
-      addInsertProperty(table, properties.get(index), index, columns, values, expectedParameters);
+    long startedNanos = listenerDispatcher.enabled() ? System.nanoTime() : 0L;
+    CompiledMutationPlan<E> plan;
+    try {
+      List<ColumnExpression<?, ?>> columns = new ArrayList<>(properties.size());
+      List<SqlExpression<?>> values = new ArrayList<>(properties.size());
+      List<ParameterSlot<?>> expectedParameters = new ArrayList<>(properties.size());
+      for (int index = 0; index < properties.size(); index++) {
+        addInsertProperty(table, properties.get(index), index, columns, values, expectedParameters);
+      }
+      RenderedSql rendered = render(new InsertStatement(table, columns, values));
+      requireParameterShape(entity, "insert", rendered, expectedParameters);
+      plan = new CompiledMutationPlan<>("insert", dialect.id(), rendered, binders.insert());
+    } catch (RuntimeException | Error failure) {
+      notifyPrewarm(
+          ExecutionOperationKind.INSERT, SkisStatementKind.INSERT, startedNanos, null, failure);
+      throw failure;
     }
-    RenderedSql rendered = render(new InsertStatement(table, columns, values));
-    requireParameterShape(entity, "insert", rendered, expectedParameters);
-    return new CompiledMutationPlan<>("insert", dialect.id(), rendered, binders.insert());
+    notifyPrewarm(
+        ExecutionOperationKind.INSERT, SkisStatementKind.INSERT, startedNanos, plan, null);
+    return plan;
   }
 
   private <E> @Nullable CompiledMutationPlan<E> compileUpdate(
@@ -116,36 +134,88 @@ final class MutationPlanCompiler {
     if (assignments.isEmpty()) {
       return null;
     }
-
-    List<SqlPredicate> predicates = new ArrayList<>(2);
-    predicates.add(equalityPredicate(table, id, expectedParameters.size(), expectedParameters));
-    if (versionChecked) {
-      PropertyMeta<E, ?> version = entity.version().orElseThrow().property();
-      predicates.add(
-          equalityPredicate(table, version, expectedParameters.size(), expectedParameters));
+    long startedNanos = listenerDispatcher.enabled() ? System.nanoTime() : 0L;
+    CompiledMutationPlan<E> plan;
+    try {
+      List<SqlPredicate> predicates = new ArrayList<>(2);
+      predicates.add(equalityPredicate(table, id, expectedParameters.size(), expectedParameters));
+      if (versionChecked) {
+        PropertyMeta<E, ?> version = entity.version().orElseThrow().property();
+        predicates.add(
+            equalityPredicate(table, version, expectedParameters.size(), expectedParameters));
+      }
+      SqlPredicate where =
+          predicates.size() == 1 ? predicates.getFirst() : LogicalPredicate.and(predicates);
+      RenderedSql rendered = render(new UpdateStatement(table, assignments, where));
+      requireParameterShape(entity, "updateById", rendered, expectedParameters);
+      plan = new CompiledMutationPlan<>("updateById", dialect.id(), rendered, binder);
+    } catch (RuntimeException | Error failure) {
+      notifyPrewarm(
+          ExecutionOperationKind.UPDATE_BY_ID,
+          SkisStatementKind.UPDATE,
+          startedNanos,
+          null,
+          failure);
+      throw failure;
     }
-    SqlPredicate where =
-        predicates.size() == 1 ? predicates.getFirst() : LogicalPredicate.and(predicates);
-    RenderedSql rendered = render(new UpdateStatement(table, assignments, where));
-    requireParameterShape(entity, "updateById", rendered, expectedParameters);
-    return new CompiledMutationPlan<>("updateById", dialect.id(), rendered, binder);
+    notifyPrewarm(
+        ExecutionOperationKind.UPDATE_BY_ID, SkisStatementKind.UPDATE, startedNanos, plan, null);
+    return plan;
   }
 
   private <E> CompiledMutationPlan<Object> compileDelete(
       EntityRuntimeModel<E> model, RuntimeMutationTable<E> table, PropertyMeta<E, ?> id) {
-    List<ParameterSlot<?>> expectedParameters = new ArrayList<>(1);
-    RenderedSql rendered =
-        render(new DeleteStatement(table, equalityPredicate(table, id, 0, expectedParameters)));
-    requireParameterShape(model.entity(), "deleteById", rendered, expectedParameters);
-    PropertyRuntime<E, ?> idRuntime = model.property(id);
-    return new CompiledMutationPlan<>(
-        "deleteById",
+    long startedNanos = listenerDispatcher.enabled() ? System.nanoTime() : 0L;
+    CompiledMutationPlan<Object> plan;
+    try {
+      List<ParameterSlot<?>> expectedParameters = new ArrayList<>(1);
+      RenderedSql rendered =
+          render(new DeleteStatement(table, equalityPredicate(table, id, 0, expectedParameters)));
+      requireParameterShape(model.entity(), "deleteById", rendered, expectedParameters);
+      PropertyRuntime<E, ?> idRuntime = model.property(id);
+      plan =
+          new CompiledMutationPlan<>(
+              "deleteById",
+              dialect.id(),
+              rendered,
+              (statement, firstIndex, value, context) -> {
+                idRuntime.bind(statement, firstIndex, value, context);
+                return firstIndex + 1;
+              });
+    } catch (RuntimeException | Error failure) {
+      notifyPrewarm(
+          ExecutionOperationKind.DELETE_BY_ID,
+          SkisStatementKind.DELETE,
+          startedNanos,
+          null,
+          failure);
+      throw failure;
+    }
+    notifyPrewarm(
+        ExecutionOperationKind.DELETE_BY_ID, SkisStatementKind.DELETE, startedNanos, plan, null);
+    return plan;
+  }
+
+  private void notifyPrewarm(
+      ExecutionOperationKind operationKind,
+      SkisStatementKind statementKind,
+      long startedNanos,
+      @Nullable CompiledMutationPlan<?> plan,
+      @Nullable Throwable failure) {
+    if (!listenerDispatcher.enabled()) {
+      return;
+    }
+    long durationNanos = Math.max(0L, System.nanoTime() - startedNanos);
+    String sql = plan == null ? null : plan.sql();
+    listenerDispatcher.prewarmCompilationCompleted(
+        operationKind,
+        StatementPurpose.PRIMARY,
+        statementKind,
         dialect.id(),
-        rendered,
-        (statement, firstIndex, value, context) -> {
-          idRuntime.bind(statement, firstIndex, value, context);
-          return firstIndex + 1;
-        });
+        durationNanos,
+        sql == null ? null : JdbcFingerprint.of(sql),
+        sql,
+        failure);
   }
 
   private static <E, V> void addInsertProperty(

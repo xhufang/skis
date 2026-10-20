@@ -76,8 +76,7 @@ class ProjectionPlanCacheTest {
   private static final DialectCapabilities TEST_CAPABILITIES =
       DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
   private static final QueryPlanKey.DialectIdentity DIALECT =
-      new QueryPlanKey.DialectIdentity(
-          "test", TEST_CAPABILITIES, TEST_CAPABILITIES.version());
+      new QueryPlanKey.DialectIdentity("test", TEST_CAPABILITIES, TEST_CAPABILITIES.version());
 
   @Test
   void recordsRealHitsMissesAndSize() {
@@ -118,27 +117,24 @@ class ProjectionPlanCacheTest {
     CompiledQueryPlan<Pet, Object> compiled = catalogQuery(operations);
     assertSame(compiled, catalogQuery(operations));
     assertEquals(
-        new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 2),
-        catalog.projectionPlanCacheStatistics());
+        new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 2), catalog.projectionPlanCacheStatistics());
     assertEquals(1, catalog.invalidateProjectionPlans(PET));
     assertEquals(
-        new QueryPlanCacheStatistics(1, 1, 0, 1, 0, 2),
-        catalog.projectionPlanCacheStatistics());
+        new QueryPlanCacheStatistics(1, 1, 0, 1, 0, 2), catalog.projectionPlanCacheStatistics());
     assertNotSame(compiled, catalogQuery(operations));
     catalog.clearProjectionPlans();
     assertEquals(
-        new QueryPlanCacheStatistics(1, 2, 0, 2, 0, 2),
-        catalog.projectionPlanCacheStatistics());
+        new QueryPlanCacheStatistics(1, 2, 0, 2, 0, 2), catalog.projectionPlanCacheStatistics());
     assertEquals(0, catalog.invalidateProjectionPlans(OWNER));
     assertEquals(
-        new QueryPlanCacheStatistics(1, 2, 0, 2, 0, 2),
-        catalog.projectionPlanCacheStatistics());
+        new QueryPlanCacheStatistics(1, 2, 0, 2, 0, 2), catalog.projectionPlanCacheStatistics());
   }
 
   private static CompiledQueryPlan<Pet, Object> catalogQuery(QueryOperations operations) {
     PetTable table = new PetTable("p");
     return ((DefaultSelectQuery<Pet>) operations.selectFrom(table))
-        .compilation(QueryPagination.None.INSTANCE).plan();
+        .compilation(QueryPagination.None.INSTANCE)
+        .plan();
   }
 
   @Test
@@ -347,8 +343,7 @@ class ProjectionPlanCacheTest {
     }
 
     assertEquals(1, compiles.get());
-    assertEquals(
-        new QueryPlanCacheStatistics(0, callers, 0, 0, 1, 1), cache.statistics());
+    assertEquals(new QueryPlanCacheStatistics(0, callers, 0, 0, 1, 1), cache.statistics());
   }
 
   @Test
@@ -711,7 +706,8 @@ class ProjectionPlanCacheTest {
         assertEquals(0, nestedCompiles.get(), operation);
         // Reuse the same worker to check both admission release and active-owner cleanup.
         CachedQueryPlan<Pet> recovered =
-            executor.submit(
+            executor
+                .submit(
                     () -> cache.getOrCompile(outer, dependencies(PET), () -> plan("SELECT retry")))
                 .get(5, TimeUnit.SECONDS);
         assertEquals("SELECT retry", recovered.plan().sql());
@@ -1056,23 +1052,17 @@ class ProjectionPlanCacheTest {
         SkisConfigurationException.class,
         () -> new ProjectionPlanCache(0, Duration.ZERO, () -> 0L));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new QueryPlanCacheStatistics(0, 0, 0, 0, 1, 0));
+        IllegalArgumentException.class, () -> new QueryPlanCacheStatistics(0, 0, 0, 0, 1, 0));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new QueryPlanCacheStatistics(0, 0, 0, 0, 0, -1));
+        IllegalArgumentException.class, () -> new QueryPlanCacheStatistics(0, 0, 0, 0, 0, -1));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new QueryPlanCacheStatistics(1, 0, 0, 0, 0, 0));
+        IllegalArgumentException.class, () -> new QueryPlanCacheStatistics(1, 0, 0, 0, 0, 0));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new QueryPlanCacheStatistics(0, 1, 0, 0, 0, 0));
+        IllegalArgumentException.class, () -> new QueryPlanCacheStatistics(0, 1, 0, 0, 0, 0));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new QueryPlanCacheStatistics(0, 0, 1, 0, 0, 0));
+        IllegalArgumentException.class, () -> new QueryPlanCacheStatistics(0, 0, 1, 0, 0, 0));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new QueryPlanCacheStatistics(0, 0, 0, 1, 0, 0));
+        IllegalArgumentException.class, () -> new QueryPlanCacheStatistics(0, 0, 0, 1, 0, 0));
   }
 
   private static ProjectionPlanCache cache(
@@ -1158,8 +1148,7 @@ class ProjectionPlanCacheTest {
     DialectCapabilities capabilities = TEST_CAPABILITIES;
     return new Dialect() {
       private final IdentifierRules identifiers = identifier -> identifier;
-      private final SqlRenderer renderer =
-          new StandardSqlRenderer(this);
+      private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
       @Override
       public String id() {
@@ -1201,6 +1190,7 @@ class ProjectionPlanCacheTest {
     private PetTable(String alias) {
       super(PET, alias);
     }
+
     public PetTable as(String alias) {
       return new PetTable(alias);
     }

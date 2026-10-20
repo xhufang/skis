@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.DialectCapabilities;
@@ -102,14 +103,20 @@ class QueryPlanKeyTest {
   @Test
   void identityFactoryCapturesCompleteStableDialectIdentity() {
     Dialect dialect = testDialect("postgresql", POSTGRES_CAPABILITIES, 17, true);
-    QueryPlanKey.DialectIdentity identity = QueryPlanKey.DialectIdentity.from(dialect).orElseThrow();
+    QueryPlanKey.DialectIdentity identity =
+        QueryPlanKey.DialectIdentity.from(dialect).orElseThrow();
     QueryPlanKey.DialectIdentity capabilityChangedIdentity =
-        QueryPlanKey.DialectIdentity.from(testDialect(
-            "postgresql", DialectCapabilities.of(DialectFeature.CATALOG_QUALIFIED_TABLES),
-            17, true)).orElseThrow();
+        QueryPlanKey.DialectIdentity.from(
+                testDialect(
+                    "postgresql",
+                    DialectCapabilities.of(DialectFeature.CATALOG_QUALIFIED_TABLES),
+                    17,
+                    true))
+            .orElseThrow();
     QueryPlanKey.DialectIdentity versionChangedIdentity =
         QueryPlanKey.DialectIdentity.from(
-            testDialect("postgresql", POSTGRES_CAPABILITIES, 18, true)).orElseThrow();
+                testDialect("postgresql", POSTGRES_CAPABILITIES, 18, true))
+            .orElseThrow();
 
     assertEquals(POSTGRES, identity);
     assertEquals(identity.capabilityVersion(), capabilityChangedIdentity.capabilityVersion());
@@ -120,8 +127,10 @@ class QueryPlanKeyTest {
 
   @Test
   void identityFactoryRejectsDialectsWithoutAnExplicitlyStableIdentity() {
-    assertTrue(QueryPlanKey.DialectIdentity.from(
-        testDialect("custom", DialectCapabilities.none(), 1, false)).isEmpty());
+    assertTrue(
+        QueryPlanKey.DialectIdentity.from(
+                testDialect("custom", DialectCapabilities.none(), 1, false))
+            .isEmpty());
   }
 
   @Test
@@ -159,11 +168,9 @@ class QueryPlanKeyTest {
         projection("pet-name-view-v1", rebuiltTable.name());
 
     assertEquals(
-        result(SelectedResult.entity(KEY_TABLE)),
-        result(SelectedResult.entity(rebuiltTable)));
+        result(SelectedResult.entity(KEY_TABLE)), result(SelectedResult.entity(rebuiltTable)));
     assertNotEquals(
-        result(SelectedResult.entity(KEY_TABLE)),
-        result(SelectedResult.nullableEntity(KEY_TABLE)));
+        result(SelectedResult.entity(KEY_TABLE)), result(SelectedResult.nullableEntity(KEY_TABLE)));
     assertNotEquals(
         result(SelectedResult.requiredScalar(KEY_TABLE.id())),
         result(SelectedResult.nullableScalar(KEY_TABLE.id())));
@@ -175,9 +182,7 @@ class QueryPlanKeyTest {
         result(SelectedResult.projection(rebuiltProjection)));
     assertNotEquals(
         result(SelectedResult.projection(firstProjection)),
-        result(
-            SelectedResult.projection(
-                projection("pet-name-view-v2", KEY_TABLE.name()))));
+        result(SelectedResult.projection(projection("pet-name-view-v2", KEY_TABLE.name()))));
   }
 
   @Test
@@ -188,8 +193,7 @@ class QueryPlanKeyTest {
             PetNameView.class,
             "same-public-mapping-id",
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
             readers -> {
               ProjectionMapping.ValueReader<String> reader = readers.reader(0, String.class);
               return (resultSet, context) -> new PetNameView(reader.read(resultSet, context));
@@ -200,8 +204,7 @@ class QueryPlanKeyTest {
             PetNameView.class,
             "same-public-mapping-id",
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
             readers -> {
               ProjectionMapping.ValueReader<String> reader = readers.reader(0, String.class);
               return (resultSet, context) -> new PetNameView(reader.read(resultSet, context));
@@ -225,8 +228,7 @@ class QueryPlanKeyTest {
             PetNameView.class,
             "same-public-mapping-and-factory",
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
             factory);
     ProjectionMapping<PetNameView> nullable =
         ProjectionMapping.generated(
@@ -234,8 +236,7 @@ class QueryPlanKeyTest {
             PetNameView.class,
             "same-public-mapping-and-factory",
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NULLABLE, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NULLABLE, 0)),
             factory);
 
     assertNotEquals(
@@ -249,8 +250,7 @@ class QueryPlanKeyTest {
     ProjectionSelection<PetNameView> second = statefulProjection("second-");
 
     assertNotEquals(
-        result(SelectedResult.projection(first)),
-        result(SelectedResult.projection(second)));
+        result(SelectedResult.projection(first)), result(SelectedResult.projection(second)));
   }
 
   @Test
@@ -268,15 +268,13 @@ class QueryPlanKeyTest {
             List.of(foreignId, foreignAlternateId, foreignName),
             new PrimaryKeyMeta<>(List.of(foreignId)),
             false);
-    PetTable foreignTable =
-        new PetTable(foreignPet, foreignId, foreignAlternateId, foreignName);
+    PetTable foreignTable = new PetTable(foreignPet, foreignId, foreignAlternateId, foreignName);
 
     assertTrue(SelectedResult.entity(foreignTable).planKeyResultShape(IDENTITIES).isEmpty());
     assertTrue(
         QueryPlanKey.ParameterShape.codec(
                 IDENTITIES,
-                new ParameterSlot<>(
-                    0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
+                new ParameterSlot<>(0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
                 foreignTable.id())
             .isEmpty());
   }
@@ -317,9 +315,11 @@ class QueryPlanKeyTest {
     byte[] classBytes = classBytes(LoaderScopedResult.class);
     String binaryName = LoaderScopedResult.class.getName();
     LoaderEntityTable first =
-        new LoaderEntityTable(loaderEntity(new ByteArrayClassLoader().define(binaryName, classBytes)));
+        new LoaderEntityTable(
+            loaderEntity(new ByteArrayClassLoader().define(binaryName, classBytes)));
     LoaderEntityTable second =
-        new LoaderEntityTable(loaderEntity(new ByteArrayClassLoader().define(binaryName, classBytes)));
+        new LoaderEntityTable(
+            loaderEntity(new ByteArrayClassLoader().define(binaryName, classBytes)));
 
     SelectStatement firstJoin =
         new SelectStatement(
@@ -352,8 +352,7 @@ class QueryPlanKeyTest {
     assertDependencyOnlyLoaderIsolation(firstExists, secondExists);
 
     assertDependencyOnlyLoaderIsolation(
-        derivedStatement(first, "loader_derived"),
-        derivedStatement(second, "loader_derived"));
+        derivedStatement(first, "loader_derived"), derivedStatement(second, "loader_derived"));
   }
 
   @Test
@@ -391,7 +390,9 @@ class QueryPlanKeyTest {
               order,
               false,
               pagination,
-              QueryTestSupport.arguments(state.structure()).withPagination(pagination));
+              QueryTestSupport.arguments(state.structure()).withPagination(pagination),
+              null,
+              StatementPurpose.PRIMARY);
       ResolvedStatement analysis = ResolvedStatement.analyze(query.ast());
       QueryPlanDependencies sources = QueryPlanDependencies.from(analysis);
       compiled.add(query);
@@ -412,8 +413,7 @@ class QueryPlanKeyTest {
     assertTrue(dependencies.get(0).sameEntities(dependencies.get(1)));
     assertNotEquals(keys.get(0), keys.get(1));
     assertThrows(
-        IllegalArgumentException.class,
-        () -> keys.get(0).requireDependencies(dependencies.get(1)));
+        IllegalArgumentException.class, () -> keys.get(0).requireDependencies(dependencies.get(1)));
 
     ProjectionPlanCache cache = new ProjectionPlanCache(2, Duration.ofMinutes(1), () -> 0L);
     AtomicInteger compilations = new AtomicInteger();
@@ -663,8 +663,7 @@ class QueryPlanKeyTest {
   @Test
   void defensivelyCopiesEveryCallerOwnedCollection() {
     ArrayList<Boolean> nullMarkers = new ArrayList<>(List.of(false));
-    ArrayList<QueryPlanKey.ParameterShape> parameters =
-        new ArrayList<>(List.of(LONG_PARAMETER));
+    ArrayList<QueryPlanKey.ParameterShape> parameters = new ArrayList<>(List.of(LONG_PARAMETER));
     HashMap<String, String> signatures = new HashMap<>(Map.of("policy", "none"));
     QueryPlanKey key =
         key(
@@ -700,20 +699,17 @@ class QueryPlanKeyTest {
         Sql.derived(Sql.select(inner.id()).from(inner), "published_pet", output);
     Selectable<Long> derivedColumn = derived.column(output);
     Selectable<Long> scalar = Sql.scalar(Sql.select(inner.id()).from(inner));
-    Selectable<Long> literal =
-        new NonNullExpressionSelectable<>(LiteralExpression.one(Long.class));
+    Selectable<Long> literal = new NonNullExpressionSelectable<>(LiteralExpression.one(Long.class));
 
     assertEquals(
         parameter(0, inner.id(), Nullability.NON_NULL),
         parameter(0, derivedColumn, Nullability.NON_NULL));
     assertEquals(
-        parameter(0, inner.id(), Nullability.NON_NULL),
-        parameter(0, scalar, Nullability.NON_NULL));
+        parameter(0, inner.id(), Nullability.NON_NULL), parameter(0, scalar, Nullability.NON_NULL));
     assertTrue(
         QueryPlanKey.ParameterShape.codec(
                 IDENTITIES,
-                new ParameterSlot<>(
-                    0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
+                new ParameterSlot<>(0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
                 literal)
             .isEmpty());
   }
@@ -744,8 +740,7 @@ class QueryPlanKeyTest {
 
   @Test
   void rejectsAmbiguousOrImpossibleKeyShapes() {
-    QueryPlanKey.ParameterShape ordinalOne =
-        parameter(1, KEY_TABLE.id(), Nullability.NON_NULL);
+    QueryPlanKey.ParameterShape ordinalOne = parameter(1, KEY_TABLE.id(), Nullability.NON_NULL);
     ArrayList<Boolean> nullMarker = new ArrayList<>();
     nullMarker.add(null);
 
@@ -762,25 +757,18 @@ class QueryPlanKeyTest {
     assertThrows(
         IllegalArgumentException.class,
         () -> new QueryPaginationShape(QueryPaginationShape.Mode.OFFSET, List.of(false)));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> QueryPaginationShape.keyset(List.of()));
-    assertThrows(
-        NullPointerException.class,
-        () -> QueryPaginationShape.keyset(nullMarker));
+    assertThrows(IllegalArgumentException.class, () -> QueryPaginationShape.keyset(List.of()));
+    assertThrows(NullPointerException.class, () -> QueryPaginationShape.keyset(nullMarker));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             QueryPlanKey.ParameterShape.codec(
                 IDENTITIES,
-                new ParameterSlot<>(
-                    0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
+                new ParameterSlot<>(0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
                 KEY_TABLE.name()));
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            new QueryPlanKey.DialectIdentity(
-                "PostgreSQL", DialectCapabilities.none(), 1));
+        () -> new QueryPlanKey.DialectIdentity("PostgreSQL", DialectCapabilities.none(), 1));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -794,8 +782,7 @@ class QueryPlanKeyTest {
   }
 
   private static QueryPlanKey actualKey(PetTable table, QueryCondition condition) {
-    CompiledQueryStructure compiled =
-        QueryTestSupport.compile(table, List.of(), condition);
+    CompiledQueryStructure compiled = QueryTestSupport.compile(table, List.of(), condition);
     SelectStatement statement =
         new SelectStatement(
             false,
@@ -807,8 +794,7 @@ class QueryPlanKeyTest {
             compiled.having(),
             compiled.orderBy(),
             null);
-    ResolvedStructureKey structure =
-        SemanticValidator.analyzeComplete(statement).structureKey();
+    ResolvedStructureKey structure = SemanticValidator.analyzeComplete(statement).structureKey();
     if (compiled.parameterSlots().size() != compiled.parameterSources().size()) {
       throw new AssertionError("compiled parameter descriptors and sources must stay aligned");
     }
@@ -830,19 +816,14 @@ class QueryPlanKeyTest {
         Map.of());
   }
 
-  private static SelectStatement derivedStatement(
-      LoaderEntityTable source, String derivedAlias) {
-    SelectStatement nested =
-        new SelectStatement(source.selections(), source.tableExpression());
+  private static SelectStatement derivedStatement(LoaderEntityTable source, String derivedAlias) {
+    SelectStatement nested = new SelectStatement(source.selections(), source.tableExpression());
     DerivedRelationReference reference =
         new DerivedRelationReference(
             Identifier.of(derivedAlias),
             List.of(
                 new DerivedOutputColumn(
-                    Identifier.of("id"),
-                    Long.class,
-                    SqlType.BIGINT,
-                    Nullability.NON_NULL)));
+                    Identifier.of("id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL)));
     FromClause from =
         new FromClause(
             KEY_TABLE.tableExpression(),
@@ -898,13 +879,7 @@ class QueryPlanKeyTest {
       QueryPlanKey.DialectIdentity dialect,
       Map<String, String> contextSignatures) {
     return new QueryPlanKey(
-        structure,
-        PLAN_DEPENDENCIES,
-        resultShape,
-        variant,
-        parameters,
-        dialect,
-        contextSignatures);
+        structure, PLAN_DEPENDENCIES, resultShape, variant, parameters, dialect, contextSignatures);
   }
 
   private static Dialect testDialect(
@@ -959,8 +934,7 @@ class QueryPlanKeyTest {
       Nullability nullability) {
     return QueryPlanKey.ParameterShape.codec(
             identities,
-            new ParameterSlot<>(
-                ordinal, source.javaType(), source.sqlType(), nullability),
+            new ParameterSlot<>(ordinal, source.javaType(), source.sqlType(), nullability),
             source)
         .orElseThrow();
   }
@@ -991,13 +965,10 @@ class QueryPlanKeyTest {
             PetNameView.class,
             mappingId,
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
             readers -> {
-              ProjectionMapping.ValueReader<String> reader =
-                  readers.reader(0, String.class);
-              return (resultSet, context) ->
-                  new PetNameView(reader.read(resultSet, context));
+              ProjectionMapping.ValueReader<String> reader = readers.reader(0, String.class);
+              return (resultSet, context) -> new PetNameView(reader.read(resultSet, context));
             })
         .bind(name);
   }
@@ -1008,8 +979,7 @@ class QueryPlanKeyTest {
             PetNameView.class,
             "same-stateful-mapping-id",
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
             readers -> {
               ProjectionMapping.ValueReader<String> reader = readers.reader(0, String.class);
               return (resultSet, context) ->
@@ -1025,8 +995,7 @@ class QueryPlanKeyTest {
             resultType,
             mappingId,
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "name", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
             ignored -> (resultSet, context) -> null)
         .bind(name);
   }

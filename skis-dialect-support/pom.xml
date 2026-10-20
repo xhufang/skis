@@ -9,7 +9,8 @@
   </parent>
   <artifactId>skis-dialect-support</artifactId>
   <name>skis-dialect-support</name>
-  <description>Reusable standard SQL rendering support for SKIS dialect implementations</description>
+  <description>Reusable standard SQL rendering support for SKIS dialect implementations
+  </description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>

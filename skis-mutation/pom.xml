@@ -9,7 +9,8 @@
   </parent>
   <artifactId>skis-mutation</artifactId>
   <name>skis-mutation</name>
-  <description>Generated single-entity insert, update-by-id, and delete-by-id operations</description>
+  <description>Generated single-entity insert, update-by-id, and delete-by-id operations
+  </description>
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>

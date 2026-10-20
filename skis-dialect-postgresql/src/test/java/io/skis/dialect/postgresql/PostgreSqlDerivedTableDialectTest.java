@@ -31,18 +31,15 @@ class PostgreSqlDerivedTableDialectTest {
     DerivedRelationReference reference = reference();
     DerivedRelationSource source =
         new DerivedRelationSource(
-            new SelectStatement(
-                List.of(inner.id(), inner.name()), inner, inner.name().eq(name)),
+            new SelectStatement(List.of(inner.id(), inner.name()), inner, inner.name().eq(name)),
             reference);
 
     RenderedSql rendered =
         PostgreSqlTestRendering.render(
             new SelectStatement(
-                List.of(new DerivedColumnExpression<Long>(reference, 0)),
-                FromClause.of(source)));
+                List.of(new DerivedColumnExpression<Long>(reference, 0)), FromClause.of(source)));
 
-    assertTrue(
-        PostgreSqlDialect.INSTANCE.capabilities().supports(DialectFeature.DERIVED_TABLE));
+    assertTrue(PostgreSqlDialect.INSTANCE.capabilities().supports(DialectFeature.DERIVED_TABLE));
     assertEquals(
         "SELECT \"visible_pets\".\"pet_id\" FROM "
             + "(SELECT \"inner_pet\".\"id\" AS \"pet_id\", "

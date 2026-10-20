@@ -9,14 +9,14 @@ import org.jspecify.annotations.Nullable;
  * Root of every framework-defined unchecked runtime failure.
  *
  * <p>An exception carries a strong {@link SkisErrorCode} and immutable {@link SkisDiagnostics}. The
- * generated message is a value-free safe snapshot built only from the code description and the fixed
- * diagnostic groups. The original cause and suppressed failures remain available for troubleshooting,
- * but are deliberately not rendered into the default message or diagnostics.
+ * generated message is a value-free safe snapshot built only from the code description and the
+ * fixed diagnostic groups. The original cause and suppressed failures remain available for
+ * troubleshooting, but are deliberately not rendered into the default message or diagnostics.
  *
  * <p>The constructor is not public. Framework modules create instances through the constrained
- * factories on the concrete subclasses, which validate the code family and required fields. The root
- * does not wrap every Throwable that leaves a framework call stack; JDK value-operation exceptions and
- * user callback failures keep their original semantics.
+ * factories on the concrete subclasses, which validate the code family and required fields. The
+ * root does not wrap every Throwable that leaves a framework call stack; JDK value-operation
+ * exceptions and user callback failures keep their original semantics.
  */
 public abstract class SkisException extends RuntimeException {
 
@@ -70,12 +70,6 @@ public abstract class SkisException extends RuntimeException {
   private static String safeMessage(SkisErrorCode code, SkisDiagnostics diagnostics) {
     Objects.requireNonNull(code, "code");
     Objects.requireNonNull(diagnostics, "diagnostics");
-    return "["
-        + code.code()
-        + "] "
-        + code.description()
-        + " ("
-        + diagnostics.safeText()
-        + ")";
+    return "[" + code.code() + "] " + code.description() + " (" + diagnostics.safeText() + ")";
   }
 }

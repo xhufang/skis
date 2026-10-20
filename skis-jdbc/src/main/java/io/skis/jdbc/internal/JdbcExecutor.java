@@ -9,7 +9,12 @@ import io.skis.core.SkisDiagnostics;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.SkisOperation;
 import io.skis.core.SkisStatementKind;
+import io.skis.core.internal.OperationObservation;
+import io.skis.core.internal.StatementObservation;
 import io.skis.core.spi.ExecutionContext;
+import io.skis.core.spi.ExecutionTermination;
+import io.skis.core.spi.StatementCompletedEvent;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.ExceptionClassifier;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.jdbc.JdbcExecutionException;
@@ -125,41 +130,65 @@ public final class JdbcExecutor {
   /** Executes and materializes every result row using an explicit execution context. */
   public <R extends @Nullable Object, P> List<R> fetchList(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
+    return fetchList(plan, parameters, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  /** Executes and observes every materialized result row. */
+  public <R extends @Nullable Object, P> List<R> fetchList(
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
     return withConnection(
         plan,
         executionContext,
-        connection -> {
-          try (PreparedStatement statement =
-                  prepare(connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS);
-              ResultSet resultSet = statement.executeQuery()) {
-            List<R> results = new ArrayList<>();
-            while (resultSet.next()) {
-              results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
-            }
-            return results;
-          }
-        });
+        connection ->
+            executeList(
+                connection,
+                plan,
+                parameters,
+                executionContext,
+                NO_MINIMUM_MAX_ROWS,
+                observation,
+                purpose));
   }
 
   /** Executes a SQL-limited query and returns its first row without cardinality checking. */
   public <R, P> Optional<R> fetchFirst(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
-    JdbcRow<R> row = fetchSingleRow(plan, parameters, executionContext, false, false);
+    JdbcRow<R> row =
+        fetchSingleRow(
+            plan, parameters, executionContext, false, false, null, StatementPurpose.PRIMARY);
     return row.present() ? Optional.of(Objects.requireNonNull(row.value())) : Optional.empty();
   }
 
   /** Executes one nullable result row while preserving the distinction between no row and NULL. */
   public <R extends @Nullable Object, P> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
-    return fetchSingleRow(plan, parameters, executionContext, true, true);
+    return fetchNullableOne(plan, parameters, executionContext, null, StatementPurpose.PRIMARY);
   }
 
-  /** Executes one SQL-limited nullable result row without cardinality checking. */
+  /** Executes and observes one nullable result row. */
+  public <R extends @Nullable Object, P> JdbcRow<R> fetchNullableOne(
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return fetchSingleRow(plan, parameters, executionContext, true, true, observation, purpose);
+  }
+
+  /** Executes and observes one SQL-limited nullable result row. */
   public <R extends @Nullable Object, P> JdbcRow<R> fetchNullableFirst(
-      CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
-    return fetchSingleRow(plan, parameters, executionContext, true, false);
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return fetchSingleRow(plan, parameters, executionContext, true, false, observation, purpose);
   }
 
   /** Validates a user-visible page size against effective statement/executor maxRows. */
@@ -184,6 +213,18 @@ public final class JdbcExecutor {
   /** Executes a size+1 slice while keeping the extra internal row outside visible maxRows. */
   public <R extends @Nullable Object, P> List<R> fetchSliceList(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext, int pageSize) {
+    return fetchSliceList(
+        plan, parameters, executionContext, pageSize, null, StatementPurpose.PRIMARY);
+  }
+
+  /** Executes and observes a size+1 slice. */
+  public <R extends @Nullable Object, P> List<R> fetchSliceList(
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      int pageSize,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     validateRequestedRows(pageSize, executionContext);
     int internalRows;
     try {
@@ -195,7 +236,15 @@ public final class JdbcExecutor {
     return withConnection(
         plan,
         executionContext,
-        connection -> executeList(connection, plan, parameters, executionContext, internalRows));
+        connection ->
+            executeList(
+                connection,
+                plan,
+                parameters,
+                executionContext,
+                internalRows,
+                observation,
+                purpose));
   }
 
   /** Executes content and count on one acquired connection and returns no partial result. */
@@ -205,6 +254,18 @@ public final class JdbcExecutor {
       CompiledQueryPlan<Long, C> countPlan,
       C countParameters,
       ExecutionContext executionContext) {
+    return fetchPage(
+        contentPlan, contentParameters, countPlan, countParameters, executionContext, null);
+  }
+
+  /** Executes and observes content and count on one acquired connection. */
+  public <R extends @Nullable Object, P, C> JdbcPageResult<R> fetchPage(
+      CompiledQueryPlan<R, P> contentPlan,
+      P contentParameters,
+      CompiledQueryPlan<Long, C> countPlan,
+      C countParameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation) {
     Objects.requireNonNull(contentPlan, "contentPlan");
     Objects.requireNonNull(countPlan, "countPlan");
     Objects.requireNonNull(executionContext, "executionContext");
@@ -218,11 +279,20 @@ public final class JdbcExecutor {
                   contentPlan,
                   contentParameters,
                   executionContext,
-                  NO_MINIMUM_MAX_ROWS);
+                  NO_MINIMUM_MAX_ROWS,
+                  observation,
+                  StatementPurpose.PAGE_CONTENT);
           try {
             JdbcRow<Long> count =
                 executeSingleRow(
-                    connection, countPlan, countParameters, executionContext, false, true);
+                    connection,
+                    countPlan,
+                    countParameters,
+                    executionContext,
+                    false,
+                    true,
+                    observation,
+                    StatementPurpose.PAGE_COUNT);
             if (!count.present() || count.value() == null) {
               throw QueryValidationException.of(
                   SkisErrorCode.QUERY_RESULT_MAPPING,
@@ -240,6 +310,16 @@ public final class JdbcExecutor {
   /** Opens an explicit cursor that owns its ResultSet, Statement, and acquired connection. */
   public <R extends @Nullable Object, P> JdbcCursor<R> openCursor(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
+    return openCursor(plan, parameters, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  /** Opens an observed cursor that completes only when its resources really terminate. */
+  public <R extends @Nullable Object, P> JdbcCursor<R> openCursor(
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
     Connection connection;
@@ -249,20 +329,32 @@ public final class JdbcExecutor {
       throw translate(plan, JdbcPhase.ACQUIRE, failure);
     }
     PreparedStatement statement = null;
+    StatementObservation statementObservation = null;
     try {
+      statementObservation = startStatement(observation, purpose, plan);
       statement = prepare(connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS);
-      ResultSet resultSet = statement.executeQuery();
-      return new DefaultJdbcCursor<>(plan, executionContext, connection, statement, resultSet);
+      ResultSet resultSet = executeQuery(statement, statementObservation);
+      return new DefaultJdbcCursor<>(
+          plan,
+          executionContext,
+          connection,
+          statement,
+          resultSet,
+          observation,
+          statementObservation);
     } catch (PhasedSqlFailure failure) {
       RuntimeException primary = translate(plan, failure.phase(), failure.sqlException());
-      closeOpenFailure(plan, connection, statement, executionContext, primary);
+      closeOpenFailure(
+          plan, connection, statement, executionContext, statementObservation, primary);
       throw primary;
     } catch (SQLException failure) {
       RuntimeException primary = translate(plan, JdbcPhase.EXECUTE, failure);
-      closeOpenFailure(plan, connection, statement, executionContext, primary);
+      closeOpenFailure(
+          plan, connection, statement, executionContext, statementObservation, primary);
       throw primary;
     } catch (RuntimeException | Error failure) {
-      closeOpenFailure(plan, connection, statement, executionContext, failure);
+      closeOpenFailure(
+          plan, connection, statement, executionContext, statementObservation, failure);
       throw failure;
     }
   }
@@ -275,7 +367,18 @@ public final class JdbcExecutor {
   /** Executes a query requiring at most one row using an explicit execution context. */
   public <R, P> Optional<R> fetchOne(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
-    JdbcRow<R> row = fetchSingleRow(plan, parameters, executionContext, false, true);
+    return fetchOne(plan, parameters, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  /** Executes and observes a query requiring at most one row. */
+  public <R, P> Optional<R> fetchOne(
+      CompiledQueryPlan<R, P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    JdbcRow<R> row =
+        fetchSingleRow(plan, parameters, executionContext, false, true, observation, purpose);
     return row.present() ? Optional.of(Objects.requireNonNull(row.value())) : Optional.empty();
   }
 
@@ -284,7 +387,9 @@ public final class JdbcExecutor {
       P parameters,
       ExecutionContext executionContext,
       boolean nullable,
-      boolean checkMultiple) {
+      boolean checkMultiple,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
     return withConnection(
@@ -292,7 +397,14 @@ public final class JdbcExecutor {
         executionContext,
         connection ->
             executeSingleRow(
-                connection, plan, parameters, executionContext, nullable, checkMultiple));
+                connection,
+                plan,
+                parameters,
+                executionContext,
+                nullable,
+                checkMultiple,
+                observation,
+                purpose));
   }
 
   private <R extends @Nullable Object, P> List<R> executeList(
@@ -300,16 +412,35 @@ public final class JdbcExecutor {
       CompiledQueryPlan<R, P> plan,
       P parameters,
       ExecutionContext executionContext,
-      int minimumMaxRows)
-      throws SQLException {
-    try (PreparedStatement statement =
-            prepare(connection, plan, parameters, executionContext, minimumMaxRows);
-        ResultSet resultSet = statement.executeQuery()) {
-      List<R> results = new ArrayList<>();
-      while (resultSet.next()) {
-        results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
+      int minimumMaxRows,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    StatementObservation statementObservation = startStatement(observation, purpose, plan);
+    long readRows = 0L;
+    try {
+      List<R> results;
+      try (PreparedStatement statement =
+              prepare(connection, plan, parameters, executionContext, minimumMaxRows);
+          ResultSet resultSet = executeQuery(statement, statementObservation)) {
+        results = new ArrayList<>();
+        while (resultSet.next()) {
+          readRows++;
+          results.add(plan.rowDecoder().decode(resultSet, rowReadContext));
+        }
       }
+      completeStatementSucceeded(statementObservation, readRows, unknownRowCount());
       return results;
+    } catch (PhasedSqlFailure failure) {
+      RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+      completeStatementFailed(statementObservation, translated, readRows, unknownRowCount());
+      throw translated;
+    } catch (SQLException failure) {
+      RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+      completeStatementFailed(statementObservation, translated, readRows, unknownRowCount());
+      throw translated;
+    } catch (RuntimeException | Error failure) {
+      completeStatementFailed(statementObservation, failure, readRows, unknownRowCount());
+      throw failure;
     }
   }
 
@@ -319,41 +450,63 @@ public final class JdbcExecutor {
       P parameters,
       ExecutionContext executionContext,
       boolean nullable,
-      boolean checkMultiple)
+      boolean checkMultiple,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose)
       throws SQLException {
     int minimumMaxRows = checkMultiple ? FETCH_ONE_CARDINALITY_ROWS : NO_MINIMUM_MAX_ROWS;
-    try (PreparedStatement statement =
-            prepare(connection, plan, parameters, executionContext, minimumMaxRows);
-        ResultSet resultSet = statement.executeQuery()) {
-      if (!resultSet.next()) {
-        return JdbcRow.absent();
+    StatementObservation statementObservation = startStatement(observation, purpose, plan);
+    long readRows = 0L;
+    try {
+      JdbcRow<R> row;
+      try (PreparedStatement statement =
+              prepare(connection, plan, parameters, executionContext, minimumMaxRows);
+          ResultSet resultSet = executeQuery(statement, statementObservation)) {
+        if (!resultSet.next()) {
+          row = JdbcRow.absent();
+        } else {
+          readRows++;
+          row = JdbcRow.present(plan.rowDecoder().decode(resultSet, rowReadContext));
+          if (!nullable && row.value() == null) {
+            throw QueryValidationException.of(
+                SkisErrorCode.QUERY_NON_NULL_RESULT,
+                SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
+                    .operation(SkisOperation.QUERY)
+                    .phase(JdbcPhase.EXECUTE.label())
+                    .statementKind(SkisStatementKind.SELECT)
+                    .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
+                    .dialectId(plan.dialectId())
+                    .detail("non-null query decoder returned null")
+                    .build());
+          }
+          if (checkMultiple && resultSet.next()) {
+            readRows++;
+            throw NonUniqueResultException.of(
+                SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
+                    .operation(SkisOperation.QUERY)
+                    .phase(JdbcPhase.EXECUTE.label())
+                    .statementKind(SkisStatementKind.SELECT)
+                    .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
+                    .dialectId(plan.dialectId())
+                    .observedCount(NonUniqueResultException.OBSERVED_ROW_LOWER_BOUND)
+                    .detail("query expected at most one row")
+                    .build());
+          }
+        }
       }
-      JdbcRow<R> row = JdbcRow.present(plan.rowDecoder().decode(resultSet, rowReadContext));
-      if (!nullable && row.value() == null) {
-        throw QueryValidationException.of(
-            SkisErrorCode.QUERY_NON_NULL_RESULT,
-            SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
-                .operation(SkisOperation.QUERY)
-                .phase(JdbcPhase.EXECUTE.label())
-                .statementKind(SkisStatementKind.SELECT)
-                .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
-                .dialectId(plan.dialectId())
-                .detail("non-null query decoder returned null")
-                .build());
-      }
-      if (checkMultiple && resultSet.next()) {
-        throw NonUniqueResultException.of(
-            SkisDiagnostics.builder(SkisDiagnosticStage.RESULT_DECODING)
-                .operation(SkisOperation.QUERY)
-                .phase(JdbcPhase.EXECUTE.label())
-                .statementKind(SkisStatementKind.SELECT)
-                .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
-                .dialectId(plan.dialectId())
-                .observedCount(NonUniqueResultException.OBSERVED_ROW_LOWER_BOUND)
-                .detail("query expected at most one row")
-                .build());
-      }
+      completeStatementSucceeded(statementObservation, readRows, unknownRowCount());
       return row;
+    } catch (PhasedSqlFailure failure) {
+      RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+      completeStatementFailed(statementObservation, translated, readRows, unknownRowCount());
+      throw translated;
+    } catch (SQLException failure) {
+      RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+      completeStatementFailed(statementObservation, translated, readRows, unknownRowCount());
+      throw translated;
+    } catch (RuntimeException | Error failure) {
+      completeStatementFailed(statementObservation, failure, readRows, unknownRowCount());
+      throw failure;
     }
   }
 
@@ -365,6 +518,16 @@ public final class JdbcExecutor {
   /** Executes a compiled mutation plan using an explicit execution context. */
   public <P> int executeUpdate(
       CompiledMutationPlan<P> plan, P parameters, ExecutionContext executionContext) {
+    return executeUpdate(plan, parameters, executionContext, null, StatementPurpose.PRIMARY);
+  }
+
+  /** Executes and observes a compiled mutation plan. */
+  public <P> int executeUpdate(
+      CompiledMutationPlan<P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
     return withConnection(
@@ -378,18 +541,116 @@ public final class JdbcExecutor {
                 failure,
                 classify(failure)),
         connection -> {
-          try (PreparedStatement statement =
-              prepare(
-                  connection,
-                  plan.sql(),
-                  plan.parameterCount(),
-                  plan.parameterBinder(),
-                  parameters,
-                  executionContext,
-                  NO_MINIMUM_MAX_ROWS)) {
-            return statement.executeUpdate();
+          StatementObservation statementObservation = startStatement(observation, purpose, plan);
+          long affectedRows = unknownRowCount();
+          try {
+            int affected;
+            try (PreparedStatement statement =
+                prepare(
+                    connection,
+                    plan.sql(),
+                    plan.parameterCount(),
+                    plan.parameterBinder(),
+                    parameters,
+                    executionContext,
+                    NO_MINIMUM_MAX_ROWS)) {
+              affected = executeUpdate(statement, statementObservation);
+              affectedRows = affected;
+            }
+            completeStatementSucceeded(statementObservation, unknownRowCount(), affected);
+            return affected;
+          } catch (PhasedSqlFailure failure) {
+            RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+            completeStatementFailed(
+                statementObservation, translated, unknownRowCount(), affectedRows);
+            throw translated;
+          } catch (SQLException failure) {
+            RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+            completeStatementFailed(
+                statementObservation, translated, unknownRowCount(), affectedRows);
+            throw translated;
+          } catch (RuntimeException | Error failure) {
+            completeStatementFailed(statementObservation, failure, unknownRowCount(), affectedRows);
+            throw failure;
           }
         });
+  }
+
+  private static <R extends @Nullable Object> @Nullable StatementObservation startStatement(
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose,
+      CompiledQueryPlan<R, ?> plan) {
+    return observation == null
+        ? null
+        : observation.startStatement(
+            purpose,
+            SkisStatementKind.SELECT,
+            plan.dialectId(),
+            JdbcFingerprint.of(plan.sql()),
+            plan.sql());
+  }
+
+  private static @Nullable StatementObservation startStatement(
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose,
+      CompiledMutationPlan<?> plan) {
+    return observation == null
+        ? null
+        : observation.startStatement(
+            purpose,
+            SkisStatementKind.fromOperationName(plan.operation()),
+            plan.dialectId(),
+            JdbcFingerprint.of(plan.sql()),
+            plan.sql());
+  }
+
+  private static ResultSet executeQuery(
+      PreparedStatement statement, @Nullable StatementObservation observation) throws SQLException {
+    if (observation != null) {
+      observation.executeStarted();
+    }
+    try {
+      return statement.executeQuery();
+    } finally {
+      if (observation != null) {
+        observation.executeCompleted();
+      }
+    }
+  }
+
+  private static int executeUpdate(
+      PreparedStatement statement, @Nullable StatementObservation observation) throws SQLException {
+    if (observation != null) {
+      observation.executeStarted();
+    }
+    try {
+      return statement.executeUpdate();
+    } finally {
+      if (observation != null) {
+        observation.executeCompleted();
+      }
+    }
+  }
+
+  private static void completeStatementSucceeded(
+      @Nullable StatementObservation observation, long readRows, long affectedRows) {
+    if (observation != null) {
+      observation.completeSucceeded(ExecutionTermination.COMPLETED, readRows, affectedRows);
+    }
+  }
+
+  private static void completeStatementFailed(
+      @Nullable StatementObservation observation,
+      Throwable failure,
+      long readRows,
+      long affectedRows) {
+    if (observation != null) {
+      observation.completeFailed(failure, SkisDiagnosticStage.EXECUTION, readRows, affectedRows);
+    }
+  }
+
+  private static long unknownRowCount() {
+    return StatementCompletedEvent.UNKNOWN_ROW_COUNT;
   }
 
   private <R extends @Nullable Object, P> PreparedStatement prepare(
@@ -434,8 +695,7 @@ public final class JdbcExecutor {
       if (nextIndex != expectedNextIndex) {
         throw new PhasedSqlFailure(
             JdbcPhase.BIND,
-            new SQLException(
-                "compiled parameter binder returned an unexpected next index"));
+            new SQLException("compiled parameter binder returned an unexpected next index"));
       }
       try {
         int queryTimeoutSeconds =
@@ -584,11 +844,23 @@ public final class JdbcExecutor {
         phase, plan.dialectId(), plan.sql(), failure, classify(failure));
   }
 
+  private JdbcExecutionException translate(
+      CompiledMutationPlan<?> plan, JdbcPhase phase, SQLException failure) {
+    return JdbcExecutionException.from(
+        phase,
+        SkisStatementKind.fromOperationName(plan.operation()),
+        plan.dialectId(),
+        plan.sql(),
+        failure,
+        classify(failure));
+  }
+
   private void closeOpenFailure(
       CompiledQueryPlan<?, ?> plan,
       Connection connection,
       @Nullable PreparedStatement statement,
       ExecutionContext executionContext,
+      @Nullable StatementObservation statementObservation,
       Throwable primary) {
     if (statement != null) {
       try {
@@ -599,12 +871,25 @@ public final class JdbcExecutor {
         primary.addSuppressed(failure);
       }
     }
+    Throwable pendingFailure = primary;
     try {
-      connectionProvider.release(connection, executionContext);
-    } catch (SQLException failure) {
-      primary.addSuppressed(translate(plan, JdbcPhase.RELEASE, failure));
-    } catch (RuntimeException | Error failure) {
-      primary.addSuppressed(failure);
+      completeStatementFailed(statementObservation, primary, unknownRowCount(), unknownRowCount());
+    } catch (RuntimeException | Error listenerFailure) {
+      pendingFailure = listenerFailure;
+      if (listenerFailure != primary) {
+        listenerFailure.addSuppressed(primary);
+      }
+      throw listenerFailure;
+    } finally {
+      try {
+        connectionProvider.release(connection, executionContext);
+      } catch (SQLException failure) {
+        pendingFailure.addSuppressed(translate(plan, JdbcPhase.RELEASE, failure));
+      } catch (RuntimeException | Error failure) {
+        if (failure != pendingFailure) {
+          pendingFailure.addSuppressed(failure);
+        }
+      }
     }
   }
 
@@ -620,10 +905,19 @@ public final class JdbcExecutor {
         ExecutionContext executionContext,
         Connection connection,
         PreparedStatement statement,
-        ResultSet resultSet) {
+        ResultSet resultSet,
+        @Nullable OperationObservation observation,
+        @Nullable StatementObservation statementObservation) {
       this.plan = plan;
       this.resources =
-          new CursorResources<>(plan, executionContext, connection, statement, resultSet);
+          new CursorResources<>(
+              plan,
+              executionContext,
+              connection,
+              statement,
+              resultSet,
+              observation,
+              statementObservation);
       this.cleanable = CursorCleanerHolder.INSTANCE.register(this, resources);
     }
 
@@ -635,16 +929,22 @@ public final class JdbcExecutor {
       current = CURSOR_NOT_POSITIONED;
       try {
         if (!resources.resultSet.next()) {
-          close();
+          Throwable failure = closeResources(null, ExecutionTermination.EXHAUSTED);
+          if (failure != null) {
+            throw runtimeFailure(failure);
+          }
           return false;
+        }
+        if (resources.statementObservation != null) {
+          resources.readRows++;
         }
         current = plan.rowDecoder().decode(resources.resultSet, rowReadContext);
         return true;
       } catch (SQLException failure) {
         RuntimeException primary = translate(plan, JdbcPhase.EXECUTE, failure);
-        throw runtimeFailure(closeResources(primary));
+        throw runtimeFailure(closeResources(primary, ExecutionTermination.FAILED));
       } catch (RuntimeException | Error failure) {
-        throw runtimeFailure(closeResources(failure));
+        throw runtimeFailure(closeResources(failure, ExecutionTermination.FAILED));
       }
     }
 
@@ -658,6 +958,21 @@ public final class JdbcExecutor {
     }
 
     @Override
+    public void fail(Throwable failure) {
+      Objects.requireNonNull(failure, "failure");
+      if (resources.isClosed()) {
+        return;
+      }
+      Throwable result = closeResources(failure, ExecutionTermination.FAILED);
+      if (result instanceof Error error && result != failure) {
+        throw error;
+      }
+      if (result instanceof RuntimeException runtime && result != failure) {
+        throw runtime;
+      }
+    }
+
+    @Override
     public boolean isClosed() {
       return resources.isClosed();
     }
@@ -667,7 +982,7 @@ public final class JdbcExecutor {
       if (resources.isClosed()) {
         return;
       }
-      Throwable failure = closeResources(null);
+      Throwable failure = closeResources(null, ExecutionTermination.CLOSED_EARLY);
       if (failure instanceof Error error) {
         throw error;
       }
@@ -676,9 +991,10 @@ public final class JdbcExecutor {
       }
     }
 
-    private @Nullable Throwable closeResources(@Nullable Throwable primary) {
+    private @Nullable Throwable closeResources(
+        @Nullable Throwable primary, ExecutionTermination termination) {
       current = CURSOR_NOT_POSITIONED;
-      Throwable result = resources.closeResources(primary);
+      Throwable result = resources.closeResources(primary, termination);
       cleanable.clean();
       return result;
     }
@@ -707,26 +1023,35 @@ public final class JdbcExecutor {
     private final Connection connection;
     private final PreparedStatement statement;
     private final ResultSet resultSet;
+    private final @Nullable OperationObservation observation;
+    private final @Nullable StatementObservation statementObservation;
     private boolean closed;
+    // Only the resource-owning cursor thread accesses this counter; the Cleaner never reads it.
+    private long readRows;
 
     private CursorResources(
         CompiledQueryPlan<R, ?> plan,
         ExecutionContext executionContext,
         Connection connection,
         PreparedStatement statement,
-        ResultSet resultSet) {
+        ResultSet resultSet,
+        @Nullable OperationObservation observation,
+        @Nullable StatementObservation statementObservation) {
       this.plan = plan;
       this.executionContext = executionContext;
       this.connection = connection;
       this.statement = statement;
       this.resultSet = resultSet;
+      this.observation = observation;
+      this.statementObservation = statementObservation;
     }
 
     private synchronized boolean isClosed() {
       return closed;
     }
 
-    private synchronized @Nullable Throwable closeResources(@Nullable Throwable primary) {
+    private synchronized @Nullable Throwable closeResources(
+        @Nullable Throwable primary, ExecutionTermination termination) {
       if (closed) {
         return primary;
       }
@@ -734,7 +1059,9 @@ public final class JdbcExecutor {
       Throwable result = primary;
       result = closeResultSet(result);
       result = closeStatement(result);
+      result = completeStatement(result, termination);
       result = releaseConnection(result);
+      result = completeOperation(result, termination);
       return result;
     }
 
@@ -786,6 +1113,54 @@ public final class JdbcExecutor {
       } catch (RuntimeException | Error failure) {
         return append(primary, failure);
       }
+    }
+
+    private @Nullable Throwable completeStatement(
+        @Nullable Throwable primary, ExecutionTermination termination) {
+      StatementObservation active = statementObservation;
+      if (active == null) {
+        return primary;
+      }
+      try {
+        if (primary == null) {
+          active.completeSucceeded(termination, readRows, unknownRowCount());
+        } else {
+          active.completeFailed(
+              primary, SkisDiagnosticStage.RESOURCE_CLOSE, readRows, unknownRowCount());
+        }
+        return primary;
+      } catch (Error listenerFailure) {
+        return promote(listenerFailure, primary);
+      } catch (RuntimeException listenerFailure) {
+        return append(primary, listenerFailure);
+      }
+    }
+
+    private @Nullable Throwable completeOperation(
+        @Nullable Throwable primary, ExecutionTermination termination) {
+      OperationObservation active = observation;
+      if (active == null) {
+        return primary;
+      }
+      try {
+        if (primary == null) {
+          active.completeSucceeded(termination);
+        } else {
+          active.completeFailed(primary, SkisDiagnosticStage.RESOURCE_CLOSE);
+        }
+        return primary;
+      } catch (Error listenerFailure) {
+        return promote(listenerFailure, primary);
+      } catch (RuntimeException listenerFailure) {
+        return append(primary, listenerFailure);
+      }
+    }
+
+    private Throwable promote(Error failure, @Nullable Throwable primary) {
+      if (primary != null && primary != failure) {
+        failure.addSuppressed(primary);
+      }
+      return failure;
     }
 
     private Throwable append(@Nullable Throwable primary, Throwable next) {

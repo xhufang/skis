@@ -148,8 +148,7 @@ final class QueryParameters {
 
   private static QueryValidationException duplicate(QueryParameter<?> parameter) {
     return QueryValidationException.of(
-        SkisErrorCode.QUERY_PARAMETER_DECLARATION,
-        "duplicate binding for " + describe(parameter));
+        SkisErrorCode.QUERY_PARAMETER_DECLARATION, "duplicate binding for " + describe(parameter));
   }
 
   private static String describe(QueryParameter<?> parameter) {

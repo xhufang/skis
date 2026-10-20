@@ -91,9 +91,7 @@ public final class JdbcTransaction implements AutoCloseable {
       cleanUpFailedBegin(
           provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);
       throw TransactionException.of(
-          SkisErrorCode.TRANSACTION_BEGIN_FAILED,
-          "cannot begin JDBC transaction",
-          failure);
+          SkisErrorCode.TRANSACTION_BEGIN_FAILED, "cannot begin JDBC transaction", failure);
     } catch (RuntimeException | Error failure) {
       cleanUpFailedBegin(
           provider, context, connection, acquiredAutoCommit, autoCommitChangeAttempted, failure);
@@ -250,8 +248,7 @@ public final class JdbcTransaction implements AutoCloseable {
     if (failure instanceof Error) {
       return failure;
     }
-    return TransactionException.of(
-        SkisErrorCode.TRANSACTION_CLOSE_FAILED, message, failure);
+    return TransactionException.of(SkisErrorCode.TRANSACTION_CLOSE_FAILED, message, failure);
   }
 
   private static void rethrow(@Nullable Throwable failure) {

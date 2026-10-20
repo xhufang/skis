@@ -59,8 +59,7 @@ class PostgreSqlDialectTest {
     assertEquals(dialect.capabilities().version(), dialect.capabilityVersion());
     assertTrue(dialect.hasStablePlanCacheIdentity());
     assertTrue(dialect.lowering() != null);
-    assertEquals(
-        StatementParameterLimit.explicit(65_535), dialect.maxStatementParameters());
+    assertEquals(StatementParameterLimit.explicit(65_535), dialect.maxStatementParameters());
     assertTrue(dialect.capabilities().supports(DialectFeature.SCHEMA_QUALIFIED_TABLES));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_LIMIT));
     assertTrue(dialect.capabilities().supports(DialectFeature.PARAMETERIZED_OFFSET));
@@ -108,8 +107,7 @@ class PostgreSqlDialectTest {
                 List.of(),
                 pet,
                 null,
-                List.of(
-                    new OrderByItem(pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+                List.of(new OrderByItem(pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
                 new KeysetSeek(pet.id().gt(anchor), keysetLimit)));
     assertEquals(
         "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" "
@@ -117,8 +115,7 @@ class PostgreSqlDialectTest {
         renderedKeyset.sql());
     assertEquals(List.of(anchor, keysetLimit), renderedKeyset.parameters());
 
-    RenderedSql renderedCount =
-        PostgreSqlTestRendering.render(new CountAst(pet, null, pet.name()));
+    RenderedSql renderedCount = PostgreSqlTestRendering.render(new CountAst(pet, null, pet.name()));
     assertEquals(
         "SELECT COUNT(DISTINCT \"pet\".\"pet_name\") FROM \"shelter\".\"pet\"",
         renderedCount.sql());
@@ -128,8 +125,7 @@ class PostgreSqlDialectTest {
             new CountAst(
                 pet,
                 null,
-                new CaseExpression<>(
-                    List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
+                new CaseExpression<>(List.of(new CaseWhen<>(pet.id().isNotNull(), pet.name())))));
     assertEquals(
         "SELECT COUNT(DISTINCT CASE WHEN \"pet\".\"id\" IS NOT NULL "
             + "THEN \"pet\".\"pet_name\" END) + CASE WHEN COUNT(*) > "
@@ -155,8 +151,7 @@ class PostgreSqlDialectTest {
                 List.of(),
                 pet,
                 LogicalPredicate.or(List.of(pet.id().lt(lower), pet.id().gt(upper))),
-                List.of(
-                    new OrderByItem(pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+                List.of(new OrderByItem(pet.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
                 new KeysetSeek(pet.id().gt(anchor), limit)));
 
     assertEquals(
@@ -185,8 +180,7 @@ class PostgreSqlDialectTest {
         SqlExceptionCategory.LOCK_NOT_AVAILABLE,
         classify(new SQLException("sensitive detail", "55P03", 0)));
     assertEquals(
-        SqlExceptionCategory.DEADLOCK,
-        classify(new SQLException("sensitive detail", "40P01", 0)));
+        SqlExceptionCategory.DEADLOCK, classify(new SQLException("sensitive detail", "40P01", 0)));
     assertEquals(
         SqlExceptionCategory.SERIALIZATION_FAILURE,
         classify(new SQLException("sensitive detail", "40001", 0)));
@@ -236,8 +230,7 @@ class PostgreSqlDialectTest {
         new SelectStatement(
             List.of(inner.name(), inner.id()),
             inner,
-            LogicalPredicate.and(
-                List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
+            LogicalPredicate.and(List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
     SelectStatement statement =
         new SelectStatement(
             List.of(outer.id()),
@@ -270,8 +263,7 @@ class PostgreSqlDialectTest {
         new SelectStatement(
             List.of(inner.id()),
             inner,
-            LogicalPredicate.and(
-                List.of(inner.name().eq(outer.name()), inner.id().gt(minimum))));
+            LogicalPredicate.and(List.of(inner.name().eq(outer.name()), inner.id().gt(minimum))));
     SelectStatement statement =
         new SelectStatement(
             List.of(outer.id()),
@@ -305,8 +297,7 @@ class PostgreSqlDialectTest {
         new SelectStatement(
             List.of(inner.name()),
             inner,
-            LogicalPredicate.and(
-                List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
+            LogicalPredicate.and(List.of(inner.id().eq(outer.id()), inner.name().eq(name))));
     ScalarSubqueryExpression<String> scalar = new ScalarSubqueryExpression<>(child);
     SelectStatement statement =
         new SelectStatement(
@@ -458,8 +449,7 @@ class PostgreSqlDialectTest {
                     new UpdateAssignment<>(pet.name(), name),
                     new UpdateAssignment<>(
                         pet.version(), new IncrementExpression<>(pet.version()))),
-                LogicalPredicate.and(
-                    List.of(pet.id().eq(id), pet.version().eq(version)))));
+                LogicalPredicate.and(List.of(pet.id().eq(id), pet.version().eq(version)))));
 
     assertEquals(
         "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",

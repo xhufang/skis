@@ -32,7 +32,8 @@ public final class ExpressionInfo {
       boolean correlated) {
     this.javaType = Objects.requireNonNull(javaType, "javaType");
     this.sqlType = Objects.requireNonNull(sqlType, "sqlType");
-    this.effectiveNullability = Objects.requireNonNull(effectiveNullability, "effectiveNullability");
+    this.effectiveNullability =
+        Objects.requireNonNull(effectiveNullability, "effectiveNullability");
     this.columnDependencies =
         List.copyOf(Objects.requireNonNull(columnDependencies, "columnDependencies"));
     this.parameterDependencies =

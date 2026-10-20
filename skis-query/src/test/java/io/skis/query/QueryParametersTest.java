@@ -39,10 +39,7 @@ class QueryParametersTest {
     Timestamp expectedTimestamp = (Timestamp) sourceTimestamp.clone();
 
     QueryParameters parameters =
-        QueryParameters.builder()
-            .bind(bytes, sourceBytes)
-            .bind(timestamp, sourceTimestamp)
-            .build();
+        QueryParameters.builder().bind(bytes, sourceBytes).bind(timestamp, sourceTimestamp).build();
     sourceBytes[0] = 9;
     sourceTimestamp.setTime(0);
     sourceTimestamp.setNanos(7);
@@ -67,8 +64,7 @@ class QueryParametersTest {
 
     QueryArguments offset = base.withPagination(new QueryPagination.Offset(12, 34));
     QueryArguments keyset =
-        base.withPagination(
-            new QueryPagination.Keyset(9, Arrays.asList(null, "anchor", 4L)));
+        base.withPagination(new QueryPagination.Keyset(9, Arrays.asList(null, "anchor", 4L)));
 
     assertSame(base, base.withPagination(QueryPagination.None.INSTANCE));
     assertEquals(QueryPaginationShape.none(), base.paginationShape());
@@ -76,13 +72,11 @@ class QueryParametersTest {
     assertSame(base.getFirst(), offset.getFirst());
     assertEquals(List.of(12, 34L), offset.subList(1, offset.size()));
     assertEquals(
-        QueryPaginationShape.from(new QueryPagination.Offset(99, 100)),
-        offset.paginationShape());
+        QueryPaginationShape.from(new QueryPagination.Offset(99, 100)), offset.paginationShape());
     assertSame(base.getFirst(), keyset.getFirst());
     assertEquals(List.of("anchor", 4L, 9), keyset.subList(1, keyset.size()));
     assertEquals(
-        QueryPaginationShape.keyset(List.of(true, false, false)),
-        keyset.paginationShape());
+        QueryPaginationShape.keyset(List.of(true, false, false)), keyset.paginationShape());
     assertThrows(UnsupportedOperationException.class, () -> offset.add("unexpected"));
     assertEquals("QueryArguments[size=3, values=<redacted>]", offset.toString());
   }
@@ -97,8 +91,7 @@ class QueryParametersTest {
     assertThrows(QueryValidationException.class, () -> duplicate.bind(used, 2L));
     assertThrows(QueryValidationException.class, () -> QueryParameters.of(required, null));
     assertThrows(
-        QueryValidationException.class,
-        () -> QueryParameters.empty().valuesFor(List.of(used)));
+        QueryValidationException.class, () -> QueryParameters.empty().valuesFor(List.of(used)));
     assertThrows(
         QueryValidationException.class,
         () ->

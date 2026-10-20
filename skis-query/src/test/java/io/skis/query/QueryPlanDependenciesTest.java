@@ -45,10 +45,7 @@ class QueryPlanDependenciesTest {
             Identifier.of("derived_source"),
             List.of(
                 new DerivedOutputColumn(
-                    Identifier.of("id"),
-                    Long.class,
-                    SqlType.BIGINT,
-                    Nullability.NON_NULL)));
+                    Identifier.of("id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL)));
     DerivedRelationSource derivedSource =
         new DerivedRelationSource(derivedStatement, derivedReference);
     FromClause outerSources =
@@ -104,13 +101,11 @@ class QueryPlanDependenciesTest {
     assertEquals(2, first.entities().size());
     assertTrue(first.sameEntities(reordered));
     assertFalse(first.contains(structurallyEqual));
-    assertFalse(
-        first.sameEntities(QueryTestSupport.dependencies(structurallyEqual, JOINED)));
+    assertFalse(first.sameEntities(QueryTestSupport.dependencies(structurallyEqual, JOINED)));
   }
 
   private static <E> EntityMeta<E> entity(Class<E> javaType, String tableName) {
-    PropertyMeta<E, Long> id =
-        new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
+    PropertyMeta<E, Long> id = new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
     return EntityMeta.simple(
         javaType,
         new TableMeta("", "cache_test", tableName),
@@ -136,6 +131,7 @@ class QueryPlanDependenciesTest {
     private TestTable(EntityMeta<E> entity, String alias) {
       super(entity, alias);
     }
+
     public TestTable<E> as(String alias) {
       return new TestTable<>(entity(), alias);
     }

@@ -30,8 +30,7 @@ public class MutationException extends SkisException {
   }
 
   /** Creates a mutation semantics failure retaining its original cause. */
-  public static MutationException of(
-      SkisErrorCode code, String detail, @Nullable Throwable cause) {
+  public static MutationException of(SkisErrorCode code, String detail, @Nullable Throwable cause) {
     String requiredDetail = Objects.requireNonNull(detail, "detail");
     if (requiredDetail.isBlank()) {
       throw new IllegalArgumentException("detail must not be blank");

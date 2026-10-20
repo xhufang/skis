@@ -22,8 +22,10 @@ either publication as a cross-version API/ABI baseline.
 - Confirm the reviewed performance-verification task has deliberately replaced the temporary `0.2.x`
   benchmark-freeze CI guard, and repository branch protection no longer requires the retired
   `Fast Path Smoke` check.
-- Complete the separately reviewed pre-`0.3.0` performance-verification task, recording its scenarios,
-  environment, statistical method, thresholds, raw results, and disposition of any regression. Deleted
+- Complete the separately reviewed pre-`0.3.0` performance-verification task, recording its
+  scenarios,
+  environment, statistical method, thresholds, raw results, and disposition of any regression.
+  Deleted
   historical benchmark results and thresholds must not be reused as current evidence without review.
 - Confirm the `maven-central` environment contains `CENTRAL_USERNAME`, `CENTRAL_PASSWORD`,
   `MAVEN_GPG_PRIVATE_KEY`, and `MAVEN_GPG_PASSPHRASE`.
@@ -33,7 +35,8 @@ either publication as a cross-version API/ABI baseline.
 
 ## Expected Central components
 
-The authoritative component list is [`.github/release-components.txt`](../.github/release-components.txt).
+The authoritative component list is [
+`.github/release-components.txt`](../.github/release-components.txt).
 For the current `0.2.7-SNAPSHOT` cumulative release set it contains exactly 17 GAVs; the already
 published `0.2.0` component set remains a historical release fact and is not retroactively changed:
 
@@ -44,7 +47,8 @@ published `0.2.0` component set remains a historical release fact and is not ret
 - `skis-dialect-postgresql`, `skis-dialect-h2`, `skis-spring`.
 
 Every non-POM component must include its main JAR, POM, sources JAR, Javadoc JAR, checksums, and GPG
-signatures. No planned, example, test, Spring Boot, cache, unsupported-dialect, or internal `skis-benchmark` artifact
+signatures. No planned, example, test, Spring Boot, cache, unsupported-dialect, or internal
+`skis-benchmark` artifact
 may appear. CI cross-checks the list against `skis-bom`, every reactor module's effective
 `maven.deploy.skip`, and the Central plugin exclusions. A later minor may add a component only after
 that module is implemented, documented, tested, included in the BOM, and deliberately added to the

@@ -10,7 +10,9 @@
   <artifactId>skis-benchmark</artifactId>
   <packaging>pom</packaging>
   <name>skis-benchmark</name>
-  <description>Reserved empty module during 0.2.x development; rebuilt only for pre-0.3.0 release verification</description>
+  <description>Reserved empty module during 0.2.x development; rebuilt only for pre-0.3.0 release
+    verification
+  </description>
 
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>

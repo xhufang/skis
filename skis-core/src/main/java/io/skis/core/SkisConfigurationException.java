@@ -31,8 +31,7 @@ public final class SkisConfigurationException extends SkisException {
   }
 
   /** Creates a configuration failure from explicitly supplied diagnostics. */
-  public static SkisConfigurationException of(
-      SkisErrorCode code, SkisDiagnostics diagnostics) {
+  public static SkisConfigurationException of(SkisErrorCode code, SkisDiagnostics diagnostics) {
     return of(code, diagnostics, null);
   }
 

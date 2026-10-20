@@ -88,8 +88,7 @@ public abstract class QueryTable<E> {
     QueryColumn<E, V> column = internalColumn(property);
     if (column.nullable()) {
       throw QueryValidationException.of(
-          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
-          "non-null query column uses nullable metadata");
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT, "non-null query column uses nullable metadata");
     }
     return (NonNullSelectable<V>) column;
   }
@@ -99,8 +98,7 @@ public abstract class QueryTable<E> {
     QueryColumn<E, V> column = internalColumn(property);
     if (!column.nullable()) {
       throw QueryValidationException.of(
-          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
-          "nullable query column uses non-null metadata");
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT, "nullable query column uses non-null metadata");
     }
     return column;
   }

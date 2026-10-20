@@ -22,8 +22,7 @@ public record Slice<R extends @Nullable Object>(
     }
     if (hasNext != nextContinuation.isPresent()) {
       throw QueryValidationException.of(
-          SkisErrorCode.QUERY_CONTINUATION_INVALID,
-          "hasNext and nextContinuation must agree");
+          SkisErrorCode.QUERY_CONTINUATION_INVALID, "hasNext and nextContinuation must agree");
     }
   }
 

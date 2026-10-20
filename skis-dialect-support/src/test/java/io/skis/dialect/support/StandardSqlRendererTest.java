@@ -73,17 +73,13 @@ class StandardSqlRendererTest {
   private static final EntityMeta<Pet> SQL_LOOKING_PET =
       metadata(TableMeta.of("pet; DROP TABLE audit; --"));
   private static final RendererHarness RENDERER =
-      RendererHarness.of(
-          "test", DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
+      RendererHarness.of("test", DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES));
 
   @Test
   void rejectsInvalidDialectIdentityBeforeRendering() {
+    assertThrows(NullPointerException.class, () -> RendererHarness.of("test", null));
     assertThrows(
-        NullPointerException.class,
-        () -> RendererHarness.of("test", null));
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> RendererHarness.of(" ", DialectCapabilities.none()));
+        IllegalArgumentException.class, () -> RendererHarness.of(" ", DialectCapabilities.none()));
     assertThrows(
         IllegalArgumentException.class,
         () -> RendererHarness.of("PostgreSQL", DialectCapabilities.none()));
@@ -154,8 +150,7 @@ class StandardSqlRendererTest {
   void compiledResolvedStagePreservesDirectGoldenOutputWithoutReparsing() {
     PetTable pet = new PetTable(PET);
     ParameterSlot<Long> id = new ParameterSlot<>(0, Long.class, false);
-    SelectStatement statement =
-        new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
+    SelectStatement statement = new SelectStatement(List.of(pet.id()), pet, pet.id().eq(id));
 
     RenderedSql direct = RENDERER.render(statement);
     SqlTemplate compiled =
@@ -180,9 +175,7 @@ class StandardSqlRendererTest {
     SqlRenderException resolved =
         assertThrows(
             SqlRenderException.class,
-            () ->
-                SqlCompiler.compile(
-                    ResolvedStatement.analyze(statement), RENDERER.dialect()));
+            () -> SqlCompiler.compile(ResolvedStatement.analyze(statement), RENDERER.dialect()));
 
     assertEquals(direct.code(), resolved.code());
     assertEquals(
@@ -279,8 +272,7 @@ class StandardSqlRendererTest {
         RendererHarness.of(
             "exists-only",
             DialectCapabilities.of(
-                DialectFeature.SCHEMA_QUALIFIED_TABLES,
-                DialectFeature.EXISTS_SUBQUERY));
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.EXISTS_SUBQUERY));
     assertTrue(existsOnly.render(uncorrelated).sql().contains("EXISTS ("));
     SelectStatement correlatedChild =
         new SelectStatement(List.of(inner.id()), inner, inner.id().eq(outer.id()));
@@ -345,8 +337,7 @@ class StandardSqlRendererTest {
         RendererHarness.of(
             "scalar-only",
             DialectCapabilities.of(
-                DialectFeature.SCHEMA_QUALIFIED_TABLES,
-                DialectFeature.SCALAR_SUBQUERY));
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.SCALAR_SUBQUERY));
     assertTrue(scalarOnly.render(uncorrelated).sql().contains("(SELECT "));
 
     SelectStatement correlatedChild =
@@ -431,18 +422,14 @@ class StandardSqlRendererTest {
         new SelectStatement(
             List.of(inner.id()),
             new FromClause(
-                inner,
-                List.of(
-                    new JoinClause(JoinType.FULL, joined, inner.id().eq(joined.id())))));
+                inner, List.of(new JoinClause(JoinType.FULL, joined, inner.id().eq(joined.id())))));
     SelectStatement statement =
-        new SelectStatement(
-            List.of(outer.id()), outer, new ExistsPredicate(child, false));
+        new SelectStatement(List.of(outer.id()), outer, new ExistsPredicate(child, false));
     RendererHarness existsOnly =
         RendererHarness.of(
             "exists-only",
             DialectCapabilities.of(
-                DialectFeature.SCHEMA_QUALIFIED_TABLES,
-                DialectFeature.EXISTS_SUBQUERY));
+                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.EXISTS_SUBQUERY));
 
     SqlRenderException failure =
         assertThrows(SqlRenderException.class, () -> existsOnly.render(statement));
@@ -514,11 +501,8 @@ class StandardSqlRendererTest {
             new SelectStatement(
                 List.of(pet.id()), pet, new InPredicate<>(pet.id(), List.of(), true)));
 
-    assertEquals(
-        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE FALSE", emptyIn.sql());
-    assertEquals(
-        "SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE TRUE",
-        emptyNotIn.sql());
+    assertEquals("SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE FALSE", emptyIn.sql());
+    assertEquals("SELECT \"pet\".\"id\" FROM \"shelter\".\"pet\" WHERE TRUE", emptyNotIn.sql());
     assertEquals(0, emptyIn.parameterCount());
     assertEquals(0, emptyNotIn.parameterCount());
   }
@@ -622,7 +606,8 @@ class StandardSqlRendererTest {
                 pet,
                 List.of(
                     new UpdateAssignment<>(pet.name(), updateName),
-                    new UpdateAssignment<>(pet.version(), new IncrementExpression<>(pet.version()))),
+                    new UpdateAssignment<>(
+                        pet.version(), new IncrementExpression<>(pet.version()))),
                 LogicalPredicate.and(
                     List.of(pet.id().eq(updateId), pet.version().eq(expectedVersion)))));
 
@@ -632,8 +617,7 @@ class StandardSqlRendererTest {
     assertEquals(List.of(updateName, updateId, expectedVersion), update.parameters());
 
     ParameterSlot<Long> deleteId = new ParameterSlot<>(0, Long.class, false);
-    RenderedSql delete =
-        RENDERER.render(new DeleteStatement(pet, pet.id().eq(deleteId)));
+    RenderedSql delete = RENDERER.render(new DeleteStatement(pet, pet.id().eq(deleteId)));
 
     assertEquals("DELETE FROM \"shelter\".\"pet\" WHERE \"id\" = ?", delete.sql());
     assertEquals(List.of(deleteId), delete.parameters());

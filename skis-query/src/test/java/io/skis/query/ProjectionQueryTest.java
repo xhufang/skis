@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.QueryValidationException;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -65,8 +66,7 @@ class ProjectionQueryTest {
 
   @Test
   void resolvesPhysicalColumnsIntoOneCompleteQueryLocalValueMapping() {
-    EntityRuntimeRegistry registry =
-        EntityRuntimeRegistry.of(List.of(petModel(), ownerModel()));
+    EntityRuntimeRegistry registry = EntityRuntimeRegistry.of(List.of(petModel(), ownerModel()));
     CompiledQueryStructure structure =
         QueryTestSupport.compile(
             PET_TABLE,
@@ -78,8 +78,7 @@ class ProjectionQueryTest {
             null);
     TableRuntimeScope scope = TableRuntimeScope.resolve(registry, structure.fromClause());
 
-    ResolvedValueMapping<?> mapping =
-        ResolvedValueMapping.resolve(OWNER_TABLE.name(), scope);
+    ResolvedValueMapping<?> mapping = ResolvedValueMapping.resolve(OWNER_TABLE.name(), scope);
 
     assertSame(OWNER_TABLE.name(), mapping.selectable());
     assertEquals(String.class, mapping.javaType());
@@ -96,8 +95,7 @@ class ProjectionQueryTest {
 
     ProjectionSelection<PetOwnerView> first = mapping.bind(selections);
     selections[0] = OWNER_TABLE.id();
-    ProjectionSelection<PetOwnerView> second =
-        mapping.bind(PET_TABLE.id(), OWNER_TABLE.name());
+    ProjectionSelection<PetOwnerView> second = mapping.bind(PET_TABLE.id(), OWNER_TABLE.name());
 
     assertEquals(List.of(PET_TABLE.id(), OWNER_TABLE.name()), first.selections());
     assertEquals(mapping.mappingId(), first.mappingId());
@@ -227,16 +225,13 @@ class ProjectionQueryTest {
 
   @Test
   void validatesSpecialProjectionAliasesBeforeQueryBinding() {
-    assertEquals(
-        "owner_2", ProjectionSource.of(OWNER_NAME, "owner_2").alias().orElseThrow());
+    assertEquals("owner_2", ProjectionSource.of(OWNER_NAME, "owner_2").alias().orElseThrow());
     assertEquals("_owner", ProjectionSource.of(OWNER_NAME, "_owner").alias().orElseThrow());
 
     for (String alias : List.of("", "bad alias", "bad-alias", "2owner", "所有者")) {
       IllegalArgumentException failure =
           assertThrows(
-              IllegalArgumentException.class,
-              () -> ProjectionSource.of(OWNER_NAME, alias),
-              alias);
+              IllegalArgumentException.class, () -> ProjectionSource.of(OWNER_NAME, alias), alias);
       assertTrue(failure.getMessage().contains("[A-Za-z_][A-Za-z0-9_]*"));
     }
   }
@@ -285,13 +280,9 @@ class ProjectionQueryTest {
             projection,
             List.of(
                 new QueryJoin(
-                    JoinType.INNER,
-                    QueryRelations.of(owner),
-                    PET_TABLE.ownerId().eq(owner.id())),
+                    JoinType.INNER, QueryRelations.of(owner), PET_TABLE.ownerId().eq(owner.id())),
                 new QueryJoin(
-                    JoinType.INNER,
-                    QueryRelations.of(reviewer),
-                    owner.id().eq(reviewer.id()))));
+                    JoinType.INNER, QueryRelations.of(reviewer), owner.id().eq(reviewer.id()))));
 
     assertTrue(compilation.plan().sql().contains("\"owner\".\"owner_name\""));
     assertTrue(compilation.plan().sql().contains("\"reviewer\".\"owner_name\""));
@@ -304,8 +295,7 @@ class ProjectionQueryTest {
         new DeclaredProjection<>(
             nullableOwnerMapping(),
             List.of(
-                ProjectionSource.of(PET_ID, "owner"),
-                ProjectionSource.of(OWNER_NAME, "owner")));
+                ProjectionSource.of(PET_ID, "owner"), ProjectionSource.of(OWNER_NAME, "owner")));
 
     QueryValidationException failure =
         assertThrows(
@@ -375,8 +365,7 @@ class ProjectionQueryTest {
         compilation
             .plan()
             .rowDecoder()
-            .decode(
-                resultSet(java.util.Collections.singletonMap(1, 7L)), RowReadContext.EMPTY));
+            .decode(resultSet(java.util.Collections.singletonMap(1, 7L)), RowReadContext.EMPTY));
 
     ProjectionSelection<StrictPetOwnerView> strict =
         strictOwnerMapping().bind(PET_TABLE.id(), ownerName);
@@ -391,15 +380,11 @@ class ProjectionQueryTest {
     NonNullDerivedOutput<Long> idOutput = Sql.output(inner.id(), "owner_id");
     NonNullDerivedOutput<String> nameOutput = Sql.output(inner.name(), "owner_name");
     DerivedRelation derived =
-        Sql.derived(
-            Sql.selectFrom(inner), "projected_owner_view", idOutput, nameOutput);
+        Sql.derived(Sql.selectFrom(inner), "projected_owner_view", idOutput, nameOutput);
     NonNullSelectable<Long> derivedId = derived.column(idOutput);
     NonNullSelectable<String> derivedName = derived.column(nameOutput);
     QueryJoin leftJoin =
-        new QueryJoin(
-            JoinType.LEFT,
-            QueryRelations.of(derived),
-            PET_TABLE.ownerId().eq(derivedId));
+        new QueryJoin(JoinType.LEFT, QueryRelations.of(derived), PET_TABLE.ownerId().eq(derivedId));
     ProjectionSelection<PetOwnerView> selected =
         nullableOwnerMapping().bind(PET_TABLE.id(), derivedName);
 
@@ -417,15 +402,12 @@ class ProjectionQueryTest {
         compilation
             .plan()
             .rowDecoder()
-            .decode(
-                resultSet(java.util.Collections.singletonMap(1, 7L)), RowReadContext.EMPTY));
+            .decode(resultSet(java.util.Collections.singletonMap(1, 7L)), RowReadContext.EMPTY));
 
     ProjectionSelection<StrictPetOwnerView> strict =
         strictOwnerMapping().bind(PET_TABLE.id(), derivedName);
     QueryValidationException failure =
-        assertThrows(
-            QueryValidationException.class,
-            () -> compile(strict, List.of(leftJoin)));
+        assertThrows(QueryValidationException.class, () -> compile(strict, List.of(leftJoin)));
     assertTrue(failure.getMessage().contains("effective NULLABLE"));
   }
 
@@ -441,16 +423,14 @@ class ProjectionQueryTest {
             WrongTypeView.class,
             "wrong-type",
             List.of(
-                new ProjectionMapping.Parameter(
-                    0, "value", String.class, Nullability.NON_NULL, 0)),
+                new ProjectionMapping.Parameter(0, "value", String.class, Nullability.NON_NULL, 0)),
             readers -> {
               ProjectionMapping.ValueReader<String> value = readers.reader(0, String.class);
               return (resultSet, context) -> new WrongTypeView(value.read(resultSet, context));
             });
     QueryValidationException typeFailure =
         assertThrows(
-            QueryValidationException.class,
-            () -> compile(mapping.bind(PET_TABLE.id()), List.of()));
+            QueryValidationException.class, () -> compile(mapping.bind(PET_TABLE.id()), List.of()));
     assertTrue(typeFailure.getMessage().contains("incompatible boxed Java type"));
   }
 
@@ -483,7 +463,9 @@ class ProjectionQueryTest {
             false,
             QueryPagination.None.INSTANCE,
             List.of(),
-            QueryTestSupport.arguments(structure));
+            QueryTestSupport.arguments(structure),
+            null,
+            StatementPurpose.PRIMARY);
   }
 
   private static <R> QueryCompilation<R> compileSpecial(
@@ -503,7 +485,9 @@ class ProjectionQueryTest {
             false,
             QueryPagination.None.INSTANCE,
             List.of(),
-            QueryTestSupport.arguments(structure));
+            QueryTestSupport.arguments(structure),
+            null,
+            StatementPurpose.PRIMARY);
   }
 
   private static ProjectionMapping<PetOwnerView> nullableOwnerMapping() {
@@ -518,8 +502,7 @@ class ProjectionQueryTest {
           ProjectionMapping.ValueReader<Long> petId = readers.reader(0, Long.class);
           ProjectionMapping.ValueReader<String> ownerName = readers.reader(1, String.class);
           return (resultSet, context) ->
-              new PetOwnerView(
-                  petId.read(resultSet, context), ownerName.read(resultSet, context));
+              new PetOwnerView(petId.read(resultSet, context), ownerName.read(resultSet, context));
         });
   }
 
@@ -635,8 +618,7 @@ class ProjectionQueryTest {
 
   private record OwnerPair(String owner, String reviewer) {}
 
-  private record DeclaredProjection<R>(
-      ProjectionMapping<R> mapping, List<ProjectionSource> sources)
+  private record DeclaredProjection<R>(ProjectionMapping<R> mapping, List<ProjectionSource> sources)
       implements ProjectionType<R> {
 
     private DeclaredProjection {
@@ -711,8 +693,7 @@ class ProjectionQueryTest {
             DialectFeature.DERIVED_TABLE,
             DialectFeature.SCALAR_SUBQUERY,
             DialectFeature.CORRELATED_SUBQUERY);
-    private final SqlRenderer renderer =
-        new StandardSqlRenderer(this);
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override
     public String id() {

@@ -193,10 +193,7 @@ public final class DerivedRelation {
       if (previous != null) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_DERIVED_SHAPE,
-            "the same derived output handle is repeated at ordinals "
-                + previous
-                + " and "
-                + index);
+            "the same derived output handle is repeated at ordinals " + previous + " and " + index);
       }
     }
     return indexed;

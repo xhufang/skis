@@ -3,6 +3,7 @@ package io.skis.query;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
@@ -42,14 +43,19 @@ public final class QueryPlanCatalog {
   private final Map<EntityMeta<?>, EntityPlanSet<?>> planSets;
   private final ProjectionPlanCache sharedPlans;
   private final QueryPlanCompiler compiler;
+  private final ExecutionListenerDispatcher listenerDispatcher;
+  private final String dialectId;
 
   QueryPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
       Dialect dialect,
       int maximumSize,
-      Duration expireAfterAccess) {
+      Duration expireAfterAccess,
+      ExecutionListenerDispatcher listenerDispatcher) {
     Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
     Dialect requiredDialect = Objects.requireNonNull(dialect, "dialect");
+    this.listenerDispatcher = Objects.requireNonNull(listenerDispatcher, "listenerDispatcher");
+    this.dialectId = requiredDialect.id();
     QueryPlanKey.IdentityScope planIdentities = new QueryPlanKey.IdentityScope(runtimeRegistry);
     Optional<QueryPlanKey.DialectIdentity> dialectIdentity =
         QueryPlanKey.DialectIdentity.from(requiredDialect);
@@ -63,7 +69,8 @@ public final class QueryPlanCatalog {
     this.compiler = compiler;
     Map<EntityMeta<?>, EntityPlanSet<?>> indexed = new IdentityHashMap<>();
     for (EntityRuntimeModel<?> model : runtimeRegistry.models()) {
-      EntityPlanSet<?> previous = indexed.put(model.entity(), createPlanSet(model, compiler));
+      EntityPlanSet<?> previous =
+          indexed.put(model.entity(), createPlanSet(model, compiler, this.listenerDispatcher));
       if (previous != null) {
         throw SkisConfigurationException.of(
             SkisErrorCode.ASSEMBLY_MODEL_DUPLICATE,
@@ -71,6 +78,15 @@ public final class QueryPlanCatalog {
       }
     }
     this.planSets = Collections.unmodifiableMap(indexed);
+  }
+
+  QueryPlanCatalog(
+      EntityRuntimeRegistry runtimeRegistry,
+      Dialect dialect,
+      int maximumSize,
+      Duration expireAfterAccess) {
+    this(
+        runtimeRegistry, dialect, maximumSize, expireAfterAccess, ExecutionListenerDispatcher.NONE);
   }
 
   /** Binds the shared plans to a JDBC executor without recompiling SQL. */
@@ -119,8 +135,18 @@ public final class QueryPlanCatalog {
     return compiler;
   }
 
+  ExecutionListenerDispatcher listenerDispatcher() {
+    return listenerDispatcher;
+  }
+
+  String dialectId() {
+    return dialectId;
+  }
+
   private static <E> EntityPlanSet<E> createPlanSet(
-      EntityRuntimeModel<E> model, QueryPlanCompiler compiler) {
-    return new EntityPlanSet<>(model, compiler);
+      EntityRuntimeModel<E> model,
+      QueryPlanCompiler compiler,
+      ExecutionListenerDispatcher listenerDispatcher) {
+    return new EntityPlanSet<>(model, compiler, listenerDispatcher, compiler.dialectId());
   }
 }

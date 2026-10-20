@@ -67,23 +67,17 @@ class JoinAstTest {
     FromClause explicit =
         new FromClause(
             rootSource,
-            List.of(
-                new JoinClause(
-                    JoinType.INNER, joinedSource, root.id().eq(joined.id()))));
+            List.of(new JoinClause(JoinType.INNER, joinedSource, root.id().eq(joined.id()))));
     FromClause legacy =
         new FromClause(
-            root,
-            List.of(
-                new JoinClause(JoinType.INNER, joined, root.id().eq(joined.id()))));
+            root, List.of(new JoinClause(JoinType.INNER, joined, root.id().eq(joined.id()))));
 
     assertSame(rootSource, explicit.root());
     assertSame(joinedSource, explicit.joins().getFirst().right());
     assertSame(root, explicit.occurrenceOf(rootSource).orElseThrow().entityTable().orElseThrow());
     assertSame(
-        joined,
-        explicit.occurrenceOf(joinedSource).orElseThrow().entityTable().orElseThrow());
-    assertSame(
-        joined, legacy.joins().getFirst().right().entityTable().orElseThrow());
+        joined, explicit.occurrenceOf(joinedSource).orElseThrow().entityTable().orElseThrow());
+    assertSame(joined, legacy.joins().getFirst().right().entityTable().orElseThrow());
     assertEquals(legacy, explicit);
     assertEquals(legacy.hashCode(), explicit.hashCode());
   }
@@ -95,9 +89,7 @@ class JoinAstTest {
     FromClause first =
         new FromClause(
             firstRoot,
-            List.of(
-                new JoinClause(
-                    JoinType.LEFT, firstOwner, firstRoot.id().eq(firstOwner.id()))));
+            List.of(new JoinClause(JoinType.LEFT, firstOwner, firstRoot.id().eq(firstOwner.id()))));
 
     PetTable secondRoot = new PetTable();
     PetTable secondOwner = secondRoot.as("owner_pet");
@@ -105,14 +97,12 @@ class JoinAstTest {
         new FromClause(
             secondRoot,
             List.of(
-                new JoinClause(
-                    JoinType.LEFT, secondOwner, secondRoot.id().eq(secondOwner.id()))));
+                new JoinClause(JoinType.LEFT, secondOwner, secondRoot.id().eq(secondOwner.id()))));
     FromClause differentType =
         new FromClause(
             secondRoot,
             List.of(
-                new JoinClause(
-                    JoinType.INNER, secondOwner, secondRoot.id().eq(secondOwner.id()))));
+                new JoinClause(JoinType.INNER, secondOwner, secondRoot.id().eq(secondOwner.id()))));
 
     assertEquals(firstRoot, secondRoot);
     assertEquals(first, equivalent);
@@ -148,9 +138,7 @@ class JoinAstTest {
             IllegalArgumentException.class,
             () ->
                 new FromClause(
-                    root,
-                    List.of(
-                        new JoinClause(JoinType.INNER, root, root.id().eq(root.id())))));
+                    root, List.of(new JoinClause(JoinType.INNER, root, root.id().eq(root.id())))));
     assertTrue(repeatedReference.getMessage().contains("registered more than once"));
 
     PetTable firstAlias = root.as("duplicate_alias");
@@ -163,9 +151,7 @@ class JoinAstTest {
                     firstAlias,
                     List.of(
                         new JoinClause(
-                            JoinType.INNER,
-                            secondAlias,
-                            firstAlias.id().eq(secondAlias.id())))));
+                            JoinType.INNER, secondAlias, firstAlias.id().eq(secondAlias.id())))));
     assertTrue(duplicateAlias.getMessage().contains("effective table qualifier 'duplicate_alias'"));
 
     PetTable otherUnaliased = new PetTable();
@@ -185,9 +171,7 @@ class JoinAstTest {
                 root,
                 List.of(
                     new JoinClause(
-                        JoinType.INNER,
-                        physicalNameAlias,
-                        root.id().eq(physicalNameAlias.id())))));
+                        JoinType.INNER, physicalNameAlias, root.id().eq(physicalNameAlias.id())))));
 
     EntityMeta<Pet> otherSchemaMetadata =
         EntityMeta.simple(
@@ -222,8 +206,7 @@ class JoinAstTest {
                 new JoinClause(JoinType.LEFT, second, first.id().eq(second.id()))));
 
     SelectStatement valid =
-        new SelectStatement(
-            List.of(second.name()), validFrom, root.id().eq(second.id()));
+        new SelectStatement(List.of(second.name()), validFrom, root.id().eq(second.id()));
     assertEquals(2, valid.joins().size());
 
     FromClause forwardReference =
@@ -246,8 +229,7 @@ class JoinAstTest {
     PetTable impersonator = root.as("owner_pet");
     FromClause from =
         new FromClause(
-            root,
-            List.of(new JoinClause(JoinType.INNER, joined, root.id().eq(joined.id()))));
+            root, List.of(new JoinClause(JoinType.INNER, joined, root.id().eq(joined.id()))));
 
     assertEquals(joined, impersonator);
     SelectStatement invalidSelection = new SelectStatement(List.of(impersonator.name()), from);
@@ -259,9 +241,7 @@ class JoinAstTest {
 
     SelectStatement invalidEmptyIn =
         new SelectStatement(
-            List.of(root.id()),
-            from,
-            new InPredicate<>(impersonator.id(), List.of(), false));
+            List.of(root.id()), from, new InPredicate<>(impersonator.id(), List.of(), false));
     IllegalArgumentException emptyInFailure =
         assertThrows(
             IllegalArgumentException.class, () -> SemanticValidator.validate(invalidEmptyIn));
@@ -304,7 +284,8 @@ class JoinAstTest {
             IllegalArgumentException.class,
             () -> SemanticValidator.validateComplete(invalidHaving));
 
-    assertTrue(groupFailure.getMessage().contains("$ GROUP BY item #0 column 'invisible_pet.name'"));
+    assertTrue(
+        groupFailure.getMessage().contains("$ GROUP BY item #0 column 'invisible_pet.name'"));
     assertTrue(havingFailure.getMessage().contains("$ HAVING item #0 operand #0"));
   }
 
@@ -316,8 +297,7 @@ class JoinAstTest {
     ParameterSlot<Integer> limit = new ParameterSlot<>(1, Integer.class, false);
     FromClause from =
         new FromClause(
-            root,
-            List.of(new JoinClause(JoinType.RIGHT, joined, root.id().eq(joined.id()))));
+            root, List.of(new JoinClause(JoinType.RIGHT, joined, root.id().eq(joined.id()))));
     SelectStatement statement =
         new SelectStatement(
             false,
@@ -325,8 +305,7 @@ class JoinAstTest {
             List.of(new HiddenSelection(joined.id(), Identifier.of("joined_id"))),
             from,
             joined.name().isNotNull(),
-            List.of(
-                new OrderByItem(joined.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+            List.of(new OrderByItem(joined.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
             new KeysetSeek(joined.id().gt(anchor), limit));
     CountAst count = new CountAst(from, joined.name().isNotNull(), joined.name());
 
@@ -342,23 +321,16 @@ class JoinAstTest {
     FromClause left =
         new FromClause(
             root,
-            List.of(
-                new JoinClause(
-                    JoinType.LEFT, leftTarget, root.id().eq(leftTarget.id()))));
+            List.of(new JoinClause(JoinType.LEFT, leftTarget, root.id().eq(leftTarget.id()))));
 
     assertEquals(Nullability.NON_NULL, leftTarget.id().nullability());
     assertEquals(Nullability.NON_NULL, left.effectiveNullability(root.id()));
     assertEquals(Nullability.NULLABLE, left.effectiveNullability(leftTarget.id()));
-    assertEquals(
-        Nullability.NULLABLE,
-        left.effectiveNullability(root.id().eq(leftTarget.id())));
+    assertEquals(Nullability.NULLABLE, left.effectiveNullability(root.id().eq(leftTarget.id())));
     assertEquals(
         Nullability.NON_NULL,
-        left.effectiveNullability(
-            new CoalesceExpression<>(List.of(leftTarget.id(), root.id()))));
-    assertEquals(
-        Nullability.NON_NULL,
-        left.effectiveNullability(leftTarget.id().isNull()));
+        left.effectiveNullability(new CoalesceExpression<>(List.of(leftTarget.id(), root.id()))));
+    assertEquals(Nullability.NON_NULL, left.effectiveNullability(leftTarget.id().isNull()));
     assertFalse(left.isNullExtended(root));
     assertTrue(left.isNullExtended(leftTarget));
 
@@ -366,9 +338,7 @@ class JoinAstTest {
     FromClause right =
         new FromClause(
             root,
-            List.of(
-                new JoinClause(
-                    JoinType.RIGHT, rightTarget, root.id().eq(rightTarget.id()))));
+            List.of(new JoinClause(JoinType.RIGHT, rightTarget, root.id().eq(rightTarget.id()))));
     assertEquals(Nullability.NULLABLE, right.effectiveNullability(root.id()));
     assertEquals(Nullability.NON_NULL, right.effectiveNullability(rightTarget.id()));
 
@@ -376,9 +346,7 @@ class JoinAstTest {
     FromClause full =
         new FromClause(
             root,
-            List.of(
-                new JoinClause(
-                    JoinType.FULL, fullTarget, root.id().eq(fullTarget.id()))));
+            List.of(new JoinClause(JoinType.FULL, fullTarget, root.id().eq(fullTarget.id()))));
     assertEquals(Nullability.NULLABLE, full.effectiveNullability(root.id()));
     assertEquals(Nullability.NULLABLE, full.effectiveNullability(fullTarget.id()));
   }
@@ -391,15 +359,11 @@ class JoinAstTest {
     state.put(root, Boolean.FALSE);
     state.put(right, Boolean.FALSE);
 
-    assertEquals(
-        Nullability.NON_NULL,
-        EffectiveNullabilityResolver.resolve(right.id(), state));
+    assertEquals(Nullability.NON_NULL, EffectiveNullabilityResolver.resolve(right.id(), state));
 
     EffectiveNullabilityResolver.applyJoin(JoinType.LEFT, right, state);
 
-    assertEquals(
-        Nullability.NULLABLE,
-        EffectiveNullabilityResolver.resolve(right.id(), state));
+    assertEquals(Nullability.NULLABLE, EffectiveNullabilityResolver.resolve(right.id(), state));
   }
 
   private record Pet(Long id, String name) {}

@@ -115,8 +115,7 @@ class EntityRuntimeModelTest {
             List.of(
                 new PropertyRuntime<>(ID, JdbcCodecs.LONG),
                 new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
-    RowDecoder<@Nullable Pet> decoder =
-        model.nullableRowDecoder(RowLayout.contiguous(2, 1));
+    RowDecoder<@Nullable Pet> decoder = model.nullableRowDecoder(RowLayout.contiguous(2, 1));
 
     assertNull(decoder.decode(resultSet(Map.of(2, "orphan")), RowReadContext.EMPTY));
     assertEquals(0, decodedRows.get());
@@ -127,8 +126,7 @@ class EntityRuntimeModelTest {
   }
 
   @Test
-  void nullableEntityDecoderDistinguishesEveryCompositePrimaryKeyPresenceState()
-      throws Exception {
+  void nullableEntityDecoderDistinguishesEveryCompositePrimaryKeyPresenceState() throws Exception {
     PropertyMeta<CompositePet, Long> tenantId =
         new PropertyMeta<>(0, "tenantId", Long.class, ColumnMeta.of("tenant_id", false));
     PropertyMeta<CompositePet, Long> petId =
@@ -164,8 +162,7 @@ class EntityRuntimeModelTest {
   @Test
   void nullableEntityDecoderRequiresPrimaryKeyMetadata() {
     EntityMeta<Pet> readOnlyWithoutKey =
-        EntityMeta.simple(
-            Pet.class, TableMeta.of("pet_view"), List.of(ID, NAME), null, true);
+        EntityMeta.simple(Pet.class, TableMeta.of("pet_view"), List.of(ID, NAME), null, true);
     EntityRuntimeModel<Pet> model =
         new EntityRuntimeModel<>(
             readOnlyWithoutKey,
@@ -175,8 +172,7 @@ class EntityRuntimeModelTest {
                 new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
 
     assertThrows(
-        IllegalArgumentException.class,
-        () -> model.nullableRowDecoder(RowLayout.contiguous(2, 1)));
+        IllegalArgumentException.class, () -> model.nullableRowDecoder(RowLayout.contiguous(2, 1)));
   }
 
   private static EntityRuntimeModel<Pet> model() {

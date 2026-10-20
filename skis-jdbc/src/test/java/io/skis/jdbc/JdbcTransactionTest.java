@@ -40,8 +40,7 @@ class JdbcTransactionTest {
     assertEquals(2, scenario.autoCommitChanges.get());
     assertTrue(scenario.autoCommit.get());
     assertEquals(
-        List.of("auto-commit:false", "commit", "auto-commit:true", "release"),
-        scenario.events);
+        List.of("auto-commit:false", "commit", "auto-commit:true", "release"), scenario.events);
   }
 
   @Test
@@ -71,8 +70,7 @@ class JdbcTransactionTest {
     assertEquals(1, scenario.releases.get());
     assertTrue(scenario.autoCommit.get());
     assertEquals(
-        List.of("auto-commit:false", "rollback", "auto-commit:true", "release"),
-        scenario.events);
+        List.of("auto-commit:false", "rollback", "auto-commit:true", "release"), scenario.events);
   }
 
   @Test
@@ -140,8 +138,7 @@ class JdbcTransactionTest {
 
   @Test
   void closePreservesRollbackFailureAndSuppressesReleaseFailure() {
-    Scenario scenario =
-        new Scenario(true).fail(FailurePoint.ROLLBACK).fail(FailurePoint.RELEASE);
+    Scenario scenario = new Scenario(true).fail(FailurePoint.ROLLBACK).fail(FailurePoint.RELEASE);
     JdbcTransaction transaction = JdbcTransaction.begin(scenario.provider());
 
     TransactionException failure = assertThrows(TransactionException.class, transaction::close);
@@ -157,9 +154,7 @@ class JdbcTransactionTest {
   @Test
   void closeReportsCommittedOutcomeWhenRestorationAndReleaseFail() {
     Scenario scenario =
-        new Scenario(true)
-            .fail(FailurePoint.RESTORE_AUTO_COMMIT)
-            .fail(FailurePoint.RELEASE);
+        new Scenario(true).fail(FailurePoint.RESTORE_AUTO_COMMIT).fail(FailurePoint.RELEASE);
     JdbcTransaction transaction = JdbcTransaction.begin(scenario.provider());
     transaction.commit();
 
@@ -189,11 +184,7 @@ class JdbcTransactionTest {
     assertEquals(2, failure.getCause().getSuppressed().length);
     assertTrue(failure.getCause().getSuppressed()[0].getMessage().contains("restore auto-commit"));
     assertTrue(
-        failure
-            .getCause()
-            .getSuppressed()[1]
-            .getMessage()
-            .contains("release JDBC connection"));
+        failure.getCause().getSuppressed()[1].getMessage().contains("release JDBC connection"));
     assertEquals(1, scenario.releases.get());
   }
 

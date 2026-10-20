@@ -246,11 +246,7 @@ final class SelectableSupport {
     if (!compatible) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_TYPE_MISMATCH,
-          operator
-              + " does not support SQL types "
-              + left.sqlType()
-              + " and "
-              + right.sqlType());
+          operator + " does not support SQL types " + left.sqlType() + " and " + right.sqlType());
     }
   }
 
@@ -330,8 +326,7 @@ final class SelectableSupport {
       case "char" -> Character.class;
       default ->
           throw QueryValidationException.of(
-              SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE,
-              "IN subquery Java type must not be void");
+              SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE, "IN subquery Java type must not be void");
     };
   }
 }

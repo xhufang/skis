@@ -3,6 +3,7 @@ package io.skis.runtime;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.TransactionException;
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.NonNullSelectable;
@@ -146,6 +147,7 @@ final class DefaultSkisSession implements SkisSession {
 
   @Override
   public void commit() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     requireActive();
     try {
       transaction.commit();
@@ -180,6 +182,7 @@ final class DefaultSkisSession implements SkisSession {
 
   @Override
   public void rollback() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     requireActive();
     try {
       transaction.rollback();
@@ -195,6 +198,7 @@ final class DefaultSkisSession implements SkisSession {
 
   @Override
   public void close() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     afterCommitCallbacks.clear();
     transaction.close();
   }

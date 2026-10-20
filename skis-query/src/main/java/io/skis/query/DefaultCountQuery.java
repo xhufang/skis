@@ -1,7 +1,9 @@
 package io.skis.query;
 
+import io.skis.core.internal.OperationObservation;
 import io.skis.core.spi.ExecutionContext;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Built-in count plan derived from an immutable query. */
 final class DefaultCountQuery implements CountQuery {
@@ -24,5 +26,9 @@ final class DefaultCountQuery implements CountQuery {
 
   QueryCompilation<Long> compilation() {
     return source.countCompilation();
+  }
+
+  QueryCompilation<Long> compilation(@Nullable OperationObservation observation) {
+    return source.countCompilation(observation);
   }
 }

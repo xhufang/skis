@@ -1,13 +1,22 @@
 package io.skis.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.ExecutionListenerDispatcher;
+import io.skis.core.internal.OperationObservation;
+import io.skis.core.spi.ExecutionListener;
+import io.skis.core.spi.ExecutionOperationKind;
+import io.skis.core.spi.ExecutionTermination;
+import io.skis.core.spi.OperationStartedEvent;
 import io.skis.jdbc.internal.JdbcCursor;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
@@ -68,9 +77,61 @@ class QueryDiagnosticContractTest {
     assertEquals(1, projected.size());
     QueryValidationException failure =
         assertThrows(
-            QueryValidationException.class,
-            () -> QueryParameters.empty().validateFor(parameters));
+            QueryValidationException.class, () -> QueryParameters.empty().validateFor(parameters));
     assertEquals(SkisErrorCode.QUERY_PARAMETER_MISSING, failure.code());
+  }
+
+  @Test
+  void listenerCannotReadOrCloseAnExistingCursorButCanInspectItsClosedState() {
+    AtomicInteger resourceCalls = new AtomicInteger();
+    QueryCursor<String> cursor =
+        new DefaultQueryCursor<>(
+            new JdbcCursor<>() {
+              @Override
+              public boolean advance() {
+                resourceCalls.incrementAndGet();
+                return true;
+              }
+
+              @Override
+              public String current() {
+                resourceCalls.incrementAndGet();
+                return "row";
+              }
+
+              @Override
+              public boolean isClosed() {
+                return false;
+              }
+
+              @Override
+              public void close() {
+                resourceCalls.incrementAndGet();
+              }
+            },
+            true);
+    ExecutionListener listener =
+        new ExecutionListener() {
+          @Override
+          public void operationStarted(OperationStartedEvent event) {
+            assertThrows(IllegalStateException.class, cursor::advance);
+            assertThrows(IllegalStateException.class, cursor::current);
+            assertThrows(IllegalStateException.class, cursor::close);
+            assertFalse(cursor.isClosed());
+            assertEquals(0, resourceCalls.get());
+          }
+        };
+
+    OperationObservation observation =
+        ExecutionListenerDispatcher.of(List.of(listener))
+            .startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+
+    assertEquals(0, resourceCalls.get());
+    assertTrue(cursor.advance());
+    assertEquals("row", cursor.current());
+    cursor.close();
+    assertEquals(3, resourceCalls.get());
+    observation.completeSucceeded(ExecutionTermination.COMPLETED);
   }
 
   private static JdbcCursor<String> delegate() {

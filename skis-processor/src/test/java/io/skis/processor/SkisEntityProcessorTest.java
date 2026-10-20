@@ -101,15 +101,11 @@ class SkisEntityProcessorTest {
             "private static final ProjectionMapping<samples.TwentyColumnSummary> MAPPING ="),
         generated);
     assertTrue(
-        generated.contains(
-            "public static ProjectionSelection<samples.TwentyColumnSummary> of("),
+        generated.contains("public static ProjectionSelection<samples.TwentyColumnSummary> of("),
         generated);
-    assertTrue(
-        generated.contains("NonNullSelectable<java.lang.Long> id"), generated);
+    assertTrue(generated.contains("NonNullSelectable<java.lang.Long> id"), generated);
     assertFalse(generated.contains("Selectable<?>..."), generated);
-    assertTrue(
-        generated.contains("$skisReaders.reader(19, java.lang.String.class);"),
-        generated);
+    assertTrue(generated.contains("$skisReaders.reader(19, java.lang.String.class);"), generated);
     assertFalse(generated.contains("ProjectionProvider"), generated);
     assertFalse(generated.contains("TwentyColumnEntityMeta"), generated);
     assertTrue(generated.contains("new samples.TwentyColumnSummary("), generated);
@@ -187,8 +183,7 @@ class SkisEntityProcessorTest {
   }
 
   @Test
-  void qualifiesTheGeneratedMappingFieldWhenAProjectionParameterHasTheSameName()
-      throws Exception {
+  void qualifiesTheGeneratedMappingFieldWhenAProjectionParameterHasTheSameName() throws Exception {
     Map<String, String> sources =
         Map.of(
             "samples.MappingNameSummary",
@@ -207,9 +202,7 @@ class SkisEntityProcessorTest {
     assertTrue(result.success(), result.diagnosticsText());
     String generated = generatedSource(result, "MappingNameSummaryPro.java");
     assertTrue(
-        generated.contains(
-            "return MappingNameSummaryPro.MAPPING.bind(MAPPING);"),
-        generated);
+        generated.contains("return MappingNameSummaryPro.MAPPING.bind(MAPPING);"), generated);
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -376,11 +369,9 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertTrue(
-        generatedSource(result, "PrimitiveRecordPro.java")
-            .contains("(long) $skisValue0.read("));
+        generatedSource(result, "PrimitiveRecordPro.java").contains("(long) $skisValue0.read("));
     assertTrue(
-        generatedSource(result, "PrimitiveClassPro.java")
-            .contains("(long) $skisValue0.read("));
+        generatedSource(result, "PrimitiveClassPro.java").contains("(long) $skisValue0.read("));
 
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -541,8 +532,7 @@ class SkisEntityProcessorTest {
         Files.exists(result.generatedSources().resolve("samples/GeneratedMoney.java")),
         "the collaborating processor did not generate the deferred type");
     assertTrue(
-        Files.exists(
-            result.generatedSources().resolve("samples/skis/DeferredProjectionPro.java")),
+        Files.exists(result.generatedSources().resolve("samples/skis/DeferredProjectionPro.java")),
         "SKIS did not retry the deferred projection");
     CompilationResult generatedCompilation = compileGenerated(sources, result);
     assertTrue(generatedCompilation.success(), generatedCompilation.diagnosticsText());
@@ -638,8 +628,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     String generated = generatedSource(result, "PetViewPro.java");
-    assertTrue(
-        generated.contains("implements ProjectionType<samples.PetView>"), generated);
+    assertTrue(generated.contains("implements ProjectionType<samples.PetView>"), generated);
     assertTrue(generated.contains("ProjectionSource.of(samples.skis.PetMeta.ID)"), generated);
     assertTrue(
         generated.contains("ProjectionSource.of(samples.skis.PetMeta.NAME, \"pet\")"), generated);
@@ -684,8 +673,7 @@ class SkisEntityProcessorTest {
     assertFalse(result.success(), "processing unexpectedly succeeded");
     assertTrue(result.diagnosticsText().contains("[SKIS232]"), result.diagnosticsText());
     assertTrue(
-        result.diagnosticsText().contains("conflicting @PropertyFrom"),
-        result.diagnosticsText());
+        result.diagnosticsText().contains("conflicting @PropertyFrom"), result.diagnosticsText());
   }
 
   @Test
@@ -717,8 +705,7 @@ class SkisEntityProcessorTest {
     assertFalse(result.success(), "processing unexpectedly succeeded");
     assertTrue(result.diagnosticsText().contains("[SKIS230]"), result.diagnosticsText());
     assertTrue(
-        result.diagnosticsText().contains("[A-Za-z_][A-Za-z0-9_]*"),
-        result.diagnosticsText());
+        result.diagnosticsText().contains("[A-Za-z_][A-Za-z0-9_]*"), result.diagnosticsText());
   }
 
   @Test
@@ -1885,9 +1872,7 @@ class SkisEntityProcessorTest {
             public record AlphaSummary(Long id) {}
             """);
     String processors =
-        SkisEntityProcessor.class.getName()
-            + ","
-            + SkisProjectionProcessor.class.getName();
+        SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName();
     CompilationResult result =
         process(sources, processors, temporaryDirectory.resolve("projection-index"));
 
@@ -2028,8 +2013,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertTrue(
-        Files.exists(
-            result.generatedSources().resolve("samples/skis/LombokPetSummaryPro.java")));
+        Files.exists(result.generatedSources().resolve("samples/skis/LombokPetSummaryPro.java")));
   }
 
   @Test
@@ -2121,9 +2105,7 @@ class SkisEntityProcessorTest {
       assertTrue(binder.contains("entity.isActive()"), binder);
       assertTrue(
           Files.exists(
-              result
-                  .generatedSources()
-                  .resolve("samples/skis/RealLombokPetSummaryPro.java")));
+              result.generatedSources().resolve("samples/skis/RealLombokPetSummaryPro.java")));
     }
   }
 

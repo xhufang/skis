@@ -78,8 +78,7 @@ class QueryScopeAnalysisTest {
         new SelectStatement(List.of(inner.id()), inner, inner.id().eq(outer.id()));
     int originalHash = child.hashCode();
 
-    QueryBlockAnalysis inWhere =
-        parentAnalysis.analyzeChild(child, QueryBlockLocation.where(0));
+    QueryBlockAnalysis inWhere = parentAnalysis.analyzeChild(child, QueryBlockLocation.where(0));
     QueryBlockAnalysis inSelect =
         parentAnalysis.analyzeChild(child, QueryBlockLocation.select(0, 0));
 
@@ -113,8 +112,7 @@ class QueryScopeAnalysisTest {
         new FromClause(
             root,
             List.of(
-                new JoinClause(
-                    JoinType.LEFT, currentRight, root.id().eq(currentRight.id())),
+                new JoinClause(JoinType.LEFT, currentRight, root.id().eq(currentRight.id())),
                 new JoinClause(
                     JoinType.INNER, futureRight, currentRight.id().eq(futureRight.id()))));
     SelectStatement parent = new SelectStatement(List.of(currentRight.id()), from);
@@ -122,8 +120,7 @@ class QueryScopeAnalysisTest {
 
     PetTable inner = root.as("inner_pet");
     SelectStatement currentCorrelation =
-        new SelectStatement(
-            List.of(inner.id()), inner, inner.id().eq(currentRight.id()));
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(currentRight.id()));
 
     QueryBlockAnalysis inFirstOn =
         parentAnalysis.analyzeChild(currentCorrelation, QueryBlockLocation.joinOn(1, 0));
@@ -131,8 +128,7 @@ class QueryScopeAnalysisTest {
         parentAnalysis.analyzeChild(currentCorrelation, QueryBlockLocation.select(0, 0));
 
     assertEquals(
-        Nullability.NON_NULL,
-        expression(inFirstOn, QueryClause.WHERE, 0).effectiveNullability());
+        Nullability.NON_NULL, expression(inFirstOn, QueryClause.WHERE, 0).effectiveNullability());
     assertEquals(
         1,
         expression(inFirstOn, QueryClause.WHERE, 0)
@@ -145,14 +141,11 @@ class QueryScopeAnalysisTest {
         expression(inFinalSelect, QueryClause.WHERE, 0).effectiveNullability());
 
     SelectStatement futureCorrelation =
-        new SelectStatement(
-            List.of(inner.id()), inner, inner.id().eq(futureRight.id()));
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(futureRight.id()));
     IllegalArgumentException failure =
         assertThrows(
             IllegalArgumentException.class,
-            () ->
-                parentAnalysis.analyzeChild(
-                    futureCorrelation, QueryBlockLocation.joinOn(1, 1)));
+            () -> parentAnalysis.analyzeChild(futureCorrelation, QueryBlockLocation.joinOn(1, 1)));
     assertTrue(failure.getMessage().contains("JOIN ON"));
     assertTrue(failure.getMessage().contains("source occurrence #2 before it is visible"));
   }
@@ -175,14 +168,11 @@ class QueryScopeAnalysisTest {
     assertEquals(outer, impersonator);
     PetTable inner = new PetTable().as("inner_pet");
     SelectStatement wrongReference =
-        new SelectStatement(
-            List.of(inner.id()), inner, inner.id().eq(impersonator.id()));
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(impersonator.id()));
     IllegalArgumentException impersonatorFailure =
         assertThrows(
             IllegalArgumentException.class,
-            () ->
-                parentAnalysis.analyzeChild(
-                    wrongReference, QueryBlockLocation.select(0, 1)));
+            () -> parentAnalysis.analyzeChild(wrongReference, QueryBlockLocation.select(0, 1)));
     assertTrue(impersonatorFailure.getMessage().contains("object identity"));
     assertTrue(impersonatorFailure.getMessage().contains("not visible"));
   }
@@ -196,9 +186,7 @@ class QueryScopeAnalysisTest {
     PetTable secondSibling = new PetTable().as("second_sibling");
     SelectStatement second =
         new SelectStatement(
-            List.of(secondSibling.id()),
-            secondSibling,
-            secondSibling.id().eq(firstSibling.id()));
+            List.of(secondSibling.id()), secondSibling, secondSibling.id().eq(firstSibling.id()));
 
     IllegalArgumentException failure =
         assertThrows(
@@ -236,8 +224,7 @@ class QueryScopeAnalysisTest {
   void rejectsQualifiersThatPostgresqlWouldTruncate() {
     PetTable boundary = new PetTable().as("a".repeat(63));
     QueryBlockAnalysis boundaryAnalysis =
-        SemanticValidator.analyzeComplete(
-            new SelectStatement(List.of(boundary.id()), boundary));
+        SemanticValidator.analyzeComplete(new SelectStatement(List.of(boundary.id()), boundary));
     assertFalse(boundaryAnalysis.expressions().isEmpty());
 
     PetTable overlong = new PetTable().as("a".repeat(64));
@@ -245,8 +232,7 @@ class QueryScopeAnalysisTest {
 
     IllegalArgumentException failure =
         assertThrows(
-            IllegalArgumentException.class,
-            () -> SemanticValidator.analyzeComplete(statement));
+            IllegalArgumentException.class, () -> SemanticValidator.analyzeComplete(statement));
 
     assertTrue(failure.getMessage().contains("query block $ source occurrence #0"));
     assertTrue(failure.getMessage().contains("must not exceed 63 bytes"));
@@ -261,17 +247,14 @@ class QueryScopeAnalysisTest {
         SemanticValidator.analyzeComplete(
             new SelectStatement(
                 List.of(root.id()),
-                new FromClause(
-                    root, List.of(new JoinClause(JoinType.CROSS, crossed, null)))));
+                new FromClause(root, List.of(new JoinClause(JoinType.CROSS, crossed, null)))));
     PetTable inner = root.as("inner_pet");
     SelectStatement child = new SelectStatement(List.of(inner.id()), inner);
 
     IllegalArgumentException failure =
         assertThrows(
             IllegalArgumentException.class,
-            () ->
-                parentAnalysis.analyzeChild(
-                    child, QueryBlockLocation.joinOn(1, 0)));
+            () -> parentAnalysis.analyzeChild(child, QueryBlockLocation.joinOn(1, 0)));
 
     assertTrue(failure.getMessage().contains("has no JOIN ON item #1"));
   }
@@ -304,16 +287,13 @@ class QueryScopeAnalysisTest {
             List.of(outer.id()),
             new FromClause(
                 outer,
-                List.of(
-                    new JoinClause(JoinType.INNER, joined, outer.id().eq(joined.id())))));
+                List.of(new JoinClause(JoinType.INNER, joined, outer.id().eq(joined.id())))));
     QueryBlockAnalysis joinAnalysis = SemanticValidator.analyzeComplete(parentWithJoin);
     IllegalArgumentException boundaryFailure =
         assertThrows(
             IllegalArgumentException.class,
             () ->
-                joinAnalysis.analyzeChild(
-                    innerStatement,
-                    QueryBlockLocation.relationSource(1, 0)));
+                joinAnalysis.analyzeChild(innerStatement, QueryBlockLocation.relationSource(1, 0)));
     assertTrue(boundaryFailure.getMessage().contains("non-correlated relation-source boundary"));
   }
 
@@ -329,9 +309,7 @@ class QueryScopeAnalysisTest {
             outer.id().isNotNull(),
             List.of(outer.id()),
             outer.id().isNotNull(),
-            List.of(
-                new OrderByItem(
-                    outer.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+            List.of(new OrderByItem(outer.id(), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
             new Limit(new ParameterSlot<>(0, Integer.class, false)));
     QueryBlockAnalysis parentAnalysis = SemanticValidator.analyzeComplete(parent);
     PetTable inner = new PetTable().as("inner_pet");
@@ -350,8 +328,7 @@ class QueryScopeAnalysisTest {
       QueryBlockAnalysis childAnalysis = parentAnalysis.analyzeChild(child, location);
       ResolvedExpression childWhere = expression(childAnalysis, QueryClause.WHERE, 0);
       assertEquals(
-          QueryBlockPath.root(),
-          childWhere.columnDependencies().get(1).source().blockPath());
+          QueryBlockPath.root(), childWhere.columnDependencies().get(1).source().blockPath());
     }
   }
 
@@ -369,9 +346,7 @@ class QueryScopeAnalysisTest {
                     future,
                     new LogicalPredicate(
                         LogicalOperator.AND,
-                        List.of(
-                            root.id().eq(future.id()),
-                            root.id().eq(parameter))))));
+                        List.of(root.id().eq(future.id()), root.id().eq(parameter))))));
     SelectStatement statement = new SelectStatement(List.of(root.id()), from);
     QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
 
@@ -389,8 +364,7 @@ class QueryScopeAnalysisTest {
 
     IllegalArgumentException failure =
         assertThrows(
-            IllegalArgumentException.class,
-            () -> new SelectStatement(List.of(unknown), root));
+            IllegalArgumentException.class, () -> new SelectStatement(List.of(unknown), root));
 
     assertTrue(failure.getMessage().contains("SELECT uses unsupported SQL expression node"));
     assertTrue(failure.getMessage().contains(UnknownExpression.class.getName()));
@@ -422,8 +396,7 @@ class QueryScopeAnalysisTest {
         new SelectStatement(
             List.of(outer.id()),
             outer,
-            new LogicalPredicate(
-                LogicalOperator.AND, List.of(outer.id().eq(outerId), exists)));
+            new LogicalPredicate(LogicalOperator.AND, List.of(outer.id().eq(outerId), exists)));
 
     QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
     QueryBlockAnalysis.NestedBlock nested = analysis.nestedBlocks().getFirst();
@@ -436,8 +409,7 @@ class QueryScopeAnalysisTest {
     assertEquals(exists, new ExistsPredicate(child, false));
     assertNotEquals(exists, new ExistsPredicate(child, true));
     assertTrue(analysis.structureKey().canonicalForm().contains("EXISTS"));
-    assertThrows(
-        IllegalArgumentException.class, () -> SemanticValidator.analyzeComplete(child));
+    assertThrows(IllegalArgumentException.class, () -> SemanticValidator.analyzeComplete(child));
   }
 
   @Test
@@ -447,15 +419,11 @@ class QueryScopeAnalysisTest {
     PetTable optional = new PetTable().as("optional_pet");
     FromClause childFrom =
         new FromClause(
-            inner,
-            List.of(new JoinClause(JoinType.LEFT, optional, inner.id().eq(optional.id()))));
+            inner, List.of(new JoinClause(JoinType.LEFT, optional, inner.id().eq(optional.id()))));
     SelectStatement child =
-        new SelectStatement(
-            List.of(optional.id()), childFrom, inner.id().eq(outer.id()));
-    InSubqueryPredicate<Long> membership =
-        new InSubqueryPredicate<>(outer.id(), child, false);
-    SelectStatement statement =
-        new SelectStatement(List.of(outer.id()), outer, membership);
+        new SelectStatement(List.of(optional.id()), childFrom, inner.id().eq(outer.id()));
+    InSubqueryPredicate<Long> membership = new InSubqueryPredicate<>(outer.id(), child, false);
+    SelectStatement statement = new SelectStatement(List.of(outer.id()), outer, membership);
 
     QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
     QueryBlockAnalysis.NestedBlock nested = analysis.nestedBlocks().getFirst();
@@ -555,19 +523,15 @@ class QueryScopeAnalysisTest {
       PetTable root, PetTable joined, ParameterSlot<Long> parameter) {
     FromClause from =
         new FromClause(
-            root,
-            List.of(
-                new JoinClause(JoinType.LEFT, joined, root.id().eq(joined.id()))));
+            root, List.of(new JoinClause(JoinType.LEFT, joined, root.id().eq(joined.id()))));
     return new SelectStatement(
         false,
         List.of(joined.name()),
         List.of(),
         from,
         new LogicalPredicate(
-            LogicalOperator.AND,
-            List.of(root.id().eq(parameter), joined.name().isNotNull())),
-        List.of(
-            new OrderByItem(joined.id(), OrderDirection.DESC, NullOrder.LAST)),
+            LogicalOperator.AND, List.of(root.id().eq(parameter), joined.name().isNotNull())),
+        List.of(new OrderByItem(joined.id(), OrderDirection.DESC, NullOrder.LAST)),
         null);
   }
 

@@ -2,6 +2,8 @@ package io.skis.query;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.internal.OperationObservation;
+import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.RenderedSql;
@@ -15,6 +17,7 @@ import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.RowDecoder;
 import io.skis.metadata.PropertyMeta;
+import io.skis.query.QueryPlanResolver.CompilationObservation;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
@@ -61,6 +64,10 @@ final class QueryPlanCompiler {
     this.plans = Objects.requireNonNull(plans, "plans");
   }
 
+  String dialectId() {
+    return dialect.id();
+  }
+
   /** Compiles the no-predicate or one-property equality Fast Path. */
   <E> CompiledQueryPlan<E, Object> compile(
       EntityRuntimeModel<E> model,
@@ -75,7 +82,11 @@ final class QueryPlanCompiler {
   }
 
   <E> CompiledQueryPlan<E, Object> compileQuery(
-      EntityRuntimeModel<E> model, QueryTable<E> table, CompiledQueryStructure structure) {
+      EntityRuntimeModel<E> model,
+      QueryTable<E> table,
+      CompiledQueryStructure structure,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
     requireCanonicalModel(model, table);
     Objects.requireNonNull(structure, "structure");
     return compileSelection(
@@ -85,7 +96,9 @@ final class QueryPlanCompiler {
             false,
             QueryPagination.None.INSTANCE,
             List.of(),
-            QueryArguments.placeholders(structure.parameterSlots().size()))
+            QueryArguments.placeholders(structure.parameterSlots().size()),
+            observation,
+            purpose)
         .plan();
   }
 
@@ -93,7 +106,27 @@ final class QueryPlanCompiler {
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       boolean distinct,
-      QueryArguments statementArguments) {
+      QueryArguments statementArguments,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    CompilationObservation compilation =
+        observation == null ? null : new CompilationObservation(observation, purpose);
+    try {
+      return prepareCount(selected, structure, distinct, statementArguments, compilation);
+    } catch (RuntimeException | Error failure) {
+      if (compilation != null) {
+        compilation.preparationFailed(failure);
+      }
+      throw failure;
+    }
+  }
+
+  private <R extends @Nullable Object> QueryCompilation<Long> prepareCount(
+      SelectedResult<R> selected,
+      CompiledQueryStructure structure,
+      boolean distinct,
+      QueryArguments statementArguments,
+      @Nullable CompilationObservation observation) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope sourceScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
@@ -109,7 +142,13 @@ final class QueryPlanCompiler {
               !structure.fromClause().joins().isEmpty(), selection.expressions());
     }
     return compileResolvedCount(
-        selected, sourceContext, structure, runtimeScope, statementArguments, distinctExpression);
+        selected,
+        sourceContext,
+        structure,
+        runtimeScope,
+        statementArguments,
+        distinctExpression,
+        observation);
   }
 
   private QueryCompilation<Long> compileResolvedCount(
@@ -118,7 +157,8 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       TableRuntimeScope runtimeScope,
       QueryArguments statementArguments,
-      @Nullable SqlExpression<?> distinctExpression) {
+      @Nullable SqlExpression<?> distinctExpression,
+      @Nullable CompilationObservation observation) {
     if (!structure.groupBy().isEmpty() || structure.having() != null) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_COUNT_CONTRACT,
@@ -155,7 +195,8 @@ final class QueryPlanCompiler {
                         SkisErrorCode.QUERY_RESULT_MAPPING, "COUNT result was unexpectedly null");
                   }
                   return value;
-                }));
+                }),
+        observation);
   }
 
   <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileOrdered(
@@ -164,7 +205,30 @@ final class QueryPlanCompiler {
       List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination,
-      QueryArguments statementArguments) {
+      QueryArguments statementArguments,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    CompilationObservation compilation =
+        observation == null ? null : new CompilationObservation(observation, purpose);
+    try {
+      return prepareOrdered(
+          selected, structure, orderBy, distinct, pagination, statementArguments, compilation);
+    } catch (RuntimeException | Error failure) {
+      if (compilation != null) {
+        compilation.preparationFailed(failure);
+      }
+      throw failure;
+    }
+  }
+
+  private <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> prepareOrdered(
+      SelectedResult<R> selected,
+      CompiledQueryStructure structure,
+      List<SortSpecification> orderBy,
+      boolean distinct,
+      QueryPagination pagination,
+      QueryArguments statementArguments,
+      @Nullable CompilationObservation observation) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope;
     if (structure.validationSource() != null) {
@@ -185,7 +249,8 @@ final class QueryPlanCompiler {
         orderBy,
         distinct,
         pagination,
-        statementArguments);
+        statementArguments,
+        observation);
   }
 
   private <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
@@ -196,7 +261,8 @@ final class QueryPlanCompiler {
       List<SortSpecification> orderBy,
       boolean distinct,
       QueryPagination pagination,
-      QueryArguments statementArguments) {
+      QueryArguments statementArguments,
+      @Nullable CompilationObservation observation) {
     List<OrderByItem> compiledOrder = orderItems(structure, orderBy);
     List<HiddenSelection> hidden = new ArrayList<>();
     int[] indexes = new int[orderBy.size()];
@@ -238,7 +304,8 @@ final class QueryPlanCompiler {
         distinct,
         pagination,
         hidden,
-        statementArguments);
+        statementArguments,
+        observation);
   }
 
   private static <R extends @Nullable Object> RowDecoder<OrderedRow<R>> orderedRowDecoder(
@@ -262,7 +329,38 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden,
-      QueryArguments statementArguments) {
+      QueryArguments statementArguments,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    CompilationObservation compilation =
+        observation == null ? null : new CompilationObservation(observation, purpose);
+    try {
+      return prepareSelection(
+          selected,
+          structure,
+          orderBy,
+          distinct,
+          pagination,
+          hidden,
+          statementArguments,
+          compilation);
+    } catch (RuntimeException | Error failure) {
+      if (compilation != null) {
+        compilation.preparationFailed(failure);
+      }
+      throw failure;
+    }
+  }
+
+  private <R extends @Nullable Object> QueryCompilation<R> prepareSelection(
+      SelectedResult<R> selected,
+      CompiledQueryStructure structure,
+      List<SortSpecification> orderBy,
+      boolean distinct,
+      QueryPagination pagination,
+      List<HiddenSelection> hidden,
+      QueryArguments statementArguments,
+      @Nullable CompilationObservation observation) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope;
     if (structure.validationSource() != null) {
@@ -285,7 +383,8 @@ final class QueryPlanCompiler {
         distinct,
         pagination,
         hidden,
-        statementArguments);
+        statementArguments,
+        observation);
   }
 
   private <R extends @Nullable Object> QueryCompilation<R> compileResolvedSelection(
@@ -298,7 +397,8 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryPagination pagination,
       List<HiddenSelection> hidden,
-      QueryArguments statementArguments) {
+      QueryArguments statementArguments,
+      @Nullable CompilationObservation observation) {
     List<OrderByItem> orderAst = orderItems(structure, orderBy);
     InputsBuilder inputs = new InputsBuilder(runtimeScope, structure);
     SelectPagination paginationAst = inputs.pagination(orderBy, orderAst, pagination);
@@ -331,7 +431,8 @@ final class QueryPlanCompiler {
         parameters,
         inputs.parameterSources,
         statementArguments.planArgument(),
-        () -> renderPlan(compilationContext, parameters, selection.decoder()));
+        () -> renderPlan(compilationContext, parameters, selection.decoder()),
+        observation);
   }
 
   private static List<SqlExpression<?>> selectionExpressions(
@@ -424,8 +525,7 @@ final class QueryPlanCompiler {
       throw QueryValidationException.ofCause(
           SkisErrorCode.QUERY_COMPILED_SHAPE, failure, "SQL rendering failed");
     }
-    RenderedSql rendered =
-        new RenderedSql(template.sql(), template.parameterLayout().slots());
+    RenderedSql rendered = new RenderedSql(template.sql(), template.parameterLayout().slots());
     List<RenderedBinding> renderedBindings = renderedBindings(logicalParameters, rendered);
     int logicalParameterCount = logicalParameters.size();
     return new CompiledQueryPlan<>(

@@ -31,15 +31,13 @@ class H2DerivedTableDialectTest {
     DerivedRelationReference reference = reference();
     DerivedRelationSource source =
         new DerivedRelationSource(
-            new SelectStatement(
-                List.of(inner.id(), inner.name()), inner, inner.name().eq(name)),
+            new SelectStatement(List.of(inner.id(), inner.name()), inner, inner.name().eq(name)),
             reference);
 
     RenderedSql rendered =
         H2TestRendering.render(
             new SelectStatement(
-                List.of(new DerivedColumnExpression<Long>(reference, 0)),
-                FromClause.of(source)));
+                List.of(new DerivedColumnExpression<Long>(reference, 0)), FromClause.of(source)));
 
     assertTrue(H2Dialect.INSTANCE.capabilities().supports(DialectFeature.DERIVED_TABLE));
     assertEquals(

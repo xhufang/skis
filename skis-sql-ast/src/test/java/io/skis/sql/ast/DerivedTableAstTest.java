@@ -55,8 +55,7 @@ class DerivedTableAstTest {
         QueryBlockAnalysis.NestedQueryKind.DERIVED_TABLE,
         analysis.nestedBlocks().getFirst().kind());
     assertEquals(
-        "$/JOIN source[0]#0",
-        analysis.nestedBlocks().getFirst().analysis().path().toString());
+        "$/JOIN source[0]#0", analysis.nestedBlocks().getFirst().analysis().path().toString());
     ResolvedDerivedColumnIdentity resolved =
         assertInstanceOf(
             ResolvedDerivedColumnIdentity.class,
@@ -73,20 +72,14 @@ class DerivedTableAstTest {
     FromClause innerFrom =
         new FromClause(
             innerRoot,
-            List.of(
-                new JoinClause(
-                    JoinType.LEFT,
-                    innerRight,
-                    innerRoot.id().eq(innerRight.id()))));
-    SelectStatement nullableInner =
-        new SelectStatement(List.of(innerRight.id()), innerFrom);
+            List.of(new JoinClause(JoinType.LEFT, innerRight, innerRoot.id().eq(innerRight.id()))));
+    SelectStatement nullableInner = new SelectStatement(List.of(innerRight.id()), innerFrom);
     DerivedRelationReference incorrectlyNonNull =
         reference(
             "nullable_ids",
             new DerivedOutputColumn(
                 Identifier.of("pet_id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL));
-    DerivedRelationSource invalid =
-        new DerivedRelationSource(nullableInner, incorrectlyNonNull);
+    DerivedRelationSource invalid = new DerivedRelationSource(nullableInner, incorrectlyNonNull);
     SelectStatement outer =
         new SelectStatement(
             List.of(new DerivedColumnExpression<Long>(incorrectlyNonNull, 0)),
@@ -94,8 +87,7 @@ class DerivedTableAstTest {
 
     IllegalArgumentException failure =
         assertThrows(
-            IllegalArgumentException.class,
-            () -> SemanticValidator.analyzeComplete(outer));
+            IllegalArgumentException.class, () -> SemanticValidator.analyzeComplete(outer));
     assertTrue(failure.getMessage().contains("effectively nullable"));
 
     PetTable outerRoot = new PetTable().as("outer_pet");
@@ -108,14 +100,11 @@ class DerivedTableAstTest {
     DerivedRelationSource stableSource =
         new DerivedRelationSource(
             new SelectStatement(List.of(stableInner.id()), stableInner), stableReference);
-    DerivedColumnExpression<Long> stableId =
-        new DerivedColumnExpression<>(stableReference, 0);
+    DerivedColumnExpression<Long> stableId = new DerivedColumnExpression<>(stableReference, 0);
     FromClause leftJoined =
         new FromClause(
             outerRoot,
-            List.of(
-                new JoinClause(
-                    JoinType.LEFT, stableSource, outerRoot.id().eq(stableId))));
+            List.of(new JoinClause(JoinType.LEFT, stableSource, outerRoot.id().eq(stableId))));
 
     assertEquals(Nullability.NULLABLE, leftJoined.effectiveNullability(stableId));
     QueryBlockAnalysis leftAnalysis =
@@ -138,9 +127,7 @@ class DerivedTableAstTest {
     FromClause fullJoined =
         new FromClause(
             outerRoot,
-            List.of(
-                new JoinClause(
-                    JoinType.FULL, stableSource, outerRoot.id().eq(stableId))));
+            List.of(new JoinClause(JoinType.FULL, stableSource, outerRoot.id().eq(stableId))));
     assertEquals(Nullability.NULLABLE, fullJoined.effectiveNullability(outerRoot.id()));
     assertEquals(Nullability.NULLABLE, fullJoined.effectiveNullability(stableId));
   }
@@ -155,15 +142,11 @@ class DerivedTableAstTest {
             new DerivedOutputColumn(
                 Identifier.of("pet_id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL));
     DerivedRelationSource capturesOuter =
-        new DerivedRelationSource(
-            new SelectStatement(List.of(outer.id()), inner), reference);
+        new DerivedRelationSource(new SelectStatement(List.of(outer.id()), inner), reference);
     DerivedColumnExpression<Long> exposed = new DerivedColumnExpression<>(reference, 0);
     FromClause capturedFrom =
         new FromClause(
-            outer,
-            List.of(
-                new JoinClause(
-                    JoinType.INNER, capturesOuter, outer.id().eq(exposed))));
+            outer, List.of(new JoinClause(JoinType.INNER, capturesOuter, outer.id().eq(exposed))));
 
     IllegalArgumentException boundaryFailure =
         assertThrows(
@@ -217,7 +200,8 @@ class DerivedTableAstTest {
             new SelectStatement(List.of(secondTable.id()), secondTable), reference("pets", id));
     DerivedRelationSource differentAlias =
         new DerivedRelationSource(
-            new SelectStatement(List.of(secondTable.id()), secondTable), reference("other_pets", id));
+            new SelectStatement(List.of(secondTable.id()), secondTable),
+            reference("other_pets", id));
 
     assertEquals(first, rebuilt);
     assertEquals(first.hashCode(), rebuilt.hashCode());
@@ -227,10 +211,7 @@ class DerivedTableAstTest {
         reference(
             "pets",
             new DerivedOutputColumn(
-                Identifier.of("a".repeat(64)),
-                Long.class,
-                SqlType.BIGINT,
-                Nullability.NON_NULL));
+                Identifier.of("a".repeat(64)), Long.class, SqlType.BIGINT, Nullability.NON_NULL));
     DerivedRelationSource nonPortable =
         new DerivedRelationSource(
             new SelectStatement(List.of(firstTable.id()), firstTable), longOutputAlias);
@@ -245,8 +226,7 @@ class DerivedTableAstTest {
     assertTrue(portabilityFailure.getMessage().contains("portable derived output aliases"));
   }
 
-  private static DerivedRelationReference reference(
-      String alias, DerivedOutputColumn... outputs) {
+  private static DerivedRelationReference reference(String alias, DerivedOutputColumn... outputs) {
     return new DerivedRelationReference(Identifier.of(alias), List.of(outputs));
   }
 

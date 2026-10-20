@@ -1,5 +1,6 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.spi.Dialect;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
@@ -14,6 +15,7 @@ public final class MutationRuntime {
   /** Creates immutable mutation operations backed by generated binders and JDBC. */
   public static MutationOperations create(
       EntityRuntimeRegistry runtimeRegistry, Dialect dialect, JdbcExecutor jdbcExecutor) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     return compile(runtimeRegistry, dialect)
         .bind(Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
   }
@@ -21,8 +23,19 @@ public final class MutationRuntime {
   /** Compiles one shareable plan catalog for subsequent ordinary and transactional execution. */
   public static MutationPlanCatalog compile(
       EntityRuntimeRegistry runtimeRegistry, Dialect dialect) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
+    return compile(runtimeRegistry, dialect, ExecutionListenerDispatcher.NONE);
+  }
+
+  /** Internal listener-aware catalog assembly used by the runtime facade. */
+  public static MutationPlanCatalog compile(
+      EntityRuntimeRegistry runtimeRegistry,
+      Dialect dialect,
+      ExecutionListenerDispatcher listenerDispatcher) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
     return new MutationPlanCatalog(
         Objects.requireNonNull(runtimeRegistry, "runtimeRegistry"),
-        Objects.requireNonNull(dialect, "dialect"));
+        Objects.requireNonNull(dialect, "dialect"),
+        Objects.requireNonNull(listenerDispatcher, "listenerDispatcher"));
   }
 }

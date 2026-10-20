@@ -72,8 +72,7 @@ class DerivedTableSqlRendererTest {
             new SelectStatement(
                 List.of(name),
                 FromClause.of(source),
-                new ComparisonPredicate<>(
-                    id, ComparisonOperator.GREATER_THAN, outerMinimum)));
+                new ComparisonPredicate<>(id, ComparisonOperator.GREATER_THAN, outerMinimum)));
 
     assertEquals(
         "SELECT \"visible_pets\".\"display_name\" FROM "
@@ -95,10 +94,8 @@ class DerivedTableSqlRendererTest {
     DerivedRelationReference secondReference = reference("second_pet");
     DerivedRelationSource first = new DerivedRelationSource(child, firstReference);
     DerivedRelationSource second = new DerivedRelationSource(child, secondReference);
-    DerivedColumnExpression<Long> firstId =
-        new DerivedColumnExpression<>(firstReference, 0);
-    DerivedColumnExpression<String> secondName =
-        new DerivedColumnExpression<>(secondReference, 1);
+    DerivedColumnExpression<Long> firstId = new DerivedColumnExpression<>(firstReference, 0);
+    DerivedColumnExpression<String> secondName = new DerivedColumnExpression<>(secondReference, 1);
     FromClause from =
         new FromClause(
             root,
@@ -106,8 +103,7 @@ class DerivedTableSqlRendererTest {
                 new JoinClause(JoinType.INNER, first, root.id().eq(firstId)),
                 new JoinClause(JoinType.CROSS, second, null)));
 
-    RenderedSql rendered =
-        RENDERER.render(new SelectStatement(List.of(firstId, secondName), from));
+    RenderedSql rendered = RENDERER.render(new SelectStatement(List.of(firstId, secondName), from));
 
     assertEquals(
         "SELECT \"first_pet\".\"pet_id\", \"second_pet\".\"display_name\" "
@@ -129,8 +125,7 @@ class DerivedTableSqlRendererTest {
     DerivedRelationSource source =
         new DerivedRelationSource(
             new SelectStatement(List.of(inner.id(), inner.name()), inner), reference);
-    RendererHarness limited =
-        renderer("limited", DialectFeature.SCHEMA_QUALIFIED_TABLES);
+    RendererHarness limited = renderer("limited", DialectFeature.SCHEMA_QUALIFIED_TABLES);
 
     SqlRenderException failure =
         assertThrows(

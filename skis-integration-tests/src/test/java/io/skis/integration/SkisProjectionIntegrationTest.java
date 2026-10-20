@@ -41,8 +41,7 @@ class SkisProjectionIntegrationTest {
     Pet pet = new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
     executor.insert(PetTable.petTable, pet);
     executor.insert(
-        PetTable.petTable,
-        new Pet(8L, "Nina", new BigDecimal("10.25"), false, null, "ignored"));
+        PetTable.petTable, new Pet(8L, "Nina", new BigDecimal("10.25"), false, null, "ignored"));
 
     List<String> names =
         executor
@@ -59,10 +58,23 @@ class SkisProjectionIntegrationTest {
             .where(PetTable.petTable.id().eq(7L))
             .fetchOne()
             .orElseThrow();
-    PetSummary reusedProjection = sharedTerminal(executor, true, 1, "generated projection", () ->
-        executor.select(PetSummaryPro.of(
-                PetTable.petTable.id(), PetTable.petTable.name(), PetTable.petTable.weight()))
-            .from(PetTable.petTable).where(PetTable.petTable.id().eq(8L)).fetchOne().orElseThrow());
+    PetSummary reusedProjection =
+        sharedTerminal(
+            executor,
+            true,
+            1,
+            "generated projection",
+            () ->
+                executor
+                    .select(
+                        PetSummaryPro.of(
+                            PetTable.petTable.id(),
+                            PetTable.petTable.name(),
+                            PetTable.petTable.weight()))
+                    .from(PetTable.petTable)
+                    .where(PetTable.petTable.id().eq(8L))
+                    .fetchOne()
+                    .orElseThrow());
     String transactionalName =
         executor.inTransaction(
             session ->
@@ -78,8 +90,7 @@ class SkisProjectionIntegrationTest {
     assertEquals(new PetSummary(8L, "Nina", new BigDecimal("10.25")), reusedProjection);
     assertEquals("Mimi", transactionalName);
     assertEquals(
-        new QueryPlanCacheStatistics(2, 2, 0, 0, 2, 2),
-        executor.queryPlanCacheStatistics());
+        new QueryPlanCacheStatistics(2, 2, 0, 0, 2, 2), executor.queryPlanCacheStatistics());
     executor.clearQueryPlanCache();
     assertEquals(0, executor.queryPlanCacheStatistics().size());
     assertEquals(2, executor.queryPlanCacheStatistics().invalidationCount());
@@ -95,41 +106,83 @@ class SkisProjectionIntegrationTest {
     }
     for (long threshold : List.of(7L, 8L)) {
       boolean warmed = threshold == 8L;
-      Supplier<SelectQuery<Long>> query = () -> {
-        PetTable table = PetTable.petTable.as("p");
-        return executor.select(table.id()).from(table)
-            .where(table.id().ge(threshold)).orderBy(table.id().asc());
-      };
+      Supplier<SelectQuery<Long>> query =
+          () -> {
+            PetTable table = PetTable.petTable.as("p");
+            return executor
+                .select(table.id())
+                .from(table)
+                .where(table.id().ge(threshold))
+                .orderBy(table.id().asc());
+          };
       List<Long> expected = threshold == 7L ? List.of(7L, 8L, 9L) : List.of(8L, 9L);
-      assertEquals(expected, sharedTerminal(executor, warmed, 1, "fetchList",
-          () -> query.get().fetchList()));
-      assertEquals(threshold, sharedTerminal(executor, warmed, 1, "fetchFirst",
-          () -> query.get().fetchFirst().orElseThrow()));
-      assertEquals(expected.size(), sharedTerminal(executor, warmed, 2, "explicit-count page",
-          () -> query.get().fetchPage(PageRequest.page(0, 1), query.get().countQuery())).totalElements());
-      var page = sharedTerminal(executor, warmed, 2, "page",
-          () -> query.get().fetchPage(PageRequest.page(0, 1)));
+      assertEquals(
+          expected,
+          sharedTerminal(executor, warmed, 1, "fetchList", () -> query.get().fetchList()));
+      assertEquals(
+          threshold,
+          sharedTerminal(
+              executor, warmed, 1, "fetchFirst", () -> query.get().fetchFirst().orElseThrow()));
+      assertEquals(
+          expected.size(),
+          sharedTerminal(
+                  executor,
+                  warmed,
+                  2,
+                  "explicit-count page",
+                  () -> query.get().fetchPage(PageRequest.page(0, 1), query.get().countQuery()))
+              .totalElements());
+      var page =
+          sharedTerminal(
+              executor, warmed, 2, "page", () -> query.get().fetchPage(PageRequest.page(0, 1)));
       assertEquals(expected.subList(0, 1), page.items());
       assertEquals(expected.size(), page.totalElements());
-      assertEquals(expected.subList(0, 1),
-          sharedTerminal(executor, warmed, 2, "offset slice",
-              () -> query.get().fetchSlice(SliceRequest.offset(0, 1))).items());
+      assertEquals(
+          expected.subList(0, 1),
+          sharedTerminal(
+                  executor,
+                  warmed,
+                  2,
+                  "offset slice",
+                  () -> query.get().fetchSlice(SliceRequest.offset(0, 1)))
+              .items());
       // Slices also look up unpaginated content for their continuation fingerprint.
-      var first = sharedTerminal(executor, warmed, 2, "keyset first",
-          () -> query.get().fetchSlice(SliceRequest.keysetFirst(1)));
+      var first =
+          sharedTerminal(
+              executor,
+              warmed,
+              2,
+              "keyset first",
+              () -> query.get().fetchSlice(SliceRequest.keysetFirst(1)));
       assertEquals(expected.subList(0, 1), first.items());
-      assertEquals(expected.subList(1, 2), sharedTerminal(executor, warmed, 2, "keyset resume",
-          () -> query.get().fetchSlice(
-              SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).items());
-      List<Long> cursorValues = sharedTerminal(executor, warmed, 1, "cursor", () -> {
-        List<Long> values = new ArrayList<>();
-        try (var cursor = query.get().cursor()) {
-          while (cursor.advance()) {
-            values.add(cursor.current());
-          }
-        }
-        return values;
-      });
+      assertEquals(
+          expected.subList(1, 2),
+          sharedTerminal(
+                  executor,
+                  warmed,
+                  2,
+                  "keyset resume",
+                  () ->
+                      query
+                          .get()
+                          .fetchSlice(
+                              SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)))
+              .items());
+      List<Long> cursorValues =
+          sharedTerminal(
+              executor,
+              warmed,
+              1,
+              "cursor",
+              () -> {
+                List<Long> values = new ArrayList<>();
+                try (var cursor = query.get().cursor()) {
+                  while (cursor.advance()) {
+                    values.add(cursor.current());
+                  }
+                }
+                return values;
+              });
       assertEquals(expected, cursorValues);
       assertEquals(
           expected,
@@ -144,12 +197,33 @@ class SkisProjectionIntegrationTest {
                 }
               }));
       PetTable single = PetTable.petTable.as("single");
-      assertEquals(threshold, sharedTerminal(executor, warmed, 1, "fetchOne",
-          () -> executor.select(single.id()).from(single)
-              .where(single.id().eq(threshold)).fetchOne().orElseThrow()));
-      assertEquals(SingleRow.present(threshold), sharedTerminal(executor, warmed, 1, "nullable fetchOne",
-          () -> executor.selectNullable(single.id()).from(single)
-              .where(single.id().eq(threshold)).fetchOne()));
+      assertEquals(
+          threshold,
+          sharedTerminal(
+              executor,
+              warmed,
+              1,
+              "fetchOne",
+              () ->
+                  executor
+                      .select(single.id())
+                      .from(single)
+                      .where(single.id().eq(threshold))
+                      .fetchOne()
+                      .orElseThrow()));
+      assertEquals(
+          SingleRow.present(threshold),
+          sharedTerminal(
+              executor,
+              warmed,
+              1,
+              "nullable fetchOne",
+              () ->
+                  executor
+                      .selectNullable(single.id())
+                      .from(single)
+                      .where(single.id().eq(threshold))
+                      .fetchOne()));
     }
   }
 
@@ -162,7 +236,8 @@ class SkisProjectionIntegrationTest {
       assertEquals(before.missCount(), after.missCount(), terminal + " unexpectedly missed L1");
       assertEquals(before.hitCount() + hits, after.hitCount(), terminal + " L1 lookup count");
     } else {
-      assertTrue(after.hitCount() + after.missCount() > before.hitCount() + before.missCount(),
+      assertTrue(
+          after.hitCount() + after.missCount() > before.hitCount() + before.missCount(),
           terminal + " must enter L1 while warming");
     }
     return result;
@@ -171,16 +246,11 @@ class SkisProjectionIntegrationTest {
   @Test
   void executesDistinctOrderingWithH2NativeNullPlacement() throws Exception {
     DataSource dataSource = database();
-    SkisExecutor executor =
-        Skis.builder(dataSource)
-            .dialect(H2Dialect.INSTANCE)
-            .build();
+    SkisExecutor executor = Skis.builder(dataSource).dialect(H2Dialect.INSTANCE).build();
     executor.insert(
-        PetTable.petTable,
-        new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
+        PetTable.petTable, new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
     executor.insert(
-        PetTable.petTable,
-        new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored"));
+        PetTable.petTable, new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored"));
 
     List<String> names =
         executor

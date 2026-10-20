@@ -24,15 +24,17 @@ final class QueryTestSupport {
   private QueryTestSupport() {}
 
   static QueryOperations operations(QueryPlanCatalog catalog) {
-    return catalog.bind(new JdbcExecutor(new ConnectionProvider() {
-      @Override
-      public Connection acquire(ExecutionContext context) {
-        throw new AssertionError("compilation must not acquire JDBC");
-      }
+    return catalog.bind(
+        new JdbcExecutor(
+            new ConnectionProvider() {
+              @Override
+              public Connection acquire(ExecutionContext context) {
+                throw new AssertionError("compilation must not acquire JDBC");
+              }
 
-      @Override
-      public void release(Connection connection, ExecutionContext context) {}
-    }));
+              @Override
+              public void release(Connection connection, ExecutionContext context) {}
+            }));
   }
 
   static QueryPlanCompiler compiler(EntityRuntimeRegistry registry, Dialect dialect) {
@@ -42,8 +44,10 @@ final class QueryTestSupport {
         new QueryPlanResolver(
             new ProjectionPlanCache(0, Duration.ofMinutes(30), System::nanoTime),
             new QueryPlanKeyAssembler(
-                registry, new QueryPlanKey.IdentityScope(registry),
-                QueryPlanKey.DialectIdentity.from(dialect), false)));
+                registry,
+                new QueryPlanKey.IdentityScope(registry),
+                QueryPlanKey.DialectIdentity.from(dialect),
+                false)));
   }
 
   static CompiledQueryStructure compile(
@@ -80,8 +84,7 @@ final class QueryTestSupport {
     QueryTable<?> root = new RuntimeQueryTable<>(entities[0]).as("source_0");
     List<JoinClause> joins = new ArrayList<>();
     for (int index = 1; index < entities.length; index++) {
-      QueryTable<?> joined =
-          new RuntimeQueryTable<>(entities[index]).as("source_" + index);
+      QueryTable<?> joined = new RuntimeQueryTable<>(entities[index]).as("source_" + index);
       joins.add(new JoinClause(JoinType.CROSS, joined.tableExpression(), null));
     }
     return QueryPlanDependencies.from(

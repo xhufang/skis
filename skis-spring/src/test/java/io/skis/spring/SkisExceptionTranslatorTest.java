@@ -37,7 +37,10 @@ class SkisExceptionTranslatorTest {
     SQLException sqlFailure = new SQLException("duplicate sensitive value", "23505", 17);
     QueryExecutionException skisFailure =
         QueryExecutionException.from(
-            JdbcPhase.EXECUTE, "test", "SELECT id FROM pet WHERE name = ?", sqlFailure,
+            JdbcPhase.EXECUTE,
+            "test",
+            "SELECT id FROM pet WHERE name = ?",
+            sqlFailure,
             SqlExceptionCategory.DUPLICATE_KEY);
     SkisExceptionTranslator translator = new SkisExceptionTranslator();
 
@@ -77,7 +80,10 @@ class SkisExceptionTranslatorTest {
     SQLException sqlFailure = new SQLException("duplicate", "23505", 25);
     QueryExecutionException uncategorized =
         QueryExecutionException.from(
-            JdbcPhase.EXECUTE, "test", "INSERT INTO pet (name) VALUES (?)", sqlFailure,
+            JdbcPhase.EXECUTE,
+            "test",
+            "INSERT INTO pet (name) VALUES (?)",
+            sqlFailure,
             SqlExceptionCategory.UNCATEGORIZED);
 
     DataAccessException translated =
@@ -89,11 +95,9 @@ class SkisExceptionTranslatorTest {
 
   @Test
   void mapsEveryPortableFailureFamily() {
+    assertInstanceOf(QueryTimeoutException.class, translate(SqlExceptionCategory.TIMEOUT));
     assertInstanceOf(
-        QueryTimeoutException.class, translate(SqlExceptionCategory.TIMEOUT));
-    assertInstanceOf(
-        UncategorizedDataAccessException.class,
-        translate(SqlExceptionCategory.QUERY_CANCELED));
+        UncategorizedDataAccessException.class, translate(SqlExceptionCategory.QUERY_CANCELED));
     assertInstanceOf(
         CannotAcquireLockException.class, translate(SqlExceptionCategory.LOCK_NOT_AVAILABLE));
     assertInstanceOf(
@@ -105,13 +109,11 @@ class SkisExceptionTranslatorTest {
     assertInstanceOf(
         DataIntegrityViolationException.class,
         translate(SqlExceptionCategory.FOREIGN_KEY_VIOLATION));
-    assertInstanceOf(
-        ConcurrencyFailureException.class, translate(SqlExceptionCategory.DEADLOCK));
+    assertInstanceOf(ConcurrencyFailureException.class, translate(SqlExceptionCategory.DEADLOCK));
     assertInstanceOf(
         ConcurrencyFailureException.class, translate(SqlExceptionCategory.SERIALIZATION_FAILURE));
     assertInstanceOf(
-        UncategorizedDataAccessException.class,
-        translate(SqlExceptionCategory.UNCATEGORIZED));
+        UncategorizedDataAccessException.class, translate(SqlExceptionCategory.UNCATEGORIZED));
     assertInstanceOf(
         OptimisticLockingFailureException.class,
         new SkisExceptionTranslator()
@@ -120,7 +122,8 @@ class SkisExceptionTranslatorTest {
 
   @Test
   void mapsMultipleRowsWithoutClaimingAPreciseTotal() {
-    NonUniqueResultException failure = NonUniqueResultException.of("query expected at most one row");
+    NonUniqueResultException failure =
+        NonUniqueResultException.of("query expected at most one row");
 
     DataAccessException translated =
         new SkisExceptionTranslator().translateExceptionIfPossible(failure);

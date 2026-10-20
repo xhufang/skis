@@ -295,7 +295,11 @@ class EntityMetaTest {
             SkisConfigurationException.class,
             () ->
                 EntityMeta.simple(
-                    Pet.class, TableMeta.of("pet"), List.of(version), primaryKey, versionMeta,
+                    Pet.class,
+                    TableMeta.of("pet"),
+                    List.of(version),
+                    primaryKey,
+                    versionMeta,
                     false));
     assertEquals(SkisErrorCode.METADATA_VERSION_INVALID, failure.code());
   }

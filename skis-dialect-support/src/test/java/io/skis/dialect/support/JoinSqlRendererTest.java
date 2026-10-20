@@ -94,12 +94,7 @@ class JoinSqlRendererTest {
             + "WHERE \"cross_pet\".\"id\" = ?",
         rendered.sql());
     assertEquals(
-        List.of(
-            innerParameter,
-            leftParameter,
-            rightParameter,
-            fullParameter,
-            whereParameter),
+        List.of(innerParameter, leftParameter, rightParameter, fullParameter, whereParameter),
         rendered.parameters());
   }
 
@@ -111,8 +106,7 @@ class JoinSqlRendererTest {
     ParameterSlot<Long> whereParameter = new ParameterSlot<>(1, Long.class, false);
     FromClause from =
         new FromClause(
-            root,
-            List.of(new JoinClause(JoinType.LEFT, joined, on(root, joined, onParameter))));
+            root, List.of(new JoinClause(JoinType.LEFT, joined, on(root, joined, onParameter))));
 
     RenderedSql rendered =
         JOIN_RENDERER.render(new CountAst(from, root.id().eq(whereParameter), null));
@@ -153,10 +147,8 @@ class JoinSqlRendererTest {
     assertEquals("FULL_JOIN", failure.diagnostics().dialect().missingCapability());
   }
 
-  private static SqlPredicate on(
-      PetTable left, PetTable right, ParameterSlot<Long> parameter) {
-    return LogicalPredicate.and(
-        List.of(left.id().eq(right.id()), right.id().eq(parameter)));
+  private static SqlPredicate on(PetTable left, PetTable right, ParameterSlot<Long> parameter) {
+    return LogicalPredicate.and(List.of(left.id().eq(right.id()), right.id().eq(parameter)));
   }
 
   private record Pet(Long id, String name) {}

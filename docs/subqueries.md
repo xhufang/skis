@@ -1,6 +1,7 @@
 # EXISTS, IN, scalar subqueries, derived tables, and correlated SELECT descriptions
 
-This document describes the EXISTS, IN, scalar-subquery, and derived-table slices implemented by the internal
+This document describes the EXISTS, IN, scalar-subquery, and derived-table slices implemented by the
+internal
 `0.2.5-SNAPSHOT` milestone.
 It accumulates toward the public `0.3.0` SQL DSL and is not part of the published `0.2.0` API.
 
@@ -63,13 +64,13 @@ ordering selection has more than one physical output and is rejected before rend
 
 Native SQL three-valued logic is preserved:
 
-| Child result and left value | `IN` | `NOT IN` |
-| --- | --- | --- |
-| An equal non-null value exists | true | false |
-| No equal value and the child has no NULL | false | true |
-| No equal value and the child contains NULL | unknown | unknown |
-| Left is NULL and the child is non-empty | unknown | unknown |
-| Child is empty, including when left is NULL | false | true |
+| Child result and left value                 | `IN`    | `NOT IN` |
+|---------------------------------------------|---------|----------|
+| An equal non-null value exists              | true    | false    |
+| No equal value and the child has no NULL    | false   | true     |
+| No equal value and the child contains NULL  | unknown | unknown  |
+| Left is NULL and the child is non-empty     | unknown | unknown  |
+| Child is empty, including when left is NULL | false   | true     |
 
 Duplicate child values do not duplicate outer rows. SKIS does not filter child NULL values or
 rewrite IN to a Join. In particular, nullable `NOT IN` is intentionally not rewritten to `NOT

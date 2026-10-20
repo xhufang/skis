@@ -76,11 +76,7 @@ class JdbcFailureContractTest {
     SQLException driverFailure = new SQLException(SECRET);
     QueryExecutionException failure =
         QueryExecutionException.from(
-            JdbcPhase.ACQUIRE,
-            "test",
-            SQL,
-            driverFailure,
-            SqlExceptionCategory.UNCATEGORIZED);
+            JdbcPhase.ACQUIRE, "test", SQL, driverFailure, SqlExceptionCategory.UNCATEGORIZED);
 
     assertNull(failure.sqlState());
     assertNull(failure.vendorCode());

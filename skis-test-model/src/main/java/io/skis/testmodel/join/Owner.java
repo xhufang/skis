@@ -9,5 +9,4 @@ import io.skis.annotations.Table;
 @SkisEntity
 @Table(schema = "shelter", name = "skis_join_owner")
 public record Owner(
-    @Id long id,
-    @Column(name = "owner_name", nullable = false, length = 200) String name) {}
+    @Id long id, @Column(name = "owner_name", nullable = false, length = 200) String name) {}
