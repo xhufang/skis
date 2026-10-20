@@ -25,6 +25,16 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/verify-release-boundary.ps1
 
+      - name: Set up Java 21 for source contract checks
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Verify current public contracts and independent consumer boundaries
+        shell: pwsh
+        run: ./.github/scripts/verify-current-contracts.ps1
+
   unit-tests:
     name: Unit tests (Java ${{ matrix.java }})
     runs-on: ubuntu-latest
@@ -95,8 +105,21 @@ jobs:
           chmod +x mvnw
           ./mvnw -B -ntp -pl skis-integration-tests -am verify
 
-      - name: Upload failing integration reports
-        if: failure()
+      - name: Require real PostgreSQL contracts without skipped tests
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-integration-tests/target/surefire-reports `
+            -RequiredSuites @(
+              'io.skis.integration.SkisProjectionPostgreSqlContractTest',
+              'io.skis.integration.SkisJoinPostgreSqlContractTest',
+              'io.skis.integration.SkisSpecialProjectionPostgreSqlContractTest',
+              'io.skis.integration.SkisJdbcTypePostgreSqlContractTest',
+              'io.skis.integration.SkisEmployeeDepartmentScalarContractTest'
+            )
+
+      - name: Upload integration reports
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: integration-test-reports
@@ -138,12 +161,107 @@ jobs:
             -Dskis.version="${project_version}" \
             verify
 
+          consumer_dir="${RUNNER_TEMP}/skis-listener-only-consumer"
+          cp -R skis-integration-tests/src/consumer/listener-only "${consumer_dir}"
+          ./mvnw -B -ntp \
+            -f "${consumer_dir}/pom.xml" \
+            -Dskis.version="${project_version}" \
+            verify
+
           consumer_dir="${RUNNER_TEMP}/skis-minimal-h2-consumer"
           cp -R skis-integration-tests/src/consumer/minimal-h2 "${consumer_dir}"
           ./mvnw -B -ntp \
             -f "${consumer_dir}/pom.xml" \
             -Dskis.version="${project_version}" \
             verify
+
+      - name: Require independent consumer contracts without skipped tests
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory "$env:RUNNER_TEMP/skis-spi-only-consumer/target/surefire-reports" `
+            -RequiredSuites example.DialectSpiOnlyConsumerTest
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory "$env:RUNNER_TEMP/skis-listener-only-consumer/target/surefire-reports" `
+            -RequiredSuites example.ListenerSpiOnlyConsumerTest
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory "$env:RUNNER_TEMP/skis-minimal-h2-consumer/target/surefire-reports" `
+            -RequiredSuites @('example.MinimalConsumerTest', 'example.SupportedSpiConsumerTest', 'example.ExecutionListenerConsumerTest')
+
+      - name: Upload independent consumer reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: independent-consumer-reports
+          path: |
+            ${{ runner.temp }}/skis-spi-only-consumer/target/surefire-reports/**
+            ${{ runner.temp }}/skis-listener-only-consumer/target/surefire-reports/**
+            ${{ runner.temp }}/skis-minimal-h2-consumer/target/surefire-reports/**
+          if-no-files-found: warn
+
+  postgresql-consumer:
+    name: Independent PostgreSQL consumer
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: skis
+          POSTGRES_USER: skis
+          POSTGRES_PASSWORD: skis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skis -d skis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SKIS_POSTGRES_URL: jdbc:postgresql://localhost:5432/skis
+      SKIS_POSTGRES_USER: skis
+      SKIS_POSTGRES_PASSWORD: skis
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Install only the PostgreSQL consumer dependency closure
+        shell: bash
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp -Dmaven.test.skip=true \
+            -pl skis-bom,skis-runtime,skis-dialect-postgresql,skis-processor \
+            -am install
+
+      - name: Verify PostgreSQL outside the repository reactor
+        shell: bash
+        run: |
+          project_version="$(./mvnw -q -N help:evaluate -Dexpression=project.version -DforceStdout)"
+          consumer_dir="${RUNNER_TEMP}/skis-minimal-postgresql-consumer"
+          cp -R skis-integration-tests/src/consumer/minimal-postgresql "${consumer_dir}"
+          ./mvnw -B -ntp -f "${consumer_dir}/pom.xml" \
+            -Dskis.version="${project_version}" verify
+
+      - name: Require the PostgreSQL consumer without skipped tests
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory "$env:RUNNER_TEMP/skis-minimal-postgresql-consumer/target/surefire-reports" `
+            -RequiredSuites example.PostgreSqlConsumerTest
+
+      - name: Upload PostgreSQL consumer reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgresql-consumer-reports
+          path: ${{ runner.temp }}/skis-minimal-postgresql-consumer/target/surefire-reports/**
+          if-no-files-found: warn
 
   gradle-incremental-processor:
     name: Gradle incremental projection processor
