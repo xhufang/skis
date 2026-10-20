@@ -329,7 +329,7 @@ meanings stable; those milestones are not separately published versions.
 - Invalid: an entity/property combination that would generate the same field name as `petTable`.
 - Valid: generated fields have distinct Java names.
 - Fix: rename the entity or conflicting property; SKIS does not silently add a suffix.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ## Entity rounds and generated output
 
@@ -558,47 +558,47 @@ meanings stable; those milestones are not separately published versions.
 
 - Cause: one result type declares both `@ReusableProjection` and `@SpecialProjection`.
 - Fix: keep exactly one projection mode.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS226
 
 - Cause: `@PropertyFrom` is used by a reusable projection, or a special-projection constructor
   parameter has no source.
 - Fix: use `@PropertyFrom` only on a special projection and declare one source per parameter.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS227
 
 - Cause: a source string is not a complete `<entity-type>#<property-name>` identity, or its
   generated metadata belongs to a different entity.
 - Fix: reference the generated table property constant directly.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS228
 
 - Cause: the boxed constructor-parameter type differs from the generated property type.
 - Fix: make the parameter and source property types exactly match.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS229
 
 - Cause: a constructor parameter that does not accept null references a nullable property.
 - Fix: annotate the parameter nullable or choose a non-null property.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS230
 
 - Cause: a non-empty `PropertyFrom.alias` is not a portable query-table identifier.
 - Fix: use the default empty alias for unique-source binding or an alias matching
   `[A-Za-z_][A-Za-z0-9_]*`.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS231
 
 - Cause: the encoded property has no matching generated table constant, metadata field, or table
   accessor.
 - Fix: regenerate the entity companions and reference an existing property constant.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ### SKIS232
 
@@ -607,7 +607,7 @@ meanings stable; those milestones are not separately published versions.
   name, type, and declared nullability.
 - Fix: retain one consistent source for each selected constructor parameter; keep source fields
   non-static and structurally identical to their parameters.
-- First public version: `0.2.7`.
+- Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
 ## Projection generated output
 
