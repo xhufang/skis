@@ -24,11 +24,194 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 
 class SkisEntityProcessorTest {
 
   @TempDir Path temporaryDirectory;
+
+  @Test
+  @EnabledIfSystemProperty(named = "skis.staticAnalysis", matches = "true")
+  void checksGeneratedSourcesAndTheirCallersWithTheRealNullnessChecker() throws Exception {
+    Map<String, String> models = Map.of(
+        "samples.NullableEntity", """
+            package samples;
+            import io.skis.annotations.*;
+            import org.jspecify.annotations.*;
+            @NullMarked @SkisEntity public record NullableEntity(
+                @Id long id,
+                @Column(nullable = false) String code,
+                @Nullable String note,
+                byte @Nullable [] photo,
+                @Version @Nullable Long version) {}
+            """,
+        "samples.NullableView", """
+            package samples;
+            import io.skis.annotations.ReusableProjection;
+            import org.jspecify.annotations.*;
+            @NullMarked @ReusableProjection public record NullableView(
+                long id, String code, @Nullable String note, byte @Nullable [] photo) {}
+            """,
+        "samples.RequiredView", """
+            package samples;
+            import io.skis.annotations.*;
+            import org.jspecify.annotations.*;
+            @NullMarked @SpecialProjection public record RequiredView(
+                @PropertyFrom(samples.skis.NullableEntityTable.CODE) String code) {}
+            """);
+    CompilationResult generated = process(models,
+        SkisEntityProcessor.class.getName() + "," + SkisProjectionProcessor.class.getName(),
+        temporaryDirectory.resolve("nullness-generation"));
+    assertTrue(generated.success(), generated.diagnosticsText());
+    // The same original/generated batch keeps the existing -proc:none javac contract too.
+    CompilationResult plain = compileGenerated(models, generated);
+    assertTrue(plain.success(), plain.diagnosticsText());
+    List<Path> generatedPaths;
+    try (var paths = Files.walk(generated.generatedSources())) {
+      generatedPaths = paths.filter(path -> path.toString().endsWith(".java")).sorted().toList();
+    }
+    String caller = """
+        package samples;
+        import io.skis.query.*;
+        import io.skis.mapping.spi.*;
+        import java.sql.*;
+        import java.util.*;
+        import org.jspecify.annotations.*;
+        import samples.skis.*;
+        @NullMarked final class Caller {
+          static int use(QueryOperations queries, PreparedStatement statement, ResultSet rs,
+              JdbcWriteContext write, RowReadContext read) throws SQLException {
+            var table = NullableEntityTable.nullableEntityTable;
+            var projection = NullableViewPro.of(table.id(), table.code(), table.note(), table.photo());
+            List<@Nullable String> notes = queries.select(table.note()).from(table).fetchList();
+            List<String> codes = queries.select(table.code()).from(table).fetchList();
+            var value = NullableEntityRowDecoder.forLayout(RowLayout.contiguous(5, 1)).decode(rs, read);
+            NullableEntityBinder.INSERT.bind(statement, 1, value, write);
+            queries.select(projection).from(table);
+            queries.select(RequiredViewPro.all()).from(table);
+            return codes.size() + notes.size();
+          }
+        }
+        """;
+    Map<String, String> sources = new TreeMap<>(models);
+    sources.put("samples.Caller", caller);
+    NullnessCompiler.compile("generated-and-caller-valid", sources, generatedPaths, List.of(),
+        temporaryDirectory.resolve("checked-valid")).assertPass();
+    Path validReport = Path.of("target", "nullness-reports", "generated-and-caller-valid.txt");
+    String evidence = Files.readString(validReport);
+    assertTrue(evidence.contains("=== JAVAC OPTIONS (one argument per entry) ==="), evidence);
+    assertTrue(evidence.contains("-classpath\n"), evidence);
+    assertTrue(evidence.contains("-processorpath\n"), evidence);
+    assertTrue(evidence.contains(System.getProperty("skis.staticAnalysis.checks")), evidence);
+    assertTrue(evidence.contains("string:///samples/Caller.java"), evidence);
+    for (String source : sources.values()) {
+      assertTrue(evidence.contains(source), evidence);
+    }
+    for (Path path : generatedPaths) {
+      assertTrue(evidence.contains(path.toUri().toString()), evidence);
+      assertTrue(evidence.contains(Files.readString(path)), evidence);
+    }
+    Map<String, String> invalidCalls = Map.of(
+        "nullable-column", "return codes.size() + notes.getFirst().length();",
+        "nullable-entity-property", "return value.note().length();",
+        "nullable-projection-property", "return new NullableView(1L, \"code\", null, null).note().length();",
+        "binder-input", "NullableEntityBinder.INSERT.bind(statement, 1, null, write); return 0;",
+        "table-alias", "table.as(null); return 0;",
+        "projection-input", "NullableViewPro.of(null, table.code(), table.note(), table.photo()); return 0;");
+    for (var entry : invalidCalls.entrySet()) {
+      sources.put("samples.Caller", caller.replace("return codes.size() + notes.size();", entry.getValue()));
+      NullnessCompiler.compile("generated-caller-" + entry.getKey(), sources, generatedPaths, List.of(),
+          temporaryDirectory.resolve("checked-" + entry.getKey()))
+          .assertRejected("NullAway", "Caller.java");
+    }
+    sources.put("samples.Caller", caller);
+    // A deliberate defect in an actual @Generated file proves generated code is checked too.
+    Path table = generated.generatedSources().resolve("samples/skis/NullableEntityTable.java");
+    String original = Files.readString(table);
+    String broken = original.replace(" = nonNullQueryColumn(NullableEntityMeta.CODE);", " = null;");
+    assertFalse(original.equals(broken), "generated table fixture did not match");
+    Files.writeString(table, broken);
+    NullnessCompiler.compile("generated-source-invalid", sources, generatedPaths, List.of(),
+        temporaryDirectory.resolve("checked-broken-generated"))
+        .assertRejected("NullAway", "NullableEntityTable.java");
+    String failureEvidence = Files.readString(
+        Path.of("target", "nullness-reports", "generated-source-invalid.txt"));
+    assertTrue(failureEvidence.contains(broken), failureEvidence);
+    assertTrue(failureEvidence.contains("success=false"), failureEvidence);
+    assertTrue(failureEvidence.contains("[NullAway]"), failureEvidence);
+    assertTrue(Files.readString(validReport).contains(original), "valid source snapshot was changed");
+  }
+
+  @Test
+  @EnabledIfSystemProperty(named = "skis.staticAnalysis", matches = "true")
+  void preservesNestedGenericAndArrayNullnessInGeneratedProjectionReaders() throws Exception {
+    Map<String, String> models = Map.of("samples.NestedView", """
+        package samples;
+        import io.skis.annotations.ReusableProjection;
+        import java.util.List;
+        import org.jspecify.annotations.*;
+        @NullMarked @ReusableProjection public record NestedView(
+            List<@Nullable String> names,
+            @Nullable List<String @Nullable []> optionalNames,
+            String @Nullable [] optionalArray,
+            String[] @Nullable [] nullableRows,
+            String @Nullable [][] nullableMatrix,
+            String @Nullable [] @Nullable [] nullableMatrixAndRows,
+            List<String[] @Nullable []> nestedNullableRows) {}
+        """);
+    CompilationResult generated = process(models, SkisProjectionProcessor.class.getName(),
+        temporaryDirectory.resolve("nested-nullness-generation"));
+    assertTrue(generated.success(), generated.diagnosticsText());
+    CompilationResult plain = compileGenerated(models, generated);
+    assertTrue(plain.success(), plain.diagnosticsText());
+    String projection = generatedSource(generated, "NestedViewPro.java");
+    for (String readerType : List.of(
+        "ValueReader<java.lang.String[] @org.jspecify.annotations.Nullable []> $skisValue3",
+        "ValueReader<java.lang.String @org.jspecify.annotations.Nullable [][]> $skisValue4",
+        "ValueReader<java.lang.String @org.jspecify.annotations.Nullable []"
+            + " @org.jspecify.annotations.Nullable []> $skisValue5",
+        "ValueReader<java.util.List<java.lang.String[] @org.jspecify.annotations.Nullable []>>"
+            + " $skisValue6")) {
+      assertTrue(projection.contains(readerType), projection);
+    }
+    List<Path> generatedPaths;
+    try (var paths = Files.walk(generated.generatedSources())) {
+      generatedPaths = paths.filter(path -> path.toString().endsWith(".java")).sorted().toList();
+    }
+    Map<String, String> sources = new TreeMap<>(models);
+    String caller = """
+        package samples;
+        import org.jspecify.annotations.*;
+        @NullMarked final class NestedCaller {
+          static int read(NestedView view) {
+            String name = view.names().getFirst();
+            int requiredArrays = view.nullableRows().length
+                + view.nestedNullableRows().getFirst().length;
+            return name == null ? requiredArrays : requiredArrays + name.length();
+          }
+        }
+        """;
+    sources.put("samples.NestedCaller", caller);
+    NullnessCompiler.compile("nested-generated-valid", sources, generatedPaths, List.of(),
+        temporaryDirectory.resolve("nested-checked-valid")).assertPass();
+    Map<String, String> mistakes = Map.of(
+        "list-element", "return name.length();",
+        "array-row", "return view.nullableRows()[0].length;",
+        "matrix-root", "return view.nullableMatrix().length;",
+        "matrix-row", "var matrix = view.nullableMatrixAndRows(); "
+            + "return matrix == null ? 0 : matrix[0].length;",
+        "nested-array-row", "return view.nestedNullableRows().getFirst()[0].length;");
+    for (var mistake : mistakes.entrySet()) {
+      sources.put("samples.NestedCaller", caller.replace(
+          "return name == null ? requiredArrays : requiredArrays + name.length();",
+          mistake.getValue()));
+      NullnessCompiler.compile("nested-generated-caller-" + mistake.getKey(),
+          sources, generatedPaths, List.of(),
+          temporaryDirectory.resolve("nested-checked-" + mistake.getKey()))
+          .assertRejected("NullAway", "NestedCaller.java");
+    }
+  }
 
   @Test
   void generatesATwentyColumnProjectionMapperWithoutNumberedFactories() throws Exception {
@@ -1616,7 +1799,7 @@ class SkisEntityProcessorTest {
                 String stringValue,
                 BigInteger bigIntegerValue,
                 BigDecimal bigDecimalValue,
-                byte[] bytesValue,
+                byte @org.jspecify.annotations.Nullable [] bytesValue,
                 UUID uuidValue,
                 Instant instantValue,
                 LocalDate localDateValue,
@@ -1638,6 +1821,10 @@ class SkisEntityProcessorTest {
     String decoder = generatedSource(result, "StandardTypesRowDecoder.java");
     String binder = generatedSource(result, "StandardTypesBinder.java");
     String runtimeModel = generatedSource(result, "StandardTypesRuntimeModel.java");
+    String metadata = generatedSource(result, "StandardTypesMeta.java");
+    assertTrue(metadata.contains("PropertyMeta<samples.StandardTypes, byte[]> BYTES_VALUE"), metadata);
+    assertTrue(metadata.contains("byte[].class"), metadata);
+    assertFalse(metadata.contains("@org.jspecify.annotations.Nullable"), metadata);
     for (String method :
         List.of(
             "readLong",

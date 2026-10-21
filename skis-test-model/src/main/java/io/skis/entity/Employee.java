@@ -6,6 +6,7 @@ import io.skis.annotations.SkisEntity;
 import io.skis.annotations.Table;
 import io.skis.annotations.Version;
 import java.time.Instant;
+import org.jspecify.annotations.Nullable;
 
 /**
  * @author: Hu Xin
@@ -14,144 +15,144 @@ import java.time.Instant;
 @Table(name = "CL_EMPLOYEE")
 public class Employee {
 
-  @Id private Long id;
+  @Id private @Nullable Long id;
 
   @Column(nullable = false)
-  private Instant createStamp;
+  private @Nullable Instant createStamp;
 
   @Column(nullable = false)
-  private Instant modifyStamp;
+  private @Nullable Instant modifyStamp;
 
-  @Version private Long version;
-
-  @Column(nullable = false)
-  private String code;
+  @Version private @Nullable Long version;
 
   @Column(nullable = false)
-  private String name;
+  private @Nullable String code;
 
   @Column(nullable = false)
-  private Integer gender;
+  private @Nullable String name;
 
   @Column(nullable = false)
-  private String pin;
+  private @Nullable Integer gender;
 
   @Column(nullable = false)
-  private String phone;
+  private @Nullable String pin;
 
   @Column(nullable = false)
-  private String email;
+  private @Nullable String phone;
 
   @Column(nullable = false)
-  private Instant entryStamp;
+  private @Nullable String email;
 
   @Column(nullable = false)
-  private String jobTitle;
+  private @Nullable Instant entryStamp;
 
   @Column(nullable = false)
-  private Long departmentId;
+  private @Nullable String jobTitle;
 
-  public Long getId() {
+  @Column(nullable = false)
+  private @Nullable Long departmentId;
+
+  public @Nullable Long getId() {
     return id;
   }
 
-  public void setId(Long id) {
+  public void setId(@Nullable Long id) {
     this.id = id;
   }
 
-  public Instant getCreateStamp() {
+  public @Nullable Instant getCreateStamp() {
     return createStamp;
   }
 
-  public void setCreateStamp(Instant createStamp) {
+  public void setCreateStamp(@Nullable Instant createStamp) {
     this.createStamp = createStamp;
   }
 
-  public Instant getModifyStamp() {
+  public @Nullable Instant getModifyStamp() {
     return modifyStamp;
   }
 
-  public void setModifyStamp(Instant modifyStamp) {
+  public void setModifyStamp(@Nullable Instant modifyStamp) {
     this.modifyStamp = modifyStamp;
   }
 
-  public Long getVersion() {
+  public @Nullable Long getVersion() {
     return version;
   }
 
-  public void setVersion(Long version) {
+  public void setVersion(@Nullable Long version) {
     this.version = version;
   }
 
-  public String getCode() {
+  public @Nullable String getCode() {
     return code;
   }
 
-  public void setCode(String code) {
+  public void setCode(@Nullable String code) {
     this.code = code;
   }
 
-  public String getName() {
+  public @Nullable String getName() {
     return name;
   }
 
-  public void setName(String name) {
+  public void setName(@Nullable String name) {
     this.name = name;
   }
 
-  public Integer getGender() {
+  public @Nullable Integer getGender() {
     return gender;
   }
 
-  public void setGender(Integer gender) {
+  public void setGender(@Nullable Integer gender) {
     this.gender = gender;
   }
 
-  public String getPin() {
+  public @Nullable String getPin() {
     return pin;
   }
 
-  public void setPin(String pin) {
+  public void setPin(@Nullable String pin) {
     this.pin = pin;
   }
 
-  public String getPhone() {
+  public @Nullable String getPhone() {
     return phone;
   }
 
-  public void setPhone(String phone) {
+  public void setPhone(@Nullable String phone) {
     this.phone = phone;
   }
 
-  public String getEmail() {
+  public @Nullable String getEmail() {
     return email;
   }
 
-  public void setEmail(String email) {
+  public void setEmail(@Nullable String email) {
     this.email = email;
   }
 
-  public Instant getEntryStamp() {
+  public @Nullable Instant getEntryStamp() {
     return entryStamp;
   }
 
-  public void setEntryStamp(Instant entryStamp) {
+  public void setEntryStamp(@Nullable Instant entryStamp) {
     this.entryStamp = entryStamp;
   }
 
-  public String getJobTitle() {
+  public @Nullable String getJobTitle() {
     return jobTitle;
   }
 
-  public void setJobTitle(String jobTitle) {
+  public void setJobTitle(@Nullable String jobTitle) {
     this.jobTitle = jobTitle;
   }
 
-  public Long getDepartmentId() {
+  public @Nullable Long getDepartmentId() {
     return departmentId;
   }
 
-  public void setDepartmentId(Long departmentId) {
+  public void setDepartmentId(@Nullable Long departmentId) {
     this.departmentId = departmentId;
   }
 }

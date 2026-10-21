@@ -56,7 +56,8 @@ public class EmployeeServiceImpl implements EmployeeService {
         session -> {
           session.insert(EMPLOYEE, employee);
           for (Long projectId : distinctProjectIds) {
-            session.insert(LINK, newLink(employee.getId(), projectId));
+            session.insert(
+                LINK, newLink(Objects.requireNonNull(employee.getId(), "employee id"), projectId));
           }
           return employee;
         });

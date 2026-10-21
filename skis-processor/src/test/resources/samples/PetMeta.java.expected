@@ -11,6 +11,7 @@ import io.skis.metadata.TableMeta;
 import io.skis.metadata.VersionMeta;
 import io.skis.metadata.VersionStrategy;
 
+@org.jspecify.annotations.NullMarked
 @javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 7")
 public final class PetMeta {
 

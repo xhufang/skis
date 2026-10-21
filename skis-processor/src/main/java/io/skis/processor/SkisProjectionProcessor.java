@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.annotation.processing.AbstractProcessor;
@@ -27,7 +28,11 @@ import javax.tools.Diagnostic;
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public final class SkisProjectionProcessor extends AbstractProcessor {
 
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private ProjectionModelScanner scanner;
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private ProjectionGenerator generator;
   private final Set<String> settledProjections = new HashSet<>();
   private final Set<String> lombokSettlementDeferred = new HashSet<>();
@@ -82,10 +87,14 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
           processingEnv.getFiler());
       return ProcessingResult.GENERATED;
     } catch (ProjectionScanDeferredException deferred) {
-      deferredProblems.put(projectionName, deferred.getMessage());
+      deferredProblems.put(
+          projectionName, Objects.requireNonNull(deferred.getMessage(), "processor diagnostic"));
       return ProcessingResult.DEFERRED;
     } catch (ProjectionScanException failure) {
-      error(failure.code(), failure.getMessage(), failure.element());
+      error(
+          failure.code(),
+          Objects.requireNonNull(failure.getMessage(), "processor diagnostic"),
+          failure.element());
       return ProcessingResult.FAILED;
     } catch (IOException failure) {
       error(

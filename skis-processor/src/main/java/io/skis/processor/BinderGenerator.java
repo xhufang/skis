@@ -88,7 +88,7 @@ final class BinderGenerator implements EntitySourceGenerator {
     appendMethod(source, "bindUpdateByIdUnchecked", entityType, uncheckedUpdateProperties, false);
     if (model.version() != null) {
       source
-          .append("  private static Object readVersion(")
+          .append("  private static @org.jspecify.annotations.Nullable Object readVersion(")
           .append(entityType)
           .append(" entity) throws SQLException {\n")
           .append("    return ")

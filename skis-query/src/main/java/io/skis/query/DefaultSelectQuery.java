@@ -935,7 +935,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   private String parameterDigest() {
     MessageDigest digest = sha256();
     List<@Nullable Object> arguments = conditionArguments();
-    for (@Nullable Object argument : arguments) {
+    for (Object argument : arguments) {
       if (argument == null) {
         updateDigest(digest, "<null>");
       } else {

@@ -1,8 +1,9 @@
 package io.skis.processor;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
-record PropertyAccessModel(Access read, Access write) {
+record PropertyAccessModel(Access read, @Nullable Access write) {
 
   private static final String ENTITY_VARIABLE = "entity";
 
@@ -33,7 +34,8 @@ record PropertyAccessModel(Access read, Access write) {
 
     Access {
       Objects.requireNonNull(kind, "kind");
-      if (memberName == null || memberName.isBlank()) {
+      Objects.requireNonNull(memberName, "memberName");
+      if (memberName.isBlank()) {
         throw new IllegalArgumentException("memberName must not be blank");
       }
     }

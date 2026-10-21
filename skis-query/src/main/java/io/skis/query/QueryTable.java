@@ -120,7 +120,7 @@ public abstract class QueryTable<E> {
   }
 
   @Override
-  public final boolean equals(Object other) {
+  public final boolean equals(@org.jspecify.annotations.Nullable Object other) {
     return this == other
         || other instanceof QueryTable<?> table && tableNode.equals(table.tableNode);
   }

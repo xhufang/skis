@@ -32,7 +32,7 @@ public record IncrementExpression<T>(SqlExpression<T> operand) implements SqlExp
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
     return this == other
         || other instanceof IncrementExpression<?>(SqlExpression<?> operand1)
             && operand.equals(operand1);

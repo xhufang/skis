@@ -5,6 +5,7 @@ import io.skis.core.TransactionException;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Thread-safe injected facade for all SKIS database operations.
@@ -35,10 +36,11 @@ public interface SkisExecutor extends QueryOperations, MutationOperations {
    *     ownership to an external transaction manager, or when begun, commit, or an after-commit
    *     callback fails
    */
-  <R> R inTransaction(TransactionCallback<R> callback);
+  <R extends @Nullable Object> R inTransaction(TransactionCallback<R> callback);
 
   /** Executes one local callback transaction with session-level statement defaults. */
-  <R> R inTransaction(ExecutionOptions executionOptions, TransactionCallback<R> callback);
+  <R extends @Nullable Object> R inTransaction(
+      ExecutionOptions executionOptions, TransactionCallback<R> callback);
 
   /** Returns an immutable snapshot of the shared dynamic query-plan cache. */
   QueryPlanCacheStatistics queryPlanCacheStatistics();

@@ -37,6 +37,7 @@ final class ProjectionGenerator {
     source.append("import io.skis.sql.ast.Nullability;\n");
     source.append("import java.util.List;\n\n");
     source
+        .append("@org.jspecify.annotations.NullMarked\n")
         .append("@javax.annotation.processing.Generated(\n")
         .append("    value = \"io.skis.processor.SkisProjectionProcessor\",\n")
         .append("    comments = \"Projection ABI ")
@@ -82,7 +83,10 @@ final class ProjectionGenerator {
       ProjectionModel.ProjectionParameter parameter = parameters.get(index);
       source
           .append("            ProjectionMapping.ValueReader<")
-          .append(parameter.typeName())
+          .append(
+              parameter.nullable()
+                  ? SourceText.nullableType(parameter.typeName())
+                  : parameter.typeName())
           .append("> ")
           .append(valueNames[index])
           .append(" =\n")

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
@@ -28,6 +29,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
+import org.jspecify.annotations.Nullable;
 
 final class EntityModelScanner {
 
@@ -200,26 +202,7 @@ final class EntityModelScanner {
       PropertyAccessModel access,
       Element source,
       Set<String> usedFieldNames) {
-    Column annotation = annotations.column();
-    String columnName = annotation == null ? "" : annotation.name();
-    if (columnName.isEmpty()) {
-      columnName = snakeCase(propertyName);
-    }
-    boolean nullable =
-        !annotations.id()
-            && !annotations.version()
-            && (annotation == null || annotation.nullable());
-    ColumnModel column =
-        new ColumnModel(
-            columnName,
-            nullable,
-            annotations.explicitlyNullable(),
-            annotation == null || annotation.insertable(),
-            annotation == null || annotation.updatable(),
-            annotation == null ? 255 : annotation.length(),
-            annotation == null ? 0 : annotation.precision(),
-            annotation == null ? 0 : annotation.scale(),
-            annotation == null ? "" : annotation.comment());
+    ColumnModel column = createColumn(propertyName, annotations);
     TypeDescriptor descriptor = describe(propertyType);
     String fieldName = SourceText.propertyFieldName(propertyName);
     if (usedFieldNames.contains(fieldName)) {
@@ -244,9 +227,31 @@ final class EntityModelScanner {
         source);
   }
 
+  private static ColumnModel createColumn(String propertyName, PropertyAnnotations annotations) {
+    Column annotation = annotations.column();
+    String columnName = annotation == null ? "" : annotation.name();
+    if (columnName.isEmpty()) {
+      columnName = snakeCase(propertyName);
+    }
+    boolean nullable =
+        !annotations.id()
+            && !annotations.version()
+            && (annotation == null || annotation.nullable());
+    return new ColumnModel(
+        columnName,
+        nullable,
+        annotations.explicitlyNullable(),
+        annotation == null || annotation.insertable(),
+        annotation == null || annotation.updatable(),
+        annotation == null ? 255 : annotation.length(),
+        annotation == null ? 0 : annotation.precision(),
+        annotation == null ? 0 : annotation.scale(),
+        annotation == null ? "" : annotation.comment());
+  }
+
   private PropertyAccessModel resolveBeanAccess(
-      VariableElement field,
-      ExecutableElement getter,
+      @Nullable VariableElement field,
+      @Nullable ExecutableElement getter,
       List<ExecutableElement> methods,
       String propertyName,
       TypeMirror propertyType)
@@ -285,7 +290,7 @@ final class EntityModelScanner {
     return PropertyAccessModel.bean(read, write);
   }
 
-  private ExecutableElement findGetter(
+  private @Nullable ExecutableElement findGetter(
       List<ExecutableElement> methods, String propertyName, TypeMirror propertyType)
       throws EntityScanException, EntityScanDeferredException {
     Set<String> candidates = new LinkedHashSet<>();
@@ -360,7 +365,7 @@ final class EntityModelScanner {
     return null;
   }
 
-  private ExecutableElement findSetter(
+  private @Nullable ExecutableElement findSetter(
       List<ExecutableElement> methods, String propertyName, TypeMirror propertyType)
       throws EntityScanException, EntityScanDeferredException {
     Set<String> candidates = new LinkedHashSet<>();
@@ -492,7 +497,7 @@ final class EntityModelScanner {
     }
   }
 
-  private PropertyAnnotations annotations(Element field, Element getter)
+  private PropertyAnnotations annotations(@Nullable Element field, @Nullable Element getter)
       throws EntityScanException {
     Column fieldColumn = field == null ? null : field.getAnnotation(Column.class);
     Column getterColumn = getter == null ? null : getter.getAnnotation(Column.class);
@@ -509,7 +514,7 @@ final class EntityModelScanner {
         hasAnnotation(field, Version.class) || hasAnnotation(getter, Version.class),
         hasAnnotation(field, Transient.class) || hasAnnotation(getter, Transient.class),
         isExplicitlyNullable(field) || isExplicitlyNullable(getter),
-        source == null ? getter : source);
+        Objects.requireNonNull(source == null ? getter : source, "property source"));
   }
 
   private static void validateAnnotationCombination(
@@ -602,10 +607,11 @@ final class EntityModelScanner {
           array.getComponentType().getKind() == TypeKind.BYTE
               ? JdbcValueKind.BYTES
               : JdbcValueKind.UNSUPPORTED;
-      return new TypeDescriptor(type.toString(), type + ".class", valueKind, false);
+      String rawType = SourceText.erasedTypeName(array);
+      return new TypeDescriptor(rawType, rawType + ".class", valueKind, false);
     }
     if (type instanceof DeclaredType declaredType) {
-      String rawType = types.erasure(declaredType).toString();
+      String rawType = SourceText.erasedTypeName(declaredType);
       if (!declaredType.getTypeArguments().isEmpty()) {
         return new TypeDescriptor(
             type.toString(), rawType + ".class", JdbcValueKind.UNSUPPORTED, false);
@@ -619,7 +625,7 @@ final class EntityModelScanner {
     if (type.getKind().isPrimitive()) {
       return JdbcValueKind.forPrimitive(type.getKind());
     }
-    return JdbcValueKind.forDeclared(types.erasure(type).toString());
+    return JdbcValueKind.forDeclared(SourceText.erasedTypeName(type));
   }
 
   private static String defaultExpression(TypeMirror type) {
@@ -645,7 +651,7 @@ final class EntityModelScanner {
     };
   }
 
-  private static String getterPropertyName(ExecutableElement method) {
+  private static @Nullable String getterPropertyName(ExecutableElement method) {
     if (method.getModifiers().contains(Modifier.STATIC)
         || !method.getParameters().isEmpty()
         || method.getReturnType().getKind() == TypeKind.VOID) {
@@ -704,7 +710,7 @@ final class EntityModelScanner {
     return result.toString();
   }
 
-  private static boolean isExplicitlyNullable(Element element) {
+  private static boolean isExplicitlyNullable(@Nullable Element element) {
     if (element == null) {
       return false;
     }
@@ -734,7 +740,7 @@ final class EntityModelScanner {
         && left.comment().equals(right.comment());
   }
 
-  private static boolean hasSkisPropertyAnnotation(Element element) {
+  private static boolean hasSkisPropertyAnnotation(@Nullable Element element) {
     return hasAnnotation(element, Column.class)
         || hasAnnotation(element, Id.class)
         || hasAnnotation(element, Version.class)
@@ -750,11 +756,12 @@ final class EntityModelScanner {
   }
 
   private static boolean hasAnnotation(
-      Element element, Class<? extends java.lang.annotation.Annotation> annotationType) {
+      @Nullable Element element, Class<? extends java.lang.annotation.Annotation> annotationType) {
     return element != null && element.getAnnotation(annotationType) != null;
   }
 
-  private static EntityScanException failure(String code, String message, Element element) {
+  private static EntityScanException failure(
+      String code, String message, @Nullable Element element) {
     return new EntityScanException(code, message, element);
   }
 
@@ -762,7 +769,7 @@ final class EntityModelScanner {
       EntityInstantiationModel instantiation, List<PropertyModel> properties) {}
 
   private record PropertyAnnotations(
-      Column column,
+      @Nullable Column column,
       boolean id,
       boolean version,
       boolean transientProperty,

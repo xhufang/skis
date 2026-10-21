@@ -8,6 +8,7 @@ import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import java.util.List;
 
+@org.jspecify.annotations.NullMarked
 @javax.annotation.processing.Generated(
     value = "io.skis.processor.SkisProjectionProcessor",
     comments = "Projection ABI 7")
@@ -24,7 +25,7 @@ public final class NullableSummaryPro {
           $skisReaders -> {
             ProjectionMapping.ValueReader<java.lang.Long> $skisValue0 =
                 $skisReaders.reader(0, java.lang.Long.class);
-            ProjectionMapping.ValueReader<java.lang.String> $skisValue1 =
+            ProjectionMapping.ValueReader<java.lang.@org.jspecify.annotations.Nullable String> $skisValue1 =
                 $skisReaders.reader(1, java.lang.String.class);
             return ($skisResultSet, $skisContext) ->
                 new samples.NullableSummary(

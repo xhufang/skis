@@ -6,6 +6,7 @@ import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
 import org.jspecify.annotations.NonNull;
 
+@org.jspecify.annotations.NullMarked
 @javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 7")
 public final class PetTable extends QueryTable<samples.Pet> {
 

@@ -203,14 +203,18 @@ public final class ProjectionMapping<R> {
   /** Typed reader lookup supplied once while a generated projection decoder is assembled. */
   public interface Readers {
 
-    /** Resolves the reader for one zero-based constructor parameter. */
-    <V> ValueReader<V> reader(int parameterOrdinal, Class<?> javaType);
+    /**
+     * Resolves the reader for one zero-based constructor parameter. Generated code supplies the
+     * parameter's complete Java type, including its nullable type argument. A non-null parameter's
+     * compiled reader rejects SQL NULL before returning; no second row-time check is required.
+     */
+    <V extends @Nullable Object> ValueReader<V> reader(int parameterOrdinal, Class<?> javaType);
   }
 
-  /** Reads one resolved selection without advancing the result-set cursor. */
+  /** Reads one resolved selection; {@code V} carries the generated parameter's nullability. */
   @FunctionalInterface
-  public interface ValueReader<V> {
-    @Nullable V read(ResultSet resultSet, RowReadContext context) throws SQLException;
+  public interface ValueReader<V extends @Nullable Object> {
+    V read(ResultSet resultSet, RowReadContext context) throws SQLException;
   }
 
   private static Class<?> boxed(Class<?> type) {

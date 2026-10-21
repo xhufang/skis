@@ -7,6 +7,7 @@ import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.PropertyRuntime;
 import java.util.List;
 
+@org.jspecify.annotations.NullMarked
 @javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 7")
 public final class PetRuntimeModel implements EntityRuntimeModelProvider {
 

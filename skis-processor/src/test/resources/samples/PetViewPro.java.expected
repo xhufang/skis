@@ -7,6 +7,7 @@ import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import java.util.List;
 
+@org.jspecify.annotations.NullMarked
 @javax.annotation.processing.Generated(
     value = "io.skis.processor.SkisProjectionProcessor",
     comments = "Projection ABI 7")

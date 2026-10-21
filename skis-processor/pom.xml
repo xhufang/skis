@@ -13,6 +13,10 @@
   </description>
   <dependencies>
     <dependency>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-annotations</artifactId>
     </dependency>
@@ -39,6 +43,16 @@
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-mutation</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-runtime</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

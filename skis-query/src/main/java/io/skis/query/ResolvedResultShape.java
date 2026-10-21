@@ -96,7 +96,7 @@ record ResolvedResultShape<R extends @Nullable Object>(
               + SelectableSupport.summary(selectable)
               + "' is effectively nullable; use selectNullable(selectable)");
     }
-    ProjectionMapping.ValueReader<R> reader = mapping.reader(1, true);
+    ProjectionMapping.ValueReader<@Nullable R> reader = mapping.reader(1, true);
     RowDecoder<R> decoder =
         (resultSet, context) ->
             requireDecodedValue(
@@ -108,7 +108,7 @@ record ResolvedResultShape<R extends @Nullable Object>(
   static <R> ResolvedResultShape<@Nullable R> nullableScalar(
       Selectable<R> selectable, SqlExpression<R> expression, TableRuntimeScope scope) {
     ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
-    ProjectionMapping.ValueReader<R> reader = mapping.reader(1, false);
+    ProjectionMapping.ValueReader<@Nullable R> reader = mapping.reader(1, false);
     RowDecoder<@Nullable R> decoder = reader::read;
     return new ResolvedResultShape<>(
         List.of(expression), decoder, List.of(new ResolvedSelection(mapping, 1)));
@@ -306,7 +306,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
 
     @Override
     @SuppressWarnings("unchecked")
-    public <V> ProjectionMapping.ValueReader<V> reader(int parameterOrdinal, Class<?> javaType) {
+    public <V extends @Nullable Object> ProjectionMapping.ValueReader<V> reader(
+        int parameterOrdinal, Class<?> javaType) {
       Objects.requireNonNull(javaType, "javaType");
       if (parameterOrdinal < 0 || parameterOrdinal >= parameters.size()) {
         throw QueryValidationException.of(
@@ -328,6 +329,8 @@ record ResolvedResultShape<R extends @Nullable Object>(
                 + " but its mapping contract requires "
                 + parameter.javaType().getTypeName());
       }
+      // Type/SQL/nullability compatibility was checked before these readers were detached.
+      // Each non-null parameter's reader already rejects SQL NULL at the JDBC read boundary.
       return (ProjectionMapping.ValueReader<V>) detachedReaders.get(parameterOrdinal);
     }
   }

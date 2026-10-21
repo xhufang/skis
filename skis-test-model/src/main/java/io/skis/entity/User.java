@@ -5,50 +5,51 @@ import io.skis.annotations.SkisEntity;
 import io.skis.annotations.Table;
 import io.skis.annotations.Version;
 import java.time.Instant;
+import org.jspecify.annotations.Nullable;
 
 @SkisEntity
 @Table(name = "X_USER")
 public class User {
 
-  @Id private Long id;
+  @Id private @Nullable Long id;
 
-  private Instant createStamp;
+  private @Nullable Instant createStamp;
 
-  private Instant modifyStamp;
+  private @Nullable Instant modifyStamp;
 
-  @Version private Long version;
+  @Version private @Nullable Long version;
 
-  private String username;
+  private @Nullable String username;
 
-  private String password;
+  private @Nullable String password;
 
-  private String phone;
+  private @Nullable String phone;
 
-  private String email;
+  private @Nullable String email;
 
-  private Instant birthday;
+  private @Nullable Instant birthday;
 
-  private Integer sex;
+  private @Nullable Integer sex;
 
-  private String description;
+  private @Nullable String description;
 
-  private Boolean deleted;
+  private @Nullable Boolean deleted;
 
   public User() {}
 
   public User(
-      Long id,
-      Instant createStamp,
-      Instant modifyStamp,
-      Long version,
-      String username,
-      String password,
-      String phone,
-      String email,
-      Instant birthday,
-      Integer sex,
-      String description,
-      Boolean deleted) {
+      @Nullable Long id,
+      @Nullable Instant createStamp,
+      @Nullable Instant modifyStamp,
+      @Nullable Long version,
+      @Nullable String username,
+      @Nullable String password,
+      @Nullable String phone,
+      @Nullable String email,
+      @Nullable Instant birthday,
+      @Nullable Integer sex,
+      @Nullable String description,
+      @Nullable Boolean deleted) {
     this.id = id;
     this.createStamp = createStamp;
     this.modifyStamp = modifyStamp;
@@ -63,99 +64,99 @@ public class User {
     this.deleted = deleted;
   }
 
-  public Long getId() {
+  public @Nullable Long getId() {
     return id;
   }
 
-  public void setId(Long id) {
+  public void setId(@Nullable Long id) {
     this.id = id;
   }
 
-  public Instant getCreateStamp() {
+  public @Nullable Instant getCreateStamp() {
     return createStamp;
   }
 
-  public void setCreateStamp(Instant createStamp) {
+  public void setCreateStamp(@Nullable Instant createStamp) {
     this.createStamp = createStamp;
   }
 
-  public Instant getModifyStamp() {
+  public @Nullable Instant getModifyStamp() {
     return modifyStamp;
   }
 
-  public void setModifyStamp(Instant modifyStamp) {
+  public void setModifyStamp(@Nullable Instant modifyStamp) {
     this.modifyStamp = modifyStamp;
   }
 
-  public Long getVersion() {
+  public @Nullable Long getVersion() {
     return version;
   }
 
-  public void setVersion(Long version) {
+  public void setVersion(@Nullable Long version) {
     this.version = version;
   }
 
-  public String getUsername() {
+  public @Nullable String getUsername() {
     return username;
   }
 
-  public void setUsername(String username) {
+  public void setUsername(@Nullable String username) {
     this.username = username;
   }
 
-  public String getPassword() {
+  public @Nullable String getPassword() {
     return password;
   }
 
-  public void setPassword(String password) {
+  public void setPassword(@Nullable String password) {
     this.password = password;
   }
 
-  public String getPhone() {
+  public @Nullable String getPhone() {
     return phone;
   }
 
-  public void setPhone(String phone) {
+  public void setPhone(@Nullable String phone) {
     this.phone = phone;
   }
 
-  public String getEmail() {
+  public @Nullable String getEmail() {
     return email;
   }
 
-  public void setEmail(String email) {
+  public void setEmail(@Nullable String email) {
     this.email = email;
   }
 
-  public Instant getBirthday() {
+  public @Nullable Instant getBirthday() {
     return birthday;
   }
 
-  public void setBirthday(Instant birthday) {
+  public void setBirthday(@Nullable Instant birthday) {
     this.birthday = birthday;
   }
 
-  public Integer getSex() {
+  public @Nullable Integer getSex() {
     return sex;
   }
 
-  public void setSex(Integer sex) {
+  public void setSex(@Nullable Integer sex) {
     this.sex = sex;
   }
 
-  public String getDescription() {
+  public @Nullable String getDescription() {
     return description;
   }
 
-  public void setDescription(String description) {
+  public void setDescription(@Nullable String description) {
     this.description = description;
   }
 
-  public Boolean getDeleted() {
+  public @Nullable Boolean getDeleted() {
     return deleted;
   }
 
-  public void setDeleted(Boolean deleted) {
+  public void setDeleted(@Nullable Boolean deleted) {
     this.deleted = deleted;
   }
 }

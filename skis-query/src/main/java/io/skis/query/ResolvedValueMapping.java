@@ -14,6 +14,7 @@ import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Query-local value contract resolved from a framework-owned selectable expression. */
 record ResolvedValueMapping<V>(
@@ -74,7 +75,7 @@ record ResolvedValueMapping<V>(
     };
   }
 
-  ProjectionMapping.ValueReader<V> reader(int resultIndex, boolean requireNonNull) {
+  ProjectionMapping.ValueReader<@Nullable V> reader(int resultIndex, boolean requireNonNull) {
     if (resultIndex < 1) {
       throw new IllegalArgumentException("result index must be positive");
     }

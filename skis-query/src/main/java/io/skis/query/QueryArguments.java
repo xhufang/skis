@@ -133,14 +133,14 @@ final class QueryArguments extends AbstractList<@Nullable Object> implements Ran
 
   private static @Nullable Object[] keysetTail(QueryPagination.Keyset keyset) {
     int valueCount = 0;
-    for (@Nullable Object value : keyset.values()) {
+    for (Object value : keyset.values()) {
       if (value != null) {
         valueCount++;
       }
     }
     @Nullable Object[] tail = new @Nullable Object[valueCount + 1];
     int target = 0;
-    for (@Nullable Object value : keyset.values()) {
+    for (Object value : keyset.values()) {
       if (value != null) {
         tail[target++] = value;
       }

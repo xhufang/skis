@@ -4,6 +4,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import javax.lang.model.type.TypeKind;
+import org.jspecify.annotations.Nullable;
 
 /** Compile-time JDBC mapping descriptor shared by scanning and source generation. */
 enum JdbcValueKind {
@@ -107,7 +108,7 @@ enum JdbcValueKind {
     DECLARED_TYPES = Map.copyOf(declaredTypes);
   }
 
-  private final TypeKind primitiveKind;
+  private final @Nullable TypeKind primitiveKind;
   private final String javaTypeName;
   private final String primitiveReadMethod;
   private final String referenceReadMethod;
@@ -116,7 +117,7 @@ enum JdbcValueKind {
   private final boolean numericVersion;
 
   JdbcValueKind(
-      TypeKind primitiveKind,
+      @Nullable TypeKind primitiveKind,
       String javaTypeName,
       String primitiveReadMethod,
       String referenceReadMethod,
