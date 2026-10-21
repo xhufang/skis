@@ -7,6 +7,7 @@ import io.skis.annotations.Table;
 import io.skis.annotations.Version;
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.jspecify.annotations.Nullable;
 
 /**
  * @author: Hu Xin
@@ -15,129 +16,129 @@ import java.time.Instant;
 @Table(name = "CL_PROJECT")
 public class Project {
 
-  @Id private Long id;
+  @Id private @Nullable Long id;
 
   @Column(nullable = false)
-  private Instant createStamp;
+  private @Nullable Instant createStamp;
 
   @Column(nullable = false)
-  private Instant modifyStamp;
+  private @Nullable Instant modifyStamp;
 
-  @Version private Long version;
-
-  @Column(nullable = false)
-  private String code;
+  @Version private @Nullable Long version;
 
   @Column(nullable = false)
-  private String name;
+  private @Nullable String code;
 
   @Column(nullable = false)
-  private BigDecimal budget;
-
-  private Instant startStamp;
-
-  private Instant endStamp;
+  private @Nullable String name;
 
   @Column(nullable = false)
-  private String status;
+  private @Nullable BigDecimal budget;
 
-  private String description;
+  private @Nullable Instant startStamp;
 
-  private Long principalId;
+  private @Nullable Instant endStamp;
 
-  public Long getId() {
+  @Column(nullable = false)
+  private @Nullable String status;
+
+  private @Nullable String description;
+
+  private @Nullable Long principalId;
+
+  public @Nullable Long getId() {
     return id;
   }
 
-  public void setId(Long id) {
+  public void setId(@Nullable Long id) {
     this.id = id;
   }
 
-  public Instant getCreateStamp() {
+  public @Nullable Instant getCreateStamp() {
     return createStamp;
   }
 
-  public void setCreateStamp(Instant createStamp) {
+  public void setCreateStamp(@Nullable Instant createStamp) {
     this.createStamp = createStamp;
   }
 
-  public Instant getModifyStamp() {
+  public @Nullable Instant getModifyStamp() {
     return modifyStamp;
   }
 
-  public void setModifyStamp(Instant modifyStamp) {
+  public void setModifyStamp(@Nullable Instant modifyStamp) {
     this.modifyStamp = modifyStamp;
   }
 
-  public Long getVersion() {
+  public @Nullable Long getVersion() {
     return version;
   }
 
-  public void setVersion(Long version) {
+  public void setVersion(@Nullable Long version) {
     this.version = version;
   }
 
-  public String getCode() {
+  public @Nullable String getCode() {
     return code;
   }
 
-  public void setCode(String code) {
+  public void setCode(@Nullable String code) {
     this.code = code;
   }
 
-  public String getName() {
+  public @Nullable String getName() {
     return name;
   }
 
-  public void setName(String name) {
+  public void setName(@Nullable String name) {
     this.name = name;
   }
 
-  public BigDecimal getBudget() {
+  public @Nullable BigDecimal getBudget() {
     return budget;
   }
 
-  public void setBudget(BigDecimal budget) {
+  public void setBudget(@Nullable BigDecimal budget) {
     this.budget = budget;
   }
 
-  public Instant getStartStamp() {
+  public @Nullable Instant getStartStamp() {
     return startStamp;
   }
 
-  public void setStartStamp(Instant startStamp) {
+  public void setStartStamp(@Nullable Instant startStamp) {
     this.startStamp = startStamp;
   }
 
-  public Instant getEndStamp() {
+  public @Nullable Instant getEndStamp() {
     return endStamp;
   }
 
-  public void setEndStamp(Instant endStamp) {
+  public void setEndStamp(@Nullable Instant endStamp) {
     this.endStamp = endStamp;
   }
 
-  public String getStatus() {
+  public @Nullable String getStatus() {
     return status;
   }
 
-  public void setStatus(String status) {
+  public void setStatus(@Nullable String status) {
     this.status = status;
   }
 
-  public String getDescription() {
+  public @Nullable String getDescription() {
     return description;
   }
 
-  public void setDescription(String description) {
+  public void setDescription(@Nullable String description) {
     this.description = description;
   }
 
-  public Long getPrincipalId() {
+  public @Nullable Long getPrincipalId() {
     return principalId;
   }
 
-  public void setPrincipalId(Long principalId) {
+  public void setPrincipalId(@Nullable Long principalId) {
     this.principalId = principalId;
   }
 }

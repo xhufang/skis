@@ -90,6 +90,8 @@ class EntityRuntimeModelTest {
     PropertyMeta<Pet, Long> distinctId =
         new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
 
+    assertEquals(ID, distinctId);
+    assertThrows(IllegalArgumentException.class, () -> model().property(distinctId));
     assertThrows(
         IllegalArgumentException.class,
         () ->

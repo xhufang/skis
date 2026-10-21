@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.annotation.processing.AbstractProcessor;
@@ -20,16 +21,27 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 import javax.tools.Diagnostic;
+import org.jspecify.annotations.Nullable;
 
 /** Generates the isolated, per-entity SKIS compile-time model. */
 @SupportedAnnotationTypes("io.skis.annotations.SkisEntity")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public final class SkisEntityProcessor extends AbstractProcessor {
 
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private EntityModelScanner scanner;
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private EntityModelValidator validator;
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private Messager messager;
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private Filer filer;
+  // JSR 269 calls init before process; this field is assigned by that lifecycle method.
+  @SuppressWarnings("NullAway.Init")
   private List<EntitySourceGenerator> generators;
   private final Set<String> settledEntities = new HashSet<>();
   private final Set<String> lombokSettlementDeferred = new HashSet<>();
@@ -55,12 +67,14 @@ public final class SkisEntityProcessor extends AbstractProcessor {
   @Override
   public boolean process(
       Set<? extends TypeElement> annotations, RoundEnvironment roundEnvironment) {
-    roundEnvironment.getElementsAnnotatedWith(SkisEntity.class).stream()
-        .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
-        .map(type -> type.getQualifiedName().toString())
-        .filter(entityName -> !settledEntities.contains(entityName))
-        .forEach(pendingEntities::add);
+    for (Element element : roundEnvironment.getElementsAnnotatedWith(SkisEntity.class)) {
+      if (element instanceof TypeElement type) {
+        String entityName = type.getQualifiedName().toString();
+        if (!settledEntities.contains(entityName)) {
+          pendingEntities.add(entityName);
+        }
+      }
+    }
 
     if (roundEnvironment.processingOver()) {
       reportUnresolvedEntities();
@@ -107,7 +121,10 @@ public final class SkisEntityProcessor extends AbstractProcessor {
       }
       return ProcessingResult.GENERATED;
     } catch (EntityScanDeferredException deferred) {
-      deferredProblems.put(entityName, new DeferredProblem("SKIS097", deferred.getMessage()));
+      deferredProblems.put(
+          entityName,
+          new DeferredProblem(
+              "SKIS097", Objects.requireNonNull(deferred.getMessage(), "processor diagnostic")));
       return ProcessingResult.DEFERRED;
     } catch (EntityScanException failure) {
       if (LombokShapeDetector.isPresent(type)
@@ -119,10 +136,13 @@ public final class SkisEntityProcessor extends AbstractProcessor {
                 "the Lombok-backed entity has not reached a supported Simple Entity shape; last structural diagnostic was ["
                     + failure.code()
                     + "] "
-                    + failure.getMessage()));
+                    + Objects.requireNonNull(failure.getMessage(), "processor diagnostic")));
         return ProcessingResult.DEFERRED;
       }
-      error(failure.code(), failure.getMessage(), failure.element());
+      error(
+          failure.code(),
+          Objects.requireNonNull(failure.getMessage(), "processor diagnostic"),
+          failure.element());
       return ProcessingResult.FAILED;
     } catch (IOException exception) {
       error("SKIS099", "cannot generate sources for '" + entityName + "': " + exception, type);
@@ -158,7 +178,7 @@ public final class SkisEntityProcessor extends AbstractProcessor {
     deferredProblems.clear();
   }
 
-  private void error(String code, String message, Element element) {
+  private void error(String code, String message, @Nullable Element element) {
     messager.printMessage(Diagnostic.Kind.ERROR, DiagnosticGuidance.format(code, message), element);
   }
 

@@ -16,6 +16,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.OffsetTime;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 
 /** Shared generated-mapping fixture for the PostgreSQL and H2 JDBC type contracts. */
 @SkisEntity
@@ -23,33 +24,33 @@ import java.util.UUID;
 public record JdbcTypes(
     @Id long id,
     @Column(nullable = false) boolean primitiveBoolean,
-    Boolean nullableBoolean,
+    @Nullable Boolean nullableBoolean,
     @Column(nullable = false) byte primitiveByte,
-    Byte nullableByte,
+    @Nullable Byte nullableByte,
     @Column(nullable = false) short primitiveShort,
-    Short nullableShort,
+    @Nullable Short nullableShort,
     @Column(nullable = false) int primitiveInteger,
-    Integer nullableInteger,
+    @Nullable Integer nullableInteger,
     @Column(nullable = false) long primitiveLong,
-    Long nullableLong,
+    @Nullable Long nullableLong,
     @Column(nullable = false) float primitiveFloat,
-    Float nullableFloat,
+    @Nullable Float nullableFloat,
     @Column(nullable = false) double primitiveDouble,
-    Double nullableDouble,
+    @Nullable Double nullableDouble,
     @Column(nullable = false) char primitiveCharacter,
-    Character nullableCharacter,
+    @Nullable Character nullableCharacter,
     @Column(nullable = false, length = 200) String requiredString,
-    String nullableString,
-    BigInteger bigIntegerValue,
-    BigDecimal bigDecimalValue,
-    byte[] bytesValue,
-    UUID uuidValue,
-    Instant instantValue,
-    LocalDate localDateValue,
-    LocalTime localTimeValue,
-    LocalDateTime localDateTimeValue,
-    OffsetTime offsetTimeValue,
-    OffsetDateTime offsetDateTimeValue,
-    Date sqlDateValue,
-    Time sqlTimeValue,
-    Timestamp sqlTimestampValue) {}
+    @Nullable String nullableString,
+    @Nullable BigInteger bigIntegerValue,
+    @Nullable BigDecimal bigDecimalValue,
+    byte @Nullable [] bytesValue,
+    @Nullable UUID uuidValue,
+    @Nullable Instant instantValue,
+    @Nullable LocalDate localDateValue,
+    @Nullable LocalTime localTimeValue,
+    @Nullable LocalDateTime localDateTimeValue,
+    @Nullable OffsetTime offsetTimeValue,
+    @Nullable OffsetDateTime offsetDateTimeValue,
+    @Nullable Date sqlDateValue,
+    @Nullable Time sqlTimeValue,
+    @Nullable Timestamp sqlTimestampValue) {}

@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 /** Thread-safe JDBC execution kernel for immutable compiled query and mutation plans. */
@@ -157,6 +158,7 @@ public final class JdbcExecutor {
   }
 
   /** Executes a SQL-limited query and returns its first row without cardinality checking. */
+  @SuppressWarnings("UnusedReturnValue")
   public <R, P> Optional<R> fetchFirst(
       CompiledQueryPlan<R, P> plan, P parameters, ExecutionContext executionContext) {
     JdbcRow<R> row =
@@ -259,6 +261,7 @@ public final class JdbcExecutor {
   }
 
   /** Executes and observes content and count on one acquired connection. */
+  @SuppressWarnings("Convert2Diamond")
   public <R extends @Nullable Object, P, C> JdbcPageResult<R> fetchPage(
       CompiledQueryPlan<R, P> contentPlan,
       P contentParameters,
@@ -298,7 +301,7 @@ public final class JdbcExecutor {
                   SkisErrorCode.QUERY_RESULT_MAPPING,
                   "count query did not return one non-null row");
             }
-            return new JdbcPageResult<@Nullable R>(items, count.value());
+            return new JdbcPageResult<R>(items, count.value());
           } catch (PhasedSqlFailure failure) {
             throw translate(countPlan, failure.phase(), failure.sqlException());
           } catch (SQLException failure) {
@@ -898,7 +901,7 @@ public final class JdbcExecutor {
     private final CompiledQueryPlan<R, ?> plan;
     private final CursorResources<R> resources;
     private final Cleaner.Cleanable cleanable;
-    private @Nullable Object current = CURSOR_NOT_POSITIONED;
+    private R current = unpositionedCursorValue();
 
     private DefaultJdbcCursor(
         CompiledQueryPlan<R, ?> plan,
@@ -926,7 +929,7 @@ public final class JdbcExecutor {
       if (resources.isClosed()) {
         return false;
       }
-      current = CURSOR_NOT_POSITIONED;
+      current = unpositionedCursorValue();
       try {
         if (!resources.resultSet.next()) {
           Throwable failure = closeResources(null, ExecutionTermination.EXHAUSTED);
@@ -954,7 +957,7 @@ public final class JdbcExecutor {
         throw new IllegalStateException(
             "current() requires a successful advance() and an open cursor");
       }
-      return cursorValue(current);
+      return current;
     }
 
     @Override
@@ -993,7 +996,7 @@ public final class JdbcExecutor {
 
     private @Nullable Throwable closeResources(
         @Nullable Throwable primary, ExecutionTermination termination) {
-      current = CURSOR_NOT_POSITIONED;
+      current = unpositionedCursorValue();
       Throwable result = resources.closeResources(primary, termination);
       cleanable.clean();
       return result;
@@ -1011,9 +1014,10 @@ public final class JdbcExecutor {
   }
 
   @SuppressWarnings("unchecked")
-  private static <R extends @Nullable Object> R cursorValue(@Nullable Object value) {
-    // Only RowDecoder<R> values reach this branch; the private sentinel is rejected first.
-    return (R) value;
+  private static <R extends @Nullable Object> @NonNull R unpositionedCursorValue() {
+    // R erases to Object. The private non-null sentinel is only stored while unpositioned and
+    // current() rejects it before exposing any value; positioned values come from RowDecoder<R>.
+    return (R) CURSOR_NOT_POSITIONED;
   }
 
   private final class CursorResources<R extends @Nullable Object> implements Runnable {

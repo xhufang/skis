@@ -28,6 +28,15 @@
 ./mvnw -Pcompliance -DskipTests verify
 ```
 
+CI 在 Temurin 21/25 上另外启用 `static-analysis` profile，对生产源码与生成代码执行
+Error Prone/NullAway 的 JSpecify 检查，并执行专用正反编译夹具。普通测试中的故意 null 输入仍由
+javac 编译；独立消费者不需要继承 SKIS parent 或安装检查工具。配置、入口映射、精确抑制和
+执行证据说明见 [静态检查](docs/static-analysis.md)。
+
+```bash
+./mvnw -B -ntp clean verify -Pstatic-analysis
+```
+
 ## 公共 API 变更
 
 `1.0.0` 之前不执行跨版本 API/ABI 比较，公开 API、SPI、生成代码合同、包结构和模块可以按当前设计质量直接调整。

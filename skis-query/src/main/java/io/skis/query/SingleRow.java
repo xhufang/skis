@@ -1,5 +1,7 @@
 package io.skis.query;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -38,6 +40,17 @@ public final class SingleRow<R extends @Nullable Object> {
   /** Returns a result containing one row; its value may be SQL NULL. */
   public static <R extends @Nullable Object> SingleRow<R> present(R value) {
     return new SingleRow<>(true, value);
+  }
+
+  /** Validates a present decoded row before retaining the resolved selection's result type. */
+  @SuppressWarnings("Convert2Diamond")
+  static <R extends @Nullable Object> SingleRow<R> decoded(
+      @Nullable R value, boolean nullableResult) {
+    if (!nullableResult && value == null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query decoded a null value");
+    }
+    return new SingleRow<R>(true, value);
   }
 
   /** Returns a result containing one required non-null value. */

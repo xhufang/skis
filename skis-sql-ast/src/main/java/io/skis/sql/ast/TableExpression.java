@@ -63,7 +63,7 @@ public abstract class TableExpression<E> {
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
     return this == other
         || other instanceof TableExpression<?> table
             && entity.javaType().getName().equals(table.entity.javaType().getName())

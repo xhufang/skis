@@ -583,19 +583,48 @@ final class ProjectionModelScanner {
       String boxed = types.boxedClass((PrimitiveType) type).getQualifiedName().toString();
       return new TypeDescriptor(boxed, boxed, boxed + ".class", true, type.toString());
     }
-    String erasedTypeName = erasedTypeName(type);
-    String sourceTypeName = sourceTypeName(type);
+    String erasedTypeName = SourceText.erasedTypeName(type);
+    String sourceTypeName = sourceTypeName(type, false);
     return new TypeDescriptor(
         sourceTypeName, erasedTypeName, erasedTypeName + ".class", false, sourceTypeName);
   }
 
   private String sourceTypeName(TypeMirror type) {
-    return switch (type.getKind()) {
-      case ARRAY -> sourceTypeName(((ArrayType) type).getComponentType()) + "[]";
+    return sourceTypeName(type, true);
+  }
+
+  private String sourceTypeName(TypeMirror type, boolean includeRootNullness) {
+    String source = switch (type.getKind()) {
+      case ARRAY -> sourceArrayTypeName((ArrayType) type, includeRootNullness);
       case DECLARED -> sourceDeclaredTypeName((DeclaredType) type);
       case WILDCARD -> sourceWildcardTypeName((WildcardType) type);
       default -> type.toString();
     };
+    return includeRootNullness && type.getKind() == TypeKind.DECLARED && isNullableType(type)
+        ? SourceText.nullableType(source)
+        : source;
+  }
+
+  private String sourceArrayTypeName(ArrayType type, boolean includeRootNullness) {
+    StringBuilder dimensions = new StringBuilder();
+    TypeMirror element = type;
+    boolean includeNullness = includeRootNullness;
+    // Java writes the outermost dimension first, independently of the element type.
+    while (element instanceof ArrayType array) {
+      if (includeNullness && isNullableType(array)) {
+        dimensions.append(" @org.jspecify.annotations.Nullable []");
+      } else {
+        dimensions.append("[]");
+      }
+      element = array.getComponentType();
+      includeNullness = true;
+    }
+    return sourceTypeName(element) + dimensions;
+  }
+
+  private static boolean isNullableType(TypeMirror type) {
+    return type.getAnnotationMirrors().stream()
+        .anyMatch(annotation -> annotation.getAnnotationType().toString().equals(NULLABLE));
   }
 
   private String sourceDeclaredTypeName(DeclaredType type) {
@@ -624,17 +653,6 @@ final class ProjectionModelScanner {
       return "? super " + sourceTypeName(type.getSuperBound());
     }
     return "?";
-  }
-
-  private String erasedTypeName(TypeMirror type) {
-    if (type.getKind() == TypeKind.ARRAY) {
-      return erasedTypeName(((ArrayType) type).getComponentType()) + "[]";
-    }
-    if (type.getKind().isPrimitive()) {
-      return type.toString();
-    }
-    DeclaredType erased = (DeclaredType) types.erasure(type);
-    return ((TypeElement) erased.asElement()).getQualifiedName().toString();
   }
 
   private String constructorDescriptor(ExecutableElement constructor) {
@@ -673,8 +691,7 @@ final class ProjectionModelScanner {
     }
     return parameter.getAnnotationMirrors().stream()
             .anyMatch(annotation -> annotation.getAnnotationType().toString().equals(NULLABLE))
-        || parameter.asType().getAnnotationMirrors().stream()
-            .anyMatch(annotation -> annotation.getAnnotationType().toString().equals(NULLABLE));
+        || isNullableType(parameter.asType());
   }
 
   private void requireResolvedType(VariableElement parameter)
@@ -706,12 +723,11 @@ final class ProjectionModelScanner {
   }
 
   private boolean isAccessibleFrom(TypeMirror type, String generatedPackage) {
-    if (type.getAnnotationMirrors().stream()
-        .map(annotation -> annotation.getAnnotationType().asElement())
-        .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
-        .anyMatch(annotationType -> isTypeElementInaccessible(annotationType, generatedPackage))) {
-      return false;
+    for (var annotation : type.getAnnotationMirrors()) {
+      if (annotation.getAnnotationType().asElement() instanceof TypeElement annotationType
+          && isTypeElementInaccessible(annotationType, generatedPackage)) {
+        return false;
+      }
     }
     return switch (type.getKind()) {
       case ARRAY -> isAccessibleFrom(((ArrayType) type).getComponentType(), generatedPackage);

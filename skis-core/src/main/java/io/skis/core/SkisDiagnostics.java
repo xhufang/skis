@@ -145,7 +145,7 @@ public final class SkisDiagnostics {
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
     if (this == other) {
       return true;
     }

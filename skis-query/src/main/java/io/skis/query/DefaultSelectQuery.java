@@ -935,7 +935,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   private String parameterDigest() {
     MessageDigest digest = sha256();
     List<@Nullable Object> arguments = conditionArguments();
-    for (@Nullable Object argument : arguments) {
+    for (Object argument : arguments) {
       if (argument == null) {
         updateDigest(digest, "<null>");
       } else {
@@ -1019,12 +1019,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     if (!row.present()) {
       return SingleRow.noRow();
     }
-    R value = row.value();
-    if (!state.selected().nullableResult() && value == null) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query decoded a null value");
-    }
-    return SingleRow.present(value);
+    //noinspection RedundantTypeArguments
+    return SingleRow.<R>decoded(row.value(), state.selected().nullableResult());
   }
 
   private void requireAllowedNulls(List<? extends R> values, String message) {

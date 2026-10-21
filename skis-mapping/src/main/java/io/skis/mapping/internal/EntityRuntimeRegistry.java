@@ -14,15 +14,15 @@ public final class EntityRuntimeRegistry {
 
   private final Map<EntityMeta<?>, EntityRuntimeModel<?>> models;
 
-  private EntityRuntimeRegistry(Map<EntityMeta<?>, EntityRuntimeModel<?>> models) {
+  private EntityRuntimeRegistry(IdentityHashMap<EntityMeta<?>, EntityRuntimeModel<?>> models) {
     this.models = Collections.unmodifiableMap(models);
   }
 
   /** Creates a registry and rejects duplicate canonical entity metadata. */
   public static EntityRuntimeRegistry of(Collection<? extends EntityRuntimeModel<?>> models) {
     Objects.requireNonNull(models, "models");
-    Map<EntityMeta<?>, EntityRuntimeModel<?>> indexed = new IdentityHashMap<>();
-    Map<Class<?>, EntityMeta<?>> entitiesByJavaType = new IdentityHashMap<>();
+    IdentityHashMap<EntityMeta<?>, EntityRuntimeModel<?>> indexed = new IdentityHashMap<>();
+    IdentityHashMap<Class<?>, EntityMeta<?>> entitiesByJavaType = new IdentityHashMap<>();
     for (EntityRuntimeModel<?> model : models) {
       Objects.requireNonNull(model, "entity runtime model");
       EntityRuntimeModel<?> previous = indexed.put(model.entity(), model);

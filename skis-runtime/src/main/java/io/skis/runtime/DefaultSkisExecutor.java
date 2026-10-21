@@ -159,12 +159,13 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <R> R inTransaction(TransactionCallback<R> callback) {
+  public <R extends @Nullable Object> R inTransaction(TransactionCallback<R> callback) {
     return inTransaction(ExecutionOptions.NONE, callback);
   }
 
   @Override
-  public <R> R inTransaction(ExecutionOptions executionOptions, TransactionCallback<R> callback) {
+  public <R extends @Nullable Object> R inTransaction(
+      ExecutionOptions executionOptions, TransactionCallback<R> callback) {
     Objects.requireNonNull(callback, "callback");
     SkisSession session = beginTransaction(executionOptions);
     Throwable pendingFailure = null;

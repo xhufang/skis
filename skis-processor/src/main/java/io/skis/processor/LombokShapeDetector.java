@@ -40,11 +40,12 @@ final class LombokShapeDetector {
   }
 
   private static boolean hasShapeAnnotation(Element element) {
-    return element.getAnnotationMirrors().stream()
-        .map(mirror -> mirror.getAnnotationType().asElement())
-        .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
-        .map(annotationType -> annotationType.getQualifiedName().toString())
-        .anyMatch(SHAPE_ANNOTATIONS::contains);
+    for (var mirror : element.getAnnotationMirrors()) {
+      if (mirror.getAnnotationType().asElement() instanceof TypeElement annotationType
+          && SHAPE_ANNOTATIONS.contains(annotationType.getQualifiedName().toString())) {
+        return true;
+      }
+    }
+    return false;
   }
 }

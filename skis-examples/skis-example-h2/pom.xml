@@ -46,7 +46,7 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
           <proc>full</proc>
-          <annotationProcessorPaths>
+          <annotationProcessorPaths combine.children="append">
             <path>
               <groupId>io.github.xhufang</groupId>
               <artifactId>skis-processor</artifactId>

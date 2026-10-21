@@ -9,6 +9,7 @@ import io.skis.metadata.VersionStrategy;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
+@org.jspecify.annotations.NullMarked
 @javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 7")
 public final class PetBinder {
 
@@ -67,7 +68,7 @@ public final class PetBinder {
     return index;
   }
 
-  private static Object readVersion(samples.Pet entity) throws SQLException {
+  private static @org.jspecify.annotations.Nullable Object readVersion(samples.Pet entity) throws SQLException {
     return entity.version();
   }
 

@@ -85,7 +85,7 @@ public final class ColumnExpression<E, V> implements SqlExpression<V> {
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
     return this == other
         || other instanceof ColumnExpression<?, ?> column
             && table.equals(column.table)

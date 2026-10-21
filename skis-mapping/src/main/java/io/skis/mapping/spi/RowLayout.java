@@ -80,7 +80,7 @@ public final class RowLayout {
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
     return other instanceof RowLayout layout
         && Arrays.equals(indexesByOrdinal, layout.indexesByOrdinal);
   }

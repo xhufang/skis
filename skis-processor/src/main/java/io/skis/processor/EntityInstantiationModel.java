@@ -2,6 +2,7 @@ package io.skis.processor;
 
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 record EntityInstantiationModel(Kind kind, List<ConstructorArgument> constructorArguments) {
 
@@ -23,7 +24,7 @@ record EntityInstantiationModel(Kind kind, List<ConstructorArgument> constructor
     return new EntityInstantiationModel(Kind.BEAN, List.of());
   }
 
-  record ConstructorArgument(PropertyModel property, String defaultExpression) {
+  record ConstructorArgument(@Nullable PropertyModel property, @Nullable String defaultExpression) {
 
     ConstructorArgument {
       if ((property == null) == (defaultExpression == null || defaultExpression.isBlank())) {

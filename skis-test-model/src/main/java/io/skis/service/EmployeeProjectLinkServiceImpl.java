@@ -58,7 +58,9 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
                   .and(LINK.projectId().eq(projectId))
                   .fetchOne()
                   .toOptional();
-          return link.map(value -> session.deleteById(LINK, value.getId())).orElse(0);
+          return link.map(
+                  value -> session.deleteById(LINK, Objects.requireNonNull(value.getId(), "link id")))
+              .orElse(0);
         });
   }
 

@@ -182,6 +182,15 @@ public final class Skis {
       return configured;
     }
     ClassLoader context = Thread.currentThread().getContextClassLoader();
-    return context != null ? context : Skis.class.getClassLoader();
+    if (context != null) {
+      return context;
+    }
+    ClassLoader fallback = Skis.class.getClassLoader();
+    if (fallback == null) {
+      throw SkisConfigurationException.of(
+          SkisErrorCode.ASSEMBLY_CONFIGURATION_INVALID,
+          "no class loader is available for generated-index discovery; configure classLoader or runtimeModels");
+    }
+    return fallback;
   }
 }

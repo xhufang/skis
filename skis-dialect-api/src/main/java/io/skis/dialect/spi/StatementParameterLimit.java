@@ -73,7 +73,7 @@ public final class StatementParameterLimit {
   }
 
   @Override
-  public boolean equals(Object other) {
+  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
     return this == other
         || other instanceof StatementParameterLimit limit
             && kind == limit.kind

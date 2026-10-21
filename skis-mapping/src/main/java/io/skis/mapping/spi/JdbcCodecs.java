@@ -28,6 +28,7 @@ import org.jspecify.annotations.Nullable;
  * <p>JSR-310 values use JDBC 4.2 native object mappings. Null binds retain an explicit JDBC type so
  * drivers do not need to infer a type from a missing Java value.
  */
+@SuppressWarnings({"DataFlowIssue", "ConstantValue"})
 public final class JdbcCodecs {
 
   public static final JdbcTypeCodec<Boolean> BOOLEAN =
@@ -233,44 +234,38 @@ public final class JdbcCodecs {
 
   public static @Nullable UUID readUuid(ResultSet resultSet, int index, JdbcReadContext context)
       throws SQLException {
-    UUID value = resultSet.getObject(index, UUID.class);
-    return resultSet.wasNull() ? null : value;
+    return resultSet.getObject(index, UUID.class);
   }
 
   public static @Nullable Instant readInstant(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
     OffsetDateTime value = resultSet.getObject(index, OffsetDateTime.class);
-    return resultSet.wasNull() ? null : value.toInstant();
+    return value == null ? null : value.toInstant();
   }
 
   public static @Nullable LocalDate readLocalDate(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    LocalDate value = resultSet.getObject(index, LocalDate.class);
-    return resultSet.wasNull() ? null : value;
+    return resultSet.getObject(index, LocalDate.class);
   }
 
   public static @Nullable LocalTime readLocalTime(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    LocalTime value = resultSet.getObject(index, LocalTime.class);
-    return resultSet.wasNull() ? null : value;
+    return resultSet.getObject(index, LocalTime.class);
   }
 
   public static @Nullable LocalDateTime readLocalDateTime(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    LocalDateTime value = resultSet.getObject(index, LocalDateTime.class);
-    return resultSet.wasNull() ? null : value;
+    return resultSet.getObject(index, LocalDateTime.class);
   }
 
   public static @Nullable OffsetTime readOffsetTime(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    OffsetTime value = resultSet.getObject(index, OffsetTime.class);
-    return resultSet.wasNull() ? null : value;
+    return resultSet.getObject(index, OffsetTime.class);
   }
 
   public static @Nullable OffsetDateTime readOffsetDateTime(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    OffsetDateTime value = resultSet.getObject(index, OffsetDateTime.class);
-    return resultSet.wasNull() ? null : value;
+    return resultSet.getObject(index, OffsetDateTime.class);
   }
 
   public static @Nullable Date readSqlDate(ResultSet resultSet, int index, JdbcReadContext context)

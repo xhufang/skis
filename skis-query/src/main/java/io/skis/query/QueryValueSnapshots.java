@@ -20,8 +20,9 @@ final class QueryValueSnapshots {
     if (value == null) {
       return null;
     }
-    if (value.getClass().isArray()) {
-      return copyArray(value);
+    Class<?> componentType = value.getClass().getComponentType();
+    if (componentType != null) {
+      return copyArray(value, componentType);
     }
     return switch (value) {
       case Timestamp timestamp -> timestamp.clone();
@@ -31,9 +32,9 @@ final class QueryValueSnapshots {
     };
   }
 
-  private static Object copyArray(Object value) {
+  private static Object copyArray(Object value, Class<?> componentType) {
     int length = Array.getLength(value);
-    Object copy = Array.newInstance(value.getClass().getComponentType(), length);
+    Object copy = Array.newInstance(componentType, length);
     for (int index = 0; index < length; index++) {
       Array.set(copy, index, copy(Array.get(value, index)));
     }

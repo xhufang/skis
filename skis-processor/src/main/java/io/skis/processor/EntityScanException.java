@@ -1,13 +1,14 @@
 package io.skis.processor;
 
 import javax.lang.model.element.Element;
+import org.jspecify.annotations.Nullable;
 
 final class EntityScanException extends Exception {
 
   private final String code;
-  private final Element element;
+  private final @Nullable Element element;
 
-  EntityScanException(String code, String message, Element element) {
+  EntityScanException(String code, String message, @Nullable Element element) {
     super(message);
     this.code = code;
     this.element = element;
@@ -17,7 +18,7 @@ final class EntityScanException extends Exception {
     return code;
   }
 
-  Element element() {
+  @Nullable Element element() {
     return element;
   }
 }

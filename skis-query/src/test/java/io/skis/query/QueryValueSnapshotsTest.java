@@ -3,6 +3,7 @@ package io.skis.query;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import io.skis.metadata.ColumnMeta;
@@ -94,6 +95,22 @@ class QueryValueSnapshotsTest {
 
     assertEquals(expectedDate, arguments(datePredicate).getFirst());
     assertEquals(expectedTime, arguments(timePredicate).getFirst());
+  }
+
+  @Test
+  void preservesNestedArrayTypesAndNullElementsWhileDetachingMutableValues() {
+    byte[][] source = {new byte[] {1, 2}, null, new byte[0]};
+    byte[][] captured = (byte[][]) QueryValueSnapshots.copy(source);
+
+    source[0][0] = 9;
+
+    assertNotSame(source, captured);
+    assertEquals(source.getClass(), captured.getClass());
+    assertArrayEquals(new byte[] {1, 2}, captured[0]);
+    assertNotSame(source[0], captured[0]);
+    assertNull(captured[1]);
+    assertArrayEquals(new byte[0], captured[2]);
+    assertNotSame(source[2], captured[2]);
   }
 
   private static List<@Nullable Object> arguments(QueryCondition condition) {
