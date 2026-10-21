@@ -1,6 +1,6 @@
 # Page and slice pagination
 
-The current `0.2.7-SNAPSHOT` query API exposes two immutable pagination results: `Page<R>` and
+The current `0.2.8-SNAPSHOT` query API exposes two immutable pagination results: `Page<R>` and
 `Slice<R>`. Offset and keyset are request/execution choices; they do not create additional public
 result types.
 
