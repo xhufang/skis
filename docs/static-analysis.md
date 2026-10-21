@@ -4,8 +4,8 @@
 Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查器不属于发布运行时依赖，
 独立消费者不继承 SKIS parent，也不需要安装检查器。
 
-用户提供的首次 CI 日志在 `skis-mapping` 的 `readInstant` 空值检查处编译失败。
-该处及同批身份语义警告已按下文修正，完整 Java 矩阵与夹具仍待 CI 重新验证，不能写成已通过。
+用户提供的 CI 日志先报告 `skis-mapping/readInstant` 空值错误，后续报告 `skis-jdbc` 分页泛型和游标返回值错误。
+这些位置及同批身份语义警告已按下文修正，完整 Java 矩阵与夹具仍待 CI 重新验证，不能写成已通过。
 
 ## 配置与环境
 
@@ -64,6 +64,10 @@ Codec、Binder、Decoder、投影读取器、mutation 和事务回调；泛型/�
 `ProjectionMapping.ValueReader<V>` 由 `V` 表达结果可空性。生成代码根据构造参数选择 nullable 或
 non-null `V`，编译好的非空读取器复用已有 JDBC 边界校验；没有新增逐行反射、参数快照或冗余非空检查。
 `TransactionCallback<R>` 和 `inTransaction` 允许 nullable `R`，非空调用方仍不能接收可空结果。
+JDBC 分页直接保留 `JdbcPageResult<R>`，由 `R` 的实际类型参数表达结果可空性。
+游标当前值同样按 `R` 存储，只有未定位状态使用私有非空哨兵；`current()` 的状态检查阻止哨兵外泄，
+已定位值直接来自 `RowDecoder<R>`，包括合法的 null 行。哨兵工厂显式返回 `@NonNull R`；类型擦除转换仅用于该哨兵，保留原有 Java unchecked 抑制，
+没有新增 NullAway 抑制、逐行分配或额外非空检查。JDBC 分页/游标的编译正反例和 null 行状态转换夹具已补齐，待 CI 执行。
 
 测试模型的 Bean 在无参构造后可能尚未赋值，因此字段、getter/setter 显式标为 nullable；
 数据库列的非空约束继续由元数据声明。record 模型的 nullable 列、版本初始值及 transient 默认值

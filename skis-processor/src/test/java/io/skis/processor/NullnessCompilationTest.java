@@ -99,6 +99,61 @@ class NullnessCompilationTest {
   }
 
   @Test
+  void jdbcPageAndCursorRetainTheirResultTypeNullness() throws Exception {
+    check("jdbc-results-valid", """
+        static int required(JdbcExecutor executor, CompiledQueryPlan<String, Object> content,
+            CompiledQueryPlan<Long, Object> count, Object parameters) {
+          JdbcPageResult<String> page = executor.fetchPage(
+              content, parameters, count, parameters, ExecutionContext.EMPTY);
+          int length = page.items().getFirst().length();
+          try (JdbcCursor<String> cursor = executor.openCursor(
+              content, parameters, ExecutionContext.EMPTY)) {
+            if (cursor.advance()) length += cursor.current().length();
+          }
+          return length;
+        }
+        static int nullable(JdbcExecutor executor,
+            CompiledQueryPlan<@Nullable String, Object> content,
+            CompiledQueryPlan<Long, Object> count, Object parameters) {
+          JdbcPageResult<@Nullable String> page = executor.fetchPage(
+              content, parameters, count, parameters, ExecutionContext.EMPTY);
+          String first = page.items().getFirst();
+          int length = first == null ? 0 : first.length();
+          try (JdbcCursor<@Nullable String> cursor = executor.openCursor(
+              content, parameters, ExecutionContext.EMPTY)) {
+            if (cursor.advance()) {
+              String value = cursor.current();
+              if (value != null) length += value.length();
+            }
+          }
+          return length;
+        }
+        static <R extends @Nullable Object> JdbcPageResult<R> generic(JdbcExecutor executor,
+            CompiledQueryPlan<R, Object> content,
+            CompiledQueryPlan<Long, Object> count, Object parameters) {
+          return executor.fetchPage(content, parameters, count, parameters, ExecutionContext.EMPTY);
+        }
+        """).assertPass();
+    reject("jdbc-page-element", """
+        static int invalid(JdbcPageResult<@Nullable String> page) {
+          return page.items().getFirst().length();
+        }
+        """);
+    reject("jdbc-cursor-element", """
+        static int invalid(JdbcCursor<@Nullable String> cursor) {
+          return cursor.current().length();
+        }
+        """);
+    reject("jdbc-page-result-type", """
+        static JdbcPageResult<String> invalid(JdbcExecutor executor,
+            CompiledQueryPlan<@Nullable String, Object> content,
+            CompiledQueryPlan<Long, Object> count, Object parameters) {
+          return executor.fetchPage(content, parameters, count, parameters, ExecutionContext.EMPTY);
+        }
+        """);
+  }
+
+  @Test
   void mappingAndMutationCallbacksEnforceInputAndOutputContracts() throws Exception {
     check("mapping-mutation-valid", """
         static RowDecoder<@Nullable String> nullableDecoder() { return (rs, context) -> null; }
@@ -210,6 +265,11 @@ class NullnessCompilationTest {
   private static Map<String, String> source(String body) {
     return Map.of("contracts.Contract", """
         package contracts;
+        import io.skis.core.spi.ExecutionContext;
+        import io.skis.jdbc.internal.CompiledQueryPlan;
+        import io.skis.jdbc.internal.JdbcCursor;
+        import io.skis.jdbc.internal.JdbcExecutor;
+        import io.skis.jdbc.internal.JdbcPageResult;
         import io.skis.query.*;
         import io.skis.query.spi.ProjectionMapping;
         import io.skis.mapping.spi.*;

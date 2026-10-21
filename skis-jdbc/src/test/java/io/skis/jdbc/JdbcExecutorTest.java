@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -731,16 +732,25 @@ class JdbcExecutorTest {
 
   @Test
   void nullableCursorDistinguishesAPositionedNullFromAnUnpositionedCursor() {
-    Scenario scenario = new Scenario(java.util.Collections.singletonList(null));
+    Scenario scenario = new Scenario(java.util.Arrays.asList(null, "Mimi", null));
     JdbcCursor<@Nullable String> cursor =
         new JdbcExecutor(scenario.provider())
             .openCursor(nullablePlan(), 17L, ExecutionContext.EMPTY);
 
     assertThrows(IllegalStateException.class, cursor::current);
     assertTrue(cursor.advance());
-    assertEquals(null, cursor.current());
+    assertNull(cursor.current());
+    assertNull(cursor.current());
+    assertTrue(cursor.advance());
+    assertEquals("Mimi", cursor.current());
+    assertTrue(cursor.advance());
+    assertNull(cursor.current());
     assertFalse(cursor.advance());
     assertTrue(cursor.isClosed());
+    assertThrows(IllegalStateException.class, cursor::current);
+    assertEquals(1, scenario.resultSetCloses.get());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
   }
 
   @Test
