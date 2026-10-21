@@ -94,7 +94,7 @@ JDBC 分页直接保留 `JdbcPageResult<R>`，由 `R` 的实际类型参数表�
 没有新增 NullAway 抑制、逐行分配或额外非空检查。JDBC 分页/游标的编译正反例和 null 行状态转换夹具已补齐，执行证据见下文。
 
 keyset 内部 `OrderedRow<R>` 的用户值直接声明为 `R`，与 `RowDecoder<R>` 一致，不额外扩大为 `@Nullable R`；
-单行结果在确认行存在后调用包内 `SingleRow.<R>decoded(value, nullableResult)`；该工厂接收 JDBC 的 `@Nullable R`，
+单行结果在确认行存在后调用包内 `DefaultSingleRow.<R>decoded(value, nullableResult)`；该工厂接收 JDBC 的 `@Nullable R`，
 按已解析选择的 nullability 执行原有非空结果校验，再直接构造 `SingleRow<R>`。无行仍返回共享 no-row 实例，
 合法 null 行仍为 present-null，公开 `present(R)` 的入参约束保持。没有新增 NullAway 抑制、强制转换或逐行分配。
 查询编译夹具补充 keyset 可空元素负例及 `fetchOne`/`fetchFirst` 的泛型结果传递正例。

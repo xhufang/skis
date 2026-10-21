@@ -1,0 +1,57 @@
+package io.skis.query.internal;
+
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.query.DerivedOutput;
+import io.skis.query.Selectable;
+import io.skis.sql.ast.Identifier;
+import io.skis.sql.ast.Nullability;
+import io.skis.sql.ast.SqlType;
+import java.util.Objects;
+
+/** Explicit typed handle for one publicly named derived-relation output. */
+class DefaultDerivedOutput<V> implements DerivedOutput<V> {
+
+  private final Selectable<V> selectable;
+  private final Identifier alias;
+  private final Nullability nullability;
+
+  DefaultDerivedOutput(Selectable<V> selectable, Identifier alias, Nullability nullability) {
+    this.selectable = SelectableSupport.requireFramework(selectable);
+    this.alias = Objects.requireNonNull(alias, "alias");
+    this.nullability = Objects.requireNonNull(nullability, "nullability");
+    if (!nullability.isNullable() && selectable.nullability().isNullable()) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
+          "a nullable selectable cannot define a non-null derived output");
+    }
+  }
+
+  /** Explicit SQL column alias exposed by the derived relation. */
+  public final String alias() {
+    return alias.value();
+  }
+
+  /** Boxed Java value type of this output. */
+  public final Class<V> javaType() {
+    return selectable.javaType();
+  }
+
+  /** Portable SQL value type of this output. */
+  public final SqlType sqlType() {
+    return selectable.sqlType();
+  }
+
+  /** Declared output nullability, before an outer join can null-extend the relation. */
+  public final Nullability nullability() {
+    return nullability;
+  }
+
+  final Selectable<V> selectable() {
+    return selectable;
+  }
+
+  final Identifier aliasIdentifier() {
+    return alias;
+  }
+}

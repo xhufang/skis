@@ -1,9 +1,6 @@
 package io.skis.query;
 
-import io.skis.core.QueryValidationException;
-import io.skis.core.SkisErrorCode;
-import java.util.NoSuchElementException;
-import java.util.Objects;
+import io.skis.query.internal.QueryDsl;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -13,172 +10,78 @@ import java.util.stream.Stream;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
-/** Immutable single-row result that preserves no-row, SQL NULL, and non-null value states. */
-public final class SingleRow<R extends @Nullable Object> {
-
-  private static final SingleRow<?> NO_ROW = new SingleRow<>(false, null);
-
-  private final boolean hasRow;
-  private final @Nullable R value;
-
-  private SingleRow(boolean hasRow, @Nullable R value) {
-    this.hasRow = hasRow;
-    this.value = value;
-  }
+/** Immutable framework-owned single-row result preserving no-row, SQL NULL, and value states. */
+public interface SingleRow<R extends @Nullable Object> {
 
   /** Returns the shared no-row result. */
-  @SuppressWarnings("unchecked")
-  public static <R extends @Nullable Object> SingleRow<R> noRow() {
-    return (SingleRow<R>) NO_ROW;
+  static <R extends @Nullable Object> SingleRow<R> noRow() {
+    return QueryDsl.noRow();
   }
 
   /** Alias for {@link #noRow()}. */
-  public static <R extends @Nullable Object> SingleRow<R> empty() {
+  static <R extends @Nullable Object> SingleRow<R> empty() {
     return noRow();
   }
 
   /** Returns a result containing one row; its value may be SQL NULL. */
-  public static <R extends @Nullable Object> SingleRow<R> present(R value) {
-    return new SingleRow<>(true, value);
-  }
-
-  /** Validates a present decoded row before retaining the resolved selection's result type. */
-  @SuppressWarnings("Convert2Diamond")
-  static <R extends @Nullable Object> SingleRow<R> decoded(
-      @Nullable R value, boolean nullableResult) {
-    if (!nullableResult && value == null) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query decoded a null value");
-    }
-    return new SingleRow<R>(true, value);
+  static <R extends @Nullable Object> SingleRow<R> present(R value) {
+    return QueryDsl.presentRow(value);
   }
 
   /** Returns a result containing one required non-null value. */
-  public static <R> SingleRow<R> of(R value) {
-    return new SingleRow<>(true, Objects.requireNonNull(value, "value"));
+  static <R> SingleRow<R> of(R value) {
+    return QueryDsl.requiredRow(value);
   }
 
   /** Maps null to no row and a non-null value to a present row. */
-  public static <R> SingleRow<R> ofNullable(@Nullable R value) {
-    return value == null ? noRow() : of(value);
+  static <R> SingleRow<R> ofNullable(@Nullable R value) {
+    return QueryDsl.nullableRow(value);
   }
 
-  public boolean hasRow() {
-    return hasRow;
-  }
+  boolean hasRow();
 
-  public boolean isNull() {
-    return hasRow && value == null;
-  }
+  boolean isNull();
 
-  public boolean isPresent() {
-    return value != null;
-  }
+  boolean isPresent();
 
-  public boolean isEmpty() {
-    return value == null;
-  }
+  boolean isEmpty();
 
-  public @NonNull R get() {
-    if (value == null) {
-      throw new NoSuchElementException(hasRow ? "row value is null" : "no row is present");
-    }
-    return value;
-  }
+  @NonNull R get();
 
-  public @NonNull R orElseThrow() {
-    return get();
-  }
+  @NonNull R orElseThrow();
 
-  public <X extends Throwable> @NonNull R orElseThrow(Supplier<? extends X> supplier) throws X {
-    if (value == null) {
-      throw supplier.get();
-    }
-    return value;
-  }
+  <X extends Throwable> @NonNull R orElseThrow(Supplier<? extends X> supplier) throws X;
 
-  public @Nullable R orElse(@Nullable R other) {
-    return value != null ? value : other;
-  }
+  @Nullable R orElse(@Nullable R other);
 
-  public @Nullable R orElseGet(Supplier<? extends @Nullable R> supplier) {
-    return value != null ? value : supplier.get();
-  }
+  @Nullable R orElseGet(Supplier<? extends @Nullable R> supplier);
 
-  public void ifPresent(Consumer<? super @NonNull R> action) {
-    if (value != null) {
-      action.accept(value);
-    }
-  }
+  void ifPresent(Consumer<? super @NonNull R> action);
 
-  public void ifPresentOrElse(Consumer<? super @NonNull R> action, Runnable emptyAction) {
-    if (value != null) {
-      action.accept(value);
-    } else {
-      emptyAction.run();
-    }
-  }
+  void ifPresentOrElse(Consumer<? super @NonNull R> action, Runnable emptyAction);
 
-  public Optional<@NonNull R> filter(Predicate<? super @NonNull R> predicate) {
-    Objects.requireNonNull(predicate, "predicate");
-    if (value == null || !predicate.test(value)) {
-      return Optional.empty();
-    }
-    return Optional.of(value);
-  }
+  Optional<@NonNull R> filter(Predicate<? super @NonNull R> predicate);
 
-  public <U> Optional<U> map(Function<? super @NonNull R, ? extends @Nullable U> mapper) {
-    Objects.requireNonNull(mapper, "mapper");
-    return value == null ? Optional.empty() : Optional.ofNullable(mapper.apply(value));
-  }
+  <U> Optional<U> map(Function<? super @NonNull R, ? extends @Nullable U> mapper);
 
-  @SuppressWarnings("unchecked")
-  public <U> Optional<U> flatMap(
-      Function<? super @NonNull R, ? extends Optional<? extends U>> mapper) {
-    Objects.requireNonNull(mapper, "mapper");
-    if (value == null) {
-      return Optional.empty();
-    }
-    return (Optional<U>) Objects.requireNonNull(mapper.apply(value));
-  }
+  <U> Optional<U> flatMap(Function<? super @NonNull R, ? extends Optional<? extends U>> mapper);
 
-  @SuppressWarnings("unchecked")
-  public Optional<@NonNull R> or(Supplier<? extends Optional<? extends @NonNull R>> supplier) {
-    Objects.requireNonNull(supplier, "supplier");
-    if (value != null) {
-      return Optional.of(value);
-    }
-    return (Optional<@NonNull R>) Objects.requireNonNull(supplier.get());
-  }
+  Optional<@NonNull R> or(Supplier<? extends Optional<? extends @NonNull R>> supplier);
 
   /** Returns a value-only view, deliberately collapsing no-row and NULL-row states. */
-  public Optional<@NonNull R> toOptional() {
-    return Optional.ofNullable(value);
-  }
+  Optional<@NonNull R> toOptional();
 
   /** Returns a zero-or-one element in-memory stream of the non-null value. */
-  public Stream<@NonNull R> stream() {
-    return value == null ? Stream.empty() : Stream.of(value);
-  }
+  Stream<@NonNull R> stream();
+
+  /** Compares row presence and value, including present NULL versus no row. */
+  @Override
+  boolean equals(@Nullable Object other);
 
   @Override
-  public boolean equals(@Nullable Object other) {
-    return this == other
-        || other instanceof SingleRow<?> row
-            && hasRow == row.hasRow
-            && Objects.equals(value, row.value);
-  }
+  int hashCode();
 
+  /** Keeps diagnostics value-redacted without invoking the result value's toString method. */
   @Override
-  public int hashCode() {
-    return 31 * Boolean.hashCode(hasRow) + Objects.hashCode(value);
-  }
-
-  /** Keeps diagnostics value-redacted and does not invoke the result value's toString method. */
-  @Override
-  public String toString() {
-    return hasRow
-        ? (value == null ? "SingleRow[present-null]" : "SingleRow[present]")
-        : "SingleRow[no-row]";
-  }
+  String toString();
 }

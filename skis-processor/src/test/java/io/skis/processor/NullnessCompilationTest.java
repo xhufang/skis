@@ -108,13 +108,14 @@ class NullnessCompilationTest {
 
   @Test
   void decodedSingleRowsRetainTheirTypeWithoutWeakeningPublicFactories() throws Exception {
-    NullnessCompiler.compile("decoded-single-row-valid", Map.of("io.skis.query.DecodedRowContract", """
-        package io.skis.query;
+    NullnessCompiler.compile("decoded-single-row-valid", Map.of("io.skis.query.internal.DecodedRowContract", """
+        package io.skis.query.internal;
+        import io.skis.query.SingleRow;
         import org.jspecify.annotations.*;
         @NullMarked final class DecodedRowContract {
           static <R extends @Nullable Object> SingleRow<R> decoded(
               @Nullable R value, boolean nullableResult) {
-            return SingleRow.<R>decoded(value, nullableResult);
+            return DefaultSingleRow.<R>decoded(value, nullableResult);
           }
           static String required(String value) {
             return DecodedRowContract.<String>decoded(value, false).get();

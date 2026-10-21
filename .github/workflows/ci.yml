@@ -62,6 +62,25 @@ jobs:
           ./mvnw -B -ntp clean verify -Pstatic-analysis 2>&1 \
             | tee "${RUNNER_TEMP}/static-analysis-build.log"
 
+      - name: Verify architecture against the complete reactor outputs
+        shell: bash
+        run: |
+          set -o pipefail
+          ./mvnw -B -ntp -pl skis-integration-tests -am test -Parchitecture \
+            -Dtest=ArchitectureContractTest -Dsurefire.failIfNoSpecifiedTests=false 2>&1 \
+            | tee "${RUNNER_TEMP}/architecture-build.log"
+
+      - name: Prove Enforcer dependency failures and test-scope allowance
+        shell: pwsh
+        run: ./.github/scripts/verify-architecture-enforcer.ps1
+
+      - name: Require executed architecture rules and violation fixtures
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-integration-tests/target/surefire-reports `
+            -RequiredSuites io.skis.architecture.ArchitectureContractTest
+
       - name: Require executed nullness and nominal type contracts
         shell: pwsh
         run: |
@@ -70,7 +89,7 @@ jobs:
             -RequiredSuites @('io.skis.processor.NullnessCompilationTest', 'io.skis.processor.SkisEntityProcessorTest')
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-query/target/surefire-reports `
-            -RequiredSuites io.skis.query.QueryTypeSafetyCompilationTest
+            -RequiredSuites io.skis.query.internal.QueryTypeSafetyCompilationTest
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-mutation/target/surefire-reports `
             -RequiredSuites io.skis.mutation.MutationTypeSafetyCompilationTest
@@ -85,6 +104,9 @@ jobs:
             skis-processor/target/nullness-reports/**
             ${{ runner.temp }}/static-analysis-environment.txt
             ${{ runner.temp }}/static-analysis-build.log
+            ${{ runner.temp }}/architecture-build.log
+            ${{ runner.temp }}/skis-enforcer-evidence/**
+            .github/quality/*.json
           if-no-files-found: error
 
   integration-tests:
@@ -180,6 +202,7 @@ jobs:
             -f "${consumer_dir}/pom.xml" \
             -Dskis.version="${project_version}" \
             verify
+          java .github/scripts/VerifyExternalBytecode.java "${consumer_dir}/target/test-classes"
 
           consumer_dir="${RUNNER_TEMP}/skis-listener-only-consumer"
           cp -R skis-integration-tests/src/consumer/listener-only "${consumer_dir}"
@@ -187,6 +210,7 @@ jobs:
             -f "${consumer_dir}/pom.xml" \
             -Dskis.version="${project_version}" \
             verify
+          java .github/scripts/VerifyExternalBytecode.java "${consumer_dir}/target/test-classes"
 
           consumer_dir="${RUNNER_TEMP}/skis-minimal-h2-consumer"
           cp -R skis-integration-tests/src/consumer/minimal-h2 "${consumer_dir}"
@@ -194,6 +218,8 @@ jobs:
             -f "${consumer_dir}/pom.xml" \
             -Dskis.version="${project_version}" \
             verify
+          java .github/scripts/VerifyExternalBytecode.java \
+            "${consumer_dir}/target/classes" "${consumer_dir}/target/test-classes"
 
       - name: Require independent consumer contracts without skipped tests
         shell: pwsh
@@ -267,6 +293,8 @@ jobs:
           cp -R skis-integration-tests/src/consumer/minimal-postgresql "${consumer_dir}"
           ./mvnw -B -ntp -f "${consumer_dir}/pom.xml" \
             -Dskis.version="${project_version}" verify
+          java .github/scripts/VerifyExternalBytecode.java \
+            "${consumer_dir}/target/classes" "${consumer_dir}/target/test-classes"
 
       - name: Require the PostgreSQL consumer without skipped tests
         shell: pwsh

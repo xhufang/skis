@@ -1,0 +1,544 @@
+{
+  "schema": "1",
+  "accesses": [
+    {
+      "caller": "io.skis.dialect.spi.RenderInput",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.dialect.spi.ResolvedStatement",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.dialect.support.SqlCompiler",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$CursorResources",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$CursorResources",
+      "target": "io.skis.core.internal.StatementObservation",
+      "reason": "Carries the SQL statement lifecycle and final outcomes through the JDBC boundary.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$DefaultJdbcCursor",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$DefaultJdbcCursor",
+      "target": "io.skis.core.internal.StatementObservation",
+      "reason": "Carries the SQL statement lifecycle and final outcomes through the JDBC boundary.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor",
+      "target": "io.skis.core.internal.StatementObservation",
+      "reason": "Carries the SQL statement lifecycle and final outcomes through the JDBC boundary.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DefaultMutationOperations",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DefaultMutationOperations",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DefaultMutationOperations",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityMutationPlanSet$UpdateExecution",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Carries the selected immutable update plan and optimistic-lock decision within framework execution.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityMutationPlanSet",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Typed framework collaboration with CompiledMutationPlan; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationPlanCatalog",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationPlanCatalog",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationPlanCatalog",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationPlanCompiler",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationPlanCompiler",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Typed framework collaboration with CompiledMutationPlan; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationPlanCompiler",
+      "target": "io.skis.jdbc.internal.JdbcFingerprint",
+      "reason": "Typed framework collaboration with JdbcFingerprint; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRuntime",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRuntime",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRuntime",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.CachedQueryPlan",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Retains only the immutable compiled plan in the shared L1 cache, excluding invocation arguments and AST.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultCountQuery",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryCursor",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryCursor",
+      "target": "io.skis.jdbc.internal.JdbcCursor",
+      "reason": "Adapts explicit cursor ownership and deterministic resource closure.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryOperations",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryOperations",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryOperations",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryOperations",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryOperations",
+      "target": "io.skis.jdbc.internal.JdbcPageResult",
+      "reason": "Transfers content/count execution outcomes without changing resource ownership.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultQueryOperations",
+      "target": "io.skis.jdbc.internal.JdbcRow",
+      "reason": "Preserves row presence independently of a nullable decoded value.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultSelectQuery$CachedPlan",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Retains the immutable terminal-operation plan and statement AST without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "target": "io.skis.jdbc.internal.JdbcPageResult",
+      "reason": "Transfers content/count execution outcomes without changing resource ownership.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "target": "io.skis.jdbc.internal.JdbcRow",
+      "reason": "Preserves row presence independently of a nullable decoded value.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.EntityPlanSet",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.EntityPlanSet",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.EntityPlanSet",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.EntityPlanSet",
+      "target": "io.skis.jdbc.internal.JdbcFingerprint",
+      "reason": "Typed framework collaboration with JdbcFingerprint; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryCompilation",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Pairs the immutable compiled plan with separate invocation arguments and AST for execution.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanCatalog",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanCatalog",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanCatalog",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanCompiler",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanCompiler",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanCompiler",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanKey$IdentityScope",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanKeyAssembler",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanResolver$CompilationObservation",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanResolver$CompilationObservation",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanResolver$CompilationObservation",
+      "target": "io.skis.jdbc.internal.JdbcFingerprint",
+      "reason": "Typed framework collaboration with JdbcFingerprint; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryPlanResolver",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryRuntime",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryRuntime",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryRuntime",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.ResolvedValueMapping",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.SelectedResult",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.SelectedResult",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.TableRuntimeScope",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisExecutor",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisExecutor",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisExecutor",
+      "target": "io.skis.jdbc.internal.JdbcTransaction",
+      "reason": "Typed framework collaboration with JdbcTransaction; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisExecutor",
+      "target": "io.skis.mutation.internal.MutationPlanCatalog",
+      "reason": "Reuses generated mutation plans across ordinary and transaction execution.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisExecutor",
+      "target": "io.skis.query.internal.QueryPlanCatalog",
+      "reason": "Reuses the same catalog for ordinary execution, transactions and cache governance.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisSession",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.DefaultSkisSession",
+      "target": "io.skis.jdbc.internal.JdbcTransaction",
+      "reason": "Typed framework collaboration with JdbcTransaction; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.EntityRuntimeModelLoader",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.core.internal.ExecutionListenerDispatcher",
+      "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Binds shared plans to the ordinary or transaction-owned JDBC executor.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves registered generated models while compiling framework-owned plans.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.mutation.internal.MutationPlanCatalog",
+      "reason": "Reuses generated mutation plans across ordinary and transaction execution.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.mutation.internal.MutationRuntime",
+      "reason": "Assembles generated mutation plans without exposing framework assembly as a public SPI.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.query.internal.QueryPlanCatalog",
+      "reason": "Reuses the same catalog for ordinary execution, transactions and cache governance.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.runtime.Skis$Builder",
+      "target": "io.skis.query.internal.QueryRuntime",
+      "reason": "Assembles the executor-owned shared query catalog at Skis build time.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    }
+  ]
+}
