@@ -25,26 +25,36 @@ $fixtures = @(
     @{ Name = 'test-spring'; Scope = 'test'; Artifact = 'spring-core'; ExpectedFailure = $false }
 )
 foreach ($fixture in $fixtures) {
-    $executionXml = $execution.OuterXml
-    if ($fixture.Name -eq 'transitive-spring') {
-        # Allow this direct coordinate only; its forbidden spring-core/beans/tx closure must still fail.
-        $executionXml = $executionXml.Replace('</includes>', '<include>org.springframework:spring-jdbc</include></includes>')
-    }
-    $pom = @"
+    $pom = [xml]@"
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <parent><groupId>io.github.xhufang</groupId><artifactId>skis-parent</artifactId><version>$version</version><relativePath>$parentPath</relativePath></parent>
   <artifactId>skis-enforcer-fixture</artifactId><packaging>pom</packaging>
   <dependencies><dependency><groupId>org.springframework</groupId><artifactId>$($fixture.Artifact)</artifactId><scope>$($fixture.Scope)</scope></dependency></dependencies>
-  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><executions>$executionXml</executions></plugin></plugins></build>
+  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><executions /></plugin></plugins></build>
 </project>
 "@
+    # Serialize within the project namespace; a standalone OuterXml fragment adds an xmlns
+    # attribute to execution, which Maven rejects when the fragment is embedded in the POM.
+    $namespaces = [System.Xml.XmlNamespaceManager]::new($pom.NameTable)
+    $namespaces.AddNamespace('pom', $pom.DocumentElement.NamespaceURI)
+    $fixtureExecution = $pom.ImportNode($execution, $true)
+    $executions = $pom.SelectSingleNode('/pom:project/pom:build/pom:plugins/pom:plugin/pom:executions', $namespaces)
+    $executions.AppendChild($fixtureExecution) | Out-Null
+    if ($fixture.Name -eq 'transitive-spring') {
+        # Allow this direct coordinate only; its forbidden spring-core/beans/tx closure must still fail.
+        $include = $pom.CreateElement('include', $pom.DocumentElement.NamespaceURI)
+        $include.InnerText = 'org.springframework:spring-jdbc'
+        $fixtureExecution.SelectSingleNode('pom:configuration/pom:rules/pom:bannedDependencies/pom:includes', $namespaces).AppendChild($include) | Out-Null
+    }
     $pomPath = Join-Path $fixtureRoot ($fixture.Name + '.xml')
-    [System.IO.File]::WriteAllText($pomPath, $pom)
+    $pom.Save($pomPath)
     $output = & $wrapper -B -ntp -f $pomPath validate 2>&1
     $exitCode = $LASTEXITCODE
     $logPath = Join-Path $fixtureRoot ($fixture.Name + '.log')
     $output | Out-File -LiteralPath $logPath -Encoding utf8
+    Write-Host "Enforcer fixture $($fixture.Name): Maven exit code $exitCode; evidence: $logPath"
+    $output | ForEach-Object { Write-Host $_ }
     if ($fixture.ExpectedFailure) {
         if ($exitCode -eq 0 -or ($output -join "`n") -notmatch 'bannedDependencies|BannedDependencies') {
             throw "Enforcer negative fixture did not fail for the intended rule: $($fixture.Name); see $logPath"
