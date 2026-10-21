@@ -8,6 +8,7 @@ Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查
 随后报告 `skis-query` 的 keyset 行值、单行结果泛型推断及数组组件类型错误。
 已核实的 [CI 运行](https://github.com/xhufang/skis/actions/runs/39559723860)中，Java 21/25 仍在单行结果转换处失败；
 显式类型参数没有消除 JDBC 值的可空性。该转换已按下文改为包内工厂，完整 Java 矩阵与夹具待 CI 重新验证。
+后续用户提供的日志在 `skis-runtime/Skis.java:185` 报告类加载器兜底返回值可空，已补显式检查，待 CI 验证。
 
 ## 配置与环境
 
@@ -66,6 +67,9 @@ Codec、Binder、Decoder、投影读取器、mutation 和事务回调；泛型/�
 `ProjectionMapping.ValueReader<V>` 由 `V` 表达结果可空性。生成代码根据构造参数选择 nullable 或
 non-null `V`，编译好的非空读取器复用已有 JDBC 边界校验；没有新增逐行反射、参数快照或冗余非空检查。
 `TransactionCallback<R>` 和 `inTransaction` 允许 nullable `R`，非空调用方仍不能接收可空结果。
+`Skis.resolveClassLoader` 按显式配置、线程上下文、SKIS 定义加载器的顺序选择；定义加载器也可能为 null，
+因此在装配期显式检查，全部不可用时抛出 `ASSEMBLY_CONFIGURATION_INVALID`，提示配置 `classLoader` 或 `runtimeModels`。
+检查只作用于生成索引发现的装配路径，不新增检查抑制。
 JDBC 分页直接保留 `JdbcPageResult<R>`，由 `R` 的实际类型参数表达结果可空性。
 游标当前值同样按 `R` 存储，只有未定位状态使用私有非空哨兵；`current()` 的状态检查阻止哨兵外泄，
 已定位值直接来自 `RowDecoder<R>`，包括合法的 null 行。哨兵工厂显式返回 `@NonNull R`；类型擦除转换仅用于该哨兵，保留原有 Java unchecked 抑制，
