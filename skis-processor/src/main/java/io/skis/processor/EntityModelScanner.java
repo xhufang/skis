@@ -45,8 +45,8 @@ final class EntityModelScanner {
     this.elements = elements;
     this.types = types;
     this.runtimeExceptionType =
-        elements.getTypeElement(RuntimeException.class.getCanonicalName()).asType();
-    this.errorType = elements.getTypeElement(Error.class.getCanonicalName()).asType();
+        elements.getTypeElement(RuntimeException.class.getName()).asType();
+    this.errorType = elements.getTypeElement(Error.class.getName()).asType();
     this.sqlExceptionType = elements.getTypeElement("java.sql.SQLException").asType();
   }
 
@@ -455,7 +455,7 @@ final class EntityModelScanner {
   }
 
   private void validateBeanClassInheritance(TypeElement type) throws EntityScanException {
-    TypeElement objectType = elements.getTypeElement(Object.class.getCanonicalName());
+    TypeElement objectType = elements.getTypeElement(Object.class.getName());
     if (objectType != null
         && !types.isSameType(types.erasure(type.getSuperclass()), objectType.asType())) {
       throw failure(
@@ -716,7 +716,7 @@ final class EntityModelScanner {
     }
     for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
       TypeElement annotationType = (TypeElement) mirror.getAnnotationType().asElement();
-      if (!annotationType.getQualifiedName().contentEquals(Column.class.getCanonicalName())) {
+      if (!annotationType.getQualifiedName().contentEquals(Column.class.getName())) {
         continue;
       }
       for (var entry : mirror.getElementValues().entrySet()) {

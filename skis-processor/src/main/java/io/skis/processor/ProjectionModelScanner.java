@@ -723,12 +723,11 @@ final class ProjectionModelScanner {
   }
 
   private boolean isAccessibleFrom(TypeMirror type, String generatedPackage) {
-    if (type.getAnnotationMirrors().stream()
-        .map(annotation -> annotation.getAnnotationType().asElement())
-        .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
-        .anyMatch(annotationType -> isTypeElementInaccessible(annotationType, generatedPackage))) {
-      return false;
+    for (var annotation : type.getAnnotationMirrors()) {
+      if (annotation.getAnnotationType().asElement() instanceof TypeElement annotationType
+          && isTypeElementInaccessible(annotationType, generatedPackage)) {
+        return false;
+      }
     }
     return switch (type.getKind()) {
       case ARRAY -> isAccessibleFrom(((ArrayType) type).getComponentType(), generatedPackage);

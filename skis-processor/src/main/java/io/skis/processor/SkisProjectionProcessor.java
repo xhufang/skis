@@ -52,12 +52,14 @@ public final class SkisProjectionProcessor extends AbstractProcessor {
     Set<Element> projectionElements = new HashSet<>();
     projectionElements.addAll(roundEnvironment.getElementsAnnotatedWith(ReusableProjection.class));
     projectionElements.addAll(roundEnvironment.getElementsAnnotatedWith(SpecialProjection.class));
-    projectionElements.stream()
-        .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
-        .map(type -> type.getQualifiedName().toString())
-        .filter(projectionName -> !settledProjections.contains(projectionName))
-        .forEach(pendingProjections::add);
+    for (Element element : projectionElements) {
+      if (element instanceof TypeElement type) {
+        String projectionName = type.getQualifiedName().toString();
+        if (!settledProjections.contains(projectionName)) {
+          pendingProjections.add(projectionName);
+        }
+      }
+    }
 
     if (roundEnvironment.processingOver()) {
       reportUnresolvedProjections();

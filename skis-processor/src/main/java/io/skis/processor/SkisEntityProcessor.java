@@ -67,12 +67,14 @@ public final class SkisEntityProcessor extends AbstractProcessor {
   @Override
   public boolean process(
       Set<? extends TypeElement> annotations, RoundEnvironment roundEnvironment) {
-    roundEnvironment.getElementsAnnotatedWith(SkisEntity.class).stream()
-        .filter(TypeElement.class::isInstance)
-        .map(TypeElement.class::cast)
-        .map(type -> type.getQualifiedName().toString())
-        .filter(entityName -> !settledEntities.contains(entityName))
-        .forEach(pendingEntities::add);
+    for (Element element : roundEnvironment.getElementsAnnotatedWith(SkisEntity.class)) {
+      if (element instanceof TypeElement type) {
+        String entityName = type.getQualifiedName().toString();
+        if (!settledEntities.contains(entityName)) {
+          pendingEntities.add(entityName);
+        }
+      }
+    }
 
     if (roundEnvironment.processingOver()) {
       reportUnresolvedEntities();

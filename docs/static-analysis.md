@@ -9,6 +9,7 @@ Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查
 已核实的 [CI 运行](https://github.com/xhufang/skis/actions/runs/39559723860)中，Java 21/25 仍在单行结果转换处失败；
 显式类型参数没有消除 JDBC 值的可空性。该转换已按下文改为包内工厂，完整 Java 矩阵与夹具待 CI 重新验证。
 后续用户提供的日志在 `skis-runtime/Skis.java:185` 报告类加载器兜底返回值可空，已补显式检查，待 CI 验证。
+最新用户日志报告 processor 的顶层类名称及 `Class.cast` 结果可空；已替换这些调用，完整检查仍待 CI。
 
 ## 配置与环境
 
@@ -58,6 +59,12 @@ Codec、Binder、Decoder、投影读取器、mutation 和事务回调；泛型/�
 实体元数据及类字面量使用无类型注解的类型名；投影源码按外层到内层保留各数组维度的可空性。
 普通 javac 的 JDBC 类型夹具覆盖可空 `byte[]`，专用投影夹具覆盖二维数组内层可空、外层可空、两层均可空及泛型内嵌数组。
 查询回调正例显式使用计算结果，继续接受 Error Prone 默认返回值检查。
+
+APT 对 `RuntimeException`、`Error`、`Object` 和 `Column` 这些已知顶层类使用非空的 `Class.getName()`；
+这些类的二进制名称与规范名称一致，不改变类型查找或注解识别。
+Lombok 注解检测、投影类型注解可见性检查及实体/投影轮次收集改用 `instanceof TypeElement` 模式匹配，
+在同一控制流内确认类型并使用非空变量，移除 `isInstance` 过滤后再 `Class.cast` 的流管线。
+待处理集合、已完成集合、延迟轮次及生成源码合同保持原有语义，未新增 NullAway 抑制或生产辅助入口。
 
 负例要求 ERROR 诊断包含指定检查器名、源码文件和有效行列位置，不能以普通语法错误或 APT 失败代替。
 另对实际生成表注入一个 null 字段缺陷，证明 `@Generated` 源码没有被跳过。
