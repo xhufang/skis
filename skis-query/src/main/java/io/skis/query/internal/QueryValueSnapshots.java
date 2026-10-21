@@ -25,7 +25,7 @@ final class QueryValueSnapshots {
       case long[] array -> array.clone();
       case float[] array -> array.clone();
       case double[] array -> array.clone();
-      case @Nullable Object[] array -> copyArray(array);
+      case Object[] array -> copyArray(array);
       case Timestamp timestamp -> timestamp.clone();
       case Time time -> time.clone();
       case Date date -> date.clone();

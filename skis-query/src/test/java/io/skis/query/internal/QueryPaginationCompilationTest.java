@@ -30,6 +30,7 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.query.CountQuery;
 import io.skis.query.NonNullSelectable;
+import io.skis.query.PageRequest;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
