@@ -5,6 +5,7 @@ Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查
 独立消费者不继承 SKIS parent，也不需要安装检查器。
 
 用户提供的 CI 日志先报告 `skis-mapping/readInstant` 空值错误，后续报告 `skis-jdbc` 分页泛型和游标返回值错误。
+本次又报告 `skis-query` 的 keyset 行值、单行结果泛型推断及数组组件类型错误。
 这些位置及同批身份语义警告已按下文修正，完整 Java 矩阵与夹具仍待 CI 重新验证，不能写成已通过。
 
 ## 配置与环境
@@ -68,6 +69,12 @@ JDBC 分页直接保留 `JdbcPageResult<R>`，由 `R` 的实际类型参数表�
 游标当前值同样按 `R` 存储，只有未定位状态使用私有非空哨兵；`current()` 的状态检查阻止哨兵外泄，
 已定位值直接来自 `RowDecoder<R>`，包括合法的 null 行。哨兵工厂显式返回 `@NonNull R`；类型擦除转换仅用于该哨兵，保留原有 Java unchecked 抑制，
 没有新增 NullAway 抑制、逐行分配或额外非空检查。JDBC 分页/游标的编译正反例和 null 行状态转换夹具已补齐，待 CI 执行。
+
+keyset 内部 `OrderedRow<R>` 的用户值直接声明为 `R`，与 `RowDecoder<R>` 一致，不额外扩大为 `@Nullable R`；
+单行结果在原有行存在性与非空选择校验后，显式调用 `SingleRow.<R>present(value)`，保留查询的结果类型参数。
+查询编译夹具补充 keyset 可空元素负例及 `fetchOne`/`fetchFirst` 的泛型结果传递正例。
+数组快照用 `getComponentType()` 的非空分支识别数组，并把组件类型传入复制方法，避免重复读取与额外非空断言；
+嵌套数组、null 元素、空数组及运行时数组类型保持夹具已补齐。现有反射数组实现的替换仍归 T03；以上夹具待 CI 执行。
 
 测试模型的 Bean 在无参构造后可能尚未赋值，因此字段、getter/setter 显式标为 nullable；
 数据库列的非空约束继续由元数据声明。record 模型的 nullable 列、版本初始值及 transient 默认值

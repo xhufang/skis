@@ -1024,7 +1024,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query decoded a null value");
     }
-    return SingleRow.present(value);
+    //noinspection RedundantTypeArguments
+    return SingleRow.<R>present(value);
   }
 
   private void requireAllowedNulls(List<? extends R> values, String message) {

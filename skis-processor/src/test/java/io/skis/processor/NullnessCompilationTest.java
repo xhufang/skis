@@ -67,6 +67,7 @@ class NullnessCompilationTest {
           List<@Nullable String> rows = nullable.fetchList();
           List<@Nullable String> page = nullable.fetchPage(new PageRequest(0, 10)).items();
           List<@Nullable String> slice = nullable.fetchSlice(SliceRequest.offset(0, 10)).items();
+          List<@Nullable String> keyset = nullable.fetchSlice(SliceRequest.keysetFirst(10)).items();
           try (QueryCursor<@Nullable String> cursor = nullable.cursor();
                Stream<@Nullable String> stream = nullable.stream()) {
             stream.forEach(value -> { if (value != null) callbackLength[0] += value.length(); });
@@ -75,8 +76,14 @@ class NullnessCompilationTest {
               if (value != null) return value.length();
             }
           }
-          return safe.length() + rows.size() + page.size() + slice.size()
+          return safe.length() + rows.size() + page.size() + slice.size() + keyset.size()
               + callbackLength[0] + mappedLength;
+        }
+        static <R extends @Nullable Object> SingleRow<R> one(SelectQuery<R> query) {
+          return query.fetchOne();
+        }
+        static <R extends @Nullable Object> SingleRow<R> first(SelectQuery<R> query) {
+          return query.fetchFirst();
         }
         """).assertPass();
     Map<String, String> mistakes = Map.of(
@@ -84,6 +91,7 @@ class NullnessCompilationTest {
         "list-element", "return query.fetchList().getFirst().length();",
         "page-element", "return query.fetchPage(new PageRequest(0, 10)).items().getFirst().length();",
         "slice-element", "return query.fetchSlice(SliceRequest.offset(0, 10)).items().getFirst().length();",
+        "keyset-element", "return query.fetchSlice(SliceRequest.keysetFirst(10)).items().getFirst().length();",
         "cursor-element", "try (var cursor = query.cursor()) { return cursor.current().length(); }",
         "stream-callback", "try (var stream = query.stream()) { return stream.mapToInt(String::length).sum(); }");
     for (var mistake : mistakes.entrySet()) {
