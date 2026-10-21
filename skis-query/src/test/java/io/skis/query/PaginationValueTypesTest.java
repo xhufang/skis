@@ -194,6 +194,24 @@ class PaginationValueTypesTest {
   }
 
   @Test
+  void decodedSingleRowsValidateNullabilityWithoutLosingThePresentNullState() {
+    SingleRow<@Nullable String> nullRow = SingleRow.decoded(null, true);
+    SingleRow<String> required = SingleRow.decoded("Mimi", false);
+    SingleRow<@Nullable String> nullable = SingleRow.decoded("Mimi", true);
+
+    assertTrue(nullRow.hasRow());
+    assertTrue(nullRow.isNull());
+    assertNotEquals(SingleRow.noRow(), nullRow);
+    assertThrows(NoSuchElementException.class, nullRow::get);
+    assertEquals("Mimi", required.get());
+    assertEquals("Mimi", nullable.get());
+
+    QueryValidationException failure =
+        assertThrows(QueryValidationException.class, () -> SingleRow.<String>decoded(null, false));
+    assertEquals(SkisErrorCode.QUERY_NON_NULL_RESULT, failure.code());
+  }
+
+  @Test
   void jdbcCursorRejectsCrossThreadReadAndCloseBeforeTouchingTheDelegate() throws Exception {
     CountingJdbcCursor delegate = new CountingJdbcCursor();
     DefaultQueryCursor<String> cursor = new DefaultQueryCursor<>(delegate, false);

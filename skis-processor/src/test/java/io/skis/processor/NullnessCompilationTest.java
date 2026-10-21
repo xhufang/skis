@@ -107,6 +107,39 @@ class NullnessCompilationTest {
   }
 
   @Test
+  void decodedSingleRowsRetainTheirTypeWithoutWeakeningPublicFactories() throws Exception {
+    NullnessCompiler.compile("decoded-single-row-valid", Map.of("io.skis.query.DecodedRowContract", """
+        package io.skis.query;
+        import org.jspecify.annotations.*;
+        @NullMarked final class DecodedRowContract {
+          static <R extends @Nullable Object> SingleRow<R> decoded(
+              @Nullable R value, boolean nullableResult) {
+            return SingleRow.<R>decoded(value, nullableResult);
+          }
+          static String required(String value) {
+            return DecodedRowContract.<String>decoded(value, false).get();
+          }
+          static @Nullable String nullable(@Nullable String value) {
+            return DecodedRowContract.<@Nullable String>decoded(value, true).orElse(null);
+          }
+          static SingleRow<@Nullable String> present(@Nullable String value) {
+            return SingleRow.<@Nullable String>present(value);
+          }
+        }
+        """), directory.resolve("decoded-single-row-valid")).assertPass();
+    reject("single-row-present-input", """
+        static SingleRow<String> invalid(@Nullable String value) {
+          return SingleRow.<String>present(value);
+        }
+        """);
+    reject("single-row-present-result", """
+        static SingleRow<String> invalid(@Nullable String value) {
+          return SingleRow.present(value);
+        }
+        """);
+  }
+
+  @Test
   void jdbcPageAndCursorRetainTheirResultTypeNullness() throws Exception {
     check("jdbc-results-valid", """
         static int required(JdbcExecutor executor, CompiledQueryPlan<String, Object> content,

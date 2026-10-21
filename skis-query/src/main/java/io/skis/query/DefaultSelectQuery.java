@@ -1019,13 +1019,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     if (!row.present()) {
       return SingleRow.noRow();
     }
-    R value = row.value();
-    if (!state.selected().nullableResult() && value == null) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_NON_NULL_RESULT, "non-null query decoded a null value");
-    }
     //noinspection RedundantTypeArguments
-    return SingleRow.<R>present(value);
+    return SingleRow.<R>decoded(row.value(), state.selected().nullableResult());
   }
 
   private void requireAllowedNulls(List<? extends R> values, String message) {

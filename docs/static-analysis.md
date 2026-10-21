@@ -5,8 +5,9 @@ Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查
 独立消费者不继承 SKIS parent，也不需要安装检查器。
 
 用户提供的 CI 日志先报告 `skis-mapping/readInstant` 空值错误，后续报告 `skis-jdbc` 分页泛型和游标返回值错误。
-本次又报告 `skis-query` 的 keyset 行值、单行结果泛型推断及数组组件类型错误。
-这些位置及同批身份语义警告已按下文修正，完整 Java 矩阵与夹具仍待 CI 重新验证，不能写成已通过。
+随后报告 `skis-query` 的 keyset 行值、单行结果泛型推断及数组组件类型错误。
+已核实的 [CI 运行](https://github.com/xhufang/skis/actions/runs/39559723860)中，Java 21/25 仍在单行结果转换处失败；
+显式类型参数没有消除 JDBC 值的可空性。该转换已按下文改为包内工厂，完整 Java 矩阵与夹具待 CI 重新验证。
 
 ## 配置与环境
 
@@ -71,8 +72,11 @@ JDBC 分页直接保留 `JdbcPageResult<R>`，由 `R` 的实际类型参数表�
 没有新增 NullAway 抑制、逐行分配或额外非空检查。JDBC 分页/游标的编译正反例和 null 行状态转换夹具已补齐，待 CI 执行。
 
 keyset 内部 `OrderedRow<R>` 的用户值直接声明为 `R`，与 `RowDecoder<R>` 一致，不额外扩大为 `@Nullable R`；
-单行结果在原有行存在性与非空选择校验后，显式调用 `SingleRow.<R>present(value)`，保留查询的结果类型参数。
+单行结果在确认行存在后调用包内 `SingleRow.<R>decoded(value, nullableResult)`；该工厂接收 JDBC 的 `@Nullable R`，
+按已解析选择的 nullability 执行原有非空结果校验，再直接构造 `SingleRow<R>`。无行仍返回共享 no-row 实例，
+合法 null 行仍为 present-null，公开 `present(R)` 的入参约束保持。没有新增 NullAway 抑制、强制转换或逐行分配。
 查询编译夹具补充 keyset 可空元素负例及 `fetchOne`/`fetchFirst` 的泛型结果传递正例。
+单行工厂另有跨字节码的包内调用正例、公开 `present` 拒绝 nullable 值/结果类型误用的负例，以及 null 行与非空选择的运行时夹具。
 数组快照用 `getComponentType()` 的非空分支识别数组，并把组件类型传入复制方法，避免重复读取与额外非空断言；
 嵌套数组、null 元素、空数组及运行时数组类型保持夹具已补齐。现有反射数组实现的替换仍归 T03；以上夹具待 CI 执行。
 
@@ -110,6 +114,15 @@ Java 21/25 的 `unit-tests` 作业启用此 profile，要求 processor 专用套
 名义类型套件非空、无跳过并成功执行。每个矩阵作业始终保存 Maven/JDK 环境、完整构建日志、
 Surefire XML，以及 `skis-processor/target/nullness-reports/*.txt`。
 普通构建中专用检查用例按 profile 标记不执行；CI 中跳过不能冒充通过。
+
+2026-10-21 已核实运行 `39559723860`，其 PR head 为 `2b89c55`，合并验证提交为 `92c0a8e`：
+
+- [Java 21](https://github.com/xhufang/skis/actions/runs/39559723860/job/119087784905) 与
+  [Java 25](https://github.com/xhufang/skis/actions/runs/39559723860/job/119087784487) 均在
+  `DefaultSelectQuery.java:1028` 报告 `passing @Nullable parameter 'value' where @NonNull is required`。
+  mapping、jdbc 已通过各自模块验证；query 编译失败使 mutation、runtime、processor 及后续模块跳过，专用 nullness 夹具尚未执行。
+- 独立公共消费者、独立 PostgreSQL 消费者、集成模块、Gradle 增量处理及发布边界作业成功；这些结果不替代静态检查矩阵。
+- 上述运行早于本次包内工厂修正；当前改动仅静态核对，未在本地编译运行，待新 CI 证明。
 
 工具接线依据：[Error Prone 安装说明](https://errorprone.info/docs/installation)、
 [NullAway JSpecify 支持](https://github.com/uber/NullAway/wiki/JSpecify-Support)、
