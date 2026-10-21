@@ -26,7 +26,8 @@ public record Slice<R extends @Nullable Object>(
     }
   }
 
-  static <R extends @Nullable Object> Slice<R> of(
+  /** Creates a slice and derives whether another slice is available from its continuation. */
+  public static <R extends @Nullable Object> Slice<R> of(
       List<R> items, int pageSize, @Nullable SliceContinuation continuation) {
     return new Slice<>(items, pageSize, continuation != null, Optional.ofNullable(continuation));
   }

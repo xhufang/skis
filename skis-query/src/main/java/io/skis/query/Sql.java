@@ -1,207 +1,84 @@
 package io.skis.query;
 
-import io.skis.core.QueryValidationException;
-import io.skis.core.SkisErrorCode;
-import io.skis.sql.ast.Identifier;
-import io.skis.sql.ast.Nullability;
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
-/** Static construction entry point for reusable SQL query descriptions and their inputs. */
+/** Static factories for immutable, framework-owned SQL descriptions. */
 public final class Sql {
 
   private Sql() {}
 
   /** Selects a complete entity before an independent of root is chosen. */
   public static <E> SelectFromStep<SelectDescription<E>> select(QueryTable<E> table) {
-    QueryTable<E> selected = Objects.requireNonNull(table, "table");
-    return fromStep(
-        root ->
-            new SelectDescription<>(
-                SelectQueryState.create(SelectedResult.entity(selected), root)));
+    return io.skis.query.internal.QueryDsl.select(table);
   }
 
   /** Selects one declared non-null SQL value and preserves the one-column result shape. */
   public static <V> SelectFromStep<SingleColumnSelect<V>> select(NonNullSelectable<V> selectable) {
-    NonNullSelectable<V> selected = Objects.requireNonNull(selectable, "selectable");
-    return fromStep(
-        root ->
-            new SingleColumnSelect<>(
-                SelectQueryState.create(SelectedResult.requiredScalar(selected), root)));
+    return io.skis.query.internal.QueryDsl.select(selectable);
   }
 
   /** Selects one conservatively nullable SQL value and preserves the one-column result shape. */
   public static <V> SelectFromStep<SingleColumnSelect<@Nullable V>> select(
       Selectable<V> selectable) {
-    Selectable<V> selected = Objects.requireNonNull(selectable, "selectable");
-    return fromStep(
-        root ->
-            new SingleColumnSelect<>(
-                SelectQueryState.<@Nullable V>create(
-                    SelectedResult.nullableScalar(selected), root)));
+    return io.skis.query.internal.QueryDsl.select(selectable);
   }
 
   /** Selects one generated, fixed-arity result-row shape. */
   public static <R> SelectFromStep<SelectDescription<R>> select(ProjectionSelection<R> projection) {
-    ProjectionSelection<R> selected = Objects.requireNonNull(projection, "projection");
-    return fromStep(
-        root ->
-            new SelectDescription<>(
-                SelectQueryState.create(SelectedResult.projection(selected), root)));
+    return io.skis.query.internal.QueryDsl.select(projection);
   }
 
   /** Explicitly permits a complete entity selection to become nullable after outer joins. */
   public static <E> SelectFromStep<SelectDescription<@Nullable E>> selectNullable(
       QueryTable<E> table) {
-    QueryTable<E> selected = Objects.requireNonNull(table, "table");
-    return fromStep(
-        root ->
-            new SelectDescription<>(
-                SelectQueryState.<@Nullable E>create(
-                    SelectedResult.nullableEntity(selected), root)));
+    return io.skis.query.internal.QueryDsl.selectNullable(table);
   }
 
   /** Explicitly permits a declared non-null value to become nullable in query context. */
   public static <V> SelectFromStep<SingleColumnSelect<@Nullable V>> selectNullable(
       NonNullSelectable<V> selectable) {
-    NonNullSelectable<V> selected = Objects.requireNonNull(selectable, "selectable");
-    return fromStep(
-        root ->
-            new SingleColumnSelect<>(
-                SelectQueryState.<@Nullable V>create(
-                    SelectedResult.nullableScalar(selected), root)));
+    return io.skis.query.internal.QueryDsl.selectNullable(selectable);
   }
 
   /** Creates the complete-entity SELECT/FROM convenience description. */
   public static <E> SelectDescription<E> selectFrom(QueryTable<E> table) {
-    QueryTable<E> selected = Objects.requireNonNull(table, "table");
-    return select(selected).from(selected);
+    return io.skis.query.internal.QueryDsl.selectFrom(table);
   }
 
   public static <V> NonNullDerivedOutput<V> output(NonNullSelectable<V> selectable, String alias) {
-    return output(
-        selectable,
-        identifier(
-            alias,
-            SkisErrorCode.QUERY_DERIVED_SHAPE,
-            "derived output alias is not a portable SQL identifier"));
-  }
-
-  private static <V> NonNullDerivedOutput<V> output(
-      NonNullSelectable<V> selectable, Identifier alias) {
-    return new NonNullDerivedOutput<>(
-        Objects.requireNonNull(selectable, "selectable"), Objects.requireNonNull(alias, "alias"));
+    return io.skis.query.internal.QueryDsl.output(selectable, alias);
   }
 
   public static <V> DerivedOutput<V> output(Selectable<V> selectable, String alias) {
-    return output(
-        selectable,
-        identifier(
-            alias,
-            SkisErrorCode.QUERY_DERIVED_SHAPE,
-            "derived output alias is not a portable SQL identifier"));
-  }
-
-  private static <V> DerivedOutput<V> output(Selectable<V> selectable, Identifier alias) {
-    Selectable<V> selected = Objects.requireNonNull(selectable, "selectable");
-    return new DerivedOutput<>(
-        selected, Objects.requireNonNull(alias, "alias"), selected.nullability());
+    return io.skis.query.internal.QueryDsl.output(selectable, alias);
   }
 
   public static <V> DerivedOutput<V> outputNullable(NonNullSelectable<V> selectable, String alias) {
-    return outputNullable(
-        selectable,
-        identifier(
-            alias,
-            SkisErrorCode.QUERY_DERIVED_SHAPE,
-            "derived output alias is not a portable SQL identifier"));
-  }
-
-  private static <V> DerivedOutput<V> outputNullable(
-      NonNullSelectable<V> selectable, Identifier alias) {
-    return new DerivedOutput<>(
-        Objects.requireNonNull(selectable, "selectable"),
-        Objects.requireNonNull(alias, "alias"),
-        Nullability.NULLABLE);
+    return io.skis.query.internal.QueryDsl.outputNullable(selectable, alias);
   }
 
   public static DerivedRelation derived(
       SelectDescription<?> description, String alias, DerivedOutput<?>... outputs) {
-    return derived(
-        description,
-        identifier(
-            alias,
-            SkisErrorCode.QUERY_DERIVED_SHAPE,
-            "derived relation alias is not a portable SQL identifier"),
-        outputs);
-  }
-
-  private static DerivedRelation derived(
-      SelectDescription<?> description, Identifier alias, DerivedOutput<?>... outputs) {
-    Objects.requireNonNull(outputs, "outputs");
-    return new DerivedRelation(
-        Objects.requireNonNull(description, "description"),
-        Objects.requireNonNull(alias, "alias"),
-        Arrays.asList(outputs.clone()));
+    return io.skis.query.internal.QueryDsl.derived(description, alias, outputs);
   }
 
   public static QueryCondition exists(SelectDescription<?> description) {
-    return FrameworkQueryCondition.exists(
-        Objects.requireNonNull(description, "description"), false);
+    return io.skis.query.internal.QueryDsl.exists(description);
   }
 
   public static QueryCondition notExists(SelectDescription<?> description) {
-    return FrameworkQueryCondition.exists(Objects.requireNonNull(description, "description"), true);
+    return io.skis.query.internal.QueryDsl.notExists(description);
   }
 
   public static <V> Selectable<V> scalar(SingleColumnSelect<V> subquery) {
-    return new ScalarSubquerySelectable<>(Objects.requireNonNull(subquery, "subquery"));
+    return io.skis.query.internal.QueryDsl.scalar(subquery);
   }
 
   public static <V> QueryParameter<V> parameter(Class<V> javaType) {
-    return new QueryParameter<>(
-        Objects.requireNonNull(javaType, "javaType"), Nullability.NULLABLE, null);
+    return io.skis.query.internal.QueryDsl.parameter(javaType);
   }
 
   public static <V> QueryParameter<V> parameter(Class<V> javaType, String diagnosticName) {
-    return new QueryParameter<>(
-        Objects.requireNonNull(javaType, "javaType"),
-        Nullability.NULLABLE,
-        Objects.requireNonNull(diagnosticName, "diagnosticName"));
-  }
-
-  static Identifier identifier(String value, SkisErrorCode code, String detail) {
-    Objects.requireNonNull(value, "identifier");
-    try {
-      return Identifier.of(value);
-    } catch (IllegalArgumentException failure) {
-      throw QueryValidationException.ofCause(code, failure, detail);
-    }
-  }
-
-  private static <Q> SelectFromStep<Q> fromStep(Function<QueryRelation, Q> factory) {
-    return new DescriptionFromStep<>(factory);
-  }
-}
-
-/** Internal generic FROM stage shared by every reusable description shape. */
-final class DescriptionFromStep<Q> implements SelectFromStep<Q> {
-
-  private final Function<QueryRelation, Q> factory;
-
-  DescriptionFromStep(Function<QueryRelation, Q> factory) {
-    this.factory = Objects.requireNonNull(factory, "factory");
-  }
-
-  @Override
-  public Q from(QueryTable<?> table) {
-    return factory.apply(QueryRelations.of(table));
-  }
-
-  @Override
-  public Q from(DerivedRelation relation) {
-    return factory.apply(QueryRelations.of(relation));
+    return io.skis.query.internal.QueryDsl.parameter(javaType, diagnosticName);
   }
 }

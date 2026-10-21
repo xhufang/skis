@@ -32,7 +32,8 @@ public record Page<R extends @Nullable Object>(
     }
   }
 
-  static <R extends @Nullable Object> Page<R> of(
+  /** Creates a page and derives navigation metadata from its request and exact total count. */
+  public static <R extends @Nullable Object> Page<R> of(
       List<R> items, PageRequest request, long totalElements) {
     long totalPages = totalElements == 0 ? 0 : 1 + ((totalElements - 1) / request.pageSize());
     return new Page<>(

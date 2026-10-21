@@ -20,8 +20,4 @@ public record PageRequest(int pageIndex, int pageSize) {
   public static PageRequest page(int pageIndex, int pageSize) {
     return new PageRequest(pageIndex, pageSize);
   }
-
-  long offset() {
-    return (long) pageIndex * pageSize;
-  }
 }

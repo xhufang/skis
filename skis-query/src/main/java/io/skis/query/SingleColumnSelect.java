@@ -1,149 +1,43 @@
 package io.skis.query;
 
-import io.skis.sql.ast.JoinType;
-import io.skis.sql.ast.SqlExpression;
-import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
 /** Reusable SELECT description whose final visible SQL shape contains exactly one value. */
-public final class SingleColumnSelect<R extends @Nullable Object> extends SelectDescription<R> {
+public interface SingleColumnSelect<R extends @Nullable Object> extends SelectDescription<R> {
 
-  SingleColumnSelect(SelectQueryState<R> state) {
-    super(state);
-    if (state.selected().expressions().size() != 1) {
-      throw new IllegalArgumentException("SingleColumnSelect requires exactly one selected value");
-    }
-  }
+  SingleColumnSelect<R> where(QueryCondition condition);
 
-  SqlExpression<?> valueExpression() {
-    return state().selected().expressions().getFirst();
-  }
+  SingleColumnSelect<R> and(QueryCondition condition);
 
-  Selectable<?> valueSelectable() {
-    return state().selected().singleSelectable();
-  }
+  SingleColumnSelect<R> or(QueryCondition condition);
 
-  @Override
-  public SingleColumnSelect<R> where(QueryCondition condition) {
-    return (SingleColumnSelect<R>) super.where(condition);
-  }
+  JoinOnStep<SingleColumnSelect<R>> join(QueryTable<?> table);
 
-  @Override
-  public SingleColumnSelect<R> and(QueryCondition condition) {
-    return (SingleColumnSelect<R>) super.and(condition);
-  }
+  JoinOnStep<SingleColumnSelect<R>> join(DerivedRelation relation);
 
-  @Override
-  public SingleColumnSelect<R> or(QueryCondition condition) {
-    return (SingleColumnSelect<R>) super.or(condition);
-  }
+  JoinOnStep<SingleColumnSelect<R>> innerJoin(QueryTable<?> table);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> join(QueryTable<?> table) {
-    return innerJoin(table);
-  }
+  JoinOnStep<SingleColumnSelect<R>> innerJoin(DerivedRelation relation);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> join(DerivedRelation relation) {
-    return innerJoin(relation);
-  }
+  JoinOnStep<SingleColumnSelect<R>> leftJoin(QueryTable<?> table);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> innerJoin(QueryTable<?> table) {
-    return joinOn(JoinType.INNER, QueryRelations.of(table));
-  }
+  JoinOnStep<SingleColumnSelect<R>> leftJoin(DerivedRelation relation);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> innerJoin(DerivedRelation relation) {
-    return joinOn(JoinType.INNER, QueryRelations.of(relation));
-  }
+  JoinOnStep<SingleColumnSelect<R>> rightJoin(QueryTable<?> table);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> leftJoin(QueryTable<?> table) {
-    return joinOn(JoinType.LEFT, QueryRelations.of(table));
-  }
+  JoinOnStep<SingleColumnSelect<R>> rightJoin(DerivedRelation relation);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> leftJoin(DerivedRelation relation) {
-    return joinOn(JoinType.LEFT, QueryRelations.of(relation));
-  }
+  JoinOnStep<SingleColumnSelect<R>> fullJoin(QueryTable<?> table);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> rightJoin(QueryTable<?> table) {
-    return joinOn(JoinType.RIGHT, QueryRelations.of(table));
-  }
+  JoinOnStep<SingleColumnSelect<R>> fullJoin(DerivedRelation relation);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> rightJoin(DerivedRelation relation) {
-    return joinOn(JoinType.RIGHT, QueryRelations.of(relation));
-  }
+  SingleColumnSelect<R> crossJoin(QueryTable<?> table);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> fullJoin(QueryTable<?> table) {
-    return joinOn(JoinType.FULL, QueryRelations.of(table));
-  }
+  SingleColumnSelect<R> crossJoin(DerivedRelation relation);
 
-  @Override
-  public JoinOnStep<SingleColumnSelect<R>> fullJoin(DerivedRelation relation) {
-    return joinOn(JoinType.FULL, QueryRelations.of(relation));
-  }
+  SingleColumnSelect<R> orderBy(SortSpecification... specifications);
 
-  @Override
-  public SingleColumnSelect<R> crossJoin(QueryTable<?> table) {
-    return (SingleColumnSelect<R>) super.crossJoin(table);
-  }
+  SingleColumnSelect<R> thenByPrimaryKey(SortDirection direction);
 
-  @Override
-  public SingleColumnSelect<R> crossJoin(DerivedRelation relation) {
-    return (SingleColumnSelect<R>) super.crossJoin(relation);
-  }
-
-  @Override
-  public SingleColumnSelect<R> orderBy(SortSpecification... specifications) {
-    return (SingleColumnSelect<R>) super.orderBy(specifications);
-  }
-
-  @Override
-  public SingleColumnSelect<R> thenByPrimaryKey(SortDirection direction) {
-    return (SingleColumnSelect<R>) super.thenByPrimaryKey(direction);
-  }
-
-  @Override
-  public SingleColumnSelect<R> distinct() {
-    return (SingleColumnSelect<R>) super.distinct();
-  }
-
-  @Override
-  SingleColumnSelect<R> recreate(SelectQueryState<R> replacement) {
-    return replacement == state() ? this : new SingleColumnSelect<>(replacement);
-  }
-
-  private JoinOnStep<SingleColumnSelect<R>> joinOn(JoinType type, QueryRelation relation) {
-    return new SingleColumnJoinOnStep<>(
-        state(), type, Objects.requireNonNull(relation, "relation"));
-  }
-}
-
-/** Internal ON stage preserving the one-column description type. */
-final class SingleColumnJoinOnStep<R extends @Nullable Object>
-    implements JoinOnStep<SingleColumnSelect<R>> {
-
-  private final SelectQueryState<R> state;
-  private final JoinType type;
-  private final QueryRelation relation;
-
-  SingleColumnJoinOnStep(SelectQueryState<R> state, JoinType type, QueryRelation relation) {
-    this.state = Objects.requireNonNull(state, "state");
-    this.type = Objects.requireNonNull(type, "type");
-    if (type == JoinType.CROSS) {
-      throw new IllegalArgumentException("CROSS JOIN does not use an ON stage");
-    }
-    this.relation = Objects.requireNonNull(relation, "relation");
-  }
-
-  @Override
-  public SingleColumnSelect<R> on(QueryCondition condition) {
-    QueryCondition reusable = QueryConditions.reusableStructure(condition);
-    return new SingleColumnSelect<>(state.appendJoin(type, relation, reusable));
-  }
+  SingleColumnSelect<R> distinct();
 }

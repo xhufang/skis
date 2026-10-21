@@ -6,6 +6,12 @@
 
 ### Changed
 
+- 0.2.8 T03: move query assembly, compilation, caches, execution and DSL state into query.internal; keep public DSL interfaces and generated-table contracts, removing the two root-package assembly exceptions.
+- Replace query snapshot and continuation array reflection with typed array copying/hashing while retaining mutable-value isolation and deep equality semantics.
+- Wire runtime Enforcer allowlists, complete-reactor ArchUnit rules and violation fixtures, exact internal-access policy, and independent consumer bytecode guards into Java 21/25 CI. Execution evidence is pending; no local compilation or tests were run.
+- Check consumer bytecode in its actual main/test outputs and require every registered production module to wire an active, transitive runtime Enforcer allowlist matching module policy. Reuse the resolved query-table model across entity result-shape columns.
+- Make Page.of and Slice.of public result factories so the query implementation and existing contracts can construct pagination results after moving into query.internal.
+
 - 0.2.8 T02 接入显式 `static-analysis` profile：Error Prone 2.50.0、NullAway 0.14.2 与 Java 21/25
   的 JSpecify 检查，覆盖生产源码、APT 生成源码及专用调用方正反例；CI 保存工具环境、构建日志和诊断报告，
   要求指定检查与名义类型套件非空无跳过。普通测试保持 javac，工具依赖只在编译/测试范围。

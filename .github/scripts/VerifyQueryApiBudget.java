@@ -23,8 +23,6 @@ import javax.tools.ToolProvider;
 /** CI source-only query API inventory; parse without attribution, processors or class generation. */
 class VerifyQueryApiBudget {
 
-  private static final Set<String> ASSEMBLY_EXCEPTIONS =
-      Set.of("io.skis.query.QueryPlanCatalog", "io.skis.query.QueryRuntime");
   private static final Set<String> GENERATED_CONTRACTS =
       Set.of("io.skis.query.spi.ProjectionMapping", "io.skis.query.spi.ProjectionSource");
 
@@ -96,9 +94,7 @@ class VerifyQueryApiBudget {
     if (GENERATED_CONTRACTS.contains(name)) {
       return;
     }
-    if (!ASSEMBLY_EXCEPTIONS.contains(name)) {
-      types.add(name);
-    }
+    types.add(name);
     boolean publicMembers =
         type.getKind() == Tree.Kind.INTERFACE || type.getKind() == Tree.Kind.ANNOTATION_TYPE;
     for (Tree member : type.getMembers()) {
@@ -159,6 +155,7 @@ class VerifyQueryApiBudget {
             "io.skis.query.fixture.Surface.Implicit.Row",
             "io.skis.query.fixture.Surface.Implicit.Value",
             "io.skis.query.spi.AdditionalSpi",
+            "io.skis.query.QueryRuntime",
             "io.skis.query.QueryRuntime.NewlyExposed");
     if (!actual.equals(expected)) {
       throw new IllegalStateException("Query API inventory fixture mismatch: " + actual);

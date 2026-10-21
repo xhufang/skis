@@ -1,5 +1,6 @@
 package io.skis.query;
 
+import io.skis.query.internal.SelectableSupport;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SqlType;
 import java.util.Collection;
@@ -8,16 +9,11 @@ import org.jspecify.annotations.Nullable;
 /**
  * Framework-owned read-only SQL selection expression.
  *
- * <p>The sealed contract prevents application implementations from injecting arbitrary SQL.
- * Generated columns and framework-created standard expressions share this contract so selection,
- * predicates, ordering, and generated projections do not need expression-specific API families.
+ * <p>Only framework-created implementations are accepted at DSL capture boundaries. Generated
+ * columns and framework-created standard expressions share this contract so selection, predicates,
+ * ordering, and generated projections do not need expression-specific API families.
  */
-public sealed interface Selectable<V>
-    permits DerivedColumnSelectable,
-        ExpressionSelectable,
-        NonNullSelectable,
-        QueryColumn,
-        ScalarSubquerySelectable {
+public interface Selectable<V> {
 
   /** Returns the boxed Java value type produced by this expression. */
   Class<V> javaType();

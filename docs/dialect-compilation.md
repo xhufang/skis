@@ -13,9 +13,10 @@ fixture does not establish MySQL support.
 
 Applications use `Skis`, `Sql`, generated tables and projection companions. They do not construct
 internal query analysis, JDBC plans or runtime registries. Generated code and supported external
-extensions do not import `*.internal`. `QueryPlanCatalog` and `QueryRuntime` remain infrastructure
-assembly exceptions in the query root package; they do not establish a supported application SPI
-or a strict JPMS export boundary.
+extensions do not import `*.internal`. T03 moved QueryPlanCatalog and QueryRuntime into
+io.skis.query.internal and removed the root-package assembly exceptions. The public DSL keeps
+business interfaces and generated-table construction contracts. Architecture checks are wired
+but await current CI evidence; package naming alone is not a strict JPMS export boundary.
 
 ## Stage order
 
