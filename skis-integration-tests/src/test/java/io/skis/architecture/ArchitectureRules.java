@@ -97,11 +97,10 @@ final class ArchitectureRules {
     for (JavaClass type : classes) {
       if (processorClasses.contains(type.getName())) continue;
       for (JavaAccess<?> access : type.getAccessesFromSelf()) {
-        String owner = access.getTargetOwner().getName();
         String member = access.getTarget().getName();
         if (forbiddenOperation(access.getTargetOwner(), member) && !assemblyException(access)) errors.add(access.getDescription());
-        String requiredCaller = assemblyCaller(owner + "#" + member);
-        String actualCaller = access.getOriginOwner().getName() + "#" + access.getOrigin().getName();
+        String requiredCaller = assemblyCaller(access.getTarget().getFullName());
+        String actualCaller = access.getOrigin().getFullName();
         if (requiredCaller != null && !requiredCaller.equals(actualCaller)) {
           errors.add("Assembly discovery reached outside its registered entry: " + access.getDescription());
         }
@@ -145,14 +144,20 @@ final class ArchitectureRules {
     };
   }
 
-  /** T03 exceptions remain restricted to generated-index/provider assembly or mapping identity. */
+  /** Full signatures keep discovery helpers distinct from cached getters and fields of the same name. */
   private static String assemblyCaller(String member) {
     return switch (member) {
-      case "io.skis.runtime.GeneratedIndexReader#resources" -> "io.skis.runtime.GeneratedIndexReader#read";
-      case "io.skis.runtime.GeneratedIndexReader#read", "io.skis.runtime.EntityRuntimeModelLoader#loadProvider" -> "io.skis.runtime.EntityRuntimeModelLoader#load";
-      case "io.skis.runtime.EntityRuntimeModelLoader#load" -> "io.skis.runtime.Skis$Builder#build";
-      case "io.skis.query.spi.ProjectionMapping#hasInstanceState" -> "io.skis.query.spi.ProjectionMapping#statefulDecoderToken";
-      case "io.skis.query.spi.ProjectionMapping#statefulDecoderToken" -> "io.skis.query.spi.ProjectionMapping#<init>";
+      case "io.skis.runtime.GeneratedIndexReader.resources(java.lang.ClassLoader, java.lang.String, java.lang.String)" ->
+          "io.skis.runtime.GeneratedIndexReader.read(java.lang.ClassLoader, java.lang.String, java.lang.String)";
+      case "io.skis.runtime.GeneratedIndexReader.read(java.lang.ClassLoader, java.lang.String, java.lang.String)",
+          "io.skis.runtime.EntityRuntimeModelLoader.loadProvider(java.lang.ClassLoader, io.skis.runtime.GeneratedIndexReader$Entry)" ->
+          "io.skis.runtime.EntityRuntimeModelLoader.load(java.lang.ClassLoader)";
+      case "io.skis.runtime.EntityRuntimeModelLoader.load(java.lang.ClassLoader)" ->
+          "io.skis.runtime.Skis$Builder.build()";
+      case "io.skis.query.spi.ProjectionMapping.hasInstanceState(java.lang.Class)" ->
+          "io.skis.query.spi.ProjectionMapping.statefulDecoderToken(io.skis.query.spi.ProjectionMapping$DecoderFactory)";
+      case "io.skis.query.spi.ProjectionMapping.statefulDecoderToken(io.skis.query.spi.ProjectionMapping$DecoderFactory)" ->
+          "io.skis.query.spi.ProjectionMapping.<init>(java.lang.Class, java.lang.String, java.util.List, io.skis.query.spi.ProjectionMapping$DecoderFactory)";
       default -> null;
     };
   }

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
+import io.skis.query.spi.ProjectionMapping;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -51,6 +52,13 @@ public class ArchitectureContractTest {
   }
 
   @Test
+  void cachedProjectionIdentityReadsDoNotCountAsAssemblyDiscovery() {
+    JavaClasses mapping = new ClassFileImporter().importClasses(
+        ProjectionMapping.class, ProjectionIdentityReader.class);
+    assertEquals(List.of(), ArchitectureRules.hotPath(mapping, Set.of()));
+  }
+
+  @Test
   void queryAssemblyHasNoRootPackageAliases() {
     assertTrue(policy.classOwners.containsKey("io.skis.query.internal.QueryRuntime"));
     assertTrue(policy.classOwners.containsKey("io.skis.query.internal.QueryPlanCatalog"));
@@ -86,8 +94,14 @@ public class ArchitectureContractTest {
     fixturePolicy.classOwners.put(BadField.class.getName(), policy.modules.get("skis-query"));
     assertTrue(ArchitectureRules.dependencies(bad, fixturePolicy).stream()
         .anyMatch(error -> error.startsWith("Unapproved internal dependency:")));
-    fixturePolicy.generated.add(BadField.class.getName());
-    assertTrue(ArchitectureRules.dependencies(bad, fixturePolicy).stream()
+    Set<ModulePolicy.Access> permitted = new HashSet<>(policy.internalAccess);
+    permitted.add(new ModulePolicy.Access(
+        BadField.class.getName(), "io.skis.jdbc.internal.JdbcExecutor"));
+    ModulePolicy permittedPolicy = new ModulePolicy(policy.root, policy.modules, permitted);
+    permittedPolicy.classOwners.putAll(fixturePolicy.classOwners);
+    assertEquals(List.of(), ArchitectureRules.dependencies(bad, permittedPolicy));
+    permittedPolicy.generated.add(ArchitectureContractTest.class.getName());
+    assertTrue(ArchitectureRules.dependencies(bad, permittedPolicy).stream()
         .anyMatch(error -> error.startsWith("Generated ")));
   }
 
@@ -211,6 +225,12 @@ public class ArchitectureContractTest {
   }
   static class SafeMetadata {
     String name(Class<?> type) { return type.getName(); }
+  }
+  static class ProjectionIdentityReader {
+    long token(ProjectionMapping<?> mapping) { return mapping.statefulDecoderToken(); }
+    java.util.function.LongSupplier tokenReference(ProjectionMapping<?> mapping) {
+      return mapping::statefulDecoderToken;
+    }
   }
   static class BadClassLoader extends ClassLoader {
     Class<?> define(byte[] code) { return defineClass(null, code, 0, code.length); }

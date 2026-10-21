@@ -86,6 +86,13 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
+      "caller": "io.skis.mutation.internal.EntityMutationPlanSet$UpdateExecution",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Carries the selected immutable update plan and optimistic-lock decision within framework execution.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
       "caller": "io.skis.mutation.internal.EntityMutationPlanSet",
       "target": "io.skis.jdbc.internal.CompiledMutationPlan",
       "reason": "Typed framework collaboration with CompiledMutationPlan; caller and target are individually registered.",
@@ -156,6 +163,13 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
+      "caller": "io.skis.query.internal.CachedQueryPlan",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Retains only the immutable compiled plan in the shared L1 cache, excluding invocation arguments and AST.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
       "caller": "io.skis.query.internal.DefaultCountQuery",
       "target": "io.skis.core.internal.OperationObservation",
       "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
@@ -219,6 +233,13 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
+      "caller": "io.skis.query.internal.DefaultSelectQuery$CachedPlan",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Retains the immutable terminal-operation plan and statement AST without invocation values.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
       "caller": "io.skis.query.internal.DefaultSelectQuery",
       "target": "io.skis.core.internal.OperationObservation",
       "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
@@ -271,6 +292,13 @@
       "caller": "io.skis.query.internal.EntityPlanSet",
       "target": "io.skis.jdbc.internal.JdbcFingerprint",
       "reason": "Typed framework collaboration with JdbcFingerprint; caller and target are individually registered.",
+      "owner": "T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.QueryCompilation",
+      "target": "io.skis.jdbc.internal.CompiledQueryPlan",
+      "reason": "Pairs the immutable compiled plan with separate invocation arguments and AST for execution.",
       "owner": "T03",
       "exit": "Review with qualified JPMS exports before 1.0"
     },

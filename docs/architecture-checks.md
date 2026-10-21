@@ -28,7 +28,8 @@ CI 使用实际 core POM 的执行配置，分别证明直接 Spring、放行直
 构造、泛型边界和继承关系。公开方法体使用框架实现是允许的，公开签名不得出现 internal。
 
 [internal-access.json](../.github/quality/internal-access.json) 逐项登记跨模块内部协作的实际调用类型、目标类型、理由、
-责任和退出安排，不支持包通配符。它不是对应用或生成代码的授权。生成源码和生成字节码另行检查，四个独立消费者
+责任和退出安排，不支持包通配符。持有计划的 record 与嵌套类型也须按各自二进制类名登记，不继承外层类型的权限。
+它不是对应用或生成代码的授权。生成源码和生成字节码另行检查，四个独立消费者
 在自己的构建完成后使用 `VerifyExternalBytecode.java` 检查实际 class 文件，包括泛型签名和数组类型。
 只有测试源码的 spi-only、listener-only 消费者检查 `target/test-classes`；H2/PG 消费者同时检查
 `target/classes` 与 `target/test-classes`，覆盖生成产物和真实调用代码。每个适用目录都必须存在且包含 class 文件，
@@ -53,6 +54,9 @@ CI 使用实际 core POM 的执行配置，分别证明直接 Spring、放行直
 | `GeneratedIndexReader.resources` | `ClassLoader.getResources`，枚举固定实体索引 | 仅 `read`，再由 `EntityRuntimeModelLoader.load` 调用 | T03 登记，T09 验证索引合同，T10 复核 |
 | `EntityRuntimeModelLoader.loadProvider` | `Class.forName/getConstructor`、`Constructor.newInstance`，装配索引中的生成提供者 | 仅 `load`，装配入口为 `Skis.Builder.build` | T03 登记，T09 验证提供者失败边界，T10 复核 |
 | `ProjectionMapping.hasInstanceState` | `Class.getDeclaredFields`、`Field.getModifiers`，建立有状态 factory 的缓存身份 | 仅 `statefulDecoderToken`；映射构造可多次发生 | T03 登记，T09 验证复用映射在 bind/命中/解码时不重扫，T10 复核 |
+
+装配调用链按包含参数类型的完整成员签名匹配，区分构造期的 `statefulDecoderToken(DecoderFactory<?>)`、
+读取缓存身份的 `statefulDecoderToken()` 与同名字段。读取已缓存的身份不属于动态发现；构造期扫描的调用方限制保持生效。
 
 数组快照已改为 primitive 数组直接 clone、运行类型不变的 Object 数组 clone 后递归必要元素；深哈希采用相应数组内容哈希。
 保留嵌套数组、null 元素、SQL 日期和深相等/hash 关系，没有为了求哈希复制数组，也没有额外快照层。
