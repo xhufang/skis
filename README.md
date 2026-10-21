@@ -6,9 +6,10 @@ Java 21 and Maven 3.9+.
 
 ## Version and availability
 
-The latest public release is **0.2.0**. This working tree remains **0.2.7-SNAPSHOT**; its internal
-API/SPI milestone closed on 2026-10-21. Internal `0.2.x-SNAPSHOT` milestones accumulate toward
-the next public **0.3.0** release and do not create standalone releases or tags.
+The latest public release is **0.2.0**. This working tree is **0.2.8-SNAPSHOT**, starting the
+engineering foundation milestone after `0.2.7` closed on 2026-10-21. Internal `0.2.x-SNAPSHOT`
+milestones accumulate toward the next public **0.3.0** release and do not create standalone
+releases or tags.
 
 The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
 and H2 contracts have passed CI with their real JDBC drivers. Aggregates and GROUP BY/HAVING,

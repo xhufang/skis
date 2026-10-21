@@ -1,6 +1,6 @@
 # Dialect SPI and controlled compilation
 
-This guide describes `0.2.7-SNAPSHOT`, an internal milestone whose capabilities accumulate toward
+This guide describes `0.2.8-SNAPSHOT`, an internal milestone whose capabilities accumulate toward
 public `0.3.0`. The latest public release remains `0.2.0`.
 
 ## Dependencies and boundaries

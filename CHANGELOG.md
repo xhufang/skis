@@ -6,11 +6,14 @@
 
 ### Changed
 
+- 仓库版本统一切换为 `0.2.8-SNAPSHOT`，包括 Reactor、示例和四个独立消费者，开始工程地基里程碑。
+  本次仅切换版本并建立开发任务，NullAway/ErrorProne、架构/覆盖率、Testcontainers、日志脱敏与模块治理尚未实现；
+  公开版本仍为 `0.2.0`，benchmark 开发期冻结继续有效。
 - 0.2.7 T10 完成文档与内部里程碑收口：README、当前读写/投影示例、方言 SPI/编译说明、资源与诊断合同及公开
   Javadoc 与当前 API 对齐；生成 ABI 为 7，查询预算为 30/30，聚合/工程治理/写入保持后续版本归属。
   已核实 [PR #68 合入 CI](https://github.com/xhufang/skis/actions/runs/39466901460) 与
   [Compliance](https://github.com/xhufang/skis/actions/runs/39466901527)，含真实 PG、独立消费者、回收与门禁验证。
-  本次文档/Javadoc 变更只做静态核对；公开版本仍为 0.2.0，仓库暂留 0.2.7-SNAPSHOT，后续单独切版本，benchmark 冻结继续有效。
+  该次文档/Javadoc 变更只做静态核对；收口时仓库保留 0.2.7-SNAPSHOT，版本切换单独进行，benchmark 冻结继续有效。
 - 0.2.7 T09 补充当前合同回归与独立消费者：新增仅依赖 core 的监听消费者、H2 外部监听生命周期用例、
   PostgreSQL 独立 BOM/APT/runtime/驱动消费者，以及已缓存 count 不留存监听器、事件和调用图的回收测试。
   CI 接入当前查询类型预算、消费者/internal 边界和旧兼容门禁禁用检查，要求指定 PostgreSQL/消费者套件非空且无跳过，

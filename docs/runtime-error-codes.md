@@ -1,6 +1,6 @@
 # SKIS 运行时错误码与安全诊断
 
-本文是 T06 定稿的运行时诊断合同，覆盖 0.2.7-SNAPSHOT 当前公开失败入口。Java 调用方使用
+本文是 0.2.7 T06 定稿的运行时诊断合同，覆盖 0.2.8-SNAPSHOT 当前公开失败入口。Java 调用方使用
 `SkisErrorCode` 枚举，日志和用户文档使用显式编码；测试断言 `code()` 与结构化字段，不匹配全文消息。
 APT 的 `SKISnnn` 编码独立，见 [`apt-error-codes.md`](apt-error-codes.md)。
 
