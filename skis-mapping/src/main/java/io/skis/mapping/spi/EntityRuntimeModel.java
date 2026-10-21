@@ -33,6 +33,8 @@ public final class EntityRuntimeModel<E> {
   }
 
   /** Creates and validates a generated entity runtime model with mutation Fast Paths. */
+  // Equal PropertyMeta values are insufficient: generated bindings require the canonical instance.
+  @SuppressWarnings("ReferenceEquality")
   public EntityRuntimeModel(
       EntityMeta<E> entity,
       RowDecoderFactory<E> rowDecoderFactory,
@@ -151,7 +153,8 @@ public final class EntityRuntimeModel<E> {
   }
 
   /** Returns the generated JDBC behavior for a canonical entity property. */
-  @SuppressWarnings("unchecked")
+  // Membership is by canonical metadata identity, rather than PropertyMeta value equality.
+  @SuppressWarnings({"unchecked", "ReferenceEquality"})
   public <V> PropertyRuntime<E, V> property(PropertyMeta<E, V> property) {
     Objects.requireNonNull(property, "property");
     int ordinal = property.ordinal();

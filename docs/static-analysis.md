@@ -4,7 +4,8 @@
 Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查器不属于发布运行时依赖，
 独立消费者不继承 SKIS parent，也不需要安装检查器。
 
-本次接线尚未取得 CI 执行结果，不能将下述配置与夹具写成已验证通过。
+用户提供的首次 CI 日志在 `skis-mapping` 的 `readInstant` 空值检查处编译失败。
+该处及同批身份语义警告已按下文修正，完整 Java 矩阵与夹具仍待 CI 重新验证，不能写成已通过。
 
 ## 配置与环境
 
@@ -75,6 +76,18 @@ non-null `V`，编译好的非空读取器复用已有 JDBC 边界校验；没�
 | --- | --- | --- |
 | `SkisEntityProcessor` | `scanner`、`validator`、`messager`、`filer`、`generators` | 由 `init` 赋值；本次精确登记，若生命周期变化必须同步检查 |
 | `SkisProjectionProcessor` | `scanner`、`generator` | 同上 |
+
+`PropertyMeta` 的值相等不代表属于同一规范元数据实例，以下成员保留身份比较并精确抑制
+`ReferenceEquality`；现有规范属性正反例同时验证构造和查找行为。
+
+| 类型 | 成员 | 理由与处置 |
+| --- | --- | --- |
+| `EntityRuntimeModel` | 四参数构造器 | 验证生成属性与实体属性为同一实例；保留比较并说明原因 |
+| `EntityRuntimeModel` | `property(PropertyMeta)` | 拒绝值相同但实例不同的属性；保留比较并说明原因 |
+
+`EntityRuntimeRegistry` 的构造输入及局部索引显式声明 `IdentityHashMap`，读取视图继续不可修改。
+JDBC 引用读取以 `getObject` 返回的 null 表达 SQL NULL；`readInstant` 先判空再转换，
+UUID 和时间对象读取省去重复的 `wasNull()` 调用，原始类型读取仍保留必需的 `wasNull()`。
 
 NullAway 的泛型推断和泛型实现检查仍有工具能力限制。边界类型转换继续依赖现有类型/SQL/nullability
 校验及生成合同正反例；不声称检查器完整证明所有泛型实现，未知诊断必须保留并定位，不能通过关闭

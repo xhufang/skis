@@ -200,9 +200,10 @@ class JdbcCodecsTest {
     assertNull(
         JdbcCodecs.readUuid(
             new InvocationRecorder(null).proxy(ResultSet.class), 1, JdbcReadContext.EMPTY));
+    InvocationRecorder nullableInstant = new InvocationRecorder(null);
     assertNull(
-        JdbcCodecs.readInstant(
-            new InvocationRecorder(null).proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+        JdbcCodecs.readInstant(nullableInstant.proxy(ResultSet.class), 2, JdbcReadContext.EMPTY));
+    assertEquals(0, nullableInstant.wasNullCalls);
     assertNull(
         JdbcCodecs.readLocalDate(
             new InvocationRecorder(null).proxy(ResultSet.class), 3, JdbcReadContext.EMPTY));
@@ -490,6 +491,9 @@ class JdbcCodecsTest {
     InvocationRecorder recorder = new InvocationRecorder(jdbcValue);
     assertEquals(expected, reader.read(recorder.proxy(ResultSet.class)));
     recorder.assertInvocation(expectedMethod, expectedArguments);
+    if (expectedMethod.equals("getObject")) {
+      assertEquals(0, recorder.wasNullCalls, "object reads already represent SQL NULL as null");
+    }
   }
 
   private static void assertBind(
@@ -512,6 +516,7 @@ class JdbcCodecsTest {
   private static final class InvocationRecorder implements InvocationHandler {
     private final Object result;
     private final boolean wasNull;
+    private int wasNullCalls;
     private Method invokedMethod;
     private Object[] invokedArguments;
 
@@ -541,6 +546,7 @@ class JdbcCodecsTest {
         };
       }
       if (method.getName().equals("wasNull")) {
+        wasNullCalls++;
         return wasNull;
       }
       invokedMethod = method;
