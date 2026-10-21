@@ -81,14 +81,14 @@ final class NullnessCompiler {
         boolean success = Boolean.TRUE.equals(
             compiler.getTask(compilerOutput, manager, diagnostics, options, null, units).call());
         Result result = new Result(success, List.copyOf(diagnostics.getDiagnostics()),
-            compilerOutput.toString());
+            compilerOutput.toString(), report);
         Files.writeString(report, "\nsuccess=" + success + "\n\n=== DIAGNOSTICS ===\n" + result.text(),
             StandardCharsets.UTF_8, StandardOpenOption.APPEND);
         return result;
       } catch (RuntimeException | Error failure) {
         failure.printStackTrace(new PrintWriter(compilerOutput));
         Result result = new Result(false, List.copyOf(diagnostics.getDiagnostics()),
-            compilerOutput.toString());
+            compilerOutput.toString(), report);
         try {
           Files.writeString(report, "\nsuccess=false\ncompilerFailure=" + failure.getClass().getName()
                   + "\n\n=== DIAGNOSTICS ===\n" + result.text(),
@@ -134,14 +134,14 @@ final class NullnessCompiler {
   }
 
   record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics,
-      String compilerOutput) {
+      String compilerOutput, Path report) {
 
     void assertPass() {
       assertTrue(success, this::text);
     }
 
     void assertRejected(String checker, String sourceName) {
-      assertFalse(success, "invalid nullness contract unexpectedly compiled");
+      assertFalse(success, () -> "invalid nullness contract unexpectedly compiled\n" + text());
       assertTrue(diagnostics.stream().anyMatch(diagnostic ->
           diagnostic.getKind() == Diagnostic.Kind.ERROR
               && diagnostic.getMessage(Locale.ROOT).contains("[" + checker + "]")
@@ -155,7 +155,8 @@ final class NullnessCompiler {
     }
 
     String text() {
-      StringBuilder text = new StringBuilder(compilerOutput);
+      StringBuilder text = new StringBuilder("report=")
+          .append(report.toAbsolutePath()).append('\n').append(compilerOutput);
       for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics) {
         text.append(diagnostic.getKind()).append(':')
             .append(diagnostic.getSource() == null ? "<none>" : diagnostic.getSource().getName())

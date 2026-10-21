@@ -1,5 +1,6 @@
 package io.skis.processor;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -25,6 +26,7 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 
 class SkisEntityProcessorTest {
@@ -182,12 +184,16 @@ class SkisEntityProcessorTest {
     Map<String, String> sources = new TreeMap<>(models);
     String caller = """
         package samples;
+        import java.util.List;
         import org.jspecify.annotations.*;
         @NullMarked final class NestedCaller {
           static int read(NestedView view) {
             String name = view.names().getFirst();
+            List<String[] @Nullable []> nested = view.nestedNullableRows();
+            int matrixRows = view.nullableMatrixAndRows() == null
+                ? 0 : view.nullableMatrixAndRows().length;
             int requiredArrays = view.nullableRows().length
-                + view.nestedNullableRows().getFirst().length;
+                + nested.getFirst().length + matrixRows;
             return name == null ? requiredArrays : requiredArrays + name.length();
           }
         }
@@ -199,18 +205,27 @@ class SkisEntityProcessorTest {
         "list-element", "return name.length();",
         "array-row", "return view.nullableRows()[0].length;",
         "matrix-root", "return view.nullableMatrix().length;",
-        "matrix-row", "var matrix = view.nullableMatrixAndRows(); "
-            + "return matrix == null ? 0 : matrix[0].length;",
-        "nested-array-row", "return view.nestedNullableRows().getFirst()[0].length;");
-    for (var mistake : mistakes.entrySet()) {
-      sources.put("samples.NestedCaller", caller.replace(
-          "return name == null ? requiredArrays : requiredArrays + name.length();",
-          mistake.getValue()));
-      NullnessCompiler.compile("nested-generated-caller-" + mistake.getKey(),
-          sources, generatedPaths, List.of(),
-          temporaryDirectory.resolve("nested-checked-" + mistake.getKey()))
-          .assertRejected("NullAway", "NestedCaller.java");
+        "matrix-row", "return view.nullableMatrixAndRows() == null ? 0 "
+            + ": view.nullableMatrixAndRows()[0].length;",
+        "nested-array-type", "List<String[][]> required = view.nestedNullableRows(); "
+            + "return required.size();");
+    // NullAway 0.14.2 misses inner-array reads through var locals and generic method returns.
+    // Check the accessor directly and reject narrowing the declared generic array type instead.
+    List<Executable> checks = new ArrayList<>();
+    for (var mistake : new TreeMap<>(mistakes).entrySet()) {
+      checks.add(() -> {
+        String invalidCaller = caller.replace(
+            "return name == null ? requiredArrays : requiredArrays + name.length();",
+            mistake.getValue());
+        assertFalse(caller.equals(invalidCaller), "negative fixture did not match: " + mistake.getKey());
+        sources.put("samples.NestedCaller", invalidCaller);
+        NullnessCompiler.compile("nested-generated-caller-" + mistake.getKey(),
+            sources, generatedPaths, List.of(),
+            temporaryDirectory.resolve("nested-checked-" + mistake.getKey()))
+            .assertRejected("NullAway", "NestedCaller.java");
+      });
     }
+    assertAll("nested generic and array nullness contracts", checks);
   }
 
   @Test
