@@ -6,6 +6,8 @@
 
 ### Changed
 
+- 修复 PG tag 筛选后无选中测试的 Failsafe fork 被覆盖率采集误判为空数据：仅在对应阶段没有测试报告时允许仅含会话的 exec，
+  保留文件新鲜度、会话身份、实际测试类记录及合并后的生产覆盖检查；补充采集回归夹具，未本地运行，待 CI 复验。
 - 修复 PostgreSQL 消费者启动器的 NullAway 编译错误：使用列表切片传递非空命令参数，
   保持子进程命令与生命周期；Java 21/25 静态分析及权威覆盖率待 CI 复验。
 - 0.2.8 T05 接线 Testcontainers 2.0.5、经官方 registry 核实的 PostgreSQL 16.15-bookworm manifest 锁、

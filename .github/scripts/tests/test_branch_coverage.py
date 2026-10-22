@@ -347,13 +347,15 @@ class CollectionTest(unittest.TestCase):
                 if command == "execinfo":
                     data = coverage.read_json(args[4])
                     return (''.join(f'Session "{name}": dates\n' for name in data["sessions"])
-                            + f"{class_id} {len(data['covered'])} of 100 {class_name}\n")
+                            + (f"{class_id} {len(data['covered'])} of 100 {class_name}\n"
+                               if data.get("classes", True) else ""))
                 if command == "merge":
                     marker = args.index("--destfile")
                     context.merge_inputs = [Path(path) for path in args[4:marker]]
                     inputs = [coverage.read_json(path) for path in context.merge_inputs]
                     coverage.write_json(args[marker + 1], {
                         "covered": sorted({branch for item in inputs for branch in item["covered"]}),
+                        "classes": any(item.get("classes", True) for item in inputs),
                         "sessions": [name for item in inputs for name in item["sessions"]]})
                     return "[INFO] merged fixture data"
                 if command == "classinfo":
@@ -402,6 +404,29 @@ class CollectionTest(unittest.TestCase):
                     self.assertRaisesRegex(coverage.GateError, "registered"):
                 coverage.check(context.root, context.output)
             self.register_and_check(context, measurement)
+
+    def test_collect_accepts_session_only_fork_without_selected_tests(self):
+        with self.build() as context:
+            fork = context.root / "skis-jdbc/target/jacoco/postgres-1.exec"
+            coverage.write_json(fork, {"covered": [], "classes": False, "sessions": [
+                f"{context.session['commit']}:skis-jdbc:postgres-1"]})
+            context.forks.append(fork)
+            coverage.collect(context.root, context.session_path, context.output)
+            measurement = coverage.read_json(context.output / "measurement.json")
+            self.assertEqual(8000, measurement["modules"]["skis-jdbc"]["threshold"])
+            self.assertEqual(set(context.forks), set(context.merge_inputs))
+            self.register_and_check(context, measurement)
+
+    def test_collect_rejects_session_only_fork_with_test_reports(self):
+        for phase in ("unit", "postgres"):
+            with self.subTest(phase=phase), self.build() as context:
+                fork = context.forks[0 if phase == "unit" else 1]
+                data = coverage.read_json(fork)
+                data.update(covered=[], classes=False)
+                coverage.write_json(fork, data)
+                with self.assertRaisesRegex(coverage.GateError, "contains no classes"):
+                    coverage.collect(context.root, context.session_path, context.output)
+                self.assertFalse((context.output / "branch-baseline.candidate.json").exists())
 
     def test_collect_rejects_missing_unit_or_postgres_fork_or_report(self):
         for missing in ("unit-fork", "postgres-fork", "unit-report", "postgres-report"):

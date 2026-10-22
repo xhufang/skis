@@ -82,6 +82,8 @@ parent、BOM、测试支持、测试模型、集成测试、示例和空 benchma
 
 - 每个复用测试 fork 使用独立的 `unit-N.exec` 或 `postgres-N.exec`；会话记录提交、模块与 fork。
   Surefire/Failsafe 的 agent 参数与现有 argLine、静态检查器 JVM 参数合并。
+  tag 筛选可能启动没有选中测试的 fork；仅当该模块对应阶段没有测试报告时，允许 exec 仅含本次会话。
+  有报告的阶段仍要求类记录；所有 fork 仍核对文件和会话，合并数据及适用生产模块仍须有真实执行记录。
 - 采集所有 Reactor 测试模块的 exec，以同版 CLI 合并，再针对各生产模块本次 `target/classes` 分别生成 XML/HTML。
 - 核对干净检出、比较提交、构建参数、文件时间、release 21 class 头、exec 会话及 JaCoCo class ID。
   缺报告、缺执行数据、关键模块无执行记录、类冲突、class ID 不一致和模块遗漏均失败。
