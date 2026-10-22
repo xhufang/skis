@@ -1,0 +1,8 @@
+{
+  "image": "postgres:16.15-bookworm@sha256:d81f7b51697014367236d07ec58b54153fc28f828b72bf247fe5c7487520bcb0",
+  "tag": "16.15-bookworm",
+  "digest": "sha256:d81f7b51697014367236d07ec58b54153fc28f828b72bf247fe5c7487520bcb0",
+  "registry": "https://registry-1.docker.io/v2/library/postgres/manifests/16.15-bookworm",
+  "verifiedAt": "2026-10-22",
+  "verification": "Docker registry authenticated manifest response Docker-Content-Digest; multi-platform manifest, no image execution"
+}

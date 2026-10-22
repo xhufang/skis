@@ -9,15 +9,41 @@
   </parent>
   <artifactId>skis-test-support</artifactId>
   <name>skis-test-support</name>
-  <!-- Planned module: retained as a source scaffold but deliberately not published from the 0.1 maintenance line. -->
   <properties>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
-  <description>Shared test databases, SQL capture, assertions, and model utilities</description>
+  <description>PostgreSQL contract environments and independent consumer launcher; never published</description>
   <dependencies>
     <dependency>
-      <groupId>io.github.xhufang</groupId>
-      <artifactId>skis-runtime</artifactId>
+      <groupId>org.jspecify</groupId>
+      <artifactId>jspecify</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
+  <build>
+    <resources>
+      <resource>
+        <directory>${project.basedir}/../.github/quality</directory>
+        <includes><include>postgresql-image.json</include></includes>
+        <targetPath>io/skis/testsupport</targetPath>
+      </resource>
+    </resources>
+  </build>
 </project>

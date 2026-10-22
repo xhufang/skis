@@ -115,6 +115,7 @@
     <skis.coverage.pgArgLine></skis.coverage.pgArgLine>
     <skis.staticAnalysis.jvmArgs></skis.staticAnalysis.jvmArgs>
     <jacoco.version>0.8.15</jacoco.version>
+    <testcontainers.version>2.0.5</testcontainers.version>
 
     <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
     <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
@@ -131,6 +132,13 @@
   <dependencyManagement>
     <dependencies>
       <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-bom</artifactId>
+        <version>${testcontainers.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
         <version>${spring-boot.version}</version>
@@ -141,6 +149,11 @@
         <groupId>org.jspecify</groupId>
         <artifactId>jspecify</artifactId>
         <version>${jspecify.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.testcontainers</groupId>
+        <artifactId>testcontainers-postgresql</artifactId>
+        <version>${testcontainers.version}</version>
       </dependency>
 
       <dependency>
@@ -365,6 +378,9 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <version>${maven-surefire-plugin.version}</version>
+          <configuration>
+            <excludedGroups>postgres-contract</excludedGroups>
+          </configuration>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
@@ -441,6 +457,33 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>postgres-contracts</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <includes><include>**/*Test.java</include></includes>
+              <groups>postgres-contract</groups>
+              <forkCount>1</forkCount>
+              <reuseForks>true</reuseForks>
+              <systemPropertyVariables>
+                <junit.jupiter.execution.parallel.enabled>false</junit.jupiter.execution.parallel.enabled>
+                <junit.jupiter.extensions.store.close.autocloseable.enabled>true</junit.jupiter.extensions.store.close.autocloseable.enabled>
+              </systemPropertyVariables>
+            </configuration>
+            <executions>
+              <execution>
+                <id>postgres-contracts</id>
+                <goals><goal>integration-test</goal><goal>verify</goal></goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
     <profile>
       <id>static-analysis</id>
       <properties>

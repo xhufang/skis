@@ -51,6 +51,9 @@ CI 使用实际 core POM 的执行配置，分别证明直接 Spring、放行直
 发现或动态调用、动态代理和外部 SQL 字符串解析器。该范围覆盖查询/写入终止、编译与计划查找、绑定、Codec/Decoder、
 行读取、cursor/stream 和监听。`Class.getName/getComponentType` 等纯类型元数据读取不作反射发现处理。
 
+T05 的 `skis-test-support` 登记为非发布 fixture，其镜像资源读取与 JUnit 参数反射不进入 ORM 热路径检查；
+模块依赖、internal 与公开签名检查仍执行。其他 fixture、生成模型和全部运行时生产类不因该分类排除而豁免。
+
 | 精确入口 | 允许操作与用途 | 调用方限制 | 责任与退出 |
 | --- | --- | --- | --- |
 | `GeneratedIndexReader.resources` | `ClassLoader.getResources`，枚举固定实体索引 | 仅 `read`，再由 `EntityRuntimeModelLoader.load` 调用 | T03 登记，T09 验证索引合同，T10 复核 |

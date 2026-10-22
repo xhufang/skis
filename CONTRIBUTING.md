@@ -25,8 +25,14 @@
 ```bash
 ./mvnw verify
 ./mvnw -pl <module> -am verify
+./mvnw -B -ntp clean verify -Ppostgres-contracts
 ./mvnw -Pcompliance -DskipTests verify
 ```
+
+普通单元入口排除 PG 合同，不探测 Docker。选中 `postgres-contracts` 后优先使用显式
+`SKIS_POSTGRES_URL/USER/PASSWORD`，没有 URL 时启动固定镜像 Testcontainers；错误配置和缺 Docker 直接失败。
+每套件独立临时数据库，外部专用测试账号需 CREATEDB 权限。配置、镜像锁、清理及消费者入口见
+[PostgreSQL 合同测试](docs/postgresql-contracts.md)；本轮接线仍待 CI 验证。
 
 CI 在 Temurin 21/25 上另外启用 `static-analysis` profile，对生产源码与生成代码执行
 Error Prone/NullAway 的 JSpecify 检查，并执行专用正反编译夹具。普通测试中的故意 null 输入仍由

@@ -15,6 +15,11 @@
   <description>Dialect and transaction integration-test module</description>
   <dependencies>
     <dependency>
+      <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-test-support</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>com.tngtech.archunit</groupId>
       <artifactId>archunit</artifactId>
       <version>1.5.1</version>

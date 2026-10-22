@@ -45,8 +45,10 @@ public class ArchitectureContractTest {
 
   @Test
   void defaultExecutionCompilationBindingAndDecodingAvoidDynamicDiscovery() {
+    // The test environment uses JUnit reflection and reads its image resource, outside ORM execution.
     Set<String> processors = policy.classOwners.entrySet().stream()
-        .filter(entry -> entry.getValue().kind().equals("processor"))
+        .filter(entry -> entry.getValue().kind().equals("processor")
+            || entry.getValue().artifact().equals("skis-test-support"))
         .map(Map.Entry::getKey).collect(Collectors.toSet());
     assertEquals(List.of(), ArchitectureRules.hotPath(production, processors));
   }

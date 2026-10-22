@@ -25,24 +25,7 @@ jobs:
     permissions:
       contents: read
       actions: read
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: skis
-          POSTGRES_USER: skis
-          POSTGRES_PASSWORD: skis
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U skis -d skis"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
-      SKIS_POSTGRES_URL: jdbc:postgresql://localhost:5432/skis
-      SKIS_POSTGRES_USER: skis
-      SKIS_POSTGRES_PASSWORD: skis
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Check out complete comparison history
@@ -90,23 +73,18 @@ jobs:
           set -euo pipefail
           bash ./mvnw --version | tee "$RUNNER_TEMP/coverage-environment.txt"
           # Keep the runtime java.version intact for Enforcer's JDK update-level check.
-          bash ./mvnw -B -ntp clean verify -Pstatic-analysis,coverage,architecture \
+          bash ./mvnw -B -ntp clean verify -Pstatic-analysis,coverage,architecture,postgres-contracts \
             -Dmaven.compiler.release=21 -Dskis.coverage.commit="$GITHUB_SHA" \
             2>&1 | tee "$RUNNER_TEMP/coverage-build.log"
 
       - name: Require real PG and critical failure contracts without skips
         shell: pwsh
         run: |
+          ./.github/scripts/verify-postgres-selection.ps1 -UnitReports
+          ./.github/scripts/verify-postgres-reports.ps1 -ExpectedSource testcontainers
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-integration-tests/target/surefire-reports `
-            -RequiredSuites @(
-              'io.skis.integration.SkisProjectionPostgreSqlContractTest',
-              'io.skis.integration.SkisJoinPostgreSqlContractTest',
-              'io.skis.integration.SkisSpecialProjectionPostgreSqlContractTest',
-              'io.skis.integration.SkisJdbcTypePostgreSqlContractTest',
-              'io.skis.integration.SkisEmployeeDepartmentScalarContractTest',
-              'io.skis.architecture.ArchitectureContractTest'
-            )
+            -RequiredSuites io.skis.architecture.ArchitectureContractTest
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-core/target/surefire-reports `
             -RequiredSuites io.skis.core.internal.ExecutionListenerDispatcherTest
@@ -174,6 +152,14 @@ jobs:
             ${{ runner.temp }}/coverage-build.log
           if-no-files-found: error
 
+      - name: Require container cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          remaining="$(docker ps -aq --filter label=io.skis.postgres-contract=true)"
+          test -z "$remaining"
+
   release-boundary:
     name: Release boundary metadata
     runs-on: ubuntu-latest
@@ -216,6 +202,10 @@ jobs:
       fail-fast: false
       matrix:
         java: [ "25" ]
+    env:
+      # Ordinary tests must ignore PG configuration and never discover Docker.
+      SKIS_POSTGRES_URL: intentionally-invalid-for-unit-selection
+      DOCKER_HOST: tcp://127.0.0.1:1
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -242,6 +232,7 @@ jobs:
       - name: Require executed architecture rules and violation fixtures
         shell: pwsh
         run: |
+          ./.github/scripts/verify-postgres-selection.ps1 -UnitReports
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-integration-tests/target/surefire-reports `
             -RequiredSuites io.skis.architecture.ArchitectureContractTest
@@ -358,14 +349,18 @@ jobs:
             ${{ runner.temp }}/skis-spi-only-consumer/target/surefire-reports/**
             ${{ runner.temp }}/skis-listener-only-consumer/target/surefire-reports/**
             ${{ runner.temp }}/skis-minimal-h2-consumer/target/surefire-reports/**
-          if-no-files-found: warn
+          if-no-files-found: error
 
   postgresql-consumer:
-    name: Independent PostgreSQL consumer
+    name: Independent PostgreSQL consumer (${{ matrix.source }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [testcontainers, external-url]
     services:
       postgres:
-        image: postgres:16
+        image: ${{ matrix.source == 'external-url' && 'postgres:16.15-bookworm@sha256:d81f7b51697014367236d07ec58b54153fc28f828b72bf247fe5c7487520bcb0' || '' }}
         env:
           POSTGRES_DB: skis
           POSTGRES_USER: skis
@@ -377,10 +372,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    env:
-      SKIS_POSTGRES_URL: jdbc:postgresql://localhost:5432/skis
-      SKIS_POSTGRES_USER: skis
-      SKIS_POSTGRES_PASSWORD: skis
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -397,23 +388,54 @@ jobs:
         run: |
           chmod +x mvnw
           ./mvnw -B -ntp -Dmaven.test.skip=true \
-            -pl skis-bom,skis-runtime,skis-dialect-postgresql,skis-processor \
+            -pl skis-bom,skis-runtime,skis-dialect-postgresql,skis-processor,skis-test-support \
             -am install
+          bash ./mvnw -B -ntp -pl skis-test-support \
+            org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies \
+            -DincludeScope=runtime -DoutputDirectory=target/consumer-launcher/lib
+
+      - name: Prove explicit URL and missing Docker failures
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-postgres-failures.ps1 `
+            -Classpath 'skis-test-support/target/classes:skis-test-support/target/consumer-launcher/lib/*'
+
+      - name: Configure explicit service URL
+        if: matrix.source == 'external-url'
+        shell: bash
+        run: |
+          echo 'SKIS_POSTGRES_URL=jdbc:postgresql://localhost:5432/skis' >> "$GITHUB_ENV"
+          echo 'SKIS_POSTGRES_USER=skis' >> "$GITHUB_ENV"
+          echo 'SKIS_POSTGRES_PASSWORD=skis' >> "$GITHUB_ENV"
 
       - name: Verify PostgreSQL outside the repository reactor
         shell: bash
         run: |
+          set -euo pipefail
           project_version="$(./mvnw -q -N help:evaluate -Dexpression=project.version -DforceStdout)"
           consumer_dir="${RUNNER_TEMP}/skis-minimal-postgresql-consumer"
           cp -R skis-integration-tests/src/consumer/minimal-postgresql "${consumer_dir}"
-          ./mvnw -B -ntp -f "${consumer_dir}/pom.xml" \
-            -Dskis.version="${project_version}" verify
+          java -cp 'skis-test-support/target/classes:skis-test-support/target/consumer-launcher/lib/*' \
+            io.skis.testsupport.PostgresConsumerLauncher -- \
+            bash ./mvnw -B -ntp -f "${consumer_dir}/pom.xml" \
+            -Dskis.version="${project_version}" verify \
+            2>&1 | tee "$RUNNER_TEMP/postgresql-consumer-launcher.log"
           java .github/scripts/VerifyExternalBytecode.java \
             "${consumer_dir}/target/classes" "${consumer_dir}/target/test-classes"
+
+      - name: Prove failed consumer child still cleans its environment
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-postgres-failures.ps1 -ChildFailure `
+            -Classpath 'skis-test-support/target/classes:skis-test-support/target/consumer-launcher/lib/*'
 
       - name: Require the PostgreSQL consumer without skipped tests
         shell: pwsh
         run: |
+          $log = Get-Content -LiteralPath "$env:RUNNER_TEMP/postgresql-consumer-launcher.log" -Raw
+          if ($log -notmatch 'PostgreSQL environment: source=${{ matrix.source }},') {
+            throw 'Independent consumer used the wrong database environment source'
+          }
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory "$env:RUNNER_TEMP/skis-minimal-postgresql-consumer/target/surefire-reports" `
             -RequiredSuites example.PostgreSqlConsumerTest
@@ -422,9 +444,93 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: postgresql-consumer-reports
-          path: ${{ runner.temp }}/skis-minimal-postgresql-consumer/target/surefire-reports/**
-          if-no-files-found: warn
+          name: postgresql-consumer-reports-${{ matrix.source }}
+          path: |
+            ${{ runner.temp }}/skis-minimal-postgresql-consumer/target/surefire-reports/**
+            ${{ runner.temp }}/postgresql-consumer-launcher.log
+            .github/quality/postgresql-image.json
+          if-no-files-found: error
+
+      - name: Require container cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          remaining="$(docker ps -aq --filter label=io.skis.postgres-contract=true)"
+          test -z "$remaining"
+
+  postgresql-contracts:
+    name: PostgreSQL contracts (${{ matrix.source }}, Java ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - source: testcontainers
+            java: "25"
+          - source: external-url
+            java: "21"
+    services:
+      postgres:
+        image: ${{ matrix.source == 'external-url' && 'postgres:16.15-bookworm@sha256:d81f7b51697014367236d07ec58b54153fc28f828b72bf247fe5c7487520bcb0' || '' }}
+        env:
+          POSTGRES_DB: skis
+          POSTGRES_USER: skis
+          POSTGRES_PASSWORD: skis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skis -d skis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Configure explicit service URL
+        if: matrix.source == 'external-url'
+        shell: bash
+        run: |
+          echo 'SKIS_POSTGRES_URL=jdbc:postgresql://localhost:5432/skis' >> "$GITHUB_ENV"
+          echo 'SKIS_POSTGRES_USER=skis' >> "$GITHUB_ENV"
+          echo 'SKIS_POSTGRES_PASSWORD=skis' >> "$GITHUB_ENV"
+
+      - name: Execute the same PostgreSQL contracts on the selected environment
+        shell: bash
+        run: bash ./mvnw -B -ntp clean verify -Ppostgres-contracts
+
+      - name: Require PG and retained H2 suites without skips
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-postgres-selection.ps1 -UnitReports
+          ./.github/scripts/verify-postgres-reports.ps1 -ExpectedSource '${{ matrix.source }}'
+
+      - name: Upload PostgreSQL contract reports and image identity
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgresql-contracts-${{ matrix.source }}-java-${{ matrix.java }}
+          path: |
+            **/target/failsafe-reports/**
+            .github/quality/postgresql-image.json
+            .github/quality/postgresql-suites.json
+          if-no-files-found: error
+
+      - name: Require container cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          remaining="$(docker ps -aq --filter label=io.skis.postgres-contract=true)"
+          test -z "$remaining"
 
   gradle-incremental-processor:
     name: Gradle incremental projection processor

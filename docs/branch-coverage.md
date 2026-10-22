@@ -1,11 +1,30 @@
 # 分支覆盖率与逐模块棘轮
 
 0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。2026-10-22 已取得权威报告，
-当前 `.github/quality/branch-baseline.json` 采用 CI 39718331626 的候选原文，状态为 `active`；没有手填覆盖率。
-该候选将 skis-query 门槛从 7303（73.03%）提升至 7314（73.14%），其他模块门槛相同。
+当前 `.github/quality/branch-baseline.json` 采用 CI 39738254300 的候选原文，状态为 `active`；没有手填覆盖率。
+该候选将 skis-query 门槛从 7314（73.14%）提升至 7337（73.37%），保留首次登记及其他 14 个模块的门槛和证据。
 更新后的登记尚待提交后 CI 的来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
 
-当前报告来自 [CI 39718331626 的权威作业](https://github.com/xhufang/skis/actions/runs/39718331626/job/119625709762)，
+登记验证 [CI 39740005226](https://github.com/xhufang/skis/actions/runs/39740005226/job/119694664049) 已通过构建、
+必需报告及覆盖率采集，但 query 为 1291/474，低于登记报告的 1295/470；其余模块计数一致。
+两轮 15 模块的生产类清单、JaCoCo class ID 及统计口径完全相同；四个分支差异均位于
+`ProjectionPlanCache.compileOrAwait` 的准入后 `putIfAbsent` 竞争及额外许可释放路径。
+已补充 `admittedWaiterJoinsAnOwnerRegisteredBeforeItsFlightInsertion`，用维护锁固定竞争窗口，
+核对等待者复用唯一编译、miss 统计及两个许可全部归还。测试仅使用现有生产锁与测试侧反射，
+不改生产代码或 73.37% 门槛，未本地编译运行，修复及登记认证仍待 CI。
+
+本次抬线报告来自 [CI 39738254300 的权威作业](https://github.com/xhufang/skis/actions/runs/39738254300/job/119688979310)，
+PR head 为 `ae4355c6e40e318298215fef144193b794acbc4f`，实际测试合并提交为
+`b14cc2099455e566549b44776a7cd27660097695`，比较基线为 `529d939cf69854d8d981011c25c3de71d5ee1e59`。
+[覆盖率工件](https://github.com/xhufang/skis/actions/runs/39738254300/artifacts/12408620651)名为
+`branch-coverage-java-21-39738254300-1`，归档 SHA-256 为
+`9faa00068675841165f9a8160f85e8f88d9a3497d2d4f17447033fafa4fa9e3f`。
+已核对工件哈希、GitHub 合并提交/父提交、七项采集源码 Git blob ID、15 模块 XML 哈希/计数/类数、HTML 和整数门槛。
+query 的 covered/missed 从 1291/474 变为 1295/470；生产统计口径、生成排除和各模块类数未变化。
+本轮 Java 21/25 构建、45 项 Python 夹具、必需报告、Enforcer、PG 双路径及独立消费者通过，采集及两份工件上传成功。
+门禁在应抬未抬时按预期失败，尚未执行新增抬线来源认证；可信 `previous` 已为 active，首次登记和其余模块行按规则保留。
+
+前次抬线报告来自 [CI 39718331626 的权威作业](https://github.com/xhufang/skis/actions/runs/39718331626/job/119625709762)，
 PR head 为 `4aeaddeb36d5e7ee8188d767a17fcdf4d4ce5f10`，实际测试合并提交为
 `0101358fea836d64cb65aa4492e7254eba8521c1`，比较基线为 `f46c957084be7c7ec3486139f06d812a6ffb805b`。
 [覆盖率工件](https://github.com/xhufang/skis/actions/runs/39718331626/artifacts/12400570401)名为
@@ -13,7 +32,7 @@ PR head 为 `4aeaddeb36d5e7ee8188d767a17fcdf4d4ce5f10`，实际测试合并提�
 `aa38b09b530e08cdfc2f4018ce16bc7566b1455d45d03d2d9b78cafffb845a6b`。
 已核对归档哈希、GitHub 合并提交/父提交、采集源码版本、会话输入哈希及 15 模块 XML 哈希/计数/类数、HTML 与整数门槛。
 类清单及 class ID 与首份报告相同，统计口径和生成排除未变化，没有模块降线。
-main 尚无已激活基线，会话 `previous` 为 null；因此候选按既有规则刷新首次 `registration` 和全部模块证据，
+该轮采集时 main 尚无已激活基线，会话 `previous` 为 null；因此当时的候选按既有规则刷新首次 `registration` 和全部模块证据，
 不能把当前 PR 中尚未通过认证的登记当成可信历史来保留来源。
 
 最初登记报告来自 [CI 39715770444 的权威作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391253)，
@@ -50,12 +69,12 @@ Java 25 作业继续验证正确性，不向权威覆盖率汇入执行数据。
 运行 JDK 由 `setup-java`、会话登记时的 `java -version` 与 Enforcer 核验；命令行仅用
 `-Dmaven.compiler.release=21` 固定产物版本，不传 `-Djava.version=21`，避免覆盖真实 JDK 更新版本并误触最低版本门禁。
 
-作业在同一干净检出中执行一次 `clean verify`，同时启用 `static-analysis,coverage,architecture`。
+作业在同一干净检出中执行一次 `clean verify`，同时启用 `static-analysis,coverage,architecture,postgres-contracts`。
 根 Reactor 将 `skis-integration-tests` 放在最后，包含 H2 示例在内的全部生产/夹具产物先完成构建，
 架构测试随后在同一次顺序构建中读取完整字节码；不另启动一轮 Reactor 测试或重编译来补齐产物。
-T05 尚未实现，因此当前复用 PostgreSQL 16 service 与现有 Surefire PG 套件，显式要求五个真实 PG 套件
-非空、成功且无跳过；T05 的 tag/profile、Testcontainers 和外部 URL 治理仍归 T05。
-T05 切换后须同步命令登记、报告验证目录和执行套件，保持同一次构建的单元/PG 数据合并。
+T05 已接线 Testcontainers 和显式 PG 选择，权威作业改用容器，并在 Failsafe 中要求五个既有真实 PG 套件及环境清理套件
+非空、成功且无跳过，同时核对实际环境来源；外部 URL 路径另有 CI 作业，接线待验证。
+命令登记、报告目录和套件清单已随 T05 同步，保持同一次构建的单元/PG 数据合并。工作流及采集脚本版本变化后，现有待认证来源如不匹配，须由新 CI 工件重新生成真实候选，保留历史门槛。
 
 Java 21 单元、APT/nullness、名义类型、架构与 PG 检查统一在 `engineering-gates` 执行，
 保留专用套件非空/无跳过核验和 Enforcer 正反例；Java 25 的 `unit-tests` 独立执行
@@ -82,6 +101,8 @@ parent、BOM、测试支持、测试模型、集成测试、示例和空 benchma
 
 - 每个复用测试 fork 使用独立的 `unit-N.exec` 或 `postgres-N.exec`；会话记录提交、模块与 fork。
   Surefire/Failsafe 的 agent 参数与现有 argLine、静态检查器 JVM 参数合并。
+  tag 筛选可能启动没有选中测试的 fork；仅当该模块对应阶段没有测试报告时，允许 exec 仅含本次会话。
+  有报告的阶段仍要求类记录；所有 fork 仍核对文件和会话，合并数据及适用生产模块仍须有真实执行记录。
 - 采集所有 Reactor 测试模块的 exec，以同版 CLI 合并，再针对各生产模块本次 `target/classes` 分别生成 XML/HTML。
 - 核对干净检出、比较提交、构建参数、文件时间、release 21 class 头、exec 会话及 JaCoCo class ID。
   缺报告、缺执行数据、关键模块无执行记录、类冲突、class ID 不一致和模块遗漏均失败。

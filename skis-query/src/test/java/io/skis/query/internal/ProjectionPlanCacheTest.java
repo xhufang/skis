@@ -42,6 +42,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -941,6 +942,65 @@ class ProjectionPlanCacheTest {
 
     assertSame(ready, outer);
     assertEquals(1, cache.statistics().hitCount());
+  }
+
+  @Test
+  @Timeout(10)
+  void admittedWaiterJoinsAnOwnerRegisteredBeforeItsFlightInsertion() throws Exception {
+    ProjectionPlanCache cache = cache(2, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("registered-after-admission");
+    QueryPlanDependencies dependencies = dependencies(PET);
+    CachedQueryPlan<Pet> compiled = plan("SELECT registered_after_admission");
+    AtomicInteger compiles = new AtomicInteger();
+    var lockField = ProjectionPlanCache.class.getDeclaredField("maintenanceLock");
+    lockField.setAccessible(true);
+    ReentrantLock maintenanceLock = (ReentrantLock) lockField.get(cache);
+    AtomicReference<Thread> waitingThread = new AtomicReference<>();
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    maintenanceLock.lock();
+    try {
+      Future<CachedQueryPlan<Pet>> waiter =
+          executor.submit(
+              () -> {
+                waitingThread.set(Thread.currentThread());
+                return cache.getOrCompile(
+                    key,
+                    dependencies,
+                    () -> {
+                      throw new AssertionError("the admitted waiter must join the owner");
+                    });
+              });
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while ((waitingThread.get() == null || !maintenanceLock.hasQueuedThread(waitingThread.get()))
+          && System.nanoTime() < deadline) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+      }
+      assertTrue(waitingThread.get() != null && maintenanceLock.hasQueuedThread(waitingThread.get()));
+      // The waiter owns one permit and has passed its plan recheck, but cannot insert its flight.
+      // Reenter the held lock to register the owner, then let the waiter lose putIfAbsent.
+      assertSame(
+          compiled,
+          cache.getOrCompile(
+              key,
+              dependencies,
+              () -> {
+                compiles.incrementAndGet();
+                maintenanceLock.unlock();
+                awaitMissCount(cache, 2);
+                return compiled;
+              }));
+      assertSame(compiled, waiter.get(5, TimeUnit.SECONDS));
+      assertEquals(1, compiles.get());
+      assertEquals(new QueryPlanCacheStatistics(0, 2, 0, 0, 1, 2), cache.statistics());
+      var admissionsField = ProjectionPlanCache.class.getDeclaredField("compilationAdmissions");
+      admissionsField.setAccessible(true);
+      assertEquals(2, ((Semaphore) admissionsField.get(cache)).availablePermits());
+    } finally {
+      if (maintenanceLock.isHeldByCurrentThread()) {
+        maintenanceLock.unlock();
+      }
+      executor.shutdownNow();
+    }
   }
 
   @Test

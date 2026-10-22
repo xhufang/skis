@@ -29,12 +29,16 @@ POLICY = ".github/quality/coverage-policy.json"
 JACOCO = "0.8.15"
 PRECISION = "floor(covered * 10000 / (covered + missed))"
 PENDING = "awaiting-first-authoritative-run"
-COMMAND = ["clean", "verify", "-Pstatic-analysis,coverage,architecture",
+COMMAND = ["clean", "verify", "-Pstatic-analysis,coverage,architecture,postgres-contracts",
            "-Dmaven.compiler.release=21"]
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 WORKFLOW = ".github/workflows/ci.yml"
 PRODUCER_FILES = (WORKFLOW, ".github/scripts/branch_coverage.py",
-                  ".github/scripts/verify-test-reports.ps1")
+                  ".github/scripts/verify-test-reports.ps1",
+                  ".github/scripts/verify-postgres-selection.ps1",
+                  ".github/scripts/verify-postgres-reports.ps1",
+                  ".github/quality/postgresql-suites.json",
+                  ".github/quality/postgresql-image.json")
 
 
 class GateError(RuntimeError):
@@ -183,12 +187,12 @@ def parse_classinfo(output):
     return classes
 
 
-def parse_execinfo(output):
+def parse_execinfo(output, *, allow_empty=False):
     data = {}
     for match in re.finditer(r"^([0-9a-f]{16})\s+\d+ of\s+\d+\s+(\S+)\s*$", output, re.MULTILINE):
         class_id, name = match.groups()
         data.setdefault(name, set()).add(class_id)
-    require(data, "JaCoCo execution data contains no classes")
+    require(data or allow_empty, "JaCoCo execution data contains no classes")
     return data
 
 
@@ -198,7 +202,7 @@ def match_class_ids(classes, executed):
             require(executed[name] == {class_id}, f"Class ID mismatch for {name}")
 
 
-def validate_fork(path, module_name, session, info):
+def validate_fork(path, module_name, session, info, *, allow_empty=False):
     require(path.stat().st_size > 0 and path.stat().st_mtime >= session["started"],
             f"Empty or stale execution data: {path}")
     sessions = re.findall(r'^Session "([^"]+)":', info, re.MULTILINE)
@@ -206,7 +210,7 @@ def validate_fork(path, module_name, session, info):
             f"Unknown test fork execution file: {path}")
     expected = f"{session['commit']}:{module_name}:{path.stem}"
     require(sessions and all(item == expected for item in sessions), f"Foreign execution session: {path}")
-    parse_execinfo(info)
+    parse_execinfo(info, allow_empty=allow_empty)
 
 
 def report_counters(path, expected_name):
@@ -358,9 +362,11 @@ def collect(root, session_path, output):
     for module in reactor_modules(root):
         data = sorted((module / "target/jacoco").glob("*.exec"))
         reports = []
+        reported_phases = set()
         for directory, phase in (("surefire-reports", "unit"), ("failsafe-reports", "postgres")):
             phase_reports = sorted((module / "target" / directory).glob("TEST-*.xml"))
             if phase_reports:
+                reported_phases.add(phase)
                 require(any(path.stem.startswith(phase + "-") for path in data),
                         f"{module.name}: missing {phase} execution data")
             reports.extend(phase_reports)
@@ -373,7 +379,9 @@ def collect(root, session_path, output):
             require(report.stat().st_mtime >= session["started"], f"Stale test report: {report}")
         for path in data:
             info = jacoco("execinfo", path)
-            validate_fork(path, module.name, session, info)
+            # Tag filtering can start a fork without selecting tests in this phase.
+            validate_fork(path, module.name, session, info,
+                          allow_empty=path.stem.split("-", 1)[0] not in reported_phases)
             exec_files.append(path)
     require(exec_files, "No execution data was produced")
     merged = output / "merged.exec"
