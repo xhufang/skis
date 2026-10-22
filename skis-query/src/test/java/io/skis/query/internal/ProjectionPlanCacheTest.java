@@ -238,6 +238,51 @@ class ProjectionPlanCacheTest {
   }
 
   @Test
+  void evictionUsesAccessAgeInsteadOfMapIterationOrder() throws Exception {
+    AtomicLong ticker = new AtomicLong();
+    ProjectionPlanCache cache = cache(3, Duration.ofMinutes(1), ticker);
+    QueryPlanDependencies dependencies = dependencies(PET);
+    Map<QueryPlanKey, CachedQueryPlan<Pet>> plans =
+        Map.of(
+            key("iteration-first"), plan("SELECT iteration_first"),
+            key("iteration-second"), plan("SELECT iteration_second"),
+            key("iteration-third"), plan("SELECT iteration_third"));
+    plans.forEach((key, plan) -> cache.getOrCompile(key, dependencies, () -> plan));
+    var entriesField = ProjectionPlanCache.class.getDeclaredField("entries");
+    entriesField.setAccessible(true);
+    Map<?, ?> entries = (Map<?, ?>) entriesField.get(cache);
+    List<QueryPlanKey> iterationOrder =
+        entries.keySet().stream().map(key -> (QueryPlanKey) key).toList();
+    assertEquals(3, iterationOrder.size());
+    // Only access timestamps change, so the map's traversal order stays fixed during eviction.
+    // The middle entry is oldest: the scan must both replace and retain its current candidate.
+    ticker.set(10);
+    assertSame(
+        plans.get(iterationOrder.get(0)),
+        cache.getOrCompile(
+            iterationOrder.get(0), dependencies, () -> fail("the first entry must be cached")));
+    ticker.set(20);
+    assertSame(
+        plans.get(iterationOrder.get(2)),
+        cache.getOrCompile(
+            iterationOrder.get(2), dependencies, () -> fail("the last entry must be cached")));
+    ticker.set(30);
+    CachedQueryPlan<Pet> added = plan("SELECT after_iteration_scan");
+    assertSame(added, cache.getOrCompile(key("after-iteration-scan"), dependencies, () -> added));
+
+    assertEquals(new QueryPlanCacheStatistics(2, 4, 1, 0, 3, 3), cache.statistics());
+    for (int index : new int[] {0, 2}) {
+      QueryPlanKey retained = iterationOrder.get(index);
+      assertSame(
+          plans.get(retained),
+          cache.getOrCompile(retained, dependencies, () -> fail("a newer entry must be retained")));
+    }
+    CachedQueryPlan<Pet> retried = plan("SELECT evicted_iteration_entry");
+    assertSame(retried, cache.getOrCompile(iterationOrder.get(1), dependencies, () -> retried));
+    assertEquals(new QueryPlanCacheStatistics(4, 5, 2, 0, 3, 3), cache.statistics());
+  }
+
+  @Test
   void expiresAfterIdleAccessAndStatisticsDoNotRunMaintenance() {
     AtomicLong ticker = new AtomicLong();
     ProjectionPlanCache cache = cache(2, Duration.ofNanos(10), ticker);
@@ -896,6 +941,58 @@ class ProjectionPlanCacheTest {
 
     assertSame(ready, outer);
     assertEquals(1, cache.statistics().hitCount());
+  }
+
+  @Test
+  @Timeout(10)
+  void admissionWaiterJoinsAnOwnerRegisteredAfterItsInitialLookup() throws Exception {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("registered-during-admission");
+    QueryPlanDependencies dependencies = dependencies(PET);
+    CachedQueryPlan<Pet> compiled = plan("SELECT registered_during_admission");
+    var lockField = ProjectionPlanCache.class.getDeclaredField("admissionWaitLock");
+    lockField.setAccessible(true);
+    ReentrantLock admissionLock = (ReentrantLock) lockField.get(cache);
+    AtomicReference<Thread> waitingThread = new AtomicReference<>();
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    admissionLock.lock();
+    try {
+      Future<CachedQueryPlan<Pet>> waiter =
+          executor.submit(
+              () -> {
+                waitingThread.set(Thread.currentThread());
+                return cache.getOrCompile(
+                    key,
+                    dependencies,
+                    () -> {
+                      throw new AssertionError("the admission waiter must join the owner");
+                    });
+              });
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while ((waitingThread.get() == null || !admissionLock.hasQueuedThread(waitingThread.get()))
+          && System.nanoTime() < deadline) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+      }
+      assertTrue(waitingThread.get() != null && admissionLock.hasQueuedThread(waitingThread.get()));
+      // This thread reenters the held gate, then releases it only after registering the owner.
+      assertSame(
+          compiled,
+          cache.getOrCompile(
+              key,
+              dependencies,
+              () -> {
+                admissionLock.unlock();
+                awaitMissCount(cache, 2);
+                return compiled;
+              }));
+      assertSame(compiled, waiter.get(5, TimeUnit.SECONDS));
+      assertEquals(new QueryPlanCacheStatistics(0, 2, 0, 0, 1, 1), cache.statistics());
+    } finally {
+      if (admissionLock.isHeldByCurrentThread()) {
+        admissionLock.unlock();
+      }
+      executor.shutdownNow();
+    }
   }
 
   @Test

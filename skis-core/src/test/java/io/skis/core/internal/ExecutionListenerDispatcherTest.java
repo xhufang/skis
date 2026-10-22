@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisDiagnosticStage;
@@ -24,8 +25,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class ExecutionListenerDispatcherTest {
 
@@ -176,6 +183,41 @@ class ExecutionListenerDispatcherTest {
         "SKIS compilation or execution must not be entered from an execution listener callback",
         rejection.get().getMessage());
     assertDoesNotThrow(ExecutionListenerDispatcher::rejectReentrantCall);
+  }
+
+  @Test
+  @Timeout(10)
+  void allowsAnotherThreadWhileAListenerCallbackIsActive() throws Exception {
+    CountDownLatch callbackStarted = new CountDownLatch(1);
+    CountDownLatch releaseCallback = new CountDownLatch(1);
+    ExecutionListener listener =
+        new ExecutionListener() {
+          @Override
+          public void operationStarted(OperationStartedEvent event) {
+            callbackStarted.countDown();
+            try {
+              assertTrue(releaseCallback.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException failure) {
+              Thread.currentThread().interrupt();
+              throw new AssertionError("listener callback was interrupted", failure);
+            }
+          }
+        };
+    ExecutionListenerDispatcher dispatcher = ExecutionListenerDispatcher.of(List.of(listener));
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<OperationObservation> observed =
+          executor.submit(() -> dispatcher.startOperation(ExecutionOperationKind.FETCH_ONE, "test"));
+      assertTrue(callbackStarted.await(5, TimeUnit.SECONDS));
+      // A callback on another thread must not reject an independent caller as reentrant.
+      assertDoesNotThrow(ExecutionListenerDispatcher::rejectReentrantCall);
+      releaseCallback.countDown();
+      observed.get(5, TimeUnit.SECONDS).completeSucceeded(ExecutionTermination.COMPLETED);
+      assertDoesNotThrow(ExecutionListenerDispatcher::rejectReentrantCall);
+    } finally {
+      releaseCallback.countDown();
+      executor.shutdownNow();
+    }
   }
 
   @Test

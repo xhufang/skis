@@ -13,6 +13,22 @@ PR head 为 `6bbac44a9242036133da9028135ac9f48f64cbe5`，实际测试合并提�
 本地已核对归档哈希、GitHub 提交/父提交与采集源码版本、15 模块 XML 哈希/计数/类数、HTML 存在性及整数门槛；
 annotations 的 10 个类确无 branch，记 N/A，其余 14 个模块均有真实分母，生成代码排除均为空。
 
+首次登记验证的 [CI 39717124424](https://github.com/xhufang/skis/actions/runs/39717124424/job/119621796314)
+再次通过构建、必需测试核验、Enforcer 和采集/上传，但在来源认证之前被模块门槛比较拒绝。
+该轮 PR head 为 `92d1785115bf300cc35292ff6e17e27c8f2dfe33`，实际测试提交为
+`099c13fa3d55db6934009e7962607f1cd87c7499`；与首份报告的 15 模块类清单及 JaCoCo class ID 完全相同。
+对比[该轮工件](https://github.com/xhufang/skis/actions/runs/39717124424/artifacts/12399776444)定位到并发时序与 Map 遍历顺序引起的分支覆盖波动：
+
+| 模块 | 首份 covered/missed | 登记验证 covered/missed | 整数门槛变化 | 具体差异 |
+| --- | --- | --- | --- | --- |
+| skis-core | 285/147 | 284/148 | 6597 → 6574 | rejectReentrantCall 中其他线程回调活跃、当前线程未重入的分支少覆盖一次 |
+| skis-query | 1289/476 | 1286/479 | 7303 → 7286 | 准入后加入已有编译任务的四个分支缺失，淘汰比较多覆盖一个分支，净减少三个 |
+
+已补充三个测试：latch 固定其他线程回调活跃窗口；在准入锁排队后注册同 key 编译任务，再释放锁让等待者加入；
+读取实际 Map 遍历顺序后只调整访问时间，固定淘汰扫描中更新/保留候选的两种结果。
+同步和反射均只在测试侧，不修改生产热路径或已登记门槛；未在本地编译运行，补充夹具待 CI。
+新报告若提高到下一可表示门槛，仍须审阅该轮真实工件并提交抬线候选，不能手填新数值或套用当前下降候选。
+
 ## 权威环境与统计范围
 
 唯一权威作业为 CI 的 `engineering-gates`，使用 Temurin 21、release 21 和 JaCoCo 0.8.15。
@@ -127,9 +143,9 @@ Java 失败路径沿现有真实入口补充：
 
 | 套件 | 验证内容 |
 | --- | --- |
-| ExecutionListenerDispatcherTest | 各阶段监听抛异常时后续监听、原始诊断与完成去重 |
+| ExecutionListenerDispatcherTest | 各阶段监听抛异常时后续监听、原始诊断与完成去重；latch 固定其他线程回调活跃窗口，验证独立调用不被误判为重入 |
 | JdbcExecutorTest | unchecked 解码失败、SQL 资源关闭失败与 unchecked release 失败的主次及清理顺序 |
-| ProjectionPlanCacheTest | 进入前已中断和耗尽许可后等待期间被中断两条路径，核对 interrupt 保留、原编译者及其缓存结果不受影响、后续重试/命中；另验证空编译结果恢复。三项恢复测试设 10 秒超时，保留已有 miss/clear/失效并发合同 |
+| ProjectionPlanCacheTest | 进入前及等待期间中断、空编译结果恢复；锁排队固定等待者加入新注册任务，验证同一编译结果共享；根据 Map 实际遍历顺序固定访问时间并验证淘汰。三项恢复测试及新准入并发测试设 10 秒超时，保留已有 miss/clear/失效合同 |
 | CompilationPipelineTest | lowering 引入作用域外列时，后校验在渲染前拒绝 |
 
 本轮 CI 已执行并通过 43 项 Python 门禁夹具、Java 21 主构建、必需 PG/失败路径/nullness/名义类型报告核验和 Enforcer 正反例，
