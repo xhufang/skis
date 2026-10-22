@@ -89,8 +89,9 @@ jobs:
         run: |
           set -euo pipefail
           bash ./mvnw --version | tee "$RUNNER_TEMP/coverage-environment.txt"
+          # Keep the runtime java.version intact for Enforcer's JDK update-level check.
           bash ./mvnw -B -ntp clean verify -Pstatic-analysis,coverage,architecture \
-            -Dmaven.compiler.release=21 -Djava.version=21 -Dskis.coverage.commit="$GITHUB_SHA" \
+            -Dmaven.compiler.release=21 -Dskis.coverage.commit="$GITHUB_SHA" \
             2>&1 | tee "$RUNNER_TEMP/coverage-build.log"
 
       - name: Require real PG and critical failure contracts without skips

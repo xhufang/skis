@@ -11,10 +11,12 @@ if ($null -eq $execution) { throw 'Actual core Enforcer policy is missing' }
 $fixtureRoot = if ($env:GITHUB_ACTIONS -eq 'true') {
     Join-Path $env:RUNNER_TEMP 'skis-enforcer-evidence'
 } else {
-    Join-Path ([System.IO.Path]::GetTempPath()) ('skis-enforcer-' + [guid]::NewGuid().ToString('N'))
+    # Keep local fixtures on the repository volume so the parent path is always relative.
+    Join-Path (Join-Path $RepositoryRoot 'target') ('skis-enforcer-' + [guid]::NewGuid().ToString('N'))
 }
 [System.IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
-$parentPath = [System.Security.SecurityElement]::Escape((Join-Path $RepositoryRoot 'pom.xml').Replace('\', '/'))
+$parentPath = [System.Security.SecurityElement]::Escape(
+    [System.IO.Path]::GetRelativePath($fixtureRoot, (Join-Path $RepositoryRoot 'pom.xml')).Replace('\', '/'))
 $version = [string]$rootPom.project.version
 $wrapper = if ($IsWindows) { Join-Path $RepositoryRoot 'mvnw.cmd' } else { Join-Path $RepositoryRoot 'mvnw' }
 

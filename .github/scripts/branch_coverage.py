@@ -30,7 +30,7 @@ JACOCO = "0.8.15"
 PRECISION = "floor(covered * 10000 / (covered + missed))"
 PENDING = "awaiting-first-authoritative-run"
 COMMAND = ["clean", "verify", "-Pstatic-analysis,coverage,architecture",
-           "-Dmaven.compiler.release=21", "-Djava.version=21"]
+           "-Dmaven.compiler.release=21"]
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 WORKFLOW = ".github/workflows/ci.yml"
 PRODUCER_FILES = (WORKFLOW, ".github/scripts/branch_coverage.py",

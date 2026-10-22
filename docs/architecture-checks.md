@@ -20,6 +20,8 @@ Commons Logging 门面。测试依赖按 test scope 放行，不进入运行时�
 
 CI 使用实际 core POM 的执行配置，分别证明直接 Spring、放行直接坐标后仍禁止的传递 Spring、合法 test scope 三种结果。
 负例必须因 BannedDependencies 失败，依赖下载失败或其他构建错误不能替代负例证据。
+夹具的 `parent.relativePath` 从夹具目录计算到仓库根 POM，不填绝对路径；CI 证据仍保存在 runner 临时目录，
+本地夹具位于仓库 `target` 下的独立目录，确保 Windows 跨盘环境也能生成真正的相对路径。
 
 ## 字节码与公开边界
 

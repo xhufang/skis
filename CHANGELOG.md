@@ -6,6 +6,10 @@
 
 ### Changed
 
+- 修复权威覆盖率命令的 JDK 版本误判：移除覆盖真实运行版本的 `-Djava.version=21`，
+  保留 release 21 和现有 Enforcer 门禁，并同步覆盖率会话命令。CI 首轮未进入编译，真实基线仍待重跑。
+- 修复 Enforcer 夹具的父 POM 定位：按夹具目录生成相对路径，本地夹具放在仓库 target 下以避免 Windows 跨盘；
+  保留负例必须命中 BannedDependencies 的约束。Java 25 主构建已通过，夹具修复待 CI 验证。
 - 修复 T04 干净构建的架构检查顺序：集成测试模块排在 Reactor 最后，先生成包含 H2 示例的完整产物。
   Java 21 单元/静态/架构/PG 检查合并至权威覆盖率作业，保留既有检查名称并显式转发失败/跳过/取消；
   Java 25 在一次构建中执行静态与架构检查，Unix Enforcer 夹具通过 bash 调用 Wrapper，避免修改检出权限。

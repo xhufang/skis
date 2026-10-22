@@ -8,6 +8,8 @@
 
 唯一权威作业为 CI 的 `engineering-gates`，使用 Temurin 21、release 21 和 JaCoCo 0.8.15。
 Java 25 作业继续验证正确性，不向权威覆盖率汇入执行数据。
+运行 JDK 由 `setup-java`、会话登记时的 `java -version` 与 Enforcer 核验；命令行仅用
+`-Dmaven.compiler.release=21` 固定产物版本，不传 `-Djava.version=21`，避免覆盖真实 JDK 更新版本并误触最低版本门禁。
 
 作业在同一干净检出中执行一次 `clean verify`，同时启用 `static-analysis,coverage,architecture`。
 根 Reactor 将 `skis-integration-tests` 放在最后，包含 H2 示例在内的全部生产/夹具产物先完成构建，
