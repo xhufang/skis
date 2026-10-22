@@ -1,10 +1,22 @@
 # 分支覆盖率与逐模块棘轮
 
-0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。2026-10-22 已取得首份权威报告，
-并将真实候选原文写入 `.github/quality/branch-baseline.json`，状态为 `active`；没有手填覆盖率。
-该登记尚待提交后的 CI 来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
+0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。2026-10-22 已取得权威报告，
+当前 `.github/quality/branch-baseline.json` 采用 CI 39718331626 的候选原文，状态为 `active`；没有手填覆盖率。
+该候选将 skis-query 门槛从 7303（73.03%）提升至 7314（73.14%），其他模块门槛相同。
+更新后的登记尚待提交后 CI 的来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
 
-报告来自 [CI 39715770444 的权威作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391253)，
+当前报告来自 [CI 39718331626 的权威作业](https://github.com/xhufang/skis/actions/runs/39718331626/job/119625709762)，
+PR head 为 `4aeaddeb36d5e7ee8188d767a17fcdf4d4ce5f10`，实际测试合并提交为
+`0101358fea836d64cb65aa4492e7254eba8521c1`，比较基线为 `f46c957084be7c7ec3486139f06d812a6ffb805b`。
+[覆盖率工件](https://github.com/xhufang/skis/actions/runs/39718331626/artifacts/12400570401)名为
+`branch-coverage-java-21-39718331626-1`，归档 SHA-256 为
+`aa38b09b530e08cdfc2f4018ce16bc7566b1455d45d03d2d9b78cafffb845a6b`。
+已核对归档哈希、GitHub 合并提交/父提交、采集源码版本、会话输入哈希及 15 模块 XML 哈希/计数/类数、HTML 与整数门槛。
+类清单及 class ID 与首份报告相同，统计口径和生成排除未变化，没有模块降线。
+main 尚无已激活基线，会话 `previous` 为 null；因此候选按既有规则刷新首次 `registration` 和全部模块证据，
+不能把当前 PR 中尚未通过认证的登记当成可信历史来保留来源。
+
+最初登记报告来自 [CI 39715770444 的权威作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391253)，
 PR head 为 `6bbac44a9242036133da9028135ac9f48f64cbe5`，实际测试合并提交为
 `b83d71a185cd92f74fb2b0627f00502f3d760f00`，比较基线为 `f46c957084be7c7ec3486139f06d812a6ffb805b`。
 [覆盖率工件](https://github.com/xhufang/skis/actions/runs/39715770444/artifacts/12398449932)名为
@@ -26,8 +38,10 @@ annotations 的 10 个类确无 branch，记 N/A，其余 14 个模块均有真�
 
 已补充三个测试：latch 固定其他线程回调活跃窗口；在准入锁排队后注册同 key 编译任务，再释放锁让等待者加入；
 读取实际 Map 遍历顺序后只调整访问时间，固定淘汰扫描中更新/保留候选的两种结果。
-同步和反射均只在测试侧，不修改生产热路径或已登记门槛；未在本地编译运行，补充夹具待 CI。
-新报告若提高到下一可表示门槛，仍须审阅该轮真实工件并提交抬线候选，不能手填新数值或套用当前下降候选。
+同步和反射均只在测试侧，不修改生产热路径。上述测试已通过 CI 39718331626 的 Java 21/25 构建，未在本地编译运行。
+该轮 core 恢复为 285/147，query 提高为 1291/474；相较首份报告，ProjectionPlanCache.evictOldest
+和 QueryPlanKey.equals 各多覆盖一个分支。门禁按预期在 query 应抬未抬时失败，尚未执行来源认证；
+已审阅本轮工件并采用真实候选抬线，更新后的登记仍待 CI 验证。
 
 ## 权威环境与统计范围
 
@@ -138,7 +152,8 @@ PR/push 的比较提交还须与 GitHub 事件原始载荷的 base/before 一致
 同时验证同一来源只下载一次；不调用真实网络、Maven 或 Java。
 新增采集链路夹具直接执行 `collect → candidate → check`：使用临时 Reactor 目录、Surefire/Failsafe 报告及模拟 CLI，
 验证单元与 PG 数据合并、模块 XML/HTML 输出、未登记失败和来源认证；缺单元/PG fork、缺测试报告及非法精度均拒绝生成候选。
-另验证同一 PR 的抬线候选和首次登记候选重新采集时刷新来源，已登记且未变更的证据继续保留。夹具仍待 CI 执行。
+另验证同一 PR 的抬线候选和首次登记候选重新采集时刷新来源，已登记且未变更的证据继续保留。
+43 项 Python 夹具已通过 CI 39718331626。
 Java 失败路径沿现有真实入口补充：
 
 | 套件 | 验证内容 |
@@ -149,8 +164,8 @@ Java 失败路径沿现有真实入口补充：
 | CompilationPipelineTest | lowering 引入作用域外列时，后校验在渲染前拒绝 |
 
 本轮 CI 已执行并通过 43 项 Python 门禁夹具、Java 21 主构建、必需 PG/失败路径/nullness/名义类型报告核验和 Enforcer 正反例，
-覆盖率采集及两份权威证据上传均成功；[Java 25 作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391263)
-也全部成功。权威作业仅在正式基线仍未登记时按预期失败，两个旧检查名称同步转发失败。
+覆盖率采集及两份权威证据上传均成功；[Java 25 作业](https://github.com/xhufang/skis/actions/runs/39718331626/job/119625709474)
+也全部成功。权威作业在 query 应抬未抬时按预期失败，两个旧检查名称同步转发失败。
 本地仅进行工件数据核对和候选登记，未编译或运行项目代码；T04 仍待登记提交的 CI 认证及历史棘轮验收，
 不勾选完整退出标准。本任务不执行 benchmark，也不设置耗时、吞吐或分配量门槛。
 
