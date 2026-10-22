@@ -3,6 +3,7 @@ package io.skis.query.internal;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -48,6 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class ProjectionPlanCacheTest {
 
@@ -233,6 +235,51 @@ class ProjectionPlanCacheTest {
         cache.getOrCompile(secondKey, dependencies, () -> plan("SELECT second_again"));
     assertNotSame(second, recompiledSecond);
     assertEquals(new QueryPlanCacheStatistics(1, 4, 2, 0, 2, 2), cache.statistics());
+  }
+
+  @Test
+  void evictionUsesAccessAgeInsteadOfMapIterationOrder() throws Exception {
+    AtomicLong ticker = new AtomicLong();
+    ProjectionPlanCache cache = cache(3, Duration.ofMinutes(1), ticker);
+    QueryPlanDependencies dependencies = dependencies(PET);
+    Map<QueryPlanKey, CachedQueryPlan<Pet>> plans =
+        Map.of(
+            key("iteration-first"), plan("SELECT iteration_first"),
+            key("iteration-second"), plan("SELECT iteration_second"),
+            key("iteration-third"), plan("SELECT iteration_third"));
+    plans.forEach((key, plan) -> cache.getOrCompile(key, dependencies, () -> plan));
+    var entriesField = ProjectionPlanCache.class.getDeclaredField("entries");
+    entriesField.setAccessible(true);
+    Map<?, ?> entries = (Map<?, ?>) entriesField.get(cache);
+    List<QueryPlanKey> iterationOrder =
+        entries.keySet().stream().map(key -> (QueryPlanKey) key).toList();
+    assertEquals(3, iterationOrder.size());
+    // Only access timestamps change, so the map's traversal order stays fixed during eviction.
+    // The middle entry is oldest: the scan must both replace and retain its current candidate.
+    ticker.set(10);
+    assertSame(
+        plans.get(iterationOrder.get(0)),
+        cache.getOrCompile(
+            iterationOrder.get(0), dependencies, () -> fail("the first entry must be cached")));
+    ticker.set(20);
+    assertSame(
+        plans.get(iterationOrder.get(2)),
+        cache.getOrCompile(
+            iterationOrder.get(2), dependencies, () -> fail("the last entry must be cached")));
+    ticker.set(30);
+    CachedQueryPlan<Pet> added = plan("SELECT after_iteration_scan");
+    assertSame(added, cache.getOrCompile(key("after-iteration-scan"), dependencies, () -> added));
+
+    assertEquals(new QueryPlanCacheStatistics(2, 4, 1, 0, 3, 3), cache.statistics());
+    for (int index : new int[] {0, 2}) {
+      QueryPlanKey retained = iterationOrder.get(index);
+      assertSame(
+          plans.get(retained),
+          cache.getOrCompile(retained, dependencies, () -> fail("a newer entry must be retained")));
+    }
+    CachedQueryPlan<Pet> retried = plan("SELECT evicted_iteration_entry");
+    assertSame(retried, cache.getOrCompile(iterationOrder.get(1), dependencies, () -> retried));
+    assertEquals(new QueryPlanCacheStatistics(4, 5, 2, 0, 3, 3), cache.statistics());
   }
 
   @Test
@@ -655,6 +702,159 @@ class ProjectionPlanCacheTest {
   }
 
   @Test
+  @Timeout(10)
+  void interruptedAdmissionPreservesInterruptAndAllowsTheNextCompilation() throws Exception {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("interrupted-admission");
+    AtomicReference<Throwable> rejected = new AtomicReference<>();
+    AtomicReference<Boolean> interruptPreserved = new AtomicReference<>(false);
+    Thread waiter =
+        new Thread(
+            () -> {
+              Thread.currentThread().interrupt();
+              try {
+                rejected.set(
+                    captureFailure(
+                        () ->
+                            cache.getOrCompile(
+                                key,
+                                dependencies(PET),
+                                () -> {
+                                  throw new AssertionError("interrupted caller must not compile");
+                                })));
+                interruptPreserved.set(Thread.currentThread().isInterrupted());
+              } finally {
+                Thread.interrupted();
+              }
+            });
+
+    waiter.setDaemon(true);
+    waiter.start();
+    waiter.join(TimeUnit.SECONDS.toMillis(5));
+    assertFalse(waiter.isAlive());
+    IllegalStateException failure = assertInstanceOf(IllegalStateException.class, rejected.get());
+    assertInstanceOf(InterruptedException.class, failure.getCause());
+    assertTrue(interruptPreserved.get());
+    assertEquals(0, cache.statistics().size());
+    CachedQueryPlan<Pet> recovered = plan("SELECT after_interrupted_admission");
+    assertSame(recovered, cache.getOrCompile(key, dependencies(PET), () -> recovered));
+    assertSame(
+        recovered,
+        cache.getOrCompile(
+            key,
+            dependencies(PET),
+            () -> {
+              throw new AssertionError("the recovered plan must remain cached");
+            }));
+  }
+
+  @Test
+  @Timeout(10)
+  void interruptingAnAdmissionWaitPreservesTheOwnerAndAllowsRetry() throws Exception {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey ownerKey = key("admission-owner");
+    QueryPlanKey waitingKey = key("interrupted-admission-waiter");
+    CountDownLatch ownerStarted = new CountDownLatch(1);
+    CountDownLatch releaseOwner = new CountDownLatch(1);
+    CountDownLatch waiterStarted = new CountDownLatch(1);
+    CachedQueryPlan<Pet> owned = plan("SELECT admission_owner");
+    AtomicReference<Throwable> rejected = new AtomicReference<>();
+    AtomicReference<Boolean> interruptPreserved = new AtomicReference<>(false);
+    Thread waiter =
+        new Thread(
+            () -> {
+              waiterStarted.countDown();
+              try {
+                rejected.set(
+                    captureFailure(
+                        () ->
+                            cache.getOrCompile(
+                                waitingKey,
+                                dependencies(PET),
+                                () -> {
+                                  throw new AssertionError("the waiting caller must not compile");
+                                })));
+                interruptPreserved.set(Thread.currentThread().isInterrupted());
+              } finally {
+                Thread.interrupted();
+              }
+            });
+    waiter.setDaemon(true);
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<CachedQueryPlan<Pet>> owner =
+          executor.submit(
+              () ->
+                  cache.getOrCompile(
+                      ownerKey,
+                      dependencies(PET),
+                      () -> {
+                        ownerStarted.countDown();
+                        awaitUnchecked(releaseOwner);
+                        return owned;
+                      }));
+      assertTrue(ownerStarted.await(5, TimeUnit.SECONDS));
+      waiter.start();
+      assertTrue(waiterStarted.await(5, TimeUnit.SECONDS));
+      // The owner holds the sole admission outside the cache locks; a different key must await it.
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (waiter.isAlive()
+          && waiter.getState() != Thread.State.WAITING
+          && System.nanoTime() < deadline) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+      }
+      assertEquals(Thread.State.WAITING, waiter.getState());
+      waiter.interrupt();
+      waiter.join(TimeUnit.SECONDS.toMillis(5));
+      assertFalse(waiter.isAlive());
+      IllegalStateException failure = assertInstanceOf(IllegalStateException.class, rejected.get());
+      assertInstanceOf(InterruptedException.class, failure.getCause());
+      assertTrue(interruptPreserved.get());
+      assertFalse(owner.isDone());
+      assertEquals(0, cache.statistics().size());
+
+      releaseOwner.countDown();
+      assertSame(owned, owner.get(5, TimeUnit.SECONDS));
+      assertSame(
+          owned,
+          cache.getOrCompile(
+              ownerKey,
+              dependencies(PET),
+              () -> {
+                throw new AssertionError("interrupting a waiter must preserve the owner's plan");
+              }));
+      CachedQueryPlan<Pet> recovered = plan("SELECT after_interrupted_wait");
+      assertSame(recovered, cache.getOrCompile(waitingKey, dependencies(PET), () -> recovered));
+      assertSame(
+          recovered,
+          cache.getOrCompile(
+              waitingKey,
+              dependencies(PET),
+              () -> {
+                throw new AssertionError("the retried plan must remain cached");
+              }));
+    } finally {
+      releaseOwner.countDown();
+      waiter.interrupt();
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  @Timeout(10)
+  void rejectsNullCompilerResultWithoutCachingItOrLeakingAdmission() {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("null-result");
+
+    assertThrows(
+        NullPointerException.class, () -> cache.getOrCompile(key, dependencies(PET), () -> null));
+    assertEquals(0, cache.statistics().size());
+    CachedQueryPlan<Pet> recovered = plan("SELECT after_null_result");
+    assertSame(recovered, cache.getOrCompile(key, dependencies(PET), () -> recovered));
+    assertEquals(new QueryPlanCacheStatistics(0, 2, 0, 0, 1, 1), cache.statistics());
+  }
+
+  @Test
   void rejectsRecursiveCompilationOfTheSameKeyWithoutWaitingOnItself() {
     ProjectionPlanCache cache = cache(2, Duration.ofMinutes(1), new AtomicLong());
     QueryPlanKey key = key("recursive");
@@ -741,6 +941,58 @@ class ProjectionPlanCacheTest {
 
     assertSame(ready, outer);
     assertEquals(1, cache.statistics().hitCount());
+  }
+
+  @Test
+  @Timeout(10)
+  void admissionWaiterJoinsAnOwnerRegisteredAfterItsInitialLookup() throws Exception {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("registered-during-admission");
+    QueryPlanDependencies dependencies = dependencies(PET);
+    CachedQueryPlan<Pet> compiled = plan("SELECT registered_during_admission");
+    var lockField = ProjectionPlanCache.class.getDeclaredField("admissionWaitLock");
+    lockField.setAccessible(true);
+    ReentrantLock admissionLock = (ReentrantLock) lockField.get(cache);
+    AtomicReference<Thread> waitingThread = new AtomicReference<>();
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    admissionLock.lock();
+    try {
+      Future<CachedQueryPlan<Pet>> waiter =
+          executor.submit(
+              () -> {
+                waitingThread.set(Thread.currentThread());
+                return cache.getOrCompile(
+                    key,
+                    dependencies,
+                    () -> {
+                      throw new AssertionError("the admission waiter must join the owner");
+                    });
+              });
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while ((waitingThread.get() == null || !admissionLock.hasQueuedThread(waitingThread.get()))
+          && System.nanoTime() < deadline) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+      }
+      assertTrue(waitingThread.get() != null && admissionLock.hasQueuedThread(waitingThread.get()));
+      // This thread reenters the held gate, then releases it only after registering the owner.
+      assertSame(
+          compiled,
+          cache.getOrCompile(
+              key,
+              dependencies,
+              () -> {
+                admissionLock.unlock();
+                awaitMissCount(cache, 2);
+                return compiled;
+              }));
+      assertSame(compiled, waiter.get(5, TimeUnit.SECONDS));
+      assertEquals(new QueryPlanCacheStatistics(0, 2, 0, 0, 1, 1), cache.statistics());
+    } finally {
+      if (admissionLock.isHeldByCurrentThread()) {
+        admissionLock.unlock();
+      }
+      executor.shutdownNow();
+    }
   }
 
   @Test

@@ -180,6 +180,31 @@ class CompilationPipelineTest {
   }
 
   @Test
+  void postLoweringAnalysisRejectsANewOutOfScopeColumnBeforeRendering() {
+    PetTable pet = new PetTable(PET);
+    PetTable outside = pet.as(Identifier.of("outside"));
+    SelectStatement statement = new SelectStatement(List.of(pet.id()), pet);
+    TrackingDialect dialect =
+        new TrackingDialect(
+            "post-lowering-scope-test",
+            false,
+            false,
+            input -> {
+              SelectStatement select = (SelectStatement) input.statement();
+              return new SelectStatement(
+                  select.selections(),
+                  select.fromClause(),
+                  outside.id().eq(LiteralExpression.one(Long.class)));
+            });
+
+    SqlRenderException failure =
+        assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(statement, dialect));
+
+    assertEquals(SkisErrorCode.DIALECT_INVALID_STRUCTURE, failure.code());
+    assertEquals(List.of("validate", "lower"), dialect.events);
+  }
+
+  @Test
   void loweringCannotChangeTheStatementKind() {
     PetTable pet = new PetTable(PET);
     SelectStatement statement = new SelectStatement(List.of(pet.id()), pet);

@@ -574,6 +574,58 @@ class JdbcExecutorTest {
   }
 
   @Test
+  void preservesUncheckedDecoderFailureAcrossSqlCleanupAndUncheckedReleaseFailure() {
+    IllegalArgumentException primary = new IllegalArgumentException("decoder rejected the row");
+    SQLException resultSetClose = new SQLException("result set close", "HY000", 101);
+    SQLException statementClose = new SQLException("statement close", "HY000", 102);
+    IllegalStateException release = new IllegalStateException("provider release failed");
+    Scenario scenario = new Scenario(List.of("Mimi"));
+    scenario.resultSetCloseFailure = resultSetClose;
+    scenario.statementCloseFailure = statementClose;
+    ConnectionProvider delegate = scenario.provider();
+    ConnectionProvider provider =
+        new ConnectionProvider() {
+          @Override
+          public Connection acquire(ExecutionContext context) throws SQLException {
+            return delegate.acquire(context);
+          }
+
+          @Override
+          public void release(Connection connection, ExecutionContext context) throws SQLException {
+            delegate.release(connection, context);
+            throw release;
+          }
+        };
+    AtomicInteger classifications = new AtomicInteger();
+    JdbcExecutor executor =
+        configuredExecutor(
+            provider,
+            ExecutionOptions.NONE,
+            failure -> {
+              classifications.incrementAndGet();
+              return SqlExceptionCategory.UNCATEGORIZED;
+            });
+    CompiledQueryPlan<String, Long> original = plan();
+    CompiledQueryPlan<String, Long> failing =
+        new CompiledQueryPlan<>(
+            original.dialectId(),
+            original.renderedSql(),
+            original.parameterBinder(),
+            (resultSet, context) -> {
+              throw primary;
+            });
+
+    assertSame(
+        primary, assertThrows(IllegalArgumentException.class, () -> executor.fetchList(failing, 1L)));
+    assertEquals(List.of(resultSetClose, statementClose, release), List.of(primary.getSuppressed()));
+    assertEquals(List.of("result-set", "statement", "connection"), scenario.resourceCloseEvents);
+    assertEquals(1, scenario.resultSetCloses.get());
+    assertEquals(1, scenario.statementCloses.get());
+    assertEquals(1, scenario.releases.get());
+    assertEquals(0, classifications.get());
+  }
+
+  @Test
   void distinguishesMutationAcquireExecutionAndReleaseFailures() {
     SQLException acquireFailure = new SQLException("pool exhausted", "08001", 61);
     Scenario acquireScenario = new Scenario(List.of());

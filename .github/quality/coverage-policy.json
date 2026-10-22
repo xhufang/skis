@@ -1,0 +1,24 @@
+{
+  "revision": 1,
+  "jacoco": "0.8.15",
+  "java": 21,
+  "release": 21,
+  "precision": "floor(covered * 10000 / (covered + missed))",
+  "modules": {
+    "skis-annotations": { "branches": "none", "reason": "Annotations and constant enums; require nonempty class inventory and zero actual branches." },
+    "skis-core": { "branches": "required" },
+    "skis-metadata": { "branches": "required" },
+    "skis-processor": { "branches": "required" },
+    "skis-sql-ast": { "branches": "required" },
+    "skis-dialect-api": { "branches": "required" },
+    "skis-dialect-support": { "branches": "required" },
+    "skis-mapping": { "branches": "required" },
+    "skis-jdbc": { "branches": "required" },
+    "skis-query": { "branches": "required" },
+    "skis-mutation": { "branches": "required" },
+    "skis-runtime": { "branches": "required" },
+    "skis-dialect-postgresql": { "branches": "required" },
+    "skis-dialect-h2": { "branches": "required" },
+    "skis-spring": { "branches": "required" }
+  }
+}

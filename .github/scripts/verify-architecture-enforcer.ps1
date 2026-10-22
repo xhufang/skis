@@ -11,10 +11,12 @@ if ($null -eq $execution) { throw 'Actual core Enforcer policy is missing' }
 $fixtureRoot = if ($env:GITHUB_ACTIONS -eq 'true') {
     Join-Path $env:RUNNER_TEMP 'skis-enforcer-evidence'
 } else {
-    Join-Path ([System.IO.Path]::GetTempPath()) ('skis-enforcer-' + [guid]::NewGuid().ToString('N'))
+    # Keep local fixtures on the repository volume so the parent path is always relative.
+    Join-Path (Join-Path $RepositoryRoot 'target') ('skis-enforcer-' + [guid]::NewGuid().ToString('N'))
 }
 [System.IO.Directory]::CreateDirectory($fixtureRoot) | Out-Null
-$parentPath = [System.Security.SecurityElement]::Escape((Join-Path $RepositoryRoot 'pom.xml').Replace('\', '/'))
+$parentPath = [System.Security.SecurityElement]::Escape(
+    [System.IO.Path]::GetRelativePath($fixtureRoot, (Join-Path $RepositoryRoot 'pom.xml')).Replace('\', '/'))
 $version = [string]$rootPom.project.version
 $wrapper = if ($IsWindows) { Join-Path $RepositoryRoot 'mvnw.cmd' } else { Join-Path $RepositoryRoot 'mvnw' }
 
@@ -49,7 +51,12 @@ foreach ($fixture in $fixtures) {
     }
     $pomPath = Join-Path $fixtureRoot ($fixture.Name + '.xml')
     $pom.Save($pomPath)
-    $output = & $wrapper -B -ntp -f $pomPath validate 2>&1
+    $output = if ($IsWindows) {
+        & $wrapper -B -ntp -f $pomPath validate 2>&1
+    } else {
+        # The wrapper is tracked as 100644; leave the authoritative checkout clean.
+        & bash $wrapper -B -ntp -f $pomPath validate 2>&1
+    }
     $exitCode = $LASTEXITCODE
     $logPath = Join-Path $fixtureRoot ($fixture.Name + '.log')
     $output | Out-File -LiteralPath $logPath -Encoding utf8
