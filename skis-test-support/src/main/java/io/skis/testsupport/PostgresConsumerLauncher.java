@@ -15,7 +15,7 @@ public final class PostgresConsumerLauncher {
     int result;
     try (PostgresEnvironment environment = PostgresEnvironment.open();
         PostgresEnvironment.Database database = environment.database()) {
-      ProcessBuilder builder = new ProcessBuilder(Arrays.copyOfRange(args, 1, args.length));
+      ProcessBuilder builder = new ProcessBuilder(Arrays.asList(args).subList(1, args.length));
       database.configure(builder);
       Process child = builder.inheritIO().start();
       try {

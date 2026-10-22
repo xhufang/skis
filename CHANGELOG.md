@@ -6,6 +6,8 @@
 
 ### Changed
 
+- 修复 PostgreSQL 消费者启动器的 NullAway 编译错误：使用列表切片传递非空命令参数，
+  保持子进程命令与生命周期；Java 21/25 静态分析及权威覆盖率待 CI 复验。
 - 0.2.8 T05 接线 Testcontainers 2.0.5、经官方 registry 核实的 PostgreSQL 16.15-bookworm manifest 锁、
   Surefire/Failsafe 的显式 PG tag/profile 分离及单 JVM 根级环境。外部 URL 优先且错误不回退；
   每套件使用独立临时数据库，保留五个 PG 必需合同和拆分后的 H2 员工/部门合同。
