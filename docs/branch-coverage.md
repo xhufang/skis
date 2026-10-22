@@ -1,11 +1,22 @@
 # 分支覆盖率与逐模块棘轮
 
 0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。2026-10-22 已取得权威报告，
-当前 `.github/quality/branch-baseline.json` 采用 CI 39718331626 的候选原文，状态为 `active`；没有手填覆盖率。
-该候选将 skis-query 门槛从 7303（73.03%）提升至 7314（73.14%），其他模块门槛相同。
+当前 `.github/quality/branch-baseline.json` 采用 CI 39738254300 的候选原文，状态为 `active`；没有手填覆盖率。
+该候选将 skis-query 门槛从 7314（73.14%）提升至 7337（73.37%），保留首次登记及其他 14 个模块的门槛和证据。
 更新后的登记尚待提交后 CI 的来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
 
-当前报告来自 [CI 39718331626 的权威作业](https://github.com/xhufang/skis/actions/runs/39718331626/job/119625709762)，
+本次抬线报告来自 [CI 39738254300 的权威作业](https://github.com/xhufang/skis/actions/runs/39738254300/job/119688979310)，
+PR head 为 `ae4355c6e40e318298215fef144193b794acbc4f`，实际测试合并提交为
+`b14cc2099455e566549b44776a7cd27660097695`，比较基线为 `529d939cf69854d8d981011c25c3de71d5ee1e59`。
+[覆盖率工件](https://github.com/xhufang/skis/actions/runs/39738254300/artifacts/12408620651)名为
+`branch-coverage-java-21-39738254300-1`，归档 SHA-256 为
+`9faa00068675841165f9a8160f85e8f88d9a3497d2d4f17447033fafa4fa9e3f`。
+已核对工件哈希、GitHub 合并提交/父提交、七项采集源码 Git blob ID、15 模块 XML 哈希/计数/类数、HTML 和整数门槛。
+query 的 covered/missed 从 1291/474 变为 1295/470；生产统计口径、生成排除和各模块类数未变化。
+本轮 Java 21/25 构建、45 项 Python 夹具、必需报告、Enforcer、PG 双路径及独立消费者通过，采集及两份工件上传成功。
+门禁在应抬未抬时按预期失败，尚未执行新增抬线来源认证；可信 `previous` 已为 active，首次登记和其余模块行按规则保留。
+
+前次抬线报告来自 [CI 39718331626 的权威作业](https://github.com/xhufang/skis/actions/runs/39718331626/job/119625709762)，
 PR head 为 `4aeaddeb36d5e7ee8188d767a17fcdf4d4ce5f10`，实际测试合并提交为
 `0101358fea836d64cb65aa4492e7254eba8521c1`，比较基线为 `f46c957084be7c7ec3486139f06d812a6ffb805b`。
 [覆盖率工件](https://github.com/xhufang/skis/actions/runs/39718331626/artifacts/12400570401)名为
@@ -13,7 +24,7 @@ PR head 为 `4aeaddeb36d5e7ee8188d767a17fcdf4d4ce5f10`，实际测试合并提�
 `aa38b09b530e08cdfc2f4018ce16bc7566b1455d45d03d2d9b78cafffb845a6b`。
 已核对归档哈希、GitHub 合并提交/父提交、采集源码版本、会话输入哈希及 15 模块 XML 哈希/计数/类数、HTML 与整数门槛。
 类清单及 class ID 与首份报告相同，统计口径和生成排除未变化，没有模块降线。
-main 尚无已激活基线，会话 `previous` 为 null；因此候选按既有规则刷新首次 `registration` 和全部模块证据，
+该轮采集时 main 尚无已激活基线，会话 `previous` 为 null；因此当时的候选按既有规则刷新首次 `registration` 和全部模块证据，
 不能把当前 PR 中尚未通过认证的登记当成可信历史来保留来源。
 
 最初登记报告来自 [CI 39715770444 的权威作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391253)，
