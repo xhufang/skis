@@ -5,6 +5,14 @@
 该候选将 skis-query 门槛从 7314（73.14%）提升至 7337（73.37%），保留首次登记及其他 14 个模块的门槛和证据。
 更新后的登记尚待提交后 CI 的来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
 
+登记验证 [CI 39740005226](https://github.com/xhufang/skis/actions/runs/39740005226/job/119694664049) 已通过构建、
+必需报告及覆盖率采集，但 query 为 1291/474，低于登记报告的 1295/470；其余模块计数一致。
+两轮 15 模块的生产类清单、JaCoCo class ID 及统计口径完全相同；四个分支差异均位于
+`ProjectionPlanCache.compileOrAwait` 的准入后 `putIfAbsent` 竞争及额外许可释放路径。
+已补充 `admittedWaiterJoinsAnOwnerRegisteredBeforeItsFlightInsertion`，用维护锁固定竞争窗口，
+核对等待者复用唯一编译、miss 统计及两个许可全部归还。测试仅使用现有生产锁与测试侧反射，
+不改生产代码或 73.37% 门槛，未本地编译运行，修复及登记认证仍待 CI。
+
 本次抬线报告来自 [CI 39738254300 的权威作业](https://github.com/xhufang/skis/actions/runs/39738254300/job/119688979310)，
 PR head 为 `ae4355c6e40e318298215fef144193b794acbc4f`，实际测试合并提交为
 `b14cc2099455e566549b44776a7cd27660097695`，比较基线为 `529d939cf69854d8d981011c25c3de71d5ee1e59`。
