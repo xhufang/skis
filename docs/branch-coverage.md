@@ -1,8 +1,17 @@
 # 分支覆盖率与逐模块棘轮
 
-0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。当前尚未取得首份权威报告，
-`.github/quality/branch-baseline.json` 明确记录 `awaiting-first-authoritative-run`，没有预填覆盖率。
-实现接线不表示执行验证通过；首次基线登记及全部夹具的执行证据仍待 CI。
+0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。2026-10-22 已取得首份权威报告，
+并将真实候选原文写入 `.github/quality/branch-baseline.json`，状态为 `active`；没有手填覆盖率。
+该登记尚待提交后的 CI 来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
+
+报告来自 [CI 39715770444 的权威作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391253)，
+PR head 为 `6bbac44a9242036133da9028135ac9f48f64cbe5`，实际测试合并提交为
+`b83d71a185cd92f74fb2b0627f00502f3d760f00`，比较基线为 `f46c957084be7c7ec3486139f06d812a6ffb805b`。
+[覆盖率工件](https://github.com/xhufang/skis/actions/runs/39715770444/artifacts/12398449932)名为
+`branch-coverage-java-21-39715770444-1`，归档 SHA-256 为
+`3b8427f6482501b79eb9a76add9c4a7f0fa08ee5157637f1b8925eb7f17aeab1`。
+本地已核对归档哈希、GitHub 提交/父提交与采集源码版本、15 模块 XML 哈希/计数/类数、HTML 存在性及整数门槛；
+annotations 的 10 个类确无 branch，记 N/A，其余 14 个模块均有真实分母，生成代码排除均为空。
 
 ## 权威环境与统计范围
 
@@ -123,8 +132,11 @@ Java 失败路径沿现有真实入口补充：
 | ProjectionPlanCacheTest | 进入前已中断和耗尽许可后等待期间被中断两条路径，核对 interrupt 保留、原编译者及其缓存结果不受影响、后续重试/命中；另验证空编译结果恢复。三项恢复测试设 10 秒超时，保留已有 miss/clear/失效并发合同 |
 | CompilationPipelineTest | lowering 引入作用域外列时，后校验在渲染前拒绝 |
 
-本轮仅做静态核对，未编译运行。T04 尚缺首份真实基线登记、指定套件/负例运行结果和完整报告上传证据；
-取得证据前保留“已接线、待 CI 验证”，不勾选退出标准。本任务不执行 benchmark，也不设置耗时、吞吐或分配量门槛。
+本轮 CI 已执行并通过 43 项 Python 门禁夹具、Java 21 主构建、必需 PG/失败路径/nullness/名义类型报告核验和 Enforcer 正反例，
+覆盖率采集及两份权威证据上传均成功；[Java 25 作业](https://github.com/xhufang/skis/actions/runs/39715770444/job/119617391263)
+也全部成功。权威作业仅在正式基线仍未登记时按预期失败，两个旧检查名称同步转发失败。
+本地仅进行工件数据核对和候选登记，未编译或运行项目代码；T04 仍待登记提交的 CI 认证及历史棘轮验收，
+不勾选完整退出标准。本任务不执行 benchmark，也不设置耗时、吞吐或分配量门槛。
 
 工具依据：[JaCoCo agent 与 argLine](https://www.jacoco.org/jacoco/trunk/doc/prepare-agent-mojo.html)、
 [CLI 的 merge/report/classinfo/execinfo](https://www.jacoco.org/jacoco/trunk/doc/cli.html)、

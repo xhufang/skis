@@ -6,6 +6,8 @@
 
 ### Changed
 
+- 从 CI 39715770444 的权威工件登记 15 模块首份真实 branch 基线，保留合并提交、运行/尝试编号及逐模块 XML 哈希。
+  Java 21/25 主构建、PG 合同、Enforcer 正反例与 43 项 Python 夹具已成功；登记提交的来源认证和棘轮仍待 CI。
 - 修复权威覆盖率命令的 JDK 版本误判：移除覆盖真实运行版本的 `-Djava.version=21`，
   保留 release 21 和现有 Enforcer 门禁，并同步覆盖率会话命令。CI 首轮未进入编译，真实基线仍待重跑。
 - 修复 Enforcer 夹具的父 POM 定位：按夹具目录生成相对路径，本地夹具放在仓库 target 下以避免 Windows 跨盘；
