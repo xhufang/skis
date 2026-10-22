@@ -4,13 +4,22 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnosticStage;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.SkisStatementKind;
+import io.skis.core.spi.CompilationCompletedEvent;
 import io.skis.core.spi.ExecutionListener;
 import io.skis.core.spi.ExecutionOperationKind;
 import io.skis.core.spi.ExecutionTermination;
 import io.skis.core.spi.OperationCompletedEvent;
 import io.skis.core.spi.OperationStartedEvent;
+import io.skis.core.spi.StatementCompletedEvent;
+import io.skis.core.spi.StatementPurpose;
+import io.skis.core.spi.StatementStartedEvent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -56,6 +65,92 @@ class ExecutionListenerDispatcherTest {
 
     assertEquals(
         List.of("first-start", "second-start", "first-complete", "second-complete"), callbacks);
+  }
+
+  @Test
+  void isolatesFailuresInEveryCallbackAndPreservesThePrimaryFailureDiagnostics() {
+    List<String> callbacks = new ArrayList<>();
+    QueryValidationException primary =
+        QueryValidationException.of(SkisErrorCode.QUERY_RESULT_MAPPING, "row mapping failed");
+    ExecutionListener failing =
+        new ExecutionListener() {
+          @Override
+          public void operationStarted(OperationStartedEvent event) {
+            throw new IllegalStateException("operation-start listener");
+          }
+
+          @Override
+          public void compilationCompleted(CompilationCompletedEvent event) {
+            throw new IllegalStateException("compilation listener");
+          }
+
+          @Override
+          public void statementStarted(StatementStartedEvent event) {
+            throw new IllegalStateException("statement-start listener");
+          }
+
+          @Override
+          public void statementCompleted(StatementCompletedEvent event) {
+            throw new IllegalStateException("statement-complete listener");
+          }
+
+          @Override
+          public void operationCompleted(OperationCompletedEvent event) {
+            throw new IllegalStateException("operation-complete listener");
+          }
+        };
+    ExecutionListener recording =
+        new ExecutionListener() {
+          @Override
+          public void operationStarted(OperationStartedEvent event) {
+            callbacks.add("operation-start");
+          }
+
+          @Override
+          public void compilationCompleted(CompilationCompletedEvent event) {
+            callbacks.add("compile");
+          }
+
+          @Override
+          public void statementStarted(StatementStartedEvent event) {
+            callbacks.add("statement-start");
+          }
+
+          @Override
+          public void statementCompleted(StatementCompletedEvent event) {
+            callbacks.add("statement-complete");
+            assertSame(primary.diagnostics(), event.diagnostics());
+            assertEquals(ExecutionTermination.FAILED, event.termination());
+          }
+
+          @Override
+          public void operationCompleted(OperationCompletedEvent event) {
+            callbacks.add("operation-complete");
+            assertSame(primary.diagnostics(), event.diagnostics());
+            assertEquals(ExecutionTermination.FAILED, event.termination());
+          }
+        };
+    OperationObservation operation =
+        ExecutionListenerDispatcher.of(List.of(failing, recording))
+            .startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+    operation.compilationCompleted(
+        StatementPurpose.PRIMARY, SkisStatementKind.SELECT, 1L, "fingerprint", "SELECT 1", null);
+    StatementObservation statement =
+        operation.startStatement(
+            StatementPurpose.PRIMARY, SkisStatementKind.SELECT, "test", "fingerprint", "SELECT 1");
+    statement.completeFailed(
+        primary, SkisDiagnosticStage.EXECUTION, 0, StatementCompletedEvent.UNKNOWN_ROW_COUNT);
+    operation.completeFailed(primary, SkisDiagnosticStage.EXECUTION);
+    // Retrying completion after a failed listener must not notify twice.
+    statement.completeFailed(
+        primary, SkisDiagnosticStage.EXECUTION, 0, StatementCompletedEvent.UNKNOWN_ROW_COUNT);
+    operation.completeFailed(primary, SkisDiagnosticStage.EXECUTION);
+
+    assertEquals(
+        List.of("operation-start", "compile", "statement-start", "statement-complete", "operation-complete"),
+        callbacks);
+    assertEquals(0, primary.getSuppressed().length);
+    assertDoesNotThrow(ExecutionListenerDispatcher::rejectReentrantCall);
   }
 
   @Test

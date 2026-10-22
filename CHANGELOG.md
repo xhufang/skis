@@ -6,6 +6,19 @@
 
 ### Changed
 
+- 修复 T04 干净构建的架构检查顺序：集成测试模块排在 Reactor 最后，先生成包含 H2 示例的完整产物。
+  Java 21 单元/静态/架构/PG 检查合并至权威覆盖率作业，保留既有检查名称并显式转发失败/跳过/取消；
+  Java 25 在一次构建中执行静态与架构检查，Unix Enforcer 夹具通过 bash 调用 Wrapper，避免修改检出权限。
+  补充耗尽编译许可后等待期间被中断的缓存测试，核对 interrupt、原编译者及后续重试；未编译运行，待 CI 验证。
+- 0.2.8 T04 接入 Java 21/JaCoCo 0.8.15 权威覆盖率作业：合并同次构建的单元及真实 PG fork 数据，
+  对 15 个生产 Jar 分别生成报告，核对会话、release 21 字节码及 class ID，逐类登记生成代码排除。
+  新增逐模块 0.01 个百分点只升棘轮、可信历史比较、Actions 工件来源核验及失败夹具，补充资源清理、
+  缓存中断/失败重试、监听异常和 lowering 作用域测试。首次基线保持显式待登记；未本地编译运行，
+  首份真实数据和全部执行证据待 CI。T05 前暂用现有 PG service/Surefire 套件，未提前实现容器/profile 治理。
+- 修正 T04 的降线边界：统计口径变化仅允许受影响模块重建，手动比较固定为默认分支当前 tip；
+  工件认证核对实际工作流/提交、采集逻辑版本与 XML 计数，并补充内存 ZIP 完整认证及绕过负例，待 CI 验证。
+- 严格校验 T04 固定精度描述，防止描述变化解除历史门槛；候选仅从可信比较基线保留历史和证据，
+  同一 PR 内待登记行及首次登记重新采集后刷新来源。补充完整采集/认证链路、缺 fork/报告负例及缓存恢复测试超时；未编译运行，待 CI 验证。
 - 0.2.8 T03: move query assembly, compilation, caches, execution and DSL state into query.internal; keep public DSL interfaces and generated-table contracts, removing the two root-package assembly exceptions.
 - Replace query snapshot and continuation array reflection with typed array copying/hashing while retaining mutable-value isolation and deep equality semantics.
 - Wire runtime Enforcer allowlists, complete-reactor ArchUnit rules and violation fixtures, exact internal-access policy, and independent consumer bytecode guards into Java 21/25 CI. Execution evidence is pending; no local compilation or tests were run.

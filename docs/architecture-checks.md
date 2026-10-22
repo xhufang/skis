@@ -63,9 +63,14 @@ CI 使用实际 core POM 的执行配置，分别证明直接 Spring、放行直
 
 ## CI 与证据
 
-Java 21/25 的完整 Reactor 构建结束后，CI 再以 `architecture` profile 单独执行 `ArchitectureContractTest`，
-避免只构建集成测试依赖闭包时漏掉 Spring 和示例。profile 未选择时普通构建不要求全仓产物；专用作业必须有实际执行、
-零跳过的架构测试报告。保留现有查询类型、消费者、发布边界和 benchmark 冻结检查，不恢复跨版本兼容检查或 benchmark。
+根 Reactor 将 `skis-integration-tests` 排在所有生产、夹具和示例模块之后；Java 21 的 `engineering-gates`
+与 Java 25 的 `unit-tests` 均在一次顺序 `clean verify` 中启用 `architecture`，在完整产物就绪后执行
+`ArchitectureContractTest`，不再追加一轮 Maven 测试。只构建集成测试依赖闭包不足以提供 Spring 和示例产物。
+profile 未选择时普通构建不要求全仓产物；专用作业必须有实际执行、零跳过的架构测试报告。
+两种 Java 作业均运行 Enforcer 正反例；Unix 通过 `bash` 调用 Wrapper，不修改受版本控制文件的执行权限。
+保留现有查询类型、消费者、发布边界和 benchmark 冻结检查，不恢复跨版本兼容检查或 benchmark。
 
-CI 上传架构日志、Surefire 报告、政策 JSON 及 Enforcer 正反例日志。ArchUnit 只证明静态结构；普通/事务共享 Catalog、
+架构输出随各作业完整构建日志保存，另上传 Surefire 报告、政策 JSON 及 Enforcer 正反例日志。
+Java 21 证据位于 `engineering-gates-build-<runId>-<attempt>`，Java 25 位于 `unit-test-reports-java-25`。
+既有 Java 21 单元与集成检查名称转发权威作业的实际结果，映射见[分支覆盖率](branch-coverage.md)。ArchUnit 只证明静态结构；普通/事务共享 Catalog、
 L0/L1/L2、快照隔离、缓存并发与回收仍由原有动态合同和 T09 回归验证，不能将字节码检查当作性能测量。

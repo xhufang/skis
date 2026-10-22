@@ -92,9 +92,10 @@
 
     <module>skis-test-support</module>
     <module>skis-test-model</module>
-    <module>skis-integration-tests</module>
     <module>skis-benchmark</module>
     <module>skis-examples</module>
+    <!-- Architecture contracts require every production, fixture and example output. -->
+    <module>skis-integration-tests</module>
   </modules>
 
   <properties>
@@ -110,6 +111,10 @@
     <nullaway.version>0.14.2</nullaway.version>
     <!-- Late evaluation lets JaCoCo supply its agent without losing profile JVM options. -->
     <argLine></argLine>
+    <skis.coverage.unitArgLine></skis.coverage.unitArgLine>
+    <skis.coverage.pgArgLine></skis.coverage.pgArgLine>
+    <skis.staticAnalysis.jvmArgs></skis.staticAnalysis.jvmArgs>
+    <jacoco.version>0.8.15</jacoco.version>
 
     <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
     <maven-surefire-plugin.version>3.5.4</maven-surefire-plugin.version>
@@ -529,7 +534,8 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
-              <argLine>@{argLine} ${skis.staticAnalysis.jvmArgs}</argLine>
+              <!--suppress UnresolvedMavenProperty -->
+              <argLine>@{argLine} @{skis.coverage.unitArgLine} ${skis.staticAnalysis.jvmArgs}</argLine>
               <systemPropertyVariables>
                 <skis.staticAnalysis>true</skis.staticAnalysis>
                 <skis.staticAnalysis.checks>${skis.staticAnalysis.checks}</skis.staticAnalysis.checks>
@@ -542,8 +548,122 @@
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-failsafe-plugin</artifactId>
             <configuration>
-              <argLine>@{argLine} ${skis.staticAnalysis.jvmArgs}</argLine>
+              <!--suppress UnresolvedMavenProperty -->
+              <argLine>@{argLine} @{skis.coverage.pgArgLine} ${skis.staticAnalysis.jvmArgs}</argLine>
             </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>coverage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>enforce-coverage-toolchain</id>
+                <goals><goal>enforce</goal></goals>
+                <configuration>
+                  <rules>
+                    <requireJavaVersion><version>[21,22)</version></requireJavaVersion>
+                    <requireProperty>
+                      <property>skis.coverage.commit</property>
+                      <regex>[0-9a-f]{40}</regex>
+                    </requireProperty>
+                    <requireProperty>
+                      <property>maven.compiler.release</property>
+                      <regex>21</regex>
+                    </requireProperty>
+                    <requireProperty>
+                      <property>jacoco.version</property>
+                      <regex>0[.]8[.]15</regex>
+                    </requireProperty>
+                  </rules>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <version>${jacoco.version}</version>
+            <configuration>
+              <append>true</append>
+              <includes><include>io.skis.*</include></includes>
+            </configuration>
+            <executions>
+              <execution>
+                <id>coverage-unit-agent</id>
+                <goals><goal>prepare-agent</goal></goals>
+                <configuration>
+                  <propertyName>skis.coverage.unitArgLine</propertyName>
+                  <!--suppress UnresolvedMavenProperty -->
+                  <destFile>${project.build.directory}/jacoco/unit-${surefire.forkNumber}.exec</destFile>
+                  <!--suppress UnresolvedMavenProperty -->
+                  <sessionId>${skis.coverage.commit}:${project.artifactId}:unit-${surefire.forkNumber}</sessionId>
+                </configuration>
+              </execution>
+              <execution>
+                <id>coverage-postgres-agent</id>
+                <goals><goal>prepare-agent-integration</goal></goals>
+                <configuration>
+                  <propertyName>skis.coverage.pgArgLine</propertyName>
+                  <!--suppress UnresolvedMavenProperty -->
+                  <destFile>${project.build.directory}/jacoco/postgres-${surefire.forkNumber}.exec</destFile>
+                  <!--suppress UnresolvedMavenProperty -->
+                  <sessionId>${skis.coverage.commit}:${project.artifactId}:postgres-${surefire.forkNumber}</sessionId>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <!--suppress UnresolvedMavenProperty -->
+              <argLine>@{argLine} @{skis.coverage.unitArgLine} ${skis.staticAnalysis.jvmArgs}</argLine>
+              <forkCount>1</forkCount>
+              <reuseForks>true</reuseForks>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <!--suppress UnresolvedMavenProperty -->
+              <argLine>@{argLine} @{skis.coverage.pgArgLine} ${skis.staticAnalysis.jvmArgs}</argLine>
+              <forkCount>1</forkCount>
+              <reuseForks>true</reuseForks>
+            </configuration>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <version>3.8.1</version>
+            <inherited>false</inherited>
+            <executions>
+              <execution>
+                <id>coverage-cli</id>
+                <phase>initialize</phase>
+                <goals><goal>copy</goal></goals>
+                <configuration>
+                  <artifactItems>
+                    <artifactItem>
+                      <groupId>org.jacoco</groupId>
+                      <artifactId>org.jacoco.cli</artifactId>
+                      <version>${jacoco.version}</version>
+                      <classifier>nodeps</classifier>
+                      <destFileName>jacococli.jar</destFileName>
+                    </artifactItem>
+                  </artifactItems>
+                  <outputDirectory>${project.build.directory}/coverage-tools</outputDirectory>
+                </configuration>
+              </execution>
+            </executions>
           </plugin>
         </plugins>
       </build>

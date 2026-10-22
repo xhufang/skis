@@ -49,7 +49,12 @@ foreach ($fixture in $fixtures) {
     }
     $pomPath = Join-Path $fixtureRoot ($fixture.Name + '.xml')
     $pom.Save($pomPath)
-    $output = & $wrapper -B -ntp -f $pomPath validate 2>&1
+    $output = if ($IsWindows) {
+        & $wrapper -B -ntp -f $pomPath validate 2>&1
+    } else {
+        # The wrapper is tracked as 100644; leave the authoritative checkout clean.
+        & bash $wrapper -B -ntp -f $pomPath validate 2>&1
+    }
     $exitCode = $LASTEXITCODE
     $logPath = Join-Path $fixtureRoot ($fixture.Name + '.log')
     $output | Out-File -LiteralPath $logPath -Encoding utf8

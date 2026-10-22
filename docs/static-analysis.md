@@ -132,9 +132,11 @@ NullAway 的泛型推断和泛型实现检查仍有工具能力限制。边界�
 
 ## CI 证据
 
-Java 21/25 的 `unit-tests` 作业启用此 profile，要求 processor 专用套件、原 APT 套件及 query/mutation
-名义类型套件非空、无跳过并成功执行。每个矩阵作业始终保存 Maven/JDK 环境、完整构建日志、
-Surefire XML，以及 `skis-processor/target/nullness-reports/*.txt`。
+Java 21 的 `engineering-gates` 与 Java 25 的 `unit-tests` 作业启用此 profile，要求 processor 专用套件、原 APT 套件及 query/mutation
+名义类型套件非空、无跳过并成功执行。两种 Java 作业均保存 Maven/JDK 环境、完整构建日志、
+Surefire XML，以及 `skis-processor/target/nullness-reports/*.txt`。Java 21 合并至
+`engineering-gates-build-<runId>-<attempt>` 工件，Java 25 继续使用 `unit-test-reports-java-25`；
+既有 `Unit tests (Java 21)` 名称转发权威作业结果，不再重复构建，依赖失败/跳过/取消时显式失败。
 普通构建中专用检查用例按 profile 标记不执行；CI 中跳过不能冒充通过。
 
 2026-10-21 已核实运行 `39559723860`，其 PR head 为 `2b89c55`，合并验证提交为 `92c0a8e`：

@@ -3,6 +3,7 @@ package io.skis.query.internal;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -48,6 +49,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class ProjectionPlanCacheTest {
 
@@ -652,6 +654,159 @@ class ProjectionPlanCacheTest {
     }
 
     assertEquals(new QueryPlanCacheStatistics(0, 2, 0, 0, 0, 4), cache.statistics());
+  }
+
+  @Test
+  @Timeout(10)
+  void interruptedAdmissionPreservesInterruptAndAllowsTheNextCompilation() throws Exception {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("interrupted-admission");
+    AtomicReference<Throwable> rejected = new AtomicReference<>();
+    AtomicReference<Boolean> interruptPreserved = new AtomicReference<>(false);
+    Thread waiter =
+        new Thread(
+            () -> {
+              Thread.currentThread().interrupt();
+              try {
+                rejected.set(
+                    captureFailure(
+                        () ->
+                            cache.getOrCompile(
+                                key,
+                                dependencies(PET),
+                                () -> {
+                                  throw new AssertionError("interrupted caller must not compile");
+                                })));
+                interruptPreserved.set(Thread.currentThread().isInterrupted());
+              } finally {
+                Thread.interrupted();
+              }
+            });
+
+    waiter.setDaemon(true);
+    waiter.start();
+    waiter.join(TimeUnit.SECONDS.toMillis(5));
+    assertFalse(waiter.isAlive());
+    IllegalStateException failure = assertInstanceOf(IllegalStateException.class, rejected.get());
+    assertInstanceOf(InterruptedException.class, failure.getCause());
+    assertTrue(interruptPreserved.get());
+    assertEquals(0, cache.statistics().size());
+    CachedQueryPlan<Pet> recovered = plan("SELECT after_interrupted_admission");
+    assertSame(recovered, cache.getOrCompile(key, dependencies(PET), () -> recovered));
+    assertSame(
+        recovered,
+        cache.getOrCompile(
+            key,
+            dependencies(PET),
+            () -> {
+              throw new AssertionError("the recovered plan must remain cached");
+            }));
+  }
+
+  @Test
+  @Timeout(10)
+  void interruptingAnAdmissionWaitPreservesTheOwnerAndAllowsRetry() throws Exception {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey ownerKey = key("admission-owner");
+    QueryPlanKey waitingKey = key("interrupted-admission-waiter");
+    CountDownLatch ownerStarted = new CountDownLatch(1);
+    CountDownLatch releaseOwner = new CountDownLatch(1);
+    CountDownLatch waiterStarted = new CountDownLatch(1);
+    CachedQueryPlan<Pet> owned = plan("SELECT admission_owner");
+    AtomicReference<Throwable> rejected = new AtomicReference<>();
+    AtomicReference<Boolean> interruptPreserved = new AtomicReference<>(false);
+    Thread waiter =
+        new Thread(
+            () -> {
+              waiterStarted.countDown();
+              try {
+                rejected.set(
+                    captureFailure(
+                        () ->
+                            cache.getOrCompile(
+                                waitingKey,
+                                dependencies(PET),
+                                () -> {
+                                  throw new AssertionError("the waiting caller must not compile");
+                                })));
+                interruptPreserved.set(Thread.currentThread().isInterrupted());
+              } finally {
+                Thread.interrupted();
+              }
+            });
+    waiter.setDaemon(true);
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<CachedQueryPlan<Pet>> owner =
+          executor.submit(
+              () ->
+                  cache.getOrCompile(
+                      ownerKey,
+                      dependencies(PET),
+                      () -> {
+                        ownerStarted.countDown();
+                        awaitUnchecked(releaseOwner);
+                        return owned;
+                      }));
+      assertTrue(ownerStarted.await(5, TimeUnit.SECONDS));
+      waiter.start();
+      assertTrue(waiterStarted.await(5, TimeUnit.SECONDS));
+      // The owner holds the sole admission outside the cache locks; a different key must await it.
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (waiter.isAlive()
+          && waiter.getState() != Thread.State.WAITING
+          && System.nanoTime() < deadline) {
+        LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+      }
+      assertEquals(Thread.State.WAITING, waiter.getState());
+      waiter.interrupt();
+      waiter.join(TimeUnit.SECONDS.toMillis(5));
+      assertFalse(waiter.isAlive());
+      IllegalStateException failure = assertInstanceOf(IllegalStateException.class, rejected.get());
+      assertInstanceOf(InterruptedException.class, failure.getCause());
+      assertTrue(interruptPreserved.get());
+      assertFalse(owner.isDone());
+      assertEquals(0, cache.statistics().size());
+
+      releaseOwner.countDown();
+      assertSame(owned, owner.get(5, TimeUnit.SECONDS));
+      assertSame(
+          owned,
+          cache.getOrCompile(
+              ownerKey,
+              dependencies(PET),
+              () -> {
+                throw new AssertionError("interrupting a waiter must preserve the owner's plan");
+              }));
+      CachedQueryPlan<Pet> recovered = plan("SELECT after_interrupted_wait");
+      assertSame(recovered, cache.getOrCompile(waitingKey, dependencies(PET), () -> recovered));
+      assertSame(
+          recovered,
+          cache.getOrCompile(
+              waitingKey,
+              dependencies(PET),
+              () -> {
+                throw new AssertionError("the retried plan must remain cached");
+              }));
+    } finally {
+      releaseOwner.countDown();
+      waiter.interrupt();
+      executor.shutdownNow();
+    }
+  }
+
+  @Test
+  @Timeout(10)
+  void rejectsNullCompilerResultWithoutCachingItOrLeakingAdmission() {
+    ProjectionPlanCache cache = cache(1, Duration.ofMinutes(1), new AtomicLong());
+    QueryPlanKey key = key("null-result");
+
+    assertThrows(
+        NullPointerException.class, () -> cache.getOrCompile(key, dependencies(PET), () -> null));
+    assertEquals(0, cache.statistics().size());
+    CachedQueryPlan<Pet> recovered = plan("SELECT after_null_result");
+    assertSame(recovered, cache.getOrCompile(key, dependencies(PET), () -> recovered));
+    assertEquals(new QueryPlanCacheStatistics(0, 2, 0, 0, 1, 1), cache.statistics());
   }
 
   @Test

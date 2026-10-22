@@ -40,3 +40,6 @@ build/
 
 ### Local development tool ###
 /.codegraph
+
+### Python build-tool caches ###
+__pycache__/

@@ -5,6 +5,11 @@ on:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
+    inputs:
+      coverage_baseline_commit:
+        description: Current default-branch tip SHA for the coverage comparison (older commits are rejected)
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -14,6 +19,160 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  engineering-gates:
+    name: Engineering gates (Java 21 coverage)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: skis
+          POSTGRES_USER: skis
+          POSTGRES_PASSWORD: skis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skis -d skis"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SKIS_POSTGRES_URL: jdbc:postgresql://localhost:5432/skis
+      SKIS_POSTGRES_USER: skis
+      SKIS_POSTGRES_PASSWORD: skis
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out complete comparison history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up authoritative Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set up coverage tooling Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Prove coverage ratchet failure cases
+        shell: bash
+        run: python -m unittest discover -s .github/scripts/tests -p test_branch_coverage.py -v
+
+      - name: Register clean build and trusted comparison
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          MANUAL_BASE: ${{ inputs.coverage_baseline_commit }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            pull_request) comparison="$PR_BASE" ;;
+            push) comparison="$PUSH_BEFORE" ;;
+            workflow_dispatch) comparison="$MANUAL_BASE" ;;
+            *) exit 1 ;;
+          esac
+          python .github/scripts/branch_coverage.py start \
+            --session "$RUNNER_TEMP/skis-coverage-session.json" --comparison "$comparison"
+
+      - name: Compile once and execute unit APT H2 and real PostgreSQL contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./mvnw --version | tee "$RUNNER_TEMP/coverage-environment.txt"
+          bash ./mvnw -B -ntp clean verify -Pstatic-analysis,coverage,architecture \
+            -Dmaven.compiler.release=21 -Djava.version=21 -Dskis.coverage.commit="$GITHUB_SHA" \
+            2>&1 | tee "$RUNNER_TEMP/coverage-build.log"
+
+      - name: Require real PG and critical failure contracts without skips
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-integration-tests/target/surefire-reports `
+            -RequiredSuites @(
+              'io.skis.integration.SkisProjectionPostgreSqlContractTest',
+              'io.skis.integration.SkisJoinPostgreSqlContractTest',
+              'io.skis.integration.SkisSpecialProjectionPostgreSqlContractTest',
+              'io.skis.integration.SkisJdbcTypePostgreSqlContractTest',
+              'io.skis.integration.SkisEmployeeDepartmentScalarContractTest',
+              'io.skis.architecture.ArchitectureContractTest'
+            )
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-core/target/surefire-reports `
+            -RequiredSuites io.skis.core.internal.ExecutionListenerDispatcherTest
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-jdbc/target/surefire-reports `
+            -RequiredSuites @('io.skis.jdbc.JdbcExecutorTest', 'io.skis.jdbc.JdbcFailureContractTest')
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-query/target/surefire-reports `
+            -RequiredSuites io.skis.query.internal.ProjectionPlanCacheTest
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-dialect-support/target/surefire-reports `
+            -RequiredSuites io.skis.dialect.support.CompilationPipelineTest
+
+      - name: Require executed nullness and nominal type contracts
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-processor/target/surefire-reports `
+            -RequiredSuites @('io.skis.processor.NullnessCompilationTest', 'io.skis.processor.SkisEntityProcessorTest')
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-query/target/surefire-reports `
+            -RequiredSuites io.skis.query.internal.QueryTypeSafetyCompilationTest
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-mutation/target/surefire-reports `
+            -RequiredSuites io.skis.mutation.MutationTypeSafetyCompilationTest
+
+      - name: Prove Enforcer dependency failures and test-scope allowance
+        shell: pwsh
+        run: ./.github/scripts/verify-architecture-enforcer.ps1
+
+      - name: Collect module coverage and candidate
+        shell: bash
+        run: |
+          python .github/scripts/branch_coverage.py collect \
+            --session "$RUNNER_TEMP/skis-coverage-session.json" --output "$RUNNER_TEMP/skis-coverage"
+          cat "$RUNNER_TEMP/skis-coverage/summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload authoritative coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: branch-coverage-java-21-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/skis-coverage/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Check branch ratchet against trusted history and report provenance
+        shell: bash
+        run: python .github/scripts/branch_coverage.py check --output "$RUNNER_TEMP/skis-coverage"
+
+      - name: Upload build test and raw fork evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: engineering-gates-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+            **/target/jacoco/*.exec
+            skis-processor/target/nullness-reports/**
+            .github/quality/*.json
+            ${{ runner.temp }}/skis-enforcer-evidence/**
+            ${{ runner.temp }}/skis-coverage-session.json
+            ${{ runner.temp }}/coverage-environment.txt
+            ${{ runner.temp }}/coverage-build.log
+          if-no-files-found: error
+
   release-boundary:
     name: Release boundary metadata
     runs-on: ubuntu-latest
@@ -35,13 +194,27 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/verify-current-contracts.ps1
 
+  # Preserve existing required-check names without rebuilding Java 21 or rerunning PG.
+  # Run these checks even when the shared job failed or was skipped, then fail explicitly.
+  unit-tests-java-21:
+    name: Unit tests (Java 21)
+    needs: engineering-gates
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful consolidated Java 21 gates
+        shell: bash
+        env:
+          ENGINEERING_GATES_RESULT: ${{ needs.engineering-gates.result }}
+        run: test "$ENGINEERING_GATES_RESULT" = success
+
   unit-tests:
     name: Unit tests (Java ${{ matrix.java }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        java: [ "21", "25" ]
+        java: [ "25" ]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -57,18 +230,9 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          chmod +x mvnw
-          ./mvnw --version | tee "${RUNNER_TEMP}/static-analysis-environment.txt"
-          ./mvnw -B -ntp clean verify -Pstatic-analysis 2>&1 \
+          bash ./mvnw --version | tee "${RUNNER_TEMP}/static-analysis-environment.txt"
+          bash ./mvnw -B -ntp clean verify -Pstatic-analysis,architecture 2>&1 \
             | tee "${RUNNER_TEMP}/static-analysis-build.log"
-
-      - name: Verify architecture against the complete reactor outputs
-        shell: bash
-        run: |
-          set -o pipefail
-          ./mvnw -B -ntp -pl skis-integration-tests -am test -Parchitecture \
-            -Dtest=ArchitectureContractTest -Dsurefire.failIfNoSpecifiedTests=false 2>&1 \
-            | tee "${RUNNER_TEMP}/architecture-build.log"
 
       - name: Prove Enforcer dependency failures and test-scope allowance
         shell: pwsh
@@ -104,71 +268,21 @@ jobs:
             skis-processor/target/nullness-reports/**
             ${{ runner.temp }}/static-analysis-environment.txt
             ${{ runner.temp }}/static-analysis-build.log
-            ${{ runner.temp }}/architecture-build.log
             ${{ runner.temp }}/skis-enforcer-evidence/**
             .github/quality/*.json
           if-no-files-found: error
 
   integration-tests:
     name: Integration test module
+    needs: engineering-gates
+    if: always()
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: skis
-          POSTGRES_USER: skis
-          POSTGRES_PASSWORD: skis
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U skis -d skis"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      SKIS_POSTGRES_URL: jdbc:postgresql://localhost:5432/skis
-      SKIS_POSTGRES_USER: skis
-      SKIS_POSTGRES_PASSWORD: skis
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-
-      - name: Verify integration tests and dependencies
+      - name: Require successful consolidated PostgreSQL contracts
         shell: bash
-        run: |
-          chmod +x mvnw
-          ./mvnw -B -ntp -pl skis-integration-tests -am verify
-
-      - name: Require real PostgreSQL contracts without skipped tests
-        shell: pwsh
-        run: |
-          ./.github/scripts/verify-test-reports.ps1 `
-            -ReportDirectory skis-integration-tests/target/surefire-reports `
-            -RequiredSuites @(
-              'io.skis.integration.SkisProjectionPostgreSqlContractTest',
-              'io.skis.integration.SkisJoinPostgreSqlContractTest',
-              'io.skis.integration.SkisSpecialProjectionPostgreSqlContractTest',
-              'io.skis.integration.SkisJdbcTypePostgreSqlContractTest',
-              'io.skis.integration.SkisEmployeeDepartmentScalarContractTest'
-            )
-
-      - name: Upload integration reports
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: integration-test-reports
-          path: |
-            **/target/surefire-reports/**
-            **/target/failsafe-reports/**
-          if-no-files-found: ignore
+        env:
+          ENGINEERING_GATES_RESULT: ${{ needs.engineering-gates.result }}
+        run: test "$ENGINEERING_GATES_RESULT" = success
 
   minimal-consumer:
     name: Independent public consumers
