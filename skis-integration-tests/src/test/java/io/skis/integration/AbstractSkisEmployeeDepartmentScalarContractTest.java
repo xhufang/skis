@@ -2,12 +2,9 @@ package io.skis.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
-import io.skis.dialect.h2.H2Dialect;
-import io.skis.dialect.postgresql.PostgreSqlDialect;
 import io.skis.entity.skis.DepartmentTable;
 import io.skis.entity.skis.EmployeeTable;
 import io.skis.jdbc.spi.ConnectionProvider;
@@ -26,32 +23,20 @@ import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.UUID;
 import javax.sql.DataSource;
-import org.h2.jdbcx.JdbcDataSource;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
-import org.postgresql.ds.PGSimpleDataSource;
 
 /** Parameterized DISTINCT scalar ordering using the employee/department test model. */
-class SkisEmployeeDepartmentScalarContractTest {
+abstract class AbstractSkisEmployeeDepartmentScalarContractTest {
+
+  protected abstract DataSource createDataSource();
+
+  protected abstract Dialect dialect();
 
   @Test
-  void ordersEmployeeDepartmentScalarResultsAgainstH2() throws Exception {
-    JdbcDataSource dataSource = new JdbcDataSource();
-    dataSource.setURL("jdbc:h2:mem:employee_scalar_" + UUID.randomUUID());
-    verifyDistinctScalarOrdering(dataSource, H2Dialect.INSTANCE);
-  }
-
-  @Test
-  void ordersEmployeeDepartmentScalarResultsAgainstPostgreSql() throws Exception {
-    String url = System.getenv("SKIS_POSTGRES_URL");
-    assumeTrue(url != null && !url.isBlank(), "SKIS_POSTGRES_URL is not configured");
-    PGSimpleDataSource dataSource = new PGSimpleDataSource();
-    dataSource.setURL(url);
-    dataSource.setUser(environmentOrDefault("SKIS_POSTGRES_USER", "skis"));
-    dataSource.setPassword(environmentOrDefault("SKIS_POSTGRES_PASSWORD", "skis"));
-    verifyDistinctScalarOrdering(dataSource, PostgreSqlDialect.INSTANCE);
+  void ordersEmployeeDepartmentScalarResults() throws Exception {
+    verifyDistinctScalarOrdering(createDataSource(), dialect());
   }
 
   private static void verifyDistinctScalarOrdering(DataSource dataSource, Dialect dialect)
@@ -155,8 +140,4 @@ class SkisEmployeeDepartmentScalarContractTest {
     }
   }
 
-  private static String environmentOrDefault(String name, String defaultValue) {
-    String value = System.getenv(name);
-    return value == null || value.isBlank() ? defaultValue : value;
-  }
 }

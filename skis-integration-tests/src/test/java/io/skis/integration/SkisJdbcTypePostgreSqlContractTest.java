@@ -3,7 +3,6 @@ package io.skis.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.dialect.postgresql.PostgreSqlCodecs;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
@@ -11,6 +10,7 @@ import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
+import io.skis.testsupport.PostgresContract;
 import io.skis.testmodel.types.JdbcTypes;
 import io.skis.testmodel.types.skis.JdbcTypesTable;
 import java.sql.Connection;
@@ -22,7 +22,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 
+@PostgresContract
 class SkisJdbcTypePostgreSqlContractTest {
+
+  private final PGSimpleDataSource postgres;
+
+  SkisJdbcTypePostgreSqlContractTest(PGSimpleDataSource postgres) {
+    this.postgres = postgres;
+  }
 
   @Test
   void roundTripsEveryDeclaredPostgreSqlMappingThroughGeneratedCode() throws Exception {
@@ -101,14 +108,8 @@ class SkisJdbcTypePostgreSqlContractTest {
     }
   }
 
-  private static PGSimpleDataSource configuredDataSource() {
-    String url = System.getenv("SKIS_POSTGRES_URL");
-    assumeTrue(url != null && url.startsWith("jdbc:postgresql:"));
-    PGSimpleDataSource dataSource = new PGSimpleDataSource();
-    dataSource.setURL(url);
-    dataSource.setUser(environmentOrDefault("SKIS_POSTGRES_USER", "skis"));
-    dataSource.setPassword(environmentOrDefault("SKIS_POSTGRES_PASSWORD", "skis"));
-    return dataSource;
+  private PGSimpleDataSource configuredDataSource() {
+    return postgres;
   }
 
   private static void prepareTypeSchema(PGSimpleDataSource dataSource) throws Exception {
@@ -206,8 +207,4 @@ class SkisJdbcTypePostgreSqlContractTest {
     return id + 1;
   }
 
-  private static String environmentOrDefault(String name, String defaultValue) {
-    String value = System.getenv(name);
-    return value == null || value.isBlank() ? defaultValue : value;
-  }
 }

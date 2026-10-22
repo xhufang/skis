@@ -1,10 +1,10 @@
 package io.skis.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
+import io.skis.testsupport.PostgresContract;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -21,19 +21,20 @@ import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 
 /** Runs the complete Join contract and resource checks against real PostgreSQL. */
+@PostgresContract
 class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
+
+  private final PGSimpleDataSource postgres;
+
+  SkisJoinPostgreSqlContractTest(PGSimpleDataSource postgres) {
+    this.postgres = postgres;
+  }
 
   private TrackingDataSource trackingDataSource;
 
   @Override
   protected DataSource createDataSource() {
-    String url = System.getenv("SKIS_POSTGRES_URL");
-    assumeTrue(url != null && url.startsWith("jdbc:postgresql:"));
-    PGSimpleDataSource delegate = new PGSimpleDataSource();
-    delegate.setURL(url);
-    delegate.setUser(environmentOrDefault("SKIS_POSTGRES_USER", "skis"));
-    delegate.setPassword(environmentOrDefault("SKIS_POSTGRES_PASSWORD", "skis"));
-    trackingDataSource = new TrackingDataSource(delegate);
+    trackingDataSource = new TrackingDataSource(postgres);
     return trackingDataSource;
   }
 
@@ -106,11 +107,6 @@ class SkisJoinPostgreSqlContractTest extends AbstractSkisJoinContractTest {
     assertEquals(1, ownerIds.stream().filter(id -> Long.valueOf(ownerGraceId).equals(id)).count());
     assertEquals(
         1, ownerIds.stream().filter(id -> Long.valueOf(ownerWithoutPetId).equals(id)).count());
-  }
-
-  private static String environmentOrDefault(String name, String defaultValue) {
-    String value = System.getenv(name);
-    return value == null || value.isBlank() ? defaultValue : value;
   }
 
   private static final class TrackingDataSource implements DataSource {

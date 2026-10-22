@@ -1,0 +1,14 @@
+{
+  "suites": {
+    "skis-test-support": [
+      "io.skis.testsupport.PostgresEnvironmentPostgreSqlContractTest"
+    ],
+    "skis-integration-tests": [
+      "io.skis.integration.SkisProjectionPostgreSqlContractTest",
+      "io.skis.integration.SkisJoinPostgreSqlContractTest",
+      "io.skis.integration.SkisSpecialProjectionPostgreSqlContractTest",
+      "io.skis.integration.SkisJdbcTypePostgreSqlContractTest",
+      "io.skis.integration.SkisEmployeeDepartmentScalarPostgreSqlContractTest"
+    ]
+  }
+}

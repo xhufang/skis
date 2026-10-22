@@ -29,12 +29,16 @@ POLICY = ".github/quality/coverage-policy.json"
 JACOCO = "0.8.15"
 PRECISION = "floor(covered * 10000 / (covered + missed))"
 PENDING = "awaiting-first-authoritative-run"
-COMMAND = ["clean", "verify", "-Pstatic-analysis,coverage,architecture",
+COMMAND = ["clean", "verify", "-Pstatic-analysis,coverage,architecture,postgres-contracts",
            "-Dmaven.compiler.release=21"]
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 WORKFLOW = ".github/workflows/ci.yml"
 PRODUCER_FILES = (WORKFLOW, ".github/scripts/branch_coverage.py",
-                  ".github/scripts/verify-test-reports.ps1")
+                  ".github/scripts/verify-test-reports.ps1",
+                  ".github/scripts/verify-postgres-selection.ps1",
+                  ".github/scripts/verify-postgres-reports.ps1",
+                  ".github/quality/postgresql-suites.json",
+                  ".github/quality/postgresql-image.json")
 
 
 class GateError(RuntimeError):

@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.skis.core.ExecutionOptions;
 import io.skis.dialect.spi.SqlExceptionCategory;
@@ -19,6 +18,7 @@ import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
+import io.skis.testsupport.PostgresContract;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.PetSummary;
 import io.skis.testmodel.pet.skis.PetSummaryPro;
@@ -34,7 +34,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 
+@PostgresContract
 class SkisProjectionPostgreSqlContractTest {
+
+  private final PGSimpleDataSource postgres;
+
+  SkisProjectionPostgreSqlContractTest(PGSimpleDataSource postgres) {
+    this.postgres = postgres;
+  }
 
   @Test
   void executesScalarAndGeneratedProjectionContractsAgainstPostgreSql() throws Exception {
@@ -200,14 +207,8 @@ class SkisProjectionPostgreSqlContractTest {
     }
   }
 
-  private static PGSimpleDataSource configuredDataSource() {
-    String url = System.getenv("SKIS_POSTGRES_URL");
-    assumeTrue(url != null && url.startsWith("jdbc:postgresql:"));
-    PGSimpleDataSource dataSource = new PGSimpleDataSource();
-    dataSource.setURL(url);
-    dataSource.setUser(environmentOrDefault("SKIS_POSTGRES_USER", "skis"));
-    dataSource.setPassword(environmentOrDefault("SKIS_POSTGRES_PASSWORD", "skis"));
-    return dataSource;
+  private PGSimpleDataSource configuredDataSource() {
+    return postgres;
   }
 
   private static void prepareSchema(PGSimpleDataSource dataSource) throws Exception {
@@ -236,8 +237,4 @@ class SkisProjectionPostgreSqlContractTest {
     }
   }
 
-  private static String environmentOrDefault(String name, String defaultValue) {
-    String value = System.getenv(name);
-    return value == null || value.isBlank() ? defaultValue : value;
-  }
 }

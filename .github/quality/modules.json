@@ -354,17 +354,14 @@
       "artifact": "skis-spring-boot-starter-test",
       "kind": "placeholder",
       "dependencies": [
-        "skis-spring-boot",
-        "skis-test-support"
+        "skis-spring-boot"
       ]
     },
     {
       "path": "skis-test-support",
       "artifact": "skis-test-support",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-runtime"
-      ]
+      "kind": "fixture",
+      "dependencies": []
     },
     {
       "path": "skis-test-model",

@@ -50,12 +50,12 @@ Java 25 作业继续验证正确性，不向权威覆盖率汇入执行数据。
 运行 JDK 由 `setup-java`、会话登记时的 `java -version` 与 Enforcer 核验；命令行仅用
 `-Dmaven.compiler.release=21` 固定产物版本，不传 `-Djava.version=21`，避免覆盖真实 JDK 更新版本并误触最低版本门禁。
 
-作业在同一干净检出中执行一次 `clean verify`，同时启用 `static-analysis,coverage,architecture`。
+作业在同一干净检出中执行一次 `clean verify`，同时启用 `static-analysis,coverage,architecture,postgres-contracts`。
 根 Reactor 将 `skis-integration-tests` 放在最后，包含 H2 示例在内的全部生产/夹具产物先完成构建，
 架构测试随后在同一次顺序构建中读取完整字节码；不另启动一轮 Reactor 测试或重编译来补齐产物。
-T05 尚未实现，因此当前复用 PostgreSQL 16 service 与现有 Surefire PG 套件，显式要求五个真实 PG 套件
-非空、成功且无跳过；T05 的 tag/profile、Testcontainers 和外部 URL 治理仍归 T05。
-T05 切换后须同步命令登记、报告验证目录和执行套件，保持同一次构建的单元/PG 数据合并。
+T05 已接线 Testcontainers 和显式 PG 选择，权威作业改用容器，并在 Failsafe 中要求五个既有真实 PG 套件及环境清理套件
+非空、成功且无跳过，同时核对实际环境来源；外部 URL 路径另有 CI 作业，接线待验证。
+命令登记、报告目录和套件清单已随 T05 同步，保持同一次构建的单元/PG 数据合并。工作流及采集脚本版本变化后，现有待认证来源如不匹配，须由新 CI 工件重新生成真实候选，保留历史门槛。
 
 Java 21 单元、APT/nullness、名义类型、架构与 PG 检查统一在 `engineering-gates` 执行，
 保留专用套件非空/无跳过核验和 Enforcer 正反例；Java 25 的 `unit-tests` 独立执行
