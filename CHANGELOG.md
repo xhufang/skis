@@ -5,7 +5,8 @@
 ## [Unreleased]
 
 
-0.2.8 工程地基内部里程碑于 2026-10-23 完成，仓库保持 `0.2.8-SNAPSHOT`；下一 snapshot 单独切换。
+0.2.8 工程地基原始收口文档于 2026-10-23 保存；PR #82 的 query 抬线/并发测试修复待 CI。
+仓库保持 `0.2.8-SNAPSHOT`，本轮复验通过后再单独切换下一 snapshot。
 当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或公开发布。
 验证提交 `9dbb932` 的 [CI](https://github.com/xhufang/skis/actions/runs/39957930561) 与
 [Compliance](https://github.com/xhufang/skis/actions/runs/39957930562) 均通过；本次收口未在本地编译运行。
@@ -45,6 +46,10 @@
   benchmark 继续冻结；全部 0.2.x 完成并功能冻结后另建 0.3.0 发布前性能任务。
 
 ### Fixed
+
+- 根据 CI 39962078076 的真实候选，将 skis-query branch 门槛从 73.37% 提升至 73.43%，保留首次登记、
+  统计口径和其他模块行。EntityPlanSet 的并发首次使用测试改为同步屏障固定发布竞争时序，验证唯一计划身份，
+  消除依赖 parallel 流调度的分支覆盖波动；未改生产代码，未本地编译运行，稳定报告及新增来源认证待 CI。
 
 - 修复 PowerShell XML 的 name 属性遮蔽节点 Name 导致有效报告被误拒的问题；使用原生节点 getter，
   补齐属性遮蔽、大小写及命名空间正反例，已在 PR #78 合入 CI 通过。

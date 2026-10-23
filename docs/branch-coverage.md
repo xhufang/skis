@@ -9,6 +9,33 @@ T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 已下载并核对摘要，候选的全部模块行及首次登记与当前基线一致，无需抬线、降线或改变统计口径。
 本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
 
+
+## PR #82：query 棘轮抬线与并发覆盖稳定化（待 CI）
+
+[CI 39962078076 的权威作业](https://github.com/xhufang/skis/actions/runs/39962078076/job/120442308744)
+在 branch 历史比较阶段拒绝 skis-query 的应抬未抬；Java 21/25 构建、必需报告、PG 双路径、消费者和覆盖率采集已执行通过。
+Java 21 单元/集成名称转发该权威失败，不是另一项测试失败；本轮尚未完成新增来源认证。
+PR head 为 `5c2dcd466c812e5853de78f673ab14083a6cbd19`，实际测试合并提交为
+`c0613777956eb564491e46af2a3cfa23b90d5126`，比较 base 为
+`9dbb9324411ff2f5697aa85ed29d76b2bb75e692`。
+
+已核对 GitHub 的运行/尝试、合并父提交、七项采集输入 blob ID、15 模块 XML 哈希与 branch/类数及 HTML。
+[工件 12505546778](https://github.com/xhufang/skis/actions/runs/39962078076/artifacts/12505546778)
+为 `branch-coverage-java-21-39962078076-1`，归档 SHA-256 为
+`904f4512ffc1a9c6a387c1083ba85cd2a5532700fa97990891ec714ac6dfe375`。
+仅采用真实候选的 skis-query 行：covered/missed 为 1299/470、178 类，门槛 7337 → 7343（73.37% → 73.43%），
+XML SHA-256 为 `3f8809ebb5c277bf5596d3f1d6db821191df0f02320b89f2d29c3f480a854ce5`；
+首次登记、统计口径/排除及其余 14 个模块行保持不变。
+
+与 9dbb932 的权威 XML 比较，唯一 branch 差异是 EntityPlanSet.java:187 的 compareAndExchange 竞争失败分支，
+covered/missed 从 1298/471 变为 1299/470。原 publishesOnePlanIdentityUnderConcurrentFirstUse 依赖 parallel 流调度，
+现改为两个独立工作线程在渲染阶段通过 CountDownLatch 同步，确保都越过空槽读取再竞争发布；
+保留单主键预热，断言竞争双方及后续命中复用同一发布计划，所有等待有上限且 finally 中中止并回收线程池。
+测试方言的标准 Renderer 绑定自身目标；没有修改生产代码、增加生产便利方法或放宽棘轮。
+
+本地仅静态核对源码/差异及 CI 工件，未编译运行或执行 benchmark；测试修正、新门槛的来源认证及稳定报告待后续 CI。
+取证数据保存在本地 `target/t10-evidence/pr82-coverage.zip`、候选/measurement 与 `pr82-inspection.json`。
+
 ## 历史登记与故障处置
 
 2026-10-23 从 CI 39887845595 的真实候选登记 core、processor 和 jdbc 的提升；首次登记、统计口径及其余 12 个模块的
