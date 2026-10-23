@@ -51,6 +51,10 @@ Java 21 的单元、静态检查、架构与 PG 验证统一由 `engineering-gat
 [分支覆盖率](docs/branch-coverage.md)。不要手填通过率或用降低 JSON 门槛处理下降。
 手动覆盖率运行必须填写默认分支当前 tip SHA；采集逻辑变化后，新增/变更门槛需要重新生成来源候选。
 
+架构决策登记在 `.github/architecture/decisions.json`，本地 ADR 正文和索引保持忽略。
+本地同步检查与 Compliance 的干净检出检查分别记录结果；修改状态、移动实现或移除锚点时同步维护清单与处置记录。
+首次登记、可信比较 SHA、命令及证据范围见 [架构决策检查](docs/architecture-decisions.md)。当前接线尚待执行验证。
+
 ## 公共 API 变更
 
 `1.0.0` 之前不执行跨版本 API/ABI 比较，公开 API、SPI、生成代码合同、包结构和模块可以按当前设计质量直接调整。

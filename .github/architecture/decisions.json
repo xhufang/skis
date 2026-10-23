@@ -1,0 +1,895 @@
+{
+  "schemaVersion": 1,
+  "decisions": [
+    {
+      "id": "ADR-0001",
+      "title": "投影计划缓存键与治理接口",
+      "status": "Superseded",
+      "decisionVersion": "0.0.8",
+      "targetVersion": null,
+      "implementedVersion": "0.0.8",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/ProjectionPlanCache.java",
+          "type": "io.skis.query.internal.ProjectionPlanCache",
+          "member": {
+            "kind": "method",
+            "name": "getOrCompile"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ProjectionPlanCacheTest.java",
+          "type": "io.skis.query.internal.ProjectionPlanCacheTest"
+        }
+      ],
+      "disposition": {
+        "reason": "投影身份方案由 ADR-0003 取代；有界缓存、失效、统计与值隔离要求继续有效",
+        "replacedBy": [
+          "ADR-0003"
+        ]
+      }
+    },
+    {
+      "id": "ADR-0002",
+      "title": "JDBC 执行选项与方言异常分类边界",
+      "status": "Implemented",
+      "decisionVersion": "0.2.1-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.1-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/ExecutionOptions.java",
+          "type": "io.skis.core.ExecutionOptions"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/SqlExceptionCategory.java",
+          "type": "io.skis.dialect.spi.SqlExceptionCategory"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/test/java/io/skis/core/ExecutionOptionsTest.java",
+          "type": "io.skis.core.ExecutionOptionsTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/JdbcFailureContractTest.java",
+          "type": "io.skis.jdbc.JdbcFailureContractTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0003",
+      "title": "生成式结果形状与显式投影绑定",
+      "status": "Superseded",
+      "decisionVersion": "0.2.4-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.4-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/spi/ProjectionMapping.java",
+          "type": "io.skis.query.spi.ProjectionMapping",
+          "member": {
+            "kind": "method",
+            "name": "bind"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ProjectionQueryTest.java",
+          "type": "io.skis.query.internal.ProjectionQueryTest"
+        }
+      ],
+      "disposition": {
+        "reason": "投影声明、生成名与入口由 ADR-0011 取代；统一结果编译、解码和缓存基线继续有效",
+        "replacedBy": [
+          "ADR-0011"
+        ]
+      }
+    },
+    {
+      "id": "ADR-0004",
+      "title": "Spring 事务时限与 JDBC Statement 配置边界",
+      "status": "Implemented",
+      "decisionVersion": "0.2.4-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.4-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-spring/src/main/java/io/skis/spring/SpringConnectionProvider.java",
+          "type": "io.skis.spring.SpringConnectionProvider"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-spring/src/test/java/io/skis/spring/SpringConnectionProviderTest.java",
+          "type": "io.skis.spring.SpringConnectionProviderTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0005",
+      "title": "查询值快照与查询对象局部分析复用",
+      "status": "Implemented",
+      "decisionVersion": "0.2.4-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.4-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryParameters.java",
+          "type": "io.skis.query.internal.QueryParameters"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryValueSnapshots.java",
+          "type": "io.skis.query.internal.QueryValueSnapshots"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryValueSnapshotsTest.java",
+          "type": "io.skis.query.internal.QueryValueSnapshotsTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0006",
+      "title": "方言能力与 AST Lowering 边界",
+      "status": "Accepted",
+      "decisionVersion": "0.2.5-SNAPSHOT",
+      "targetVersion": "0.2.9-SNAPSHOT",
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "能力身份、参数上限与通用管线已验证；聚合专用类型及 CAST/lowering 规则未完成",
+      "task": "0.2.9:聚合语义闭环",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/DialectCapabilities.java",
+          "type": "io.skis.dialect.spi.DialectCapabilities"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/DialectLowering.java",
+          "type": "io.skis.dialect.spi.DialectLowering"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/RenderInput.java",
+          "type": "io.skis.dialect.spi.RenderInput",
+          "member": {
+            "kind": "method",
+            "name": "prepare"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/CompilationPipelineTest.java",
+          "type": "io.skis.dialect.support.CompilationPipelineTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0007",
+      "title": "共享查询计划结构键与缓存治理",
+      "status": "Implemented",
+      "decisionVersion": "0.2.6-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.6-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/ProjectionPlanCache.java",
+          "type": "io.skis.query.internal.ProjectionPlanCache",
+          "member": {
+            "kind": "method",
+            "name": "getOrCompile"
+          }
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryPlanKey.java",
+          "type": "io.skis.query.internal.QueryPlanKey"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ProjectionPlanCacheTest.java",
+          "type": "io.skis.query.internal.ProjectionPlanCacheTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryPlanKeyTest.java",
+          "type": "io.skis.query.internal.QueryPlanKeyTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0008",
+      "title": "最终查询参数载体与 Binder 调用期所有权",
+      "status": "Implemented",
+      "decisionVersion": "0.2.6-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.6-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryArguments.java",
+          "type": "io.skis.query.internal.QueryArguments"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mapping/src/main/java/io/skis/mapping/spi/ParameterBinder.java",
+          "type": "io.skis.mapping.spi.ParameterBinder",
+          "member": {
+            "kind": "method",
+            "name": "bind"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryPaginationCompilationTest.java",
+          "type": "io.skis.query.internal.QueryPaginationCompilationTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0009",
+      "title": "查询结果泛型与构建阶段收敛",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/SelectQuery.java",
+          "type": "io.skis.query.SelectQuery"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/QueryTable.java",
+          "type": "io.skis.query.QueryTable"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/JoinQueryDslTest.java",
+          "type": "io.skis.query.internal.JoinQueryDslTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0010",
+      "title": "SingleRow 的 Optional 风格 API 与结果可空性",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/SingleRow.java",
+          "type": "io.skis.query.SingleRow"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/DefaultSingleRow.java",
+          "type": "io.skis.query.internal.DefaultSingleRow"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryDiagnosticContractTest.java",
+          "type": "io.skis.query.internal.QueryDiagnosticContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/JdbcExecutorTest.java",
+          "type": "io.skis.jdbc.JdbcExecutorTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0011",
+      "title": "双投影声明、Pro 入口与属性来源",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-annotations/src/main/java/io/skis/annotations/PropertyFrom.java",
+          "type": "io.skis.annotations.PropertyFrom"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/spi/ProjectionMapping.java",
+          "type": "io.skis.query.spi.ProjectionMapping",
+          "member": {
+            "kind": "method",
+            "name": "bind"
+          }
+        },
+        {
+          "kind": "java",
+          "path": "skis-processor/src/main/java/io/skis/processor/SkisEntityProcessor.java",
+          "type": "io.skis.processor.SkisEntityProcessor"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-processor/src/test/java/io/skis/processor/SkisEntityProcessorTest.java",
+          "type": "io.skis.processor.SkisEntityProcessorTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ProjectionQueryTest.java",
+          "type": "io.skis.query.internal.ProjectionQueryTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0012",
+      "title": "API/SPI 职责分层与统一 AST 模型",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/SelectStatement.java",
+          "type": "io.skis.sql.ast.SelectStatement"
+        },
+        {
+          "kind": "json",
+          "path": ".github/quality/modules.json",
+          "pointer": [
+            "modules"
+          ],
+          "expectedType": "array",
+          "minItems": 1
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/architecture/ArchitectureContractTest.java",
+          "type": "io.skis.architecture.ArchitectureContractTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0013",
+      "title": "表单例命名与调用入口收敛",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-runtime/src/main/java/io/skis/runtime/Skis.java",
+          "type": "io.skis.runtime.Skis",
+          "member": {
+            "kind": "method",
+            "name": "create"
+          }
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/Sql.java",
+          "type": "io.skis.query.Sql"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-processor/src/test/java/io/skis/processor/SkisEntityProcessorTest.java",
+          "type": "io.skis.processor.SkisEntityProcessorTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0014",
+      "title": "运行时错误码、结构化安全诊断与 Spring 翻译",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/SkisErrorCode.java",
+          "type": "io.skis.core.SkisErrorCode"
+        },
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/SkisDiagnostics.java",
+          "type": "io.skis.core.SkisDiagnostics"
+        },
+        {
+          "kind": "java",
+          "path": "skis-spring/src/main/java/io/skis/spring/SkisExceptionTranslator.java",
+          "type": "io.skis.spring.SkisExceptionTranslator"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/test/java/io/skis/core/SkisDiagnosticsTest.java",
+          "type": "io.skis.core.SkisDiagnosticsTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-spring/src/test/java/io/skis/spring/SkisExceptionTranslatorTest.java",
+          "type": "io.skis.spring.SkisExceptionTranslatorTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0015",
+      "title": "受控编译阶段输入与分析归属证明",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/ResolvedStatement.java",
+          "type": "io.skis.dialect.spi.ResolvedStatement",
+          "member": {
+            "kind": "method",
+            "name": "analyze"
+          }
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/RenderInput.java",
+          "type": "io.skis.dialect.spi.RenderInput",
+          "member": {
+            "kind": "method",
+            "name": "prepare"
+          }
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/CompilationPipelineTest.java",
+          "type": "io.skis.dialect.support.CompilationPipelineTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0016",
+      "title": "方言支持模块与共享安全编译管线",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/main/java/io/skis/dialect/support/SqlCompiler.java",
+          "type": "io.skis.dialect.support.SqlCompiler",
+          "member": {
+            "kind": "method",
+            "name": "compile"
+          }
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/main/java/io/skis/dialect/support/StandardSqlRenderer.java",
+          "type": "io.skis.dialect.support.StandardSqlRenderer"
+        },
+        {
+          "kind": "xml",
+          "path": "pom.xml",
+          "xpath": "m:modules/m:module[.='skis-dialect-support']",
+          "expected": "skis-dialect-support"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/CompilationPipelineTest.java",
+          "type": "io.skis.dialect.support.CompilationPipelineTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/consumer/minimal-h2/src/test/java/example/SupportedSpiConsumerTest.java",
+          "type": "example.SupportedSpiConsumerTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0017",
+      "title": "只读执行监听与操作、SQL 双层生命周期",
+      "status": "Implemented",
+      "decisionVersion": "0.2.7-SNAPSHOT",
+      "targetVersion": null,
+      "implementedVersion": "0.2.7-SNAPSHOT",
+      "remaining": "",
+      "task": "",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/spi/ExecutionListener.java",
+          "type": "io.skis.core.spi.ExecutionListener"
+        },
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/internal/ExecutionListenerDispatcher.java",
+          "type": "io.skis.core.internal.ExecutionListenerDispatcher"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/test/java/io/skis/core/internal/ExecutionListenerDispatcherTest.java",
+          "type": "io.skis.core.internal.ExecutionListenerDispatcherTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-core/src/test/java/io/skis/core/spi/ExecutionListenerEventContractTest.java",
+          "type": "io.skis.core.spi.ExecutionListenerEventContractTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0018",
+      "title": "query 装配内部化与公共边界收口",
+      "status": "Accepted",
+      "decisionVersion": "0.2.8-SNAPSHOT",
+      "targetVersion": "0.2.8-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "T03 源码和架构规则已接线；T07 检查接线待验证，公共边界、共享 Catalog、事务与缓存合同待 CI/T09",
+      "task": "0.2.8:T03/T07/T09",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryRuntime.java",
+          "type": "io.skis.query.internal.QueryRuntime"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryPlanCatalog.java",
+          "type": "io.skis.query.internal.QueryPlanCatalog"
+        },
+        {
+          "kind": "python",
+          "path": ".github/scripts/architecture_decisions.py",
+          "entry": "main"
+        },
+        {
+          "kind": "python",
+          "path": ".github/scripts/run_architecture_contracts.py",
+          "entry": "main"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/compliance.yml",
+          "pointer": [
+            "jobs",
+            "adr-consistency",
+            "steps",
+            {
+              "name": "Verify registered decisions against trusted history"
+            },
+            "run"
+          ],
+          "expected": "set -euo pipefail\ncase \"$EVENT_NAME\" in\n  pull_request) comparison=\"$PR_BASE\" ;;\n  push) comparison=\"$PUSH_BEFORE\" ;;\n  workflow_dispatch) comparison=\"$MANUAL_BASE\" ;;\n  *) exit 1 ;;\nesac\npython .github/scripts/architecture_decisions.py ci --baseline \"$comparison\" \\\n  --report \"$RUNNER_TEMP/architecture/ci.json\"\n"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/architecture/ArchitectureContractTest.java",
+          "type": "io.skis.architecture.ArchitectureContractTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/compliance.yml",
+          "pointer": [
+            "jobs",
+            "adr-consistency",
+            "steps",
+            {
+              "name": "Prove architecture gate failure cases"
+            },
+            "run"
+          ],
+          "expected": "set -euo pipefail\nmkdir -p \"$RUNNER_TEMP/architecture\"\npython .github/scripts/run_architecture_contracts.py \\\n  2>&1 | tee \"$RUNNER_TEMP/architecture/failure-contracts.txt\"\n"
+        },
+        {
+          "kind": "python-test",
+          "path": ".github/scripts/tests/test_architecture_decisions.py",
+          "suite": "ArchitectureDecisionsTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0019",
+      "title": "统一 SLF4J 与调用期参数脱敏",
+      "status": "Accepted",
+      "decisionVersion": "0.2.8-SNAPSHOT",
+      "targetVersion": "0.2.8-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "T06 源码、生成 ABI 8、配置与失败/并发测试已接线；日志脱敏、资源、热路径及消费者执行证据待 CI/T09",
+      "task": "0.2.8:T06/T09",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/SqlLoggingOptions.java",
+          "type": "io.skis.core.SqlLoggingOptions"
+        },
+        {
+          "kind": "java",
+          "path": "skis-core/src/main/java/io/skis/core/spi/ParameterRedactor.java",
+          "type": "io.skis.core.spi.ParameterRedactor"
+        },
+        {
+          "kind": "xml",
+          "path": "pom.xml",
+          "xpath": "m:properties/m:slf4j.version",
+          "expected": "2.0.20"
+        },
+        {
+          "kind": "xml",
+          "path": "skis-core/pom.xml",
+          "xpath": "m:dependencies/m:dependency[m:artifactId='slf4j-api']/m:groupId",
+          "expected": "org.slf4j"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-core/src/test/java/io/skis/core/internal/SqlLoggingTest.java",
+          "type": "io.skis.core.internal.SqlLoggingTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/internal/ParameterLoggingTest.java",
+          "type": "io.skis.jdbc.internal.ParameterLoggingTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ADR-0020",
+      "title": "占位模块清理与独立测试设施",
+      "status": "Accepted",
+      "decisionVersion": "0.2.8-SNAPSHOT",
+      "targetVersion": "0.2.8-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "T05 test-support 已接线待 CI；23 个占位根模块及 Boot 示例未删除，44→21 根模块与发布边界治理待 T08/T09",
+      "task": "0.2.8:T05/T08/T09",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-test-support/src/main/java/io/skis/testsupport/PostgresEnvironment.java",
+          "type": "io.skis.testsupport.PostgresEnvironment"
+        },
+        {
+          "kind": "xml",
+          "path": "skis-benchmark/pom.xml",
+          "xpath": "m:packaging",
+          "expected": "pom"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/compliance.yml",
+          "pointer": [
+            "jobs",
+            "benchmark-freeze"
+          ]
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-test-support/src/test/java/io/skis/testsupport/PostgresSettingsTest.java",
+          "type": "io.skis.testsupport.PostgresSettingsTest"
+        },
+        {
+          "kind": "yaml",
+          "path": ".github/workflows/ci.yml",
+          "pointer": [
+            "jobs",
+            "engineering-gates"
+          ]
+        }
+      ]
+    }
+  ]
+}

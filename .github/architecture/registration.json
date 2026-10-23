@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "baselineRevision": "55a01f31aaee40171dc7c1907d9dad6c33d49858",
+  "ids": [
+    "ADR-0001",
+    "ADR-0002",
+    "ADR-0003",
+    "ADR-0004",
+    "ADR-0005",
+    "ADR-0006",
+    "ADR-0007",
+    "ADR-0008",
+    "ADR-0009",
+    "ADR-0010",
+    "ADR-0011",
+    "ADR-0012",
+    "ADR-0013",
+    "ADR-0014",
+    "ADR-0015",
+    "ADR-0016",
+    "ADR-0017",
+    "ADR-0018",
+    "ADR-0019",
+    "ADR-0020"
+  ],
+  "decisionsSha256": "bb2c699a9f60130f28477bcf13ab65be76afef621515ef65baecf0e278683316",
+  "localSync": {
+    "method": "static-inspection",
+    "result": "matched",
+    "fields": [
+      "id",
+      "status",
+      "decisionVersion",
+      "targetVersion",
+      "implementedVersion",
+      "remaining",
+      "task"
+    ],
+    "scope": "ADR-0001—0020 正文头部、索引与清单；全部状态、版本、未完成范围和任务",
+    "checkerExecution": "not-run",
+    "semanticVerification": "not-run",
+    "note": "2026-10-23 按本地开发约束仅做静态核对；本地命令、失败夹具和干净检出 CI 独立待验证。bootstrap 仅证明本次登记声明。"
+  }
+}

@@ -1,0 +1,4 @@
+# Source inspection tools only; never added to Maven artifacts or runtime dependencies.
+tree-sitter==0.25.2
+tree-sitter-java==0.23.5
+PyYAML==6.0.3
