@@ -6,6 +6,9 @@
 
 ### Changed
 
+- 采用 CI 39887845595 的真实覆盖率候选，将 core/processor/jdbc 的 branch 门槛分别提升至 72.25%/72.44%/78.62%，
+  保留其余模块历史门槛；针对 mutation 的覆盖缺口补充 delete Binder 在需求开启/关闭时的绑定顺序、槽位和停止观察合同。
+  未本地编译运行，新增登记认证及测试结果待 CI。
 - 0.2.8 T06 接入 SLF4J 2.0.20 API、不可变 SqlLoggingOptions 与 ParameterRedactor；统一内部安全日志，
   SQL/慢查询复用无值监听事件，参数摘要通过独立绑定通道同步生成，默认关闭且不重复 getter。
   查询最终布局、Fast Path、生成写入和分页双 SQL 均接线有界摘要；普通脱敏/后端失败隔离，保留原始异常链与资源所有权。
