@@ -137,17 +137,17 @@
       }
     },
     "skis-sql-ast": {
-      "covered": 784,
-      "missed": 300,
-      "classes": 93,
-      "threshold": 7232,
-      "reportSha256": "fb7c5d2663cac333a82ed826b6eb85d65a347db9742226e0c287e83ed535d387",
+      "covered": 916,
+      "missed": 303,
+      "classes": 97,
+      "threshold": 7514,
+      "reportSha256": "d4a916892b0d79b68c4878e75b2204cab92cc51b103f855be0dac16ac789ab3f",
       "evidence": {
-        "commit": "0101358fea836d64cb65aa4492e7254eba8521c1",
-        "runId": "39718331626",
+        "commit": "08b2f7291770d0168f173a2892dba11ce1fe46e0",
+        "runId": "40000183883",
         "attempt": "1",
         "repository": "xhufang/skis",
-        "artifact": "branch-coverage-java-21-39718331626-1"
+        "artifact": "branch-coverage-java-21-40000183883-1"
       }
     },
     "skis-dialect-api": {
