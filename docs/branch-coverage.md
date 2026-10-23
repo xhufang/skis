@@ -1,18 +1,46 @@
 # 分支覆盖率与逐模块棘轮
 
 0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。当前 `.github/quality/branch-baseline.json` 状态为 `active`。
-T09 已核实基线 `5a593af62d501ae7ea4cb93e3acc5aae46118d63` 的
-[Java 21 权威作业](https://github.com/xhufang/skis/actions/runs/39952962527/job/120411709528)：
-45 项脚本夹具、15 模块覆盖采集、历史棘轮及来源认证全部通过，原门槛保持。
-工件为 `branch-coverage-java-21-39952962527-1`（ID `12501337261`），归档 SHA-256 为
-`af7970220f4d3ac24b29c471185a59997a9bb50c0a4b2c93b48398656fe2f7ad`。
-本轮 T09 工作流与报告守卫变化仍待新 CI，未在本地编译运行。
+T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
+[Java 21 权威作业](https://github.com/xhufang/skis/actions/runs/39957930561/job/120428327026)：
+45 项脚本夹具、15 模块覆盖采集、历史棘轮及来源认证全部通过；两条完整 Java 构建的报告守卫各 53 项通过。
+工件 `branch-coverage-java-21-39957930561-1`（ID `12503487449`）归档 SHA-256 为
+`2876c1755d441238047f8eb8eb47e5c56095cf3c32f3fce39717f885575e6c82`。
+已下载并核对摘要，候选的全部模块行及首次登记与当前基线一致，无需抬线、降线或改变统计口径。
+本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
+
+
+## PR #82：query 棘轮抬线与并发覆盖稳定化（待 CI）
+
+[CI 39962078076 的权威作业](https://github.com/xhufang/skis/actions/runs/39962078076/job/120442308744)
+在 branch 历史比较阶段拒绝 skis-query 的应抬未抬；Java 21/25 构建、必需报告、PG 双路径、消费者和覆盖率采集已执行通过。
+Java 21 单元/集成名称转发该权威失败，不是另一项测试失败；本轮尚未完成新增来源认证。
+PR head 为 `5c2dcd466c812e5853de78f673ab14083a6cbd19`，实际测试合并提交为
+`c0613777956eb564491e46af2a3cfa23b90d5126`，比较 base 为
+`9dbb9324411ff2f5697aa85ed29d76b2bb75e692`。
+
+已核对 GitHub 的运行/尝试、合并父提交、七项采集输入 blob ID、15 模块 XML 哈希与 branch/类数及 HTML。
+[工件 12505546778](https://github.com/xhufang/skis/actions/runs/39962078076/artifacts/12505546778)
+为 `branch-coverage-java-21-39962078076-1`，归档 SHA-256 为
+`904f4512ffc1a9c6a387c1083ba85cd2a5532700fa97990891ec714ac6dfe375`。
+仅采用真实候选的 skis-query 行：covered/missed 为 1299/470、178 类，门槛 7337 → 7343（73.37% → 73.43%），
+XML SHA-256 为 `3f8809ebb5c277bf5596d3f1d6db821191df0f02320b89f2d29c3f480a854ce5`；
+首次登记、统计口径/排除及其余 14 个模块行保持不变。
+
+与 9dbb932 的权威 XML 比较，唯一 branch 差异是 EntityPlanSet.java:187 的 compareAndExchange 竞争失败分支，
+covered/missed 从 1298/471 变为 1299/470。原 publishesOnePlanIdentityUnderConcurrentFirstUse 依赖 parallel 流调度，
+现改为两个独立工作线程在渲染阶段通过 CountDownLatch 同步，确保都越过空槽读取再竞争发布；
+保留单主键预热，断言竞争双方及后续命中复用同一发布计划，所有等待有上限且 finally 中中止并回收线程池。
+测试方言的标准 Renderer 绑定自身目标；没有修改生产代码、增加生产便利方法或放宽棘轮。
+
+本地仅静态核对源码/差异及 CI 工件，未编译运行或执行 benchmark；测试修正、新门槛的来源认证及稳定报告待后续 CI。
+取证数据保存在本地 `target/t10-evidence/pr82-coverage.zip`、候选/measurement 与 `pr82-inspection.json`。
 
 ## 历史登记与故障处置
 
 2026-10-23 从 CI 39887845595 的真实候选登记 core、processor 和 jdbc 的提升；首次登记、统计口径及其余 12 个模块的
 历史门槛与证据保持不变。该候选同时含 mutation 的下降行，该行未采用，保留 73.40% 并补充缺失的合同测试。
-当时新增登记的来源认证及测试修复后测量仍待 CI；后续验证结论见本文开头的 5a593af 记录。
+当时新增登记的来源认证及测试修复后测量仍待 CI；后续最终验证结论见本文开头的 9dbb932 记录。
 
 本轮报告来自 [CI 39887845595 的权威作业](https://github.com/xhufang/skis/actions/runs/39887845595/job/120200120805)，
 PR #75 head 为 `b1d4405e6d1747d7c57416dbdf2582c302a50a3b`，实际测试合并提交为

@@ -60,8 +60,11 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.IntStream;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
 
@@ -503,16 +506,67 @@ class EntityPlanSetTest {
   }
 
   @Test
-  void publishesOnePlanIdentityUnderConcurrentFirstUse() {
-    EntityPlanSet<Pet> plans = plans();
-    List<CompiledQueryPlan<Pet, Object>> observed =
-        IntStream.range(0, 64)
-            .parallel()
-            .mapToObj(index -> selectPlan(plans, TABLE, TABLE.name().eq("pet-" + index)))
-            .toList();
+  void publishesOnePlanIdentityUnderConcurrentFirstUse() throws Exception {
+    CountDownLatch bothCompiling = new CountDownLatch(2);
+    AtomicBoolean coordinateRendering = new AtomicBoolean();
+    Dialect dialect =
+        new Dialect() {
+          private final SqlRenderer delegate = new StandardSqlRenderer(this);
+          private final SqlRenderer renderer =
+              input -> {
+                if (coordinateRendering.get()) {
+                  bothCompiling.countDown();
+                  try {
+                    assertTrue(bothCompiling.await(5, TimeUnit.SECONDS));
+                  } catch (InterruptedException failure) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(
+                        "interrupted while coordinating plan publication", failure);
+                  }
+                }
+                return delegate.render(input);
+              };
 
-    CompiledQueryPlan<Pet, Object> published = observed.getFirst();
-    observed.forEach(plan -> assertSame(published, plan));
+          @Override
+          public String id() {
+            return TestDialect.INSTANCE.id();
+          }
+
+          @Override
+          public IdentifierRules identifierRules() {
+            return TestDialect.INSTANCE.identifierRules();
+          }
+
+          @Override
+          public DialectCapabilities capabilities() {
+            return TestDialect.INSTANCE.capabilities();
+          }
+
+          @Override
+          public SqlRenderer renderer() {
+            return renderer;
+          }
+        };
+    EntityRuntimeModel<Pet> runtimeModel = model();
+    EntityPlanSet<Pet> plans =
+        new EntityPlanSet<>(
+            runtimeModel,
+            QueryTestSupport.compiler(EntityRuntimeRegistry.of(List.of(runtimeModel)), dialect));
+    // Leave findById prewarming unblocked, then hold both first-use compilers before publication.
+    coordinateRendering.set(true);
+    var workers = Executors.newFixedThreadPool(2);
+    try {
+      var first = workers.submit(() -> selectPlan(plans, TABLE, TABLE.name().eq("Mimi")));
+      var second = workers.submit(() -> selectPlan(plans, TABLE, TABLE.name().eq("Fifi")));
+
+      CompiledQueryPlan<Pet, Object> published = first.get(10, TimeUnit.SECONDS);
+      assertSame(published, second.get(10, TimeUnit.SECONDS));
+      assertEquals(0L, bothCompiling.getCount());
+      assertSame(published, selectPlan(plans, TABLE, TABLE.name().eq("Poppy")));
+    } finally {
+      workers.shutdownNow();
+      assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+    }
   }
 
   @Test

@@ -4,106 +4,58 @@
 
 ## [Unreleased]
 
-- 修复 T09 报告守卫被 PowerShell XML 属性适配器影响的问题：通过原生 getter 校验节点名称和命名空间，
-  避免 Surefire 的 name 属性覆盖节点 Name 后误拒合法报告；补充属性遮蔽、大小写与命名空间正反例。
-  CI 39956227062 在报告夹具/报告验收阶段失败，本轮修复仅静态检查，未本地编译运行，待新 CI。
-- 0.2.8 T09 登记 Java 21/25 的 17 模块、76 个普通回归必需套件，覆盖查询类型、共享计划/事务、缓存并发与回收、
-  数组/日期快照、生成编解码、方言、日志脱敏及资源生命周期；继续保留 PG 双路径与四个独立消费者。
-  报告守卫拒绝缺失/非法计数、空报告、实际用例数不一致，以及失败、跳过和重跑失败节点，新增正反例并输出带提交、
-  作业和逐报告 SHA-256 的回归证据。已核实基线 5a593af 的 CI 39952962527 / Compliance 39952962528 通过；
-  本轮新增门禁与夹具未本地执行，仍待新 CI，不能使用基线结果代替本轮验证。
-- 0.2.8 T08 删除 23 个远期占位根模块及未就绪 Boot 示例，根 Reactor 从 44 缩为 21 个模块；
-  同步版本管理、Central 排除、模块分类及 ADR 当前范围，保留 17 个公开 GAV、H2 示例和测试设施。
-  发布检查增加失效 SKIS 依赖及 test-support 使用方 test scope 校验，保持原覆盖率门槛与 benchmark 冻结。
-- 合并 CompiledQueryPlan 的常量错误消息，保持原异常语义；说明 ASCII 标识符、缺少数据库长度校验及单主键最小预热策略。
-  GC 夹具移除弃用的 System.runFinalization，保持原有界等待及 ClassLoader/映射/调用图断言；
-  Java 21/25 CI 显式要求回收报告非空无跳过。以上变更仅静态核对，当前提交执行证据待 CI，未本地编译运行。
+
+0.2.8 工程地基原始收口文档于 2026-10-23 保存；PR #82 的 query 抬线/并发测试修复待 CI。
+仓库保持 `0.2.8-SNAPSHOT`，本轮复验通过后再单独切换下一 snapshot。
+当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或公开发布。
+验证提交 `9dbb932` 的 [CI](https://github.com/xhufang/skis/actions/runs/39957930561) 与
+[Compliance](https://github.com/xhufang/skis/actions/runs/39957930562) 均通过；本次收口未在本地编译运行。
+
+### Added
+
+- 接入维护者显式使用的 `static-analysis` profile：Error Prone 2.50.0、NullAway 0.14.2 和 JSpecify，
+  覆盖生产/生成源码、调用方及可空泛型正负例；检查器不进入发布运行时，独立消费者不需要 SKIS parent。
+  Java 21/25 当前专用检查及名义类型套件均无跳过通过；已确认数组读取漏检保留为工具升级复核项。
+- 接入运行时 Enforcer、完整 Reactor 产物 ArchUnit、精确 internal/反射例外及违规夹具，
+  验证生成代码和四个独立消费者不依赖 internal；公开查询预算保持 30/30。
+- 接入 Java 21/JaCoCo 0.8.15 权威采集、15 个生产 Jar 的 branch 只升棘轮、可信历史比较和工件来源认证。
+  当前 45 项失败夹具、采集及历史/来源检查通过；门槛、首次登记及统计口径保持。
+- 测试侧接入 Testcontainers 2.0.5、PG 16.15 固定镜像、显式 profile/tag 和单 JVM 环境；
+  外部 URL 优先且错误不回退，普通单元不初始化 Docker，每套件隔离数据库并清理。
+  容器/URL 两条路径各 6 套件/32 项及独立 PG 消费者通过。
+- 接入 SLF4J 2.0.20 API、不可变 SqlLoggingOptions 和 ParameterRedactor；SQL/慢查询/参数日志默认关闭，
+  默认 TYPE_ONLY 不格式化值。显式参数摘要使用独立同步绑定通道，保留无值事件和原始异常链，
+  不重复 getter、不留存值；失败、重入、预算、并发、引用与资源合同通过。生成绑定 ABI 为 8。
+- 登记 ADR-0001—0020 的最小机器清单、首次登记、结构化锚点和可信历史防删除/无处置状态变更检查。
+  Compliance 的 33 项失败夹具及干净检出检查通过；本地正文/索引/清单另作静态核对，项目 local 检查器未运行。
+- 登记 17 模块、76 个普通必需回归套件；报告守卫拒绝缺失/非法计数、空报告、用例数不符、失败/跳过和重跑失败，
+  输出绑定提交、运行/作业及逐 XML SHA-256 的证据。Java 21/25 各 729 项测试及报告守卫各 53 项检查通过。
 
 ### Changed
 
-- 0.2.8 T07 接入 ADR-0001—0020 的最小机器清单、首次登记记录和源码/配置结构化检查，
-  分离本地 ADR 同步与干净检出 CI；按可信历史拦截决策删除、无处置状态变更和锚点/合同归属移除。
-  失败夹具专用入口拒绝文件缺失和零测试，合同归属限定 Java/Python 测试及可执行工作流作业/步骤，补充对应负例。
-  配置锚点默认拒绝空数组/对象，支持显式容器类型与最小数量；modules 清单要求非空数组，补充对应正反例并同步首次登记摘要。
-  拒绝失败夹具的任意测试/子测试跳过，Python 入口只接受主分支直属调用并补充正反例；夹具失败后仍独立生成 CI JSON，保留作业失败状态。
-  拒绝失败夹具中的预期失败；统一校验各状态的 change/disposition 对象类型和替代 ID 数组，类型错误保留 ADR/字段诊断，补充失败夹具及本地/CI JSON 负例。
-  补充临时 Git 仓库失败夹具与 Compliance 证据工件；仅完成静态核对，未本地编译运行，检查器和 CI 结果待验证。
-- 采用 CI 39887845595 的真实覆盖率候选，将 core/processor/jdbc 的 branch 门槛分别提升至 72.25%/72.44%/78.62%，
-  保留其余模块历史门槛；针对 mutation 的覆盖缺口补充 delete Binder 在需求开启/关闭时的绑定顺序、槽位和停止观察合同。
-  未本地编译运行，新增登记认证及测试结果待 CI。
-- 0.2.8 T06 接入 SLF4J 2.0.20 API、不可变 SqlLoggingOptions 与 ParameterRedactor；统一内部安全日志，
-  SQL/慢查询复用无值监听事件，参数摘要通过独立绑定通道同步生成，默认关闭且不重复 getter。
-  查询最终布局、Fast Path、生成写入和分页双 SQL 均接线有界摘要；普通脱敏/后端失败隔离，保留原始异常链与资源所有权。
-  完成日志的致命 Error 保留已有 JDBC 失败和清理链；装配期预建日志需求快照，参数摘要复用本条观察指纹，避免逐操作快照分配和重复哈希。
-  安全日志输出及级别探测均复用监听重入保护并保留外层作用域；慢日志独立携带有界 SQL 模板。
-  查询/写入入口一次捕获日志需求，无观察需求时在对象、事件、ID 和计时前短路；参数摘要复用已有操作/语句 ID，支持同 SQL 并发关联，仅摘要路径不分配 ID。
-  摘要与观察同时启用时，从 SQL/操作生命周期扣除同步脱敏、摘要格式化及输出耗时；关闭和仅摘要路径不新增计时。
-  补充输出及探测重入/嵌套作用域、单次需求捕获、耗时扣除及失败清理测试，并发测试核对每次调用的安全摘要与生命周期关联。
-  ParameterRedactor 返回值显式标注 Nullable，与 null 降级合同一致，新增对应检查器正反例。
-  重入保护复用线程内 Boolean，移除每次日志级别探测、输出和监听回调的全局原子计数更新；线程首次保护访问的条目随后复用。
-  ParameterBindingObserver 增加 needsMore，生成/框架 Binder 在预算耗尽后停止后续观察和 primitive 装箱，继续全部 JDBC 绑定并保留准确截断数量。
-  补充关闭级别探测的线程隔离、70 属性生成 Binder 的绑定/getter/停止观察、查询重复槽位和摘要完整性回归，修正指南中的旧实现状态。
-  评审整改修正 70 属性夹具的非空列声明，加固摘要计时与慢日志阈值测试，消费者需求计数与后端内部探测解耦；安全文本无需处理时复用原串，清理备份及多余生成导入，并让 JDBC 测试代理拒绝未知调用。
-  生成 ABI 升为 8，处理器、golden 与消费者同步；新增关闭路径、恶意值/失败、并发/引用释放及独立 H2 合同，CI 要求非空无跳过报告。
-  本地仅静态核对，未编译运行，运行证据和覆盖率棘轮仍待 CI。
-- 为查询计划缓存补充准入后同 key 竞争的确定性测试：固定取得许可后、注册编译任务前的窗口，
-  验证复用同一次编译、miss 统计和许可归还，消除本轮四个分支的调度覆盖波动；门槛保持 73.37%，未本地运行，待 CI。
-- 采用 CI 39738254300 的真实覆盖率候选，将 skis-query branch 门槛从 73.14% 提升至 73.37%，
-  保留首次登记及其他 14 个模块的门槛和证据；构建、PG 双路径及覆盖率采集已通过，抬线登记待 CI 认证。
-- 修复 PG tag 筛选后无选中测试的 Failsafe fork 被覆盖率采集误判为空数据：仅在对应阶段没有测试报告时允许仅含会话的 exec，
-  保留文件新鲜度、会话身份、实际测试类记录及合并后的生产覆盖检查；补充采集回归夹具，未本地运行，待 CI 复验。
-- 修复 PostgreSQL 消费者启动器的 NullAway 编译错误：使用列表切片传递非空命令参数，
-  保持子进程命令与生命周期；Java 21/25 静态分析及权威覆盖率待 CI 复验。
-- 0.2.8 T05 接线 Testcontainers 2.0.5、经官方 registry 核实的 PostgreSQL 16.15-bookworm manifest 锁、
-  Surefire/Failsafe 的显式 PG tag/profile 分离及单 JVM 根级环境。外部 URL 优先且错误不回退；
-  每套件使用独立临时数据库，保留五个 PG 必需合同和拆分后的 H2 员工/部门合同。
-  独立 PG 消费者由父进程管理环境，CI 接入容器/URL 双路径、非空无跳过报告、失败与清理检查，
-  权威覆盖率继续合并同次单元/PG 数据；未在本地编译运行，执行证据待 CI。
-- 采用 CI 39718331626 的真实覆盖率候选，将 skis-query branch 门槛从 73.03% 提升至 73.14%，其他模块门槛相同。
-  确定性测试已通过 Java 21/25 CI；按尚未激活的目标分支基线刷新登记来源，更新后的来源认证及棘轮仍待 CI。
-- 补充覆盖率并发分支的确定性测试：用 latch 验证活跃监听回调不阻止其他线程，用准入锁排队固定缓存等待者加入新编译任务的时序，
-  并按实际 Map 遍历顺序安排访问时间验证淘汰选择。保持生产代码和覆盖率门槛，修复待 CI 验证，未本地编译运行。
-- 从 CI 39715770444 的权威工件登记 15 模块首份真实 branch 基线，保留合并提交、运行/尝试编号及逐模块 XML 哈希。
-  Java 21/25 主构建、PG 合同、Enforcer 正反例与 43 项 Python 夹具已成功；登记提交的来源认证和棘轮仍待 CI。
-- 修复权威覆盖率命令的 JDK 版本误判：移除覆盖真实运行版本的 `-Djava.version=21`，
-  保留 release 21 和现有 Enforcer 门禁，并同步覆盖率会话命令。CI 首轮未进入编译，真实基线仍待重跑。
-- 修复 Enforcer 夹具的父 POM 定位：按夹具目录生成相对路径，本地夹具放在仓库 target 下以避免 Windows 跨盘；
-  保留负例必须命中 BannedDependencies 的约束。Java 25 主构建已通过，夹具修复待 CI 验证。
-- 修复 T04 干净构建的架构检查顺序：集成测试模块排在 Reactor 最后，先生成包含 H2 示例的完整产物。
-  Java 21 单元/静态/架构/PG 检查合并至权威覆盖率作业，保留既有检查名称并显式转发失败/跳过/取消；
-  Java 25 在一次构建中执行静态与架构检查，Unix Enforcer 夹具通过 bash 调用 Wrapper，避免修改检出权限。
-  补充耗尽编译许可后等待期间被中断的缓存测试，核对 interrupt、原编译者及后续重试；未编译运行，待 CI 验证。
-- 0.2.8 T04 接入 Java 21/JaCoCo 0.8.15 权威覆盖率作业：合并同次构建的单元及真实 PG fork 数据，
-  对 15 个生产 Jar 分别生成报告，核对会话、release 21 字节码及 class ID，逐类登记生成代码排除。
-  新增逐模块 0.01 个百分点只升棘轮、可信历史比较、Actions 工件来源核验及失败夹具，补充资源清理、
-  缓存中断/失败重试、监听异常和 lowering 作用域测试。首次基线保持显式待登记；未本地编译运行，
-  首份真实数据和全部执行证据待 CI。T05 前暂用现有 PG service/Surefire 套件，未提前实现容器/profile 治理。
-- 修正 T04 的降线边界：统计口径变化仅允许受影响模块重建，手动比较固定为默认分支当前 tip；
-  工件认证核对实际工作流/提交、采集逻辑版本与 XML 计数，并补充内存 ZIP 完整认证及绕过负例，待 CI 验证。
-- 严格校验 T04 固定精度描述，防止描述变化解除历史门槛；候选仅从可信比较基线保留历史和证据，
-  同一 PR 内待登记行及首次登记重新采集后刷新来源。补充完整采集/认证链路、缺 fork/报告负例及缓存恢复测试超时；未编译运行，待 CI 验证。
-- 0.2.8 T03: move query assembly, compilation, caches, execution and DSL state into query.internal; keep public DSL interfaces and generated-table contracts, removing the two root-package assembly exceptions.
-- Replace query snapshot and continuation array reflection with typed array copying/hashing while retaining mutable-value isolation and deep equality semantics.
-- Wire runtime Enforcer allowlists, complete-reactor ArchUnit rules and violation fixtures, exact internal-access policy, and independent consumer bytecode guards into Java 21/25 CI. Execution evidence is pending; no local compilation or tests were run.
-- Check consumer bytecode in its actual main/test outputs and require every registered production module to wire an active, transitive runtime Enforcer allowlist matching module policy. Reuse the resolved query-table model across entity result-shape columns.
-- Make Page.of and Slice.of public result factories so the query implementation and existing contracts can construct pagination results after moving into query.internal.
+- 将 QueryRuntime、QueryPlanCatalog 及编译/缓存/执行和 DSL 状态迁入 query.internal，保留公开业务接口和生成表合同，
+  删除两项根包装配例外；共享 Catalog、事务绑定、Fast Path、缓存/并发/回收和资源合同保持。
+- 数组快照/continuation 改用保持运行类型的直接数组复制与深 hash，保留嵌套/null/SQL 日期及值隔离。
+  Page.of、Slice.of 提供公开结果值工厂；可空 JDBC/查询/事务泛型与生成器注解同步修正。
+- 删除 23 个远期占位根模块及未就绪 Boot 示例，Reactor 保留 21 根模块，发布白名单仍为 17 GAV；
+  测试支持、模型、集成、示例和空 benchmark 共 6 个内部项目不发布。
+- 移除 GC 夹具的 System.runFinalization，保留有界等待和 ClassLoader/映射/调用图回收断言；
+  合并常量消息并说明 ASCII 标识符、无数据库长度校验及单主键最小预热边界。
+- 同步当前指南/专题文档、贡献说明、CHANGELOG 和 ADR-0018—0020 的实际落地状态。
+  聚合/类型/CAST/grouped count 归 0.2.9，写入/真实流读取归 0.2.10，稳定化归 0.2.11。
+  benchmark 继续冻结；全部 0.2.x 完成并功能冻结后另建 0.3.0 发布前性能任务。
 
-- 0.2.8 T02 接入显式 `static-analysis` profile：Error Prone 2.50.0、NullAway 0.14.2 与 Java 21/25
-  的 JSpecify 检查，覆盖生产源码、APT 生成源码及专用调用方正反例；CI 保存工具环境、构建日志和诊断报告，
-  要求指定检查与名义类型套件非空无跳过。普通测试保持 javac，工具依赖只在编译/测试范围。
-  生成源码声明 nullness，投影读取器与事务回调由泛型承载可空性，补齐 processor、测试模型和 equals 契约。
-  类型渲染分离无注解类字面量与可空源码类型，保留多维数组各层注解；检查报告保存完整编译参数、源码快照和诊断。
-  修正 Instant 读取的可空性推断并省去引用读取的多余 JDBC 调用；身份索引显式声明，规范元数据身份校验保留并精确登记检查例外。
-  JDBC 分页与游标保留结果类型参数的可空性，游标用私有哨兵区分未定位与 null 行，补齐相应编译及状态转换夹具。
-  query 的 keyset 行值与单行结果保留 `R`，数组快照复用已判空的组件类型，补充泛型、keyset 与嵌套数组夹具。
-  单行解码通过包内工厂校验 JDBC 可空值后构造结果，保留公开工厂约束及无行/null 行状态，补充相应编译正反例与状态夹具。
-  装配期类加载器兜底显式判空，无可用加载器时返回标准配置错误。
-  APT 的已知顶层类查找使用非空名称，注解检测和轮次收集改用类型模式匹配，消除可空反射转换结果。
-  嵌套数组负例明确检查器推断限制，按稳定顺序汇总全部失败，断言信息包含具体报告路径与诊断。
-  本地仅静态核对，未编译运行；Java 21/25 及全部新增诊断仍待 CI 验证，T02 尚未按运行证据关闭。
-- 仓库版本统一切换为 `0.2.8-SNAPSHOT`，包括 Reactor、示例和四个独立消费者，开始工程地基里程碑。
-  版本切换本身仅建立开发任务；T02 静态检查后续接线见上项，架构/覆盖率、Testcontainers、日志脱敏与模块治理尚未实现；
-  公开版本仍为 `0.2.0`，benchmark 开发期冻结继续有效。
+### Fixed
+
+- 根据 CI 39962078076 的真实候选，将 skis-query branch 门槛从 73.37% 提升至 73.43%，保留首次登记、
+  统计口径和其他模块行。EntityPlanSet 的并发首次使用测试改为同步屏障固定发布竞争时序，验证唯一计划身份，
+  消除依赖 parallel 流调度的分支覆盖波动；未改生产代码，未本地编译运行，稳定报告及新增来源认证待 CI。
+
+- 修复 PowerShell XML 的 name 属性遮蔽节点 Name 导致有效报告被误拒的问题；使用原生节点 getter，
+  补齐属性遮蔽、大小写及命名空间正反例，已在 PR #78 合入 CI 通过。
+
+### Earlier unreleased milestones
+
 - 0.2.7 T10 完成文档与内部里程碑收口：README、当前读写/投影示例、方言 SPI/编译说明、资源与诊断合同及公开
   Javadoc 与当前 API 对齐；生成 ABI 为 7，查询预算为 30/30，聚合/工程治理/写入保持后续版本归属。
   已核实 [PR #68 合入 CI](https://github.com/xhufang/skis/actions/runs/39466901460) 与

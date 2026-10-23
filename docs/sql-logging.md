@@ -114,5 +114,8 @@ afterward each thread initializes its entry on first access and reuses it, holdi
 If completion logging raises an `Error` after a JDBC failure, the propagated error retains that failure
 and its existing cause/cleanup chain as suppressed; connection release is still attempted.
 
-Implementation and tests are wired in 0.2.8 T06. No local compilation or execution was performed;
-Java 21/25, coverage, real PostgreSQL regression and independent-consumer results await CI.
+The 0.2.8 implementation passed [CI](https://github.com/xhufang/skis/actions/runs/39957930561)
+at commit `9dbb932`: Java 21/25 logging, binding, resource and concurrency contracts, real PostgreSQL
+regression, independent consumers and the coverage ratchet passed. `SqlLoggingTest` executed 15 tests,
+`ParameterLoggingTest` 20, and the independent H2 `SqlLoggingConsumerTest` 5, with zero failures, errors
+or skips. No local compilation or execution was performed.

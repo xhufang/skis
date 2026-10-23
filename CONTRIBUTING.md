@@ -47,7 +47,7 @@ Java 21 的单元、静态检查、架构与 PG 验证统一由 `engineering-gat
 以固定 JaCoCo 0.8.15 汇集单元/PG 数据并执行逐模块分支覆盖率棘轮；Java 25 保留独立验证。
 集成测试模块排在 Reactor 最后，使架构检查读取包含示例的完整产物。既有 Java 21 单元/集成检查名称
 转发权威作业结果，依赖失败、跳过或取消时显式失败，不重复构建。真实基线及历史棘轮/来源认证已通过
-[5a593af 的权威作业](https://github.com/xhufang/skis/actions/runs/39952962527/job/120411709528)；本轮新增报告门禁待 CI。
+[9dbb932 的权威作业](https://github.com/xhufang/skis/actions/runs/39957930561/job/120428327026)，包含本轮完整报告守卫。
 检查名称映射、证据位置、提高门槛、可信历史比较及口径修订步骤见
 [分支覆盖率](docs/branch-coverage.md)。不要手填通过率或用降低 JSON 门槛处理下降。
 手动覆盖率运行必须填写默认分支当前 tip SHA；采集逻辑变化后，新增/变更门槛需要重新生成来源候选。
@@ -58,12 +58,17 @@ Java 21/25 的完整静态/架构作业还通过 `.github/quality/regression-sui
 消费者继续在仓库 Reactor 外验证。新增或重命名普通回归套件时同步更新登记，不能靠删除清单条目绕过合同。
 CI 先执行报告守卫正反例，再输出 `regression-java-21.json` / `regression-java-25.json`，
 记录实际检出提交、运行/尝试编号、套件、测试数及 XML SHA-256，并随对应构建工件保存。
-该报告只证明其列出的本次测试，不能代替 PG、消费者、覆盖率或 ADR 各自的证据；本轮新增守卫尚待 CI 验证。
+该报告只证明其列出的本次测试，不能代替 PG、消费者、覆盖率或 ADR 各自的证据。
+9dbb932 的 Java 21/25 各 76 套件/729 项及报告守卫各 53 项检查均已通过；普通报告无失败/错误/跳过。
+PG 专用作业未启用静态/架构 profile 的普通阶段有预期跳过，不作为静态/架构证据。
 
 架构决策登记在 `.github/architecture/decisions.json`，本地 ADR 正文和索引保持忽略。
 本地同步检查与 Compliance 的干净检出检查分别记录结果；修改状态、移动实现或移除锚点时同步维护清单与处置记录。
 首次登记、可信比较 SHA、命令及证据范围见 [架构决策检查](docs/architecture-decisions.md)。
-干净检出检查与失败夹具已通过 5a593af 的 Compliance；本地正文检查结果仍独立登记。
+干净检出检查与 33 项失败夹具已通过
+[9dbb932 的 Compliance](https://github.com/xhufang/skis/actions/runs/39957930562/job/120428327502)。
+受本地不编译运行约束时，正文/索引/清单逐字段静态核对另作独立记录，不能称作项目检查器 local.json；
+CI JSON 的 localAdrChecked=false、semanticContractsExecuted=false 也不能用来证明本地正文或功能合同。
 
 ## 公共 API 变更
 

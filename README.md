@@ -6,8 +6,9 @@ Java 21 and Maven 3.9+.
 
 ## Version and availability
 
-The latest public release is **0.2.0**. This working tree is **0.2.8-SNAPSHOT**, starting the
-engineering foundation milestone after `0.2.7` closed on 2026-10-21. Internal `0.2.x-SNAPSHOT`
+The latest public release is **0.2.0**. This working tree is **0.2.8-SNAPSHOT**. The engineering
+foundation milestone closed on 2026-10-23; the next snapshot is a separate initialization step.
+Internal `0.2.x-SNAPSHOT`
 milestones accumulate toward the next public **0.3.0** release and do not create standalone
 releases or tags.
 
@@ -64,6 +65,12 @@ snapshot. Public application and extension contracts use API/SPI packages. `*.in
 and infrastructure assembly classes are outside the application extension contract.
 
 ## Development and release
+
+The engineering foundation passed [CI](https://github.com/xhufang/skis/actions/runs/39957930561)
+and [Compliance](https://github.com/xhufang/skis/actions/runs/39957930562) at commit `9dbb932`.
+Java 21/25 each executed 76 required ordinary suites (729 tests), with separate real PostgreSQL
+container/URL paths and independent consumers. See [CONTRIBUTING](CONTRIBUTING.md) for the
+static-analysis, architecture, report-completeness and branch-coverage gates.
 
 See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md) and the
 [release checklist](docs/release-checklist.md). Performance benchmarks remain frozen throughout
