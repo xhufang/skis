@@ -209,7 +209,7 @@ final class ModulePolicy {
   }
 
   private void inventory(Module module) throws IOException {
-    if (!Set.of("production", "processor", "fixture", "application", "placeholder", "frozen", "aggregator").contains(module.kind())) {
+    if (!Set.of("production", "processor", "fixture", "application", "test-suite", "frozen", "aggregator").contains(module.kind())) {
       throw new IllegalStateException("Unclassified module: " + module);
     }
     Path directory = root.resolve(module.path()).normalize();

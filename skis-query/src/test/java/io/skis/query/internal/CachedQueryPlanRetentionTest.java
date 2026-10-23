@@ -327,7 +327,7 @@ class CachedQueryPlanRetentionTest {
         pressure[index] = new byte[256 * 1024];
       }
       System.gc();
-      System.runFinalization();
+      // Weak-reference clearing does not require finalization; keep pressure and waiting bounded.
       Reference.reachabilityFence(pressure);
       LockSupport.parkNanos(5_000_000L);
     }

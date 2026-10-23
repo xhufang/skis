@@ -16,6 +16,10 @@ and H2 contracts have passed CI with their real JDBC drivers. Aggregates and GRO
 generated keys, batch writes, raw SQL and Spring Boot integration retain their later milestone
 assignments. See [CHANGELOG](CHANGELOG.md) for the published and unreleased boundaries.
 
+The reactor now declares 21 root modules after removing 23 future placeholders and the unready
+Boot example. Existing production modules, the H2 example and test facilities remain. The public
+release list stays at 17 GAVs; tests, examples and the frozen empty benchmark are not published.
+
 ## Query and write
 
 Applications declare entities with `@SkisEntity`. APT generates `PetTable`, `PetMeta`, binders,

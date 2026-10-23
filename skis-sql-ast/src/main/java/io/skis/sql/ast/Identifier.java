@@ -5,8 +5,9 @@ import java.util.Objects;
 /**
  * Validated, unquoted SQL identifier stored in the AST.
  *
- * <p>Identifiers use a deliberately portable ASCII form. A renderer is still responsible for
- * applying the quoting rules of its database dialect.
+ * <p>Identifiers use the deliberately portable ASCII form {@code [A-Za-z_][A-Za-z0-9_]*}.
+ * Database-specific identifier length limits are not validated here. A renderer is still responsible
+ * for applying the quoting rules of its database dialect; quoting does not enable Unicode DSL names.
  */
 public record Identifier(String value) {
 

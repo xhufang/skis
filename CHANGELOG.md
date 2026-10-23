@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+- 0.2.8 T08 删除 23 个远期占位根模块及未就绪 Boot 示例，根 Reactor 从 44 缩为 21 个模块；
+  同步版本管理、Central 排除、模块分类及 ADR 当前范围，保留 17 个公开 GAV、H2 示例和测试设施。
+  发布检查增加失效 SKIS 依赖及 test-support 使用方 test scope 校验，保持原覆盖率门槛与 benchmark 冻结。
+- 合并 CompiledQueryPlan 的常量错误消息，保持原异常语义；说明 ASCII 标识符、缺少数据库长度校验及单主键最小预热策略。
+  GC 夹具移除弃用的 System.runFinalization，保持原有界等待及 ClassLoader/映射/调用图断言；
+  Java 21/25 CI 显式要求回收报告非空无跳过。以上变更仅静态核对，当前提交执行证据待 CI，未本地编译运行。
+
 ### Changed
 
 - 0.2.8 T07 接入 ADR-0001—0020 的最小机器清单、首次登记记录和源码/配置结构化检查，
