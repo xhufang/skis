@@ -5,8 +5,9 @@
 ## [Unreleased]
 
 
-0.2.8 工程地基原始收口文档于 2026-10-23 保存；PR #82 的 query 抬线/并发测试修复待 CI。
-仓库保持 `0.2.8-SNAPSHOT`，本轮复验通过后再单独切换下一 snapshot。
+0.2.8 工程地基收口文档于 2026-10-23 保存；2026-10-24 已核实 PR #82 合入提交 3afa2f0 的 CI/Compliance 通过，query 抬线/并发测试复验关闭。
+2026-10-23 按开发安排切换为 `0.2.9-SNAPSHOT`，开始聚合语义里程碑；版本初始化不代表聚合能力已实现，
+前版修复的合入后验证与本版开发状态分别登记。
 当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或公开发布。
 验证提交 `9dbb932` 的 [CI](https://github.com/xhufang/skis/actions/runs/39957930561) 与
 [Compliance](https://github.com/xhufang/skis/actions/runs/39957930562) 均通过；本次收口未在本地编译运行。

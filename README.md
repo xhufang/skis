@@ -6,8 +6,8 @@ Java 21 and Maven 3.9+.
 
 ## Version and availability
 
-The latest public release is **0.2.0**. This working tree is **0.2.8-SNAPSHOT**. The engineering
-foundation milestone closed on 2026-10-23; the next snapshot is a separate initialization step.
+The latest public release is **0.2.0**. This working tree is **0.2.9-SNAPSHOT**. Aggregate semantics
+are the current development milestone; initialization does not mark these capabilities as implemented.
 Internal `0.2.x-SNAPSHOT`
 milestones accumulate toward the next public **0.3.0** release and do not create standalone
 releases or tags.
