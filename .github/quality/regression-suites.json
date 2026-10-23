@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "suites": {
+    "skis-annotations": [
+      "io.skis.annotations.AnnotationContractTest"
+    ],
+    "skis-core": [
+      "io.skis.core.ExecutionOptionsTest",
+      "io.skis.core.SkisDiagnosticsTest",
+      "io.skis.core.internal.ExecutionListenerDispatcherTest",
+      "io.skis.core.internal.SqlLoggingTest",
+      "io.skis.core.spi.ExecutionListenerEventContractTest"
+    ],
+    "skis-metadata": [
+      "io.skis.metadata.EntityMetaTest",
+      "io.skis.metadata.GeneratedModelAbiTest",
+      "io.skis.metadata.ValueMetadataTest",
+      "io.skis.metadata.VersionStrategyTest"
+    ],
+    "skis-mapping": [
+      "io.skis.mapping.EntityRuntimeModelTest",
+      "io.skis.mapping.JdbcCodecsTest",
+      "io.skis.mapping.RowLayoutTest"
+    ],
+    "skis-sql-ast": [
+      "io.skis.sql.ast.DerivedTableAstTest",
+      "io.skis.sql.ast.IdentifierTest",
+      "io.skis.sql.ast.JoinAstTest",
+      "io.skis.sql.ast.QueryScopeAnalysisTest",
+      "io.skis.sql.ast.SqlAstStructureTest"
+    ],
+    "skis-dialect-api": [
+      "io.skis.dialect.SqlRenderExceptionTest",
+      "io.skis.dialect.spi.DialectValueTypesTest"
+    ],
+    "skis-jdbc": [
+      "io.skis.jdbc.DataSourceConnectionProviderTest",
+      "io.skis.jdbc.JdbcExecutorTest",
+      "io.skis.jdbc.JdbcFailureContractTest",
+      "io.skis.jdbc.JdbcTransactionTest",
+      "io.skis.jdbc.internal.ParameterLoggingTest"
+    ],
+    "skis-dialect-support": [
+      "io.skis.dialect.support.CompilationPipelineTest",
+      "io.skis.dialect.support.DerivedTableSqlRendererTest",
+      "io.skis.dialect.support.JoinSqlRendererTest",
+      "io.skis.dialect.support.StandardIdentifierRulesTest",
+      "io.skis.dialect.support.StandardSqlRendererTest"
+    ],
+    "skis-query": [
+      "io.skis.query.internal.CachedQueryPlanRetentionTest",
+      "io.skis.query.internal.CompiledQueryPlanConcurrencyTest",
+      "io.skis.query.internal.DerivedRelationDslTest",
+      "io.skis.query.internal.EntityPlanSetTest",
+      "io.skis.query.internal.JoinQueryDslTest",
+      "io.skis.query.internal.PaginationValueTypesTest",
+      "io.skis.query.internal.ProjectionPlanCacheTest",
+      "io.skis.query.internal.ProjectionQueryTest",
+      "io.skis.query.internal.QueryDiagnosticContractTest",
+      "io.skis.query.internal.QueryPaginationCompilationTest",
+      "io.skis.query.internal.QueryParametersTest",
+      "io.skis.query.internal.QueryPlanDependenciesTest",
+      "io.skis.query.internal.QueryPlanKeyTest",
+      "io.skis.query.internal.QueryTypeSafetyCompilationTest",
+      "io.skis.query.internal.QueryValueSnapshotsTest",
+      "io.skis.query.internal.SharedQueryPlanRoutingTest"
+    ],
+    "skis-mutation": [
+      "io.skis.mutation.MutationExecutionDiagnosticsTest",
+      "io.skis.mutation.MutationPlanCompilerTest",
+      "io.skis.mutation.MutationTypeSafetyCompilationTest",
+      "io.skis.mutation.internal.MutationParameterBindingTest"
+    ],
+    "skis-runtime": [
+      "io.skis.runtime.DefaultSkisSessionTest",
+      "io.skis.runtime.EntityRuntimeModelLoaderTest",
+      "io.skis.runtime.SkisPlanReuseTest"
+    ],
+    "skis-processor": [
+      "io.skis.processor.JdbcValueKindTest",
+      "io.skis.processor.NullnessCompilationTest",
+      "io.skis.processor.SkisEntityProcessorTest",
+      "io.skis.processor.SkisProjectionIncrementalContractTest",
+      "io.skis.processor.SourceTextTest"
+    ],
+    "skis-dialect-postgresql": [
+      "io.skis.dialect.postgresql.PostgreSqlCodecsTest",
+      "io.skis.dialect.postgresql.PostgreSqlDerivedTableDialectTest",
+      "io.skis.dialect.postgresql.PostgreSqlDialectTest",
+      "io.skis.dialect.postgresql.PostgreSqlJoinDialectTest"
+    ],
+    "skis-dialect-h2": [
+      "io.skis.dialect.h2.H2DerivedTableDialectTest",
+      "io.skis.dialect.h2.H2DialectTest",
+      "io.skis.dialect.h2.H2JoinDialectTest"
+    ],
+    "skis-spring": [
+      "io.skis.spring.SkisExceptionTranslatorTest",
+      "io.skis.spring.SpringConnectionProviderTest"
+    ],
+    "skis-test-support": [
+      "io.skis.testsupport.PostgresSettingsTest"
+    ],
+    "skis-integration-tests": [
+      "io.skis.architecture.ArchitectureContractTest",
+      "io.skis.integration.SkisEmployeeDepartmentScalarH2ContractTest",
+      "io.skis.integration.SkisExecutorReadSliceTest",
+      "io.skis.integration.SkisJdbcTypeH2ContractTest",
+      "io.skis.integration.SkisJoinH2ContractTest",
+      "io.skis.integration.SkisMutationTransactionTest",
+      "io.skis.integration.SkisProjectionIntegrationTest",
+      "io.skis.integration.SkisSpecialProjectionH2ContractTest"
+    ]
+  }
+}

@@ -49,6 +49,13 @@ jobs:
         shell: bash
         run: python -m unittest discover -s .github/scripts/tests -p test_branch_coverage.py -v
 
+      - name: Prove test report gate rejects incomplete and failed evidence
+        shell: pwsh
+        run: |
+          Start-Transcript -Path "$env:RUNNER_TEMP/report-gate-contracts.txt"
+          ./.github/scripts/tests/test-test-reports.ps1
+          Stop-Transcript
+
       - name: Register clean build and trusted comparison
         shell: bash
         env:
@@ -115,6 +122,12 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/verify-architecture-enforcer.ps1
 
+      - name: Require complete current regression suites
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-regression-reports.ps1 `
+            -ReportPath "$env:RUNNER_TEMP/regression-java-21.json"
+
       - name: Collect module coverage and candidate
         shell: bash
         run: |
@@ -150,6 +163,8 @@ jobs:
             ${{ runner.temp }}/skis-coverage-session.json
             ${{ runner.temp }}/coverage-environment.txt
             ${{ runner.temp }}/coverage-build.log
+            ${{ runner.temp }}/report-gate-contracts.txt
+            ${{ runner.temp }}/regression-java-21.json
           if-no-files-found: error
 
       - name: Require container cleanup
@@ -225,6 +240,19 @@ jobs:
           bash ./mvnw -B -ntp clean verify -Pstatic-analysis,architecture 2>&1 \
             | tee "${RUNNER_TEMP}/static-analysis-build.log"
 
+      - name: Prove test report gate rejects incomplete and failed evidence
+        shell: pwsh
+        run: |
+          Start-Transcript -Path "$env:RUNNER_TEMP/report-gate-contracts.txt"
+          ./.github/scripts/tests/test-test-reports.ps1
+          Stop-Transcript
+
+      - name: Require complete current regression suites
+        shell: pwsh
+        run: |
+          ./.github/scripts/verify-regression-reports.ps1 `
+            -ReportPath "$env:RUNNER_TEMP/regression-java-${{ matrix.java }}.json"
+
       - name: Prove Enforcer dependency failures and test-scope allowance
         shell: pwsh
         run: ./.github/scripts/verify-architecture-enforcer.ps1
@@ -263,6 +291,8 @@ jobs:
             skis-processor/target/nullness-reports/**
             ${{ runner.temp }}/static-analysis-environment.txt
             ${{ runner.temp }}/static-analysis-build.log
+            ${{ runner.temp }}/report-gate-contracts.txt
+            ${{ runner.temp }}/regression-java-${{ matrix.java }}.json
             ${{ runner.temp }}/skis-enforcer-evidence/**
             .github/quality/*.json
           if-no-files-found: error

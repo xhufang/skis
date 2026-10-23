@@ -2,7 +2,10 @@
 
 `.github/architecture/decisions.json` 是可提交的最小决策清单，首次登记 ADR-0001—0020。
 本地 `docs/adr` 正文和索引继续由 Git 忽略；公开清单只包含必要状态、版本、未完成范围、任务、实现锚点、合同归属及处置理由。
-当前检查器和 CI 已接线，尚未执行本地命令、失败夹具或 CI 验证。
+当前基线 `5a593af62d501ae7ea4cb93e3acc5aae46118d63` 的
+[Compliance 作业](https://github.com/xhufang/skis/actions/runs/39952962528/job/120411709846)
+已通过 33 项失败夹具、可信历史比较和实现锚点检查，并上传 CI JSON/夹具日志。
+本地正文/索引检查器仍未执行，不能使用 CI 结果代替本地结果；T09 本轮报告门禁变更仍待新 CI。
 
 ## 两类检查的职责
 
@@ -122,7 +125,7 @@ Compliance 新增 `ADR registration and implementation anchors` 作业，与既�
 预期失败负例覆盖整类、单方法、通过与预期失败混合及子测试；意外成功仍由 unittest 判为失败。
 处置字段夹具覆盖所有状态下的非法对象类型、非法替代 ID 数组，以及本地/CI 入口提前失败时的结构化 JSON 错误原因。
 配置锚点夹具覆盖 JSON/YAML 空数组/对象、显式允许空容器、数量不足、类型/约束声明错误及实际登记的 `modules` 非空规则。
-上述修复已接线，未本地执行，结果仍待 CI 验证。
+上述修复已在 5a593af 的 Compliance 作业通过，未在本地执行。
 源码检查工具安装成功且作业未取消时，一致性检查独立于失败夹具步骤执行；夹具步骤失败后仍生成 `ci.json`，
 与失败夹具日志分别留证。两个检查步骤均保留失败状态，不使用 `continue-on-error`；任一步失败都会使作业失败。
 工件 `architecture-decisions-<run_id>-<run_attempt>` 保存 CI JSON 和夹具日志；本地 `local.json` 单独登记，不混作 CI 证据。
