@@ -1,7 +1,9 @@
 # PostgreSQL 合同测试环境
 
-0.2.8 T05 已接线 Testcontainers、外部 URL、显式测试选择及 CI；PG 合同、独立消费者双路径及 Java 21/25
-静态分析、架构检查及权威覆盖率采集已通过 CI，覆盖率抬线登记仍待新提交的来源认证与棘轮复验。
+0.2.8 的 Testcontainers、外部 URL、显式测试选择及清理合同已在提交 `9dbb932` 的
+[CI](https://github.com/xhufang/skis/actions/runs/39957930561) 通过。external-url/Java 21 与 testcontainers/Java 25
+各执行同一 6 个 PG 必需套件、32 项测试，零失败/错误/跳过，实际 PG 16.15；独立 PG 消费者两条路径各 1 项通过。
+Java 25 普通单元在错误 PG URL/Docker host 下仍通过，Java 21/25 静态/架构及覆盖率历史/来源门禁通过。
 按项目要求，本地未编译、运行测试或启动容器；以下命令供 CI 或后续授权验证使用。
 
 ## 测试选择

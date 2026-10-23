@@ -1,6 +1,9 @@
 # 0.2.8 架构检查
 
-T03 已完成源码、POM 和 CI 接线，尚未取得本版执行证据。本地不编译运行；以下检查由 CI 执行，不能据接线状态宣称通过。
+0.2.8 的架构、依赖与消费者边界已在提交 `9dbb932` 的
+[CI](https://github.com/xhufang/skis/actions/runs/39957930561) 通过。Java 21/25 的 ArchitectureContractTest
+各 10 项、CachedQueryPlanRetentionTest 各 3 项均零失败/错误/跳过，Enforcer 正反例及四消费者字节码检查通过。
+本地未编译运行；动态缓存/事务/资源结果仍以其各自合同为证据。
 
 ## 模块与依赖
 
@@ -22,7 +25,7 @@ Central 排除剩余 6 个内部项目：test-support、test-model、integration
 
 GC 夹具保留原 120 次有界弱引用收集、每次 2 MiB 内存压力和 5 ms 等待；移除弃用 finalization 调用，
 保留缓存、ClassLoader、映射及调用图回收断言。Java 21/25 CI 均要求 `CachedQueryPlanRetentionTest` 报告非空且无跳过，
-并沿用原作业上传报告；当前变更的 GC、消费者及发布检查执行证据仍待 CI，本地未编译运行。
+并沿用原作业上传报告；9dbb932 的 GC、四消费者、17 公共组件/6 内部组件发布检查已通过，本地未编译运行。
 
 架构检查同时核对每个 `production` 模块 POM 中显式声明的 `enforce-runtime-boundaries` 执行：
 必须在 validate 阶段执行 enforce、启用传递依赖检查，并按模块政策推导的 SKIS 依赖闭包及上述外部坐标精确准入。

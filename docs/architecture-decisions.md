@@ -2,10 +2,12 @@
 
 `.github/architecture/decisions.json` 是可提交的最小决策清单，首次登记 ADR-0001—0020。
 本地 `docs/adr` 正文和索引继续由 Git 忽略；公开清单只包含必要状态、版本、未完成范围、任务、实现锚点、合同归属及处置理由。
-当前基线 `5a593af62d501ae7ea4cb93e3acc5aae46118d63` 的
-[Compliance 作业](https://github.com/xhufang/skis/actions/runs/39952962528/job/120411709846)
-已通过 33 项失败夹具、可信历史比较和实现锚点检查，并上传 CI JSON/夹具日志。
-本地正文/索引检查器仍未执行，不能使用 CI 结果代替本地结果；T09 本轮报告门禁变更仍待新 CI。
+当前验证提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
+[Compliance 作业](https://github.com/xhufang/skis/actions/runs/39957930562/job/120428327502)
+已通过 33 项失败夹具、可信历史比较和实现锚点检查，上传 CI JSON/夹具日志。
+ci.json 的 localAdrChecked=false、semanticContractsExecuted=false；功能/资源等语义证据另由
+[CI](https://github.com/xhufang/skis/actions/runs/39957930561) 提供，不能由锚点存在推断。
+本地 ADR 正文/索引/清单已另作逐字段静态核对，项目 local 检查器未执行，不冒充其 local.json。
 
 ## 两类检查的职责
 
@@ -109,8 +111,8 @@ JSON、XML、普通 YAML 配置和 Python `entry` 仍可作为实现锚点，不
 ```
 
 Superseded/Abandoned 保留原 ID 和处置记录；模块移动、删除或合并时更新相应实现锚点，并登记被移除的旧锚点。
-ADR-0006 保持 Accepted，聚合专用规则归 0.2.9；ADR-0018 的 T03 接线与 T09 验证分别登记，
-ADR-0019/0020 也不会因登记检查而自动升级为 Implemented。
+ADR-0006 保持 Accepted，聚合专用规则归 0.2.9；ADR-0018—0020 按当前 CI 的实际架构、消费者、日志/资源及模块/发布语义证据升级 Implemented，
+同时记录 Accepted 原状态、9dbb932 比较基线及理由，保留全部锚点/合同和首次登记；并非由本检查单独推断。
 
 ## CI 与结果
 
@@ -125,7 +127,7 @@ Compliance 新增 `ADR registration and implementation anchors` 作业，与既�
 预期失败负例覆盖整类、单方法、通过与预期失败混合及子测试；意外成功仍由 unittest 判为失败。
 处置字段夹具覆盖所有状态下的非法对象类型、非法替代 ID 数组，以及本地/CI 入口提前失败时的结构化 JSON 错误原因。
 配置锚点夹具覆盖 JSON/YAML 空数组/对象、显式允许空容器、数量不足、类型/约束声明错误及实际登记的 `modules` 非空规则。
-上述修复已在 5a593af 的 Compliance 作业通过，未在本地执行。
+上述修复已在 9dbb932 的 Compliance 作业通过，未在本地执行。
 源码检查工具安装成功且作业未取消时，一致性检查独立于失败夹具步骤执行；夹具步骤失败后仍生成 `ci.json`，
 与失败夹具日志分别留证。两个检查步骤均保留失败状态，不使用 `continue-on-error`；任一步失败都会使作业失败。
 工件 `architecture-decisions-<run_id>-<run_attempt>` 保存 CI JSON 和夹具日志；本地 `local.json` 单独登记，不混作 CI 证据。
@@ -133,3 +135,11 @@ Compliance 新增 `ADR registration and implementation anchors` 作业，与既�
 解析工具固定在 `.github/architecture/requirements.txt`，仅用于开发/CI。
 上游接口说明见 [Python Tree-sitter](https://tree-sitter.github.io/py-tree-sitter/)、
 [Java grammar](https://github.com/tree-sitter/tree-sitter-java)、[PyYAML](https://pyyaml.org/wiki/PyYAMLDocumentation)。
+
+## 0.2.8 收口记录
+
+2026-10-23 的本地核对范围为 ADR-0001—0020 的 ID、状态、决策/目标/落地版本、未完成范围与任务，
+正文、八列索引和机器清单一致；独立记录见本地 `target/t10-evidence/local-adr-static.json`。
+T07 的本地验收是同步核对有独立记录，禁止本地运行时采用此静态核对；不把它标为检查器执行通过。
+33 项 CI 失败夹具覆盖本地同步与干净检出规则的拒绝行为。首次登记中 checkerExecution=not-run 的历史声明保持不变。
+本次三条状态升级及处置字段仅经静态核对，提交后仍由 Compliance 验证本次清单声明；既有语义验收以 9dbb932 为准。

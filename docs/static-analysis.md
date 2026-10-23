@@ -4,10 +4,12 @@
 Error Prone 2.50.0 和 NullAway 0.14.2；普通构建继续使用 javac。检查器不属于发布运行时依赖，
 独立消费者不继承 SKIS parent，也不需要安装检查器。
 
-已核实 [CI 39566474356](https://github.com/xhufang/skis/actions/runs/39566474356)：Java 21/25 均已执行
-processor 专用检查，`NullnessCompilationTest` 的 8 个测试全部通过；`SkisEntityProcessorTest` 的 70 个测试中
-有 1 个嵌套数组负例测试失败。工件确认生成注解完整，但两个数组读取路径被检查器漏检，具体边界与修正见下文。
-当前夹具修正仅静态核对，未在本地编译运行，完整门禁仍待新 CI，T02 尚未关闭。
+当前验证提交 `9dbb932` 的
+[Java 21](https://github.com/xhufang/skis/actions/runs/39957930561/job/120428327026) 与
+[Java 25](https://github.com/xhufang/skis/actions/runs/39957930561/job/120428326578) 均已通过完整静态检查。
+两边 NullnessCompilationTest 各 9 项、SkisEntityProcessorTest 各 71 项、query 名义类型各 19 项、
+mutation 名义类型各 1 项，均零失败/错误/跳过；两份当前 regression JSON 的计数和 XML 哈希已核对。
+未在本地编译运行；已确认的数组读取漏检边界继续保留，不能宣称工具完整证明任意数组访问安全。
 
 ## 配置与环境
 
@@ -69,7 +71,7 @@ NullAway 0.14.2 的数组读取存在以下已确认漏检，不能把这些用�
 两份报告的生成源码均保留了各层 `@Nullable`。结合该版本的[数组读取实现](https://github.com/uber/NullAway/blob/v0.14.2/nullaway/src/main/java/com/uber/nullaway/dataflow/AccessPathNullnessPropagation.java)，
 这里属于按符号读取数组元素注解时的推断覆盖限制；未修改生成器、关闭检查或把错误用法改为应成功。
 嵌套负例按名称排序，并通过 `assertAll` 顺序执行全部用例，避免随机顺序下第一个失败隐藏其他漏检。
-新负例及外层数组判空正例仍待 CI 验证；上述漏检保留为工具升级后的复核项。
+替代负例及外层数组判空正例已通过当前 Java 21/25 CI；上述原始读取漏检仍保留为工具升级后的复核项。
 
 APT 对 `RuntimeException`、`Error`、`Object` 和 `Column` 这些已知顶层类使用非空的 `Class.getName()`；
 这些类的二进制名称与规范名称一致，不改变类型查找或注解识别。
@@ -100,7 +102,7 @@ keyset 内部 `OrderedRow<R>` 的用户值直接声明为 `R`，与 `RowDecoder<
 查询编译夹具补充 keyset 可空元素负例及 `fetchOne`/`fetchFirst` 的泛型结果传递正例。
 单行工厂另有跨字节码的包内调用正例、公开 `present` 拒绝 nullable 值/结果类型误用的负例，以及 null 行与非空选择的运行时夹具。
 数组快照用 `getComponentType()` 的非空分支识别数组，并把组件类型传入复制方法，避免重复读取与额外非空断言；
-嵌套数组、null 元素、空数组及运行时数组类型保持夹具已补齐。现有反射数组实现的替换仍归 T03，完整矩阵尚未关闭。
+嵌套数组、null 元素、空数组及运行时数组类型保持夹具已补齐；T03 已替换数组反射，当前矩阵通过。
 
 测试模型的 Bean 在无参构造后可能尚未赋值，因此字段、getter/setter 显式标为 nullable；
 数据库列的非空约束继续由元数据声明。record 模型的 nullable 列、版本初始值及 transient 默认值
@@ -157,7 +159,7 @@ Surefire XML，以及 `skis-processor/target/nullness-reports/*.txt`。Java 21 �
   [Java 25 工件](https://github.com/xhufang/skis/actions/runs/39566474356/artifacts/12329519302)中是 `nested-array-row`。
   原测试遇到首个断言失败即停止，因此不能推定其他未留存报告的负例结果。
 - 独立公共消费者、独立 PostgreSQL 消费者、集成模块、Gradle 增量和发布边界作业均成功；两个 Java 单元作业仍失败。
-  当前对负例及失败报告的修正尚未执行，完整门禁仍待新 CI。
+  该轮失败后的负例及报告修正已在 9dbb932 的两条完整构建通过，见本文开头的当前证据。
 
 工具接线依据：[Error Prone 安装说明](https://errorprone.info/docs/installation)、
 [NullAway JSpecify 支持](https://github.com/uber/NullAway/wiki/JSpecify-Support)、
