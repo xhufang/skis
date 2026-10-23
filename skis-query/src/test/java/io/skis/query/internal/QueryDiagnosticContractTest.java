@@ -129,6 +129,7 @@ class QueryDiagnosticContractTest {
     OperationObservation observation =
         ExecutionListenerDispatcher.of(List.of(listener))
             .startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+    java.util.Objects.requireNonNull(observation);
 
     assertEquals(0, resourceCalls.get());
     assertTrue(cursor.advance());

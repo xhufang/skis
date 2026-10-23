@@ -15,6 +15,8 @@ import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.mapping.spi.ParameterBinder;
+import io.skis.mapping.spi.ParameterBindingObserver;
 import io.skis.mapping.spi.RowDecoder;
 import io.skis.metadata.PropertyMeta;
 import io.skis.query.NullPlacement;
@@ -540,22 +542,42 @@ final class QueryPlanCompiler {
     return new CompiledQueryPlan<>(
         dialect.id(),
         rendered,
-        (preparedStatement, firstIndex, argument, context) -> {
-          var values = requireArguments(argument, logicalParameterCount);
-          int index = firstIndex;
-          for (RenderedBinding binding : renderedBindings) {
-            binding
-                .parameter()
-                .bind(
-                    preparedStatement,
-                    index,
-                    values == null ? argument : values.get(binding.argumentOrdinal()),
-                    context);
-            index++;
-          }
-          return index;
-        },
+        new QueryParameterBinder(renderedBindings, logicalParameterCount),
         rowDecoder);
+  }
+
+  private record QueryParameterBinder(List<RenderedBinding> bindings, int logicalParameterCount)
+      implements ParameterBinder<Object> {
+    @Override
+    public int bind(PreparedStatement statement, int firstIndex, Object argument,
+        JdbcWriteContext context) throws SQLException {
+      var values = requireArguments(argument, logicalParameterCount);
+      int index = firstIndex;
+      for (RenderedBinding binding : bindings) {
+        binding.parameter().bind(statement, index,
+            values == null ? argument : values.get(binding.argumentOrdinal()), context);
+        index++;
+      }
+      return index;
+    }
+
+    @Override
+    public int bindObserved(PreparedStatement statement, int firstIndex, Object argument,
+        JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {
+      var values = requireArguments(argument, logicalParameterCount);
+      int index = firstIndex;
+      boolean observing = observer.needsMore();
+      for (RenderedBinding binding : bindings) {
+        Object value = values == null ? argument : values.get(binding.argumentOrdinal());
+        binding.parameter().bind(statement, index, value, context);
+        if (observing) {
+          observer.bound(index, binding.parameter().descriptor().javaType(), value);
+          observing = observer.needsMore();
+        }
+        index++;
+      }
+      return index;
+    }
   }
 
   private ResolvedStatement prepareContext(StatementAst statement) {

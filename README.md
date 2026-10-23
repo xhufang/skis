@@ -51,6 +51,7 @@ operations. Streams and cursors must be consumed sequentially and closed on thei
 | User records and classes | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md) |
 | SQL queries | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md) |
 | Resource ownership and observation | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md) |
+| SQL logging | [Opt-in SQL/slow logging and parameter redaction](docs/sql-logging.md) |
 | Extensions | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md) |
 | Diagnostics | [Runtime errors](docs/runtime-error-codes.md), [APT errors](docs/apt-error-codes.md), [execution options and Spring translation](docs/execution-options-and-exception-translation.md) |
 

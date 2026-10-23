@@ -21,6 +21,8 @@ import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcCodecs;
+import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.mapping.spi.ParameterBindingObserver;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
@@ -69,6 +71,34 @@ class QueryPaginationCompilationTest {
           new PrimaryKeyMeta<>(List.of(ID)),
           false);
   private static final PetTable TABLE = new PetTable();
+
+  @Test
+  void observedContentAndCountBindTheirOwnFinalPaginationSlots() throws Exception {
+    CompilerFixture fixture = compilerFixture();
+    QueryCondition predicate = TABLE.id().ge(10L);
+    QueryCompilation<Pet> content = compileEntity(fixture, predicate, List.of(TABLE.id().asc()),
+        false, new QueryPagination.Offset(20, 40));
+    QueryCompilation<Long> count = compileCount(fixture.compiler(), TABLE, SelectedResult.entity(TABLE),
+        List.of(), predicate, false);
+    List<List<Object>> observed = new java.util.ArrayList<>();
+    ParameterBindingObserver observer = new ParameterBindingObserver() {
+      @Override public void bound(int index, Class<?> type, @Nullable Object value) {
+        observed.add(Arrays.asList(index, type, value));
+      }
+      @Override public void unavailable() { throw new AssertionError("framework binder is opaque"); }
+    };
+    java.sql.PreparedStatement statement = (java.sql.PreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
+        getClass().getClassLoader(), new Class<?>[] {java.sql.PreparedStatement.class},
+        (proxy, method, values) -> null);
+    assertEquals(4, content.plan().parameterBinder().bindObserved(statement, 1, content.argument(),
+        JdbcWriteContext.EMPTY, observer));
+    assertEquals(List.of(List.of(1, Long.class, 10L), List.of(2, Integer.class, 20),
+        List.of(3, Long.class, 40L)), observed);
+    observed.clear();
+    assertEquals(2, count.plan().parameterBinder().bindObserved(statement, 1, count.argument(),
+        JdbcWriteContext.EMPTY, observer));
+    assertEquals(List.of(List.of(1, Long.class, 10L)), observed);
+  }
 
   @Test
   void compilesOffsetContentAndIndependentCountPlans() {

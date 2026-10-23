@@ -24,15 +24,22 @@ $wrapper = if ($IsWindows) { Join-Path $RepositoryRoot 'mvnw.cmd' } else { Join-
 $fixtures = @(
     @{ Name = 'compile-spring'; Scope = 'compile'; Artifact = 'spring-core'; ExpectedFailure = $true },
     @{ Name = 'transitive-spring'; Scope = 'compile'; Artifact = 'spring-jdbc'; ExpectedFailure = $true },
-    @{ Name = 'test-spring'; Scope = 'test'; Artifact = 'spring-core'; ExpectedFailure = $false }
+    @{ Name = 'test-spring'; Scope = 'test'; Artifact = 'spring-core'; ExpectedFailure = $false },
+    @{ Name = 'compile-slf4j-api'; Group = 'org.slf4j'; Scope = 'compile'; Artifact = 'slf4j-api'; ExpectedFailure = $false },
+    @{ Name = 'compile-slf4j-provider'; Group = 'org.slf4j'; Scope = 'compile'; Artifact = 'slf4j-simple'; ExpectedFailure = $true },
+    @{ Name = 'test-slf4j-provider'; Group = 'org.slf4j'; Scope = 'test'; Artifact = 'slf4j-simple'; ExpectedFailure = $false }
 )
 foreach ($fixture in $fixtures) {
+    $dependencyGroup = if ($fixture.Group) { $fixture.Group } else { 'org.springframework' }
+    $dependencyVersion = if ($dependencyGroup -eq 'org.slf4j') {
+        '<version>' + [string]$rootPom.project.properties.'slf4j.version' + '</version>'
+    } else { '' }
     $pom = [xml]@"
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <parent><groupId>io.github.xhufang</groupId><artifactId>skis-parent</artifactId><version>$version</version><relativePath>$parentPath</relativePath></parent>
   <artifactId>skis-enforcer-fixture</artifactId><packaging>pom</packaging>
-  <dependencies><dependency><groupId>org.springframework</groupId><artifactId>$($fixture.Artifact)</artifactId><scope>$($fixture.Scope)</scope></dependency></dependencies>
+  <dependencies><dependency><groupId>$dependencyGroup</groupId><artifactId>$($fixture.Artifact)</artifactId>$dependencyVersion<scope>$($fixture.Scope)</scope></dependency></dependencies>
   <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><executions /></plugin></plugins></build>
 </project>
 "@

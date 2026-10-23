@@ -813,6 +813,7 @@ class SharedQueryPlanRoutingTest {
       OperationObservation observation =
           compilationListener(events)
               .startOperation(ExecutionOperationKind.FETCH_PAGE, fixture.dialect().id());
+      java.util.Objects.requireNonNull(observation);
       int planVariant = variant;
 
       assertSame(
@@ -889,7 +890,8 @@ class SharedQueryPlanRoutingTest {
       List<CompilationCompletedEvent> events = new ArrayList<>();
       ExecutionListenerDispatcher dispatcher = compilationListener(events);
       OperationObservation firstOperation =
-          dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id());
+          java.util.Objects.requireNonNull(
+              dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id()));
 
       QueryCompilation<IdView> first =
           compileObservedSelection(fixture, table, selected, firstOperation);
@@ -901,7 +903,8 @@ class SharedQueryPlanRoutingTest {
       assertTrue(events.getFirst().durationNanos() >= preparationNanos.get());
       preparationNanos.set(0L);
       OperationObservation secondOperation =
-          dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id());
+          java.util.Objects.requireNonNull(
+              dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id()));
       QueryCompilation<IdView> second =
           compileObservedSelection(fixture, table, selected, secondOperation);
       secondOperation.completeSucceeded(ExecutionTermination.COMPLETED);
@@ -926,7 +929,8 @@ class SharedQueryPlanRoutingTest {
     List<CompilationCompletedEvent> events = new ArrayList<>();
     ExecutionListenerDispatcher dispatcher = compilationListener(events);
     OperationObservation failed =
-        dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id());
+        java.util.Objects.requireNonNull(
+            dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id()));
     fixture.dialect().failNext = true;
 
     QueryValidationException failure =
@@ -939,7 +943,8 @@ class SharedQueryPlanRoutingTest {
     assertEquals(ExecutionOutcome.FAILED, events.getFirst().outcome());
     assertEquals(0, fixture.stats().size());
     OperationObservation retry =
-        dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id());
+        java.util.Objects.requireNonNull(
+            dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, fixture.dialect().id()));
     compileObservedSelection(fixture, table, selected, retry);
     retry.completeSucceeded(ExecutionTermination.COMPLETED);
     assertEquals(2, events.size());
@@ -963,8 +968,8 @@ class SharedQueryPlanRoutingTest {
                   () -> {
                     PetTable table = new PetTable();
                     OperationObservation observation =
-                        dispatcher.startOperation(
-                            ExecutionOperationKind.FETCH_LIST, fixture.dialect().id());
+                        java.util.Objects.requireNonNull(dispatcher.startOperation(
+                            ExecutionOperationKind.FETCH_LIST, fixture.dialect().id()));
                     QueryCompilation<Long> compiled =
                         compileObservedSelection(
                             fixture, table, SelectedResult.requiredScalar(table.id), observation);

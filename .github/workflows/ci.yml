@@ -87,13 +87,13 @@ jobs:
             -RequiredSuites io.skis.architecture.ArchitectureContractTest
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-core/target/surefire-reports `
-            -RequiredSuites io.skis.core.internal.ExecutionListenerDispatcherTest
+            -RequiredSuites @('io.skis.core.internal.ExecutionListenerDispatcherTest', 'io.skis.core.internal.SqlLoggingTest')
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-jdbc/target/surefire-reports `
-            -RequiredSuites @('io.skis.jdbc.JdbcExecutorTest', 'io.skis.jdbc.JdbcFailureContractTest')
+            -RequiredSuites @('io.skis.jdbc.JdbcExecutorTest', 'io.skis.jdbc.JdbcFailureContractTest', 'io.skis.jdbc.internal.ParameterLoggingTest')
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-query/target/surefire-reports `
-            -RequiredSuites io.skis.query.internal.ProjectionPlanCacheTest
+            -RequiredSuites @('io.skis.query.internal.ProjectionPlanCacheTest', 'io.skis.query.internal.EntityPlanSetTest', 'io.skis.query.internal.QueryPaginationCompilationTest')
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-dialect-support/target/surefire-reports `
             -RequiredSuites io.skis.dialect.support.CompilationPipelineTest
@@ -338,7 +338,7 @@ jobs:
             -RequiredSuites example.ListenerSpiOnlyConsumerTest
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory "$env:RUNNER_TEMP/skis-minimal-h2-consumer/target/surefire-reports" `
-            -RequiredSuites @('example.MinimalConsumerTest', 'example.SupportedSpiConsumerTest', 'example.ExecutionListenerConsumerTest')
+            -RequiredSuites @('example.MinimalConsumerTest', 'example.SupportedSpiConsumerTest', 'example.ExecutionListenerConsumerTest', 'example.SqlLoggingConsumerTest')
 
       - name: Upload independent consumer reports
         if: always()
