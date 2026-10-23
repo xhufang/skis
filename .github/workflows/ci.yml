@@ -93,7 +93,7 @@ jobs:
             -RequiredSuites @('io.skis.jdbc.JdbcExecutorTest', 'io.skis.jdbc.JdbcFailureContractTest', 'io.skis.jdbc.internal.ParameterLoggingTest')
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-query/target/surefire-reports `
-            -RequiredSuites @('io.skis.query.internal.ProjectionPlanCacheTest', 'io.skis.query.internal.EntityPlanSetTest', 'io.skis.query.internal.QueryPaginationCompilationTest')
+            -RequiredSuites @('io.skis.query.internal.ProjectionPlanCacheTest', 'io.skis.query.internal.EntityPlanSetTest', 'io.skis.query.internal.QueryPaginationCompilationTest', 'io.skis.query.internal.CachedQueryPlanRetentionTest')
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-dialect-support/target/surefire-reports `
             -RequiredSuites io.skis.dialect.support.CompilationPipelineTest
@@ -229,13 +229,16 @@ jobs:
         shell: pwsh
         run: ./.github/scripts/verify-architecture-enforcer.ps1
 
-      - name: Require executed architecture rules and violation fixtures
+      - name: Require executed architecture rules and GC contracts
         shell: pwsh
         run: |
           ./.github/scripts/verify-postgres-selection.ps1 -UnitReports
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory skis-integration-tests/target/surefire-reports `
             -RequiredSuites io.skis.architecture.ArchitectureContractTest
+          ./.github/scripts/verify-test-reports.ps1 `
+            -ReportDirectory skis-query/target/surefire-reports `
+            -RequiredSuites io.skis.query.internal.CachedQueryPlanRetentionTest
 
       - name: Require executed nullness and nominal type contracts
         shell: pwsh

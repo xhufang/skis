@@ -36,7 +36,7 @@ public record CompiledQueryPlan<R extends @Nullable Object, P>(
   private static String requireDialectText(String value) {
     Objects.requireNonNull(value, "dialectId");
     if (value.isBlank()) {
-      throw new IllegalArgumentException("dialectId" + " must not be blank");
+      throw new IllegalArgumentException("dialectId must not be blank");
     }
     return value;
   }

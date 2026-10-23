@@ -852,7 +852,7 @@
       "decisionVersion": "0.2.8-SNAPSHOT",
       "targetVersion": "0.2.8-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T05 test-support 已接线待 CI；23 个占位根模块及 Boot 示例未删除，44→21 根模块与发布边界治理待 T08/T09",
+      "remaining": "T05 test-support 与 T08 模块治理已接线；23 个占位根模块及 Boot 示例已删除，实际 21 根模块、17 发布 GAV；GC、消费者、发布及冻结检查待当前提交 CI/T09 验证",
       "task": "0.2.8:T05/T08/T09",
       "anchors": [
         {

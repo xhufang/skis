@@ -72,15 +72,6 @@
       ]
     },
     {
-      "path": "skis-optimizer",
-      "artifact": "skis-optimizer",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api",
-        "skis-sql-ast"
-      ]
-    },
-    {
       "path": "skis-mapping",
       "artifact": "skis-mapping",
       "kind": "production",
@@ -129,14 +120,6 @@
       ]
     },
     {
-      "path": "skis-graph",
-      "artifact": "skis-graph",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-mutation"
-      ]
-    },
-    {
       "path": "skis-runtime",
       "artifact": "skis-runtime",
       "kind": "production",
@@ -162,14 +145,6 @@
       ]
     },
     {
-      "path": "skis-dialect-mysql",
-      "artifact": "skis-dialect-mysql",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api"
-      ]
-    },
-    {
       "path": "skis-dialect-h2",
       "artifact": "skis-dialect-h2",
       "kind": "production",
@@ -177,137 +152,6 @@
         "skis-dialect-api",
         "skis-dialect-support",
         "skis-sql-ast"
-      ]
-    },
-    {
-      "path": "skis-dialect-sqlserver",
-      "artifact": "skis-dialect-sqlserver",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api"
-      ]
-    },
-    {
-      "path": "skis-dialect-oracle",
-      "artifact": "skis-dialect-oracle",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api"
-      ]
-    },
-    {
-      "path": "skis-dialect-db2",
-      "artifact": "skis-dialect-db2",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api"
-      ]
-    },
-    {
-      "path": "skis-dialect-sqlite",
-      "artifact": "skis-dialect-sqlite",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api"
-      ]
-    },
-    {
-      "path": "skis-dialect-mariadb",
-      "artifact": "skis-dialect-mariadb",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api"
-      ]
-    },
-    {
-      "path": "skis-cache-api",
-      "artifact": "skis-cache-api",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-core"
-      ]
-    },
-    {
-      "path": "skis-cache-caffeine",
-      "artifact": "skis-cache-caffeine",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-cache-api"
-      ]
-    },
-    {
-      "path": "skis-cache-redis",
-      "artifact": "skis-cache-redis",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-cache-api"
-      ]
-    },
-    {
-      "path": "skis-multitenancy",
-      "artifact": "skis-multitenancy",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-sql-ast"
-      ]
-    },
-    {
-      "path": "skis-data-permission",
-      "artifact": "skis-data-permission",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-sql-ast"
-      ]
-    },
-    {
-      "path": "skis-datasource-routing",
-      "artifact": "skis-datasource-routing",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-jdbc"
-      ]
-    },
-    {
-      "path": "skis-encryption",
-      "artifact": "skis-encryption",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-mapping"
-      ]
-    },
-    {
-      "path": "skis-audit",
-      "artifact": "skis-audit",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-mutation"
-      ]
-    },
-    {
-      "path": "skis-observability",
-      "artifact": "skis-observability",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-core"
-      ]
-    },
-    {
-      "path": "skis-schema",
-      "artifact": "skis-schema",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-dialect-api",
-        "skis-jdbc",
-        "skis-metadata"
-      ]
-    },
-    {
-      "path": "skis-codegen",
-      "artifact": "skis-codegen",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-annotations",
-        "skis-schema"
       ]
     },
     {
@@ -320,41 +164,6 @@
         "skis-jdbc",
         "skis-mutation",
         "skis-runtime"
-      ]
-    },
-    {
-      "path": "skis-spring-boot",
-      "artifact": "skis-spring-boot",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-runtime",
-        "skis-spring"
-      ]
-    },
-    {
-      "path": "skis-spring-boot-starter",
-      "artifact": "skis-spring-boot-starter",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-runtime",
-        "skis-spring-boot"
-      ]
-    },
-    {
-      "path": "skis-spring-boot-actuator",
-      "artifact": "skis-spring-boot-actuator",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-observability",
-        "skis-spring-boot"
-      ]
-    },
-    {
-      "path": "skis-spring-boot-starter-test",
-      "artifact": "skis-spring-boot-starter-test",
-      "kind": "placeholder",
-      "dependencies": [
-        "skis-spring-boot"
       ]
     },
     {
@@ -379,7 +188,7 @@
     {
       "path": "skis-integration-tests",
       "artifact": "skis-integration-tests",
-      "kind": "placeholder",
+      "kind": "test-suite",
       "dependencies": [
         "skis-dialect-h2",
         "skis-dialect-postgresql",
@@ -391,7 +200,7 @@
     {
       "path": "skis-benchmark",
       "artifact": "skis-benchmark",
-      "kind": "aggregator",
+      "kind": "frozen",
       "dependencies": []
     },
     {

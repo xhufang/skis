@@ -5,13 +5,24 @@ T03 已完成源码、POM 和 CI 接线，尚未取得本版执行证据。本�
 ## 模块与依赖
 
 [modules.json](../.github/quality/modules.json) 登记实际 Reactor 的路径、artifact、职责和允许的直接生产依赖。
-检查递归读取根 POM 的实际 modules，核对全部 46 个条目（根聚合、44 个根模块及 H2 示例）；新增、删除、未分类、
-生产源码与职责不符、生产产物缺失或为空都会失败。模块治理 T08 删除占位模块时必须同步修改政策。
+T08 已删除 23 个远期占位根模块及未就绪 Boot 示例。检查递归读取根 POM 的实际 modules，核对全部 23 个条目
+（根聚合、21 个根模块及 H2 示例）；新增、删除、未分类、生产源码与职责不符、生产产物缺失或为空都会失败。
+集成测试登记为 `test-suite`，最小空 benchmark 登记为 `frozen`；不再接受 `placeholder` 分类。
 
 生产模块的 Enforcer `enforce-runtime-boundaries` 检查传递依赖闭包。普通核心只准入登记的 SKIS 依赖、JSpecify
 和 SLF4J API；annotations 只允许 JSpecify。Spring 集成另准入实际 Spring JDBC/事务依赖及 Spring 7 必需的
-Commons Logging 门面。测试依赖按 test scope 放行，不进入运行时准入。现存无实现的远期 Boot 模块保持 placeholder，
-其删除由 T08 负责，不能凭空模块宣称 Starter 已支持或其运行时已验收。
+Commons Logging 门面。测试依赖按 test scope 放行，不进入运行时准入。`skis-spring` 保留实际适配职责，
+Spring Boot、其他未实现方言及可选能力继续按路线图开发，需要时再创建具有真实职责的模块。
+
+公开发布边界仍为 parent、BOM 和 15 个生产 Jar，共 17 个 GAV；BOM 与发布白名单不变。
+Central 排除剩余 6 个内部项目：test-support、test-model、integration-tests、benchmark、examples 和 H2 示例。
+发布检查同时拒绝 Reactor 中指向已删除 SKIS GAV 的依赖（含 dependencyManagement），并要求 test-support 的使用方
+显式声明 test scope；独立消费者继续使用自己的 BOM/APT/runtime，不依赖该测试 Jar。覆盖率分母仍为原 15 个生产 Jar，
+本次未重建基线或降低门槛。benchmark 的空 POM、开发期冻结守卫及发布排除持续保留。
+
+GC 夹具保留原 120 次有界弱引用收集、每次 2 MiB 内存压力和 5 ms 等待；移除弃用 finalization 调用，
+保留缓存、ClassLoader、映射及调用图回收断言。Java 21/25 CI 均要求 `CachedQueryPlanRetentionTest` 报告非空且无跳过，
+并沿用原作业上传报告；当前变更的 GC、消费者及发布检查执行证据仍待 CI，本地未编译运行。
 
 架构检查同时核对每个 `production` 模块 POM 中显式声明的 `enforce-runtime-boundaries` 执行：
 必须在 validate 阶段执行 enforce、启用传递依赖检查，并按模块政策推导的 SKIS 依赖闭包及上述外部坐标精确准入。

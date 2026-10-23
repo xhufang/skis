@@ -100,6 +100,28 @@ foreach ($entry in $projects.GetEnumerator())
     $artifactPoms[$artifactId] = $entry.Key
 }
 
+foreach ($entry in $projects.GetEnumerator())
+{
+    $namespaces = New-Object System.Xml.XmlNamespaceManager($entry.Value.NameTable)
+    $namespaces.AddNamespace("m", "http://maven.apache.org/POM/4.0.0")
+    foreach ($dependency in $entry.Value.SelectNodes("//m:dependency[m:groupId='io.github.xhufang']", $namespaces))
+    {
+        $artifactId = [string]$dependency.artifactId
+        if (-not $artifactPoms.ContainsKey($artifactId))
+        {
+            throw "SKIS dependency is missing from the reactor: $artifactId in $( $entry.Key )"
+        }
+        if ($artifactId -eq "skis-test-support" -and [string]$dependency.scope -ne "test")
+        {
+            # A managed version does not introduce the test tool into a consumer's dependency graph.
+            if ($dependency.ParentNode.ParentNode.LocalName -ne "dependencyManagement")
+            {
+                throw "skis-test-support may only be consumed with test scope: $( $entry.Key )"
+            }
+        }
+    }
+}
+
 $allowlist = @(
 Get-Content -LiteralPath $allowlistPath |
         ForEach-Object { $_.Trim() } |

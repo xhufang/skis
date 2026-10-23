@@ -55,6 +55,11 @@ to `0.2.9`; existing pagination count SQL does not expose those capabilities.
 
 ## Identifiers, cache identity and values
 
+DSL identifiers currently match ASCII `[A-Za-z_][A-Za-z0-9_]*`. Database-specific identifier
+length limits, including byte-based limits, are not validated. Quoting and quote escaping do not
+enable Unicode DSL identifiers. Unicode and database-specific length capabilities belong to the
+formal dialect milestones (`0.4.x` toward `0.5.0`); there is no universal length limit in this snapshot.
+
 PostgreSQL and H2 quote each identifier component and preserve its declared case. Schemas created
 with unquoted names can therefore differ from quoted metadata, especially with H2's default case
 folding. Use schema/table/column spellings consistently in metadata and DDL. Unsupported catalog
