@@ -23,6 +23,7 @@
       "io.skis.mapping.RowLayoutTest"
     ],
     "skis-sql-ast": [
+      "io.skis.sql.ast.AggregateSemanticsTest",
       "io.skis.sql.ast.DerivedTableAstTest",
       "io.skis.sql.ast.IdentifierTest",
       "io.skis.sql.ast.JoinAstTest",

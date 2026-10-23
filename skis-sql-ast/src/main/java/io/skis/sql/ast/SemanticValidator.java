@@ -415,6 +415,25 @@ public final class SemanticValidator {
     }
   }
 
+  /** Validates an aggregate argument without assuming its final query block or parameter layout. */
+  static void validateAggregateOperand(SqlExpression<?> operand) {
+    // Immutable scalar leaves need no query scope or parameter-consistency maps.
+    if (operand instanceof ColumnExpression<?, ?>
+        || operand instanceof ParameterSlot<?>
+        || operand instanceof LiteralExpression<?>
+        || operand instanceof DerivedColumnExpression<?>) {
+      requireJavaSqlDescriptor(operand.javaType(), operand.sqlType(), "aggregate argument");
+      Nullability nullability =
+          Objects.requireNonNull(operand.nullability(), "aggregate argument nullability");
+      if (nullability.isNullable() && operand.javaType().isPrimitive()) {
+        throw new IllegalArgumentException(
+            "a nullable expression cannot use a primitive Java type");
+      }
+      return;
+    }
+    new ValidationContext(false).validateExpression(operand, "aggregate argument");
+  }
+
   static void validateLiteral(
       LiteralExpression.Kind kind, Class<?> javaType, SqlType sqlType, Nullability nullability) {
     requireJavaSqlDescriptor(javaType, sqlType, "literal");
@@ -551,10 +570,8 @@ public final class SemanticValidator {
   private static final class ValidationContext {
 
     private final boolean validatesQueryContext;
-    private final IdentityHashMap<TableExpression<?>, Boolean> visibleTables =
-        new IdentityHashMap<>();
-    private final IdentityHashMap<DerivedRelationReference, Boolean> visibleDerivedRelations =
-        new IdentityHashMap<>();
+    private final Map<TableExpression<?>, Boolean> visibleTables;
+    private final Map<DerivedRelationReference, Boolean> visibleDerivedRelations;
     private final Map<Integer, ParameterSlot<?>> parametersByOrdinal = new HashMap<>();
 
     private ValidationContext() {
@@ -563,6 +580,9 @@ public final class SemanticValidator {
 
     private ValidationContext(boolean validatesQueryContext) {
       this.validatesQueryContext = validatesQueryContext;
+      // Local validation only tracks parameter consistency; source identity is resolved separately.
+      this.visibleTables = validatesQueryContext ? new IdentityHashMap<>() : Map.of();
+      this.visibleDerivedRelations = validatesQueryContext ? new IdentityHashMap<>() : Map.of();
     }
 
     private void addVisible(RelationSource source) {
@@ -651,6 +671,13 @@ public final class SemanticValidator {
           validateExpression(cast.operand(), clause);
         }
         case CoalesceExpression<?> coalesce -> validateCoalesceExpression(coalesce, clause);
+        case AggregateExpression<?> aggregate -> {
+          if (validatesQueryContext) {
+            throw new IllegalArgumentException(
+                clause + " uses an aggregate outside a SELECT query block");
+          }
+          aggregate.operand().ifPresent(operand -> validateExpression(operand, clause));
+        }
         case ComparisonPredicate<?> comparison -> {
           validateComparison(comparison.left(), comparison.operator(), comparison.right());
           validateExpression(comparison.left(), clause);
