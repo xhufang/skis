@@ -31,6 +31,12 @@ try
         throw 'Valid report did not produce its actual count and SHA-256'
     }
     $script:checked++
+    # XML-adapter properties can be shadowed by attributes; element identity uses CLR getters.
+    $shadowedProperties = $valid.Replace('<testsuite ',
+        '<testsuite LocalName="other" NamespaceURI="urn:attribute" ')
+    [System.IO.File]::WriteAllText($path, $shadowedProperties)
+    & $verifier -ReportDirectory $directory -RequiredSuites example.ContractTest
+    $script:checked++
     # Parameterized and dynamic test display names may repeat in valid Surefire XML.
     $twoCases = $valid.Replace('tests="1"', 'tests="2"').Replace('</testsuite>',
         '<testcase name="contract" classname="example.ContractTest"/></testsuite>')
@@ -54,7 +60,13 @@ try
     Assert-InvalidReport 'empty XML' ''
     Assert-InvalidReport 'wrong suite' ($valid.Replace('name="example.ContractTest"', 'name="example.OtherTest"'))
     Assert-InvalidReport 'wrong root' ($valid.Replace('testsuite', 'testsuites'))
+    Assert-InvalidReport 'root identity cannot be supplied by attributes' (
+        $valid.Replace('testsuite', 'other').Replace('<other ',
+            '<other LocalName="testsuite" NamespaceURI="" '))
+    Assert-InvalidReport 'root name is case sensitive' ($valid.Replace('testsuite', 'TESTSUITE'))
     Assert-InvalidReport 'namespaced root' ($valid.Replace('<testsuite ', '<testsuite xmlns="urn:other" '))
+    Assert-InvalidReport 'namespace cannot be hidden by an attribute' (
+        $valid.Replace('<testsuite ', '<testsuite xmlns="urn:other" NamespaceURI="" '))
     foreach ($attribute in @('tests', 'failures', 'errors', 'skipped'))
     {
         Assert-InvalidReport "missing $attribute" ([regex]::Replace($valid, " $attribute=`"[0-9]+`"", ''))

@@ -28,7 +28,8 @@ foreach ($suite in $RequiredSuites)
     }
     $report = [xml][System.IO.File]::ReadAllText($path)
     $result = $report.DocumentElement
-    if ($result.Name -ne 'testsuite' -or $result.NamespaceURI -ne '' -or
+    # XML attributes shadow CLR properties in PowerShell's XML adapter (notably name).
+    if ($result.get_Name() -cne 'testsuite' -or $result.get_NamespaceURI() -cne '' -or
         $result.GetAttribute('name') -cne $suite)
     {
         throw "Required report has the wrong suite: $suite"
