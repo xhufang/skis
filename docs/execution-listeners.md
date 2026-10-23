@@ -57,7 +57,9 @@ order and primary/suppressed exception ownership still apply; see [cursor and st
 statement normally reads one row; the count value is not its row-read count. `affectedRowCount`
 contains the driver's reported write count. Counts that are unknown or inapplicable use
 `StatementCompletedEvent.UNKNOWN_ROW_COUNT` (`-1L`). An execute call that was not reached uses
-`UNKNOWN_DURATION_NANOS` (`-1L`). Operation and statement durations exclude listener callback time.
+`UNKNOWN_DURATION_NANOS` (`-1L`). Operation and statement durations exclude listener callback time
+and, when parameter summaries are enabled, synchronous redaction, summary formatting and parameter
+log output time. JDBC binding, execute calls, reading and owned cleanup remain part of the lifecycle.
 
 ## Safety and callback behavior
 
@@ -75,13 +77,24 @@ An `Error` propagates after the applicable cleanup. Synchronous re-entry into SK
 execution is rejected with `IllegalStateException`, including entry through a different executor or
 independent compiler. This rejection is a listener usage failure.
 
-Executors with no listeners use the unobserved path without per-invocation observation objects,
+Executors with no listeners or active SQL/slow logging use the unobserved path without per-invocation observation objects,
 events, IDs or additional observation wrappers. This is a structural contract, not a measured
 throughput or allocation claim.
+
+Opt-in [SQL logging and redaction](sql-logging.md) consumes these same value-free lifecycle events.
+Parameter summaries use a separate synchronous binding channel and are never added to events or
+diagnostics. Configuring parameter summaries alone does not enable lifecycle observation.
+When observation is already active, parameter logs reuse the existing operation/statement IDs and
+fingerprint to correlate concurrent SQL attempts. SQL/slow demand is captured once at operation entry;
+both logging output and level probes share the callback re-entry guard.
+The guard reuses a thread-local Boolean across calls and does not increment a global callback counter.
+Before the first guarded callback, a monotonic gate skips thread-local access; afterward a thread's
+first guard access initializes its entry. Exiting the owning scope resets the Boolean without
+retaining execution state or clearing an enclosing callback's protection.
 
 ## Independent consumer contracts
 
 The [consumer fixtures](../skis-integration-tests/src/consumer/README.md) exercise core-only listener
 compilation, actual H2 registration and lifecycles, and PostgreSQL driver behavior outside the
-repository reactor. PostgreSQL is supplied by the CI service; these fixtures do not install a local
-database. Results for a changed fixture require that revision's CI evidence.
+repository reactor. PostgreSQL uses the selected Testcontainers environment or an explicit external
+URL. Results for a changed fixture require that revision's CI evidence.

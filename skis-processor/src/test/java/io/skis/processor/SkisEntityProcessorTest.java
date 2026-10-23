@@ -90,6 +90,11 @@ class SkisEntityProcessorTest {
             List<String> codes = queries.select(table.code()).from(table).fetchList();
             var value = NullableEntityRowDecoder.forLayout(RowLayout.contiguous(5, 1)).decode(rs, read);
             NullableEntityBinder.INSERT.bind(statement, 1, value, write);
+            ParameterBindingObserver observer = new ParameterBindingObserver() {
+              public void bound(int index, Class<?> type, @Nullable Object boundValue) {}
+              public void unavailable() {}
+            };
+            NullableEntityBinder.INSERT.bindObserved(statement, 1, value, write, observer);
             queries.select(projection).from(table);
             queries.select(RequiredViewPro.all()).from(table);
             return codes.size() + notes.size();
@@ -119,6 +124,8 @@ class SkisEntityProcessorTest {
         "nullable-entity-property", "return value.note().length();",
         "nullable-projection-property", "return new NullableView(1L, \"code\", null, null).note().length();",
         "binder-input", "NullableEntityBinder.INSERT.bind(statement, 1, null, write); return 0;",
+        "observed-binder-input", "NullableEntityBinder.INSERT.bindObserved(statement, 1, null, write, observer); return 0;",
+        "observed-binder-observer", "NullableEntityBinder.INSERT.bindObserved(statement, 1, value, write, null); return 0;",
         "table-alias", "table.as(null); return 0;",
         "projection-input", "NullableViewPro.of(null, table.code(), table.note(), table.photo()); return 0;");
     for (var entry : invalidCalls.entrySet()) {
@@ -600,7 +607,7 @@ class SkisEntityProcessorTest {
     assertTrue(generated.contains("Selectable<java.lang.String> name)"), generated);
     assertTrue(
         generated.contains(
-            "skis-projection:7:samples.NullableSummary:(JLjava/lang/String;)V:"
+            "skis-projection:8:samples.NullableSummary:(JLjava/lang/String;)V:"
                 + "id=java.lang.Long!:name=java.lang.String?"),
         generated);
     assertGeneratedEquals(result, "NullableSummaryPro.java");
@@ -2041,7 +2048,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=7\n"
+        ("# skis-generated-abi=8\n"
                 + "samples.skis.AlphaRuntimeModel\n"
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
@@ -2137,7 +2144,7 @@ class SkisEntityProcessorTest {
     assertEquals(outputSnapshot(normal), outputSnapshot(reversed));
     assertTrue(
         generatedSource(normal, "AlphaSummaryPro.java")
-            .contains("comments = \"Projection ABI 7\""));
+            .contains("comments = \"Projection ABI 8\""));
   }
 
   @Test
@@ -2308,6 +2315,86 @@ class SkisEntityProcessorTest {
       assertTrue(
           Files.exists(
               result.generatedSources().resolve("samples/skis/RealLombokPetSummaryPro.java")));
+    }
+  }
+
+  @Test
+  @SuppressWarnings("unchecked")
+  void generatedPrimitiveBindersStopObservationButStillBindAndReadEveryProperty() throws Exception {
+    int propertyCount = 70;
+    List<String> properties = new ArrayList<>();
+    StringBuilder accessors = new StringBuilder();
+    for (int ordinal = 0; ordinal < propertyCount; ordinal++) {
+      properties.add((ordinal == 0 ? "@Id " : "@Column(nullable = false) ") + "long value" + ordinal);
+      accessors.append("public long value").append(ordinal).append("() { READS[")
+          .append(ordinal).append("]++; return value").append(ordinal).append("; }\n");
+    }
+    Map<String, String> sources = Map.of("samples.WideEntity", """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity public record WideEntity(%s) {
+          public static final int[] READS = new int[%d];
+          %s
+        }
+        """.formatted(String.join(", ", properties), propertyCount, accessors));
+    CompilationResult generated = process(sources, SkisEntityProcessor.class.getName(),
+        temporaryDirectory.resolve("wide-observed-binder"));
+    assertTrue(generated.success(), generated.diagnosticsText());
+    CompilationResult compiled = compileGenerated(sources, generated);
+    assertTrue(compiled.success(), compiled.diagnosticsText());
+    try (var loader = new java.net.URLClassLoader(
+        new java.net.URL[] {compiled.classes().toUri().toURL()}, getClass().getClassLoader())) {
+      Class<?> entityType = loader.loadClass("samples.WideEntity");
+      Class<?> binderType = loader.loadClass("samples.skis.WideEntityBinder");
+      Class<?>[] parameterTypes = new Class<?>[propertyCount];
+      java.util.Arrays.fill(parameterTypes, long.class);
+      Object[] values = new Object[propertyCount];
+      for (int ordinal = 0; ordinal < propertyCount; ordinal++) values[ordinal] = 1000L + ordinal;
+      Object entity = entityType.getConstructor(parameterTypes).newInstance(values);
+      int[] reads = (int[]) entityType.getField("READS").get(null);
+      int[] expectedReads = new int[propertyCount];
+      java.util.Arrays.fill(expectedReads, 1);
+      for (String field : List.of("INSERT", "UPDATE_BY_ID", "UPDATE_BY_ID_UNCHECKED")) {
+        var binder = (io.skis.mapping.spi.ParameterBinder<Object>) binderType.getField(field).get(null);
+        List<List<Object>> expectedBindings = new ArrayList<>();
+        for (int slot = 0; slot < propertyCount; slot++) {
+          int ordinal = field.equals("INSERT") ? slot : (slot + 1) % propertyCount;
+          expectedBindings.add(List.of(slot + 4, values[ordinal]));
+        }
+        for (int limit : List.of(0, 1, 64, propertyCount)) {
+          java.util.Arrays.fill(reads, 0);
+          List<List<Object>> bindings = new ArrayList<>();
+          var statement = (java.sql.PreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
+              getClass().getClassLoader(), new Class<?>[] {java.sql.PreparedStatement.class},
+              (proxy, method, arguments) -> {
+                if (method.getName().equals("setLong")) {
+                  bindings.add(List.of(arguments[0], arguments[1]));
+                }
+                return null;
+              });
+          List<List<Object>> observed = new ArrayList<>();
+          var demands = new java.util.concurrent.atomic.AtomicInteger();
+          var observer = new io.skis.mapping.spi.ParameterBindingObserver() {
+            @Override public boolean needsMore() {
+              demands.incrementAndGet();
+              return observed.size() < limit;
+            }
+            @Override public void bound(int index, Class<?> type,
+                @org.jspecify.annotations.Nullable Object value) {
+              assertTrue(observed.size() < limit, "value observed after budget exhaustion");
+              assertEquals(Long.class, type);
+              observed.add(java.util.Arrays.asList(index, value));
+            }
+            @Override public void unavailable() { throw new AssertionError("generated binder is opaque"); }
+          };
+          assertEquals(propertyCount + 4, binder.bindObserved(statement, 4, entity,
+              io.skis.mapping.spi.JdbcWriteContext.EMPTY, observer));
+          assertEquals(expectedBindings, bindings);
+          assertEquals(expectedBindings.subList(0, limit), observed);
+          assertEquals(limit + 1, demands.get(), "binder kept polling a stopped observer");
+          assertArrayEquals(expectedReads, reads, "binding must read every property exactly once");
+        }
+      }
     }
   }
 

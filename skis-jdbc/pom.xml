@@ -12,6 +12,10 @@
   <description>JDBC data source, connection, statement, and result-set execution</description>
   <dependencies>
     <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-core</artifactId>
     </dependency>

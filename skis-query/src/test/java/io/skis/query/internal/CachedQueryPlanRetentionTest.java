@@ -147,7 +147,8 @@ class CachedQueryPlanRetentionTest {
         };
     ExecutionListenerDispatcher dispatcher = ExecutionListenerDispatcher.of(List.of(listener));
     OperationObservation observation =
-        dispatcher.startOperation(ExecutionOperationKind.FETCH_PAGE, TestDialect.INSTANCE.id());
+        java.util.Objects.requireNonNull(
+            dispatcher.startOperation(ExecutionOperationKind.FETCH_PAGE, TestDialect.INSTANCE.id()));
     RetentionTable table = new RetentionTable(new Object());
     String value = new String("observed-value-" + label);
     DefaultSelectQuery<RetentionEntity> query =

@@ -539,6 +539,27 @@
       "reason": "Assembles the executor-owned shared query catalog at Skis build time.",
       "owner": "T03",
       "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor",
+      "target": "io.skis.core.internal.SafeLog",
+      "reason": "Synchronous bounded string-only logging; isolates ordinary backend failure without retaining parameter values.",
+      "owner": "T06",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$CursorResources",
+      "target": "io.skis.core.internal.SafeLog",
+      "reason": "Synchronous bounded string-only logging; isolates ordinary backend failure without retaining parameter values.",
+      "owner": "T06",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.ParameterSummary",
+      "target": "io.skis.core.internal.SafeLog",
+      "reason": "Synchronous bounded string-only logging; isolates ordinary backend failure without retaining parameter values.",
+      "owner": "T06",
+      "exit": "Review with qualified JPMS exports before 1.0"
     }
   ]
 }

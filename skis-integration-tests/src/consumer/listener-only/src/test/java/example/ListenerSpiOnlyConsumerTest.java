@@ -3,6 +3,8 @@ package example;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.skis.core.SkisStatementKind;
+import io.skis.core.SqlLoggingOptions;
+import io.skis.core.spi.ParameterRedactor;
 import io.skis.core.spi.CompilationCompletedEvent;
 import io.skis.core.spi.CompilationOrigin;
 import io.skis.core.spi.ExecutionListener;
@@ -19,6 +21,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.Test;
 
 class ListenerSpiOnlyConsumerTest {
+
+  @Test
+  void configuresTheCoreRedactionContractWithoutRuntimeOrALoggingProvider() {
+    ParameterRedactor policy = (index, type, value) -> "approved";
+    SqlLoggingOptions options = SqlLoggingOptions.builder().parameterRedactor(policy).build();
+    assertEquals(false, options.parameters());
+    assertEquals("approved", options.parameterRedactor().redact(1, String.class, "secret"));
+    assertEquals("java.lang.String", ParameterRedactor.TYPE_ONLY.redact(1, String.class, "secret"));
+  }
 
   @Test
   void implementsEveryCallbackWithOnlyTheCoreArtifact() {

@@ -48,6 +48,27 @@ public final class StatementObservation {
     this.startedNanos = startedNanos;
   }
 
+  /** Reuses the owning operation's ID for synchronous parameter logging. */
+  public long operationId() {
+    return operation.operationId();
+  }
+
+  /** Reuses this SQL attempt's ID for synchronous parameter logging. */
+  public long statementId() {
+    return statementId;
+  }
+
+  /** Reuses this SQL attempt's existing value-free fingerprint for synchronous parameter logging. */
+  public String sqlFingerprint() {
+    return sqlFingerprint;
+  }
+
+  /** Excludes synchronous parameter-summary work from both SQL and operation lifecycles. */
+  public void excludeLoggingNanos(long nanos) {
+    addCallbackNanos(nanos);
+    operation.addCallbackNanos(nanos);
+  }
+
   /** Marks the exact start of the JDBC driver execute call. */
   public void executeStarted() {
     if (executeActive) {

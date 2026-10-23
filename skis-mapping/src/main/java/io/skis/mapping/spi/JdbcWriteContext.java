@@ -3,8 +3,8 @@ package io.skis.mapping.spi;
 /**
  * Write-time services made available to JDBC codecs and parameter binders.
  *
- * <p>The first runtime slice deliberately keeps this contract empty. Future capabilities must be
- * introduced as default methods so generated binders remain binary compatible.
+ * <p>This contract currently carries no services. Explicit parameter observation uses the separate
+ * {@link ParameterBinder#bindObserved} channel, so normal binding does not inspect logging state.
  */
 public interface JdbcWriteContext {
 

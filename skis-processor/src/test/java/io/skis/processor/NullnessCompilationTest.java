@@ -245,6 +245,22 @@ class NullnessCompilationTest {
   }
 
   @Test
+  void redactorNullOutputIsAllowedAndMustBeHandledByCallers() throws Exception {
+    check("redactor-null-output-valid", """
+        static ParameterRedactor unavailable() { return (index, type, value) -> null; }
+        static int length(ParameterRedactor redactor) {
+          String text = redactor.redact(1, String.class, null);
+          return text == null ? 0 : text.length();
+        }
+        """).assertPass();
+    reject("redactor-null-output-dereference", """
+        static int invalid(ParameterRedactor redactor) {
+          return redactor.redact(1, String.class, null).length();
+        }
+        """);
+  }
+
+  @Test
   void genericAndWildcardRelationshipsRetainNullness() throws Exception {
     check("generic-wildcard-valid", """
         static <T extends @Nullable Object> T identity(T value) { return value; }
@@ -308,6 +324,7 @@ class NullnessCompilationTest {
     return Map.of("contracts.Contract", """
         package contracts;
         import io.skis.core.spi.ExecutionContext;
+        import io.skis.core.spi.ParameterRedactor;
         import io.skis.jdbc.internal.CompiledQueryPlan;
         import io.skis.jdbc.internal.JdbcCursor;
         import io.skis.jdbc.internal.JdbcExecutor;

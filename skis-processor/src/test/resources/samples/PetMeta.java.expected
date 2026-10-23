@@ -12,12 +12,12 @@ import io.skis.metadata.VersionMeta;
 import io.skis.metadata.VersionStrategy;
 
 @org.jspecify.annotations.NullMarked
-@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 7")
+@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 8")
 public final class PetMeta {
 
   private PetMeta() {}
 
-  public static final int GENERATED_ABI = 7;
+  public static final int GENERATED_ABI = 8;
 
   static {
     GeneratedModelAbi.requireCompatible(GENERATED_ABI);

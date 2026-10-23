@@ -170,6 +170,7 @@ class JdbcExecutorTest {
     OperationObservation observation =
         ExecutionListenerDispatcher.of(List.of(listener))
             .startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+    java.util.Objects.requireNonNull(observation);
     ConnectionProvider provider =
         new ConnectionProvider() {
           @Override
@@ -715,6 +716,7 @@ class JdbcExecutorTest {
                       }
                     }))
             .startOperation(ExecutionOperationKind.CURSOR, "test");
+    java.util.Objects.requireNonNull(observation);
 
     AssertionError thrown =
         assertThrows(
@@ -759,6 +761,7 @@ class JdbcExecutorTest {
                       }
                     }))
             .startOperation(ExecutionOperationKind.DELETE_BY_ID, "test");
+    java.util.Objects.requireNonNull(observation);
 
     JdbcExecutionException thrown =
         assertThrows(
@@ -987,6 +990,7 @@ class JdbcExecutorTest {
     OperationObservation observation =
         ExecutionListenerDispatcher.of(List.of(listener))
             .startOperation(ExecutionOperationKind.FETCH_PAGE, "test");
+    java.util.Objects.requireNonNull(observation);
 
     JdbcPageResult<String> page =
         new JdbcExecutor(provider)

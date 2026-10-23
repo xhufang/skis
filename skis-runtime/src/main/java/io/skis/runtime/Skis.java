@@ -3,6 +3,7 @@ package io.skis.runtime;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.SqlLoggingOptions;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.spi.ExecutionListener;
 import io.skis.dialect.spi.Dialect;
@@ -53,6 +54,7 @@ public final class Skis {
     private int planCacheMaximumSize = QueryPlanCatalog.DEFAULT_MAXIMUM_SIZE;
     private Duration planCacheExpireAfterAccess = QueryPlanCatalog.DEFAULT_EXPIRE_AFTER_ACCESS;
     private ExecutionOptions executionOptions = ExecutionOptions.NONE;
+    private SqlLoggingOptions sqlLogging = SqlLoggingOptions.NONE;
     private @Nullable List<ExecutionListener> listeners;
 
     private Builder(ConnectionProvider connectionProvider) {
@@ -99,6 +101,12 @@ public final class Skis {
      */
     public Builder executionOptions(ExecutionOptions executionOptions) {
       this.executionOptions = Objects.requireNonNull(executionOptions, "executionOptions");
+      return this;
+    }
+
+    /** Sets opt-in SQL/slow/parameter logging, inherited unchanged by transaction sessions. */
+    public Builder sqlLogging(SqlLoggingOptions options) {
+      sqlLogging = Objects.requireNonNull(options, "options");
       return this;
     }
 
@@ -157,11 +165,9 @@ public final class Skis {
               JdbcWriteContext.EMPTY,
               RowReadContext.EMPTY,
               executionOptions,
-              selectedDialect.exceptionClassifier());
+              selectedDialect.exceptionClassifier(), sqlLogging);
       ExecutionListenerDispatcher listenerDispatcher =
-          listeners == null
-              ? ExecutionListenerDispatcher.NONE
-              : ExecutionListenerDispatcher.of(listeners);
+          ExecutionListenerDispatcher.of(listeners == null ? List.of() : listeners, sqlLogging);
       QueryPlanCatalog queryPlans =
           QueryRuntime.compile(
               selectedRegistry,

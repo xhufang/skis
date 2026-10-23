@@ -21,6 +21,9 @@ final class BinderGenerator implements EntitySourceGenerator {
     source.append("import io.skis.mapping.spi.JdbcCodecs;\n");
     source.append("import io.skis.mapping.spi.JdbcWriteContext;\n");
     source.append("import io.skis.mapping.spi.ParameterBinder;\n");
+    if (!model.readOnly()) {
+      source.append("import io.skis.mapping.spi.ParameterBindingObserver;\n");
+    }
     source.append("import io.skis.metadata.VersionStrategy;\n");
     source.append("import java.sql.PreparedStatement;\n");
     source.append("import java.sql.SQLException;\n\n");
@@ -31,28 +34,13 @@ final class BinderGenerator implements EntitySourceGenerator {
       source.append("}\n");
       return source.toString();
     }
-    source
-        .append("\n  public static final ParameterBinder<")
-        .append(entityType)
-        .append("> INSERT = ")
-        .append(className)
-        .append("::bindInsert;\n");
+    appendBinder(source, entityType, "INSERT", "bindInsert");
     source
         .append("  public static final ParameterBinder<")
         .append(entityType)
         .append("> UPSERT = INSERT;\n");
-    source
-        .append("  public static final ParameterBinder<")
-        .append(entityType)
-        .append("> UPDATE_BY_ID = ")
-        .append(className)
-        .append("::bindUpdateById;\n");
-    source
-        .append("  public static final ParameterBinder<")
-        .append(entityType)
-        .append("> UPDATE_BY_ID_UNCHECKED = ")
-        .append(className)
-        .append("::bindUpdateByIdUnchecked;\n");
+    appendBinder(source, entityType, "UPDATE_BY_ID", "bindUpdateById");
+    appendBinder(source, entityType, "UPDATE_BY_ID_UNCHECKED", "bindUpdateByIdUnchecked");
     source
         .append("  public static final EntityMutationBinders<")
         .append(entityType)
@@ -106,6 +94,32 @@ final class BinderGenerator implements EntitySourceGenerator {
       String entityType,
       List<PropertyModel> properties,
       boolean initializeVersion) {
+    appendMethod(source, methodName, entityType, properties, initializeVersion, false);
+    appendMethod(source, methodName + "Observed", entityType, properties, initializeVersion, true);
+  }
+
+  private static void appendBinder(
+      StringBuilder source, String entityType, String field, String method) {
+    source.append("\n  public static final ParameterBinder<").append(entityType)
+        .append("> ").append(field).append(" = new ParameterBinder<>() {\n")
+        .append("    @Override\n    public int bind(PreparedStatement statement, int firstIndex, ")
+        .append(entityType).append(" entity, JdbcWriteContext context) throws SQLException {\n")
+        .append("      return ").append(method)
+        .append("(statement, firstIndex, entity, context);\n    }\n")
+        .append("    @Override\n    public int bindObserved(PreparedStatement statement, int firstIndex, ")
+        .append(entityType)
+        .append(" entity, JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {\n")
+        .append("      return ").append(method)
+        .append("Observed(statement, firstIndex, entity, context, observer);\n    }\n  };\n");
+  }
+
+  private static void appendMethod(
+      StringBuilder source,
+      String methodName,
+      String entityType,
+      List<PropertyModel> properties,
+      boolean initializeVersion,
+      boolean observed) {
     source
         .append("  private static int ")
         .append(methodName)
@@ -115,9 +129,13 @@ final class BinderGenerator implements EntitySourceGenerator {
         .append("      ")
         .append(entityType)
         .append(" entity,\n")
-        .append("      JdbcWriteContext context)\n")
+        .append("      JdbcWriteContext context")
+        .append(observed ? ", ParameterBindingObserver observer)\n" : ")\n")
         .append("      throws SQLException {\n")
         .append("    int index = firstIndex;\n");
+    if (observed && !properties.isEmpty()) {
+      source.append("    boolean observing = observer.needsMore();\n");
+    }
     for (PropertyModel property : properties) {
       String valueExpression = property.access().readEntityExpression();
       if (initializeVersion && property.version()) {
@@ -130,13 +148,25 @@ final class BinderGenerator implements EntitySourceGenerator {
       } else if (!property.primitive() && !property.column().nullable()) {
         valueExpression = "JdbcCodecs.requireBindValue(" + valueExpression + ", index)";
       }
+      if (observed) {
+        source.append("    var value").append(property.ordinal()).append(" = ")
+            .append(valueExpression).append(";\n");
+        valueExpression = "value" + property.ordinal();
+      }
       source
           .append("    JdbcCodecs.")
           .append(bindMethod(property))
           .append("(statement, index, ")
           .append(valueExpression)
-          .append(", context);\n")
-          .append("    index++;\n");
+          .append(", context);\n");
+      if (observed) {
+        source.append("    if (observing) {\n")
+            .append("      observer.bound(index, ").append(property.classLiteral()).append(", ")
+            .append(valueExpression).append(");\n")
+            .append("      observing = observer.needsMore();\n")
+            .append("    }\n");
+      }
+      source.append("    index++;\n");
     }
     source.append("    return index;\n").append("  }\n\n");
   }

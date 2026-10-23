@@ -271,10 +271,7 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Nullable OperationObservation startObservation(ExecutionOperationKind operationKind) {
-    ExecutionListenerDispatcher.rejectReentrantCall();
-    return listenerDispatcher.enabled()
-        ? listenerDispatcher.startOperation(operationKind, dialectId)
-        : null;
+    return listenerDispatcher.startOperation(operationKind, dialectId);
   }
 
   void completeSucceeded(@Nullable OperationObservation observation) {

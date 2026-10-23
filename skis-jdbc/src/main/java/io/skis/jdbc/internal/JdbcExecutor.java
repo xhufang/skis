@@ -9,7 +9,9 @@ import io.skis.core.SkisDiagnostics;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.SkisOperation;
 import io.skis.core.SkisStatementKind;
+import io.skis.core.SqlLoggingOptions;
 import io.skis.core.internal.OperationObservation;
+import io.skis.core.internal.SafeLog;
 import io.skis.core.internal.StatementObservation;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.core.spi.ExecutionTermination;
@@ -35,6 +37,8 @@ import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Thread-safe JDBC execution kernel for immutable compiled query and mutation plans. */
 public final class JdbcExecutor {
@@ -43,7 +47,8 @@ public final class JdbcExecutor {
   private static final int UNCONFIGURED_QUERY_TIMEOUT = -1;
   private static final int FETCH_ONE_CARDINALITY_ROWS = 2;
   private static final Object CURSOR_NOT_POSITIONED = new Object();
-  private static final System.Logger LOGGER = System.getLogger(JdbcExecutor.class.getName());
+  private static final Logger LOGGER = LoggerFactory.getLogger("io.skis.internal");
+  private static final Logger PARAMETERS = LoggerFactory.getLogger("io.skis.sql.parameters");
 
   private final ConnectionProvider connectionProvider;
   private final JdbcWriteContext writeContext;
@@ -51,6 +56,7 @@ public final class JdbcExecutor {
   private final ExecutionOptions defaultExecutionOptions;
   private final boolean defaultExecutionOptionsConfigured;
   private final ExceptionClassifier exceptionClassifier;
+  private final SqlLoggingOptions loggingOptions;
 
   /** Creates an executor using the default generated-code contexts. */
   public JdbcExecutor(ConnectionProvider connectionProvider) {
@@ -82,6 +88,18 @@ public final class JdbcExecutor {
       RowReadContext rowReadContext,
       ExecutionOptions defaultExecutionOptions,
       ExceptionClassifier exceptionClassifier) {
+    this(connectionProvider, writeContext, rowReadContext, defaultExecutionOptions,
+        exceptionClassifier, SqlLoggingOptions.NONE);
+  }
+
+  /** Creates an executor with immutable opt-in logging and synchronous redaction configuration. */
+  public JdbcExecutor(
+      ConnectionProvider connectionProvider,
+      JdbcWriteContext writeContext,
+      RowReadContext rowReadContext,
+      ExecutionOptions defaultExecutionOptions,
+      ExceptionClassifier exceptionClassifier,
+      SqlLoggingOptions loggingOptions) {
     this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
     this.writeContext = Objects.requireNonNull(writeContext, "writeContext");
     this.rowReadContext = Objects.requireNonNull(rowReadContext, "rowReadContext");
@@ -89,6 +107,7 @@ public final class JdbcExecutor {
         Objects.requireNonNull(defaultExecutionOptions, "defaultExecutionOptions");
     this.defaultExecutionOptionsConfigured = !defaultExecutionOptions.isEmpty();
     this.exceptionClassifier = Objects.requireNonNull(exceptionClassifier, "exceptionClassifier");
+    this.loggingOptions = Objects.requireNonNull(loggingOptions, "loggingOptions");
   }
 
   /**
@@ -103,7 +122,7 @@ public final class JdbcExecutor {
         writeContext,
         rowReadContext,
         defaultExecutionOptions,
-        exceptionClassifier);
+        exceptionClassifier, loggingOptions);
   }
 
   /** Returns an executor whose session defaults overlay this executor's immutable defaults. */
@@ -115,7 +134,8 @@ public final class JdbcExecutor {
       return this;
     }
     return new JdbcExecutor(
-        connectionProvider, writeContext, rowReadContext, effectiveDefaults, exceptionClassifier);
+        connectionProvider, writeContext, rowReadContext, effectiveDefaults, exceptionClassifier,
+        loggingOptions);
   }
 
   ConnectionProvider connectionProvider() {
@@ -335,7 +355,8 @@ public final class JdbcExecutor {
     StatementObservation statementObservation = null;
     try {
       statementObservation = startStatement(observation, purpose, plan);
-      statement = prepare(connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS);
+      statement = prepare(
+          connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS, statementObservation);
       ResultSet resultSet = executeQuery(statement, statementObservation);
       return new DefaultJdbcCursor<>(
           plan,
@@ -423,7 +444,8 @@ public final class JdbcExecutor {
     try {
       List<R> results;
       try (PreparedStatement statement =
-              prepare(connection, plan, parameters, executionContext, minimumMaxRows);
+              prepare(connection, plan, parameters, executionContext, minimumMaxRows,
+                  statementObservation);
           ResultSet resultSet = executeQuery(statement, statementObservation)) {
         results = new ArrayList<>();
         while (resultSet.next()) {
@@ -463,7 +485,8 @@ public final class JdbcExecutor {
     try {
       JdbcRow<R> row;
       try (PreparedStatement statement =
-              prepare(connection, plan, parameters, executionContext, minimumMaxRows);
+              prepare(connection, plan, parameters, executionContext, minimumMaxRows,
+                  statementObservation);
           ResultSet resultSet = executeQuery(statement, statementObservation)) {
         if (!resultSet.next()) {
           row = JdbcRow.absent();
@@ -556,7 +579,8 @@ public final class JdbcExecutor {
                     plan.parameterBinder(),
                     parameters,
                     executionContext,
-                    NO_MINIMUM_MAX_ROWS)) {
+                    NO_MINIMUM_MAX_ROWS,
+                    statementObservation)) {
               affected = executeUpdate(statement, statementObservation);
               affectedRows = affected;
             }
@@ -648,7 +672,14 @@ public final class JdbcExecutor {
       long readRows,
       long affectedRows) {
     if (observation != null) {
-      observation.completeFailed(failure, SkisDiagnosticStage.EXECUTION, readRows, affectedRows);
+      try {
+        observation.completeFailed(failure, SkisDiagnosticStage.EXECUTION, readRows, affectedRows);
+      } catch (RuntimeException | Error completionFailure) {
+        if (completionFailure != failure) {
+          completionFailure.addSuppressed(failure);
+        }
+        throw completionFailure;
+      }
     }
   }
 
@@ -661,7 +692,8 @@ public final class JdbcExecutor {
       CompiledQueryPlan<R, P> plan,
       P parameters,
       ExecutionContext executionContext,
-      int minimumMaxRows)
+      int minimumMaxRows,
+      @Nullable StatementObservation observation)
       throws SQLException {
     return prepare(
         connection,
@@ -670,7 +702,8 @@ public final class JdbcExecutor {
         plan.parameterBinder(),
         parameters,
         executionContext,
-        minimumMaxRows);
+        minimumMaxRows,
+        observation);
   }
 
   private <P> PreparedStatement prepare(
@@ -680,7 +713,8 @@ public final class JdbcExecutor {
       ParameterBinder<P> parameterBinder,
       P parameters,
       ExecutionContext executionContext,
-      int minimumMaxRows)
+      int minimumMaxRows,
+      @Nullable StatementObservation observation)
       throws SQLException {
     ExecutionOptions statementOptions =
         executionContext == ExecutionContext.EMPTY
@@ -693,8 +727,27 @@ public final class JdbcExecutor {
     PreparedStatement statement =
         connection.prepareStatement(optionsConfigured ? taggedSql(sql, statementOptions) : sql);
     try {
-      int nextIndex = parameterBinder.bind(statement, 1, parameters, writeContext);
       int expectedNextIndex = parameterCount + 1;
+      int nextIndex;
+      if (loggingOptions.parameters() && SafeLog.debugEnabled(PARAMETERS)) {
+        ParameterSummary summary = new ParameterSummary(
+            loggingOptions.parameterRedactor(), parameterCount, observation != null);
+        try {
+          nextIndex = parameterBinder.bindObserved(statement, 1, parameters, writeContext, summary);
+          if (nextIndex == expectedNextIndex) {
+            summary.publish(PARAMETERS,
+                observation == null ? JdbcFingerprint.of(sql) : observation.sqlFingerprint(),
+                observation == null ? 0L : observation.operationId(),
+                observation == null ? 0L : observation.statementId());
+          }
+        } finally {
+          if (observation != null) {
+            observation.excludeLoggingNanos(summary.loggingNanos());
+          }
+        }
+      } else {
+        nextIndex = parameterBinder.bind(statement, 1, parameters, writeContext);
+      }
       if (nextIndex != expectedNextIndex) {
         throw new PhasedSqlFailure(
             JdbcPhase.BIND,
@@ -879,9 +932,6 @@ public final class JdbcExecutor {
       completeStatementFailed(statementObservation, primary, unknownRowCount(), unknownRowCount());
     } catch (RuntimeException | Error listenerFailure) {
       pendingFailure = listenerFailure;
-      if (listenerFailure != primary) {
-        listenerFailure.addSuppressed(primary);
-      }
       throw listenerFailure;
     } finally {
       try {
@@ -1074,14 +1124,15 @@ public final class JdbcExecutor {
       if (closed) {
         return;
       }
-      String fingerprint = JdbcFingerprint.of(plan.sql());
-      LOGGER.log(
-          System.Logger.Level.WARNING,
+      if (SafeLog.warnEnabled(LOGGER)) {
+        String fingerprint = JdbcFingerprint.of(plan.sql());
+        SafeLog.warn(LOGGER,
           "JDBC cursor was abandoned without close [dialect="
-              + plan.dialectId()
+              + SafeLog.text(plan.dialectId(), 128)
               + ", sqlFingerprint="
               + fingerprint
               + "]");
+      }
       // JDBC cleanup is intentionally not attempted from the Cleaner thread. Providers backed by
       // external transaction managers may require release on the acquiring thread.
     }

@@ -23,6 +23,7 @@ import io.skis.core.spi.StatementPurpose;
 import io.skis.core.spi.StatementStartedEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -67,7 +68,7 @@ class ExecutionListenerDispatcherTest {
     ExecutionListenerDispatcher dispatcher = ExecutionListenerDispatcher.of(List.of(first, second));
 
     OperationObservation observation =
-        dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+        Objects.requireNonNull(dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, "test"));
     observation.completeSucceeded(ExecutionTermination.COMPLETED);
 
     assertEquals(
@@ -138,8 +139,8 @@ class ExecutionListenerDispatcherTest {
           }
         };
     OperationObservation operation =
-        ExecutionListenerDispatcher.of(List.of(failing, recording))
-            .startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+        Objects.requireNonNull(ExecutionListenerDispatcher.of(List.of(failing, recording))
+            .startOperation(ExecutionOperationKind.FETCH_LIST, "test"));
     operation.compilationCompleted(
         StatementPurpose.PRIMARY, SkisStatementKind.SELECT, 1L, "fingerprint", "SELECT 1", null);
     StatementObservation statement =
@@ -207,7 +208,8 @@ class ExecutionListenerDispatcherTest {
     ExecutorService executor = Executors.newSingleThreadExecutor();
     try {
       Future<OperationObservation> observed =
-          executor.submit(() -> dispatcher.startOperation(ExecutionOperationKind.FETCH_ONE, "test"));
+          executor.submit(() -> Objects.requireNonNull(
+              dispatcher.startOperation(ExecutionOperationKind.FETCH_ONE, "test")));
       assertTrue(callbackStarted.await(5, TimeUnit.SECONDS));
       // A callback on another thread must not reject an independent caller as reentrant.
       assertDoesNotThrow(ExecutionListenerDispatcher::rejectReentrantCall);
@@ -259,7 +261,7 @@ class ExecutionListenerDispatcherTest {
         () -> {
           try {
             OperationObservation observation =
-                dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, "test");
+                Objects.requireNonNull(dispatcher.startOperation(ExecutionOperationKind.FETCH_LIST, "test"));
             observation.completeSucceeded(ExecutionTermination.COMPLETED);
           } catch (Throwable thrown) {
             failure.compareAndSet(null, thrown);

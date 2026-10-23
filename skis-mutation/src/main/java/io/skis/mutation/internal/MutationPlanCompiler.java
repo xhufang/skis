@@ -15,6 +15,9 @@ import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.jdbc.internal.JdbcFingerprint;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.mapping.spi.ParameterBinder;
+import io.skis.mapping.spi.ParameterBindingObserver;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.GeneratedModelAbi;
@@ -30,6 +33,8 @@ import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -178,10 +183,7 @@ final class MutationPlanCompiler {
               "deleteById",
               dialect.id(),
               rendered,
-              (statement, firstIndex, value, context) -> {
-                idRuntime.bind(statement, firstIndex, value, context);
-                return firstIndex + 1;
-              });
+              new DeleteParameterBinder<>(idRuntime, id.javaType()));
     } catch (RuntimeException | Error failure) {
       notifyPrewarm(
           ExecutionOperationKind.DELETE_BY_ID,
@@ -194,6 +196,26 @@ final class MutationPlanCompiler {
     notifyPrewarm(
         ExecutionOperationKind.DELETE_BY_ID, SkisStatementKind.DELETE, startedNanos, plan, null);
     return plan;
+  }
+
+  private record DeleteParameterBinder<E>(PropertyRuntime<E, ?> runtime, Class<?> javaType)
+      implements ParameterBinder<Object> {
+    @Override
+    public int bind(PreparedStatement statement, int firstIndex, Object value,
+        JdbcWriteContext context) throws SQLException {
+      runtime.bind(statement, firstIndex, value, context);
+      return firstIndex + 1;
+    }
+
+    @Override
+    public int bindObserved(PreparedStatement statement, int firstIndex, Object value,
+        JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {
+      runtime.bind(statement, firstIndex, value, context);
+      if (observer.needsMore()) {
+        observer.bound(firstIndex, javaType, value);
+      }
+      return firstIndex + 1;
+    }
   }
 
   private void notifyPrewarm(

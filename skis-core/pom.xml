@@ -12,6 +12,10 @@
   <description>Public types, exceptions, contexts, SPIs, and lifecycle contracts</description>
   <dependencies>
     <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-annotations</artifactId>
     </dependency>

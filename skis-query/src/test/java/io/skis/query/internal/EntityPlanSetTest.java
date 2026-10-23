@@ -31,6 +31,7 @@ import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.mapping.spi.ParameterBindingObserver;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
@@ -271,6 +272,35 @@ class EntityPlanSetTest {
         plan.renderedSql().parameters().stream().map(slot -> slot.ordinal()).toList());
     assertEquals(6, nextIndex);
     assertEquals(List.of(List.of(4, "Mimi"), List.of(5, "Mimi")), bindings);
+    List<List<Object>> observed = new ArrayList<>();
+    bindings.clear();
+    assertEquals(6, plan.parameterBinder().bindObserved(statement, 4, argument(TABLE, repeated),
+        JdbcWriteContext.EMPTY, bindingObserver(observed)));
+    assertEquals(List.of(List.of(4, "Mimi"), List.of(5, "Mimi")), bindings);
+    assertEquals(List.of(List.of(4, String.class, "Mimi"), List.of(5, String.class, "Mimi")), observed);
+
+    for (int limit : List.of(0, 1)) {
+      bindings.clear();
+      observed.clear();
+      var demands = new java.util.concurrent.atomic.AtomicInteger();
+      ParameterBindingObserver limited = new ParameterBindingObserver() {
+        @Override public boolean needsMore() {
+          demands.incrementAndGet();
+          return observed.size() < limit;
+        }
+        @Override public void bound(int index, Class<?> type,
+            @org.jspecify.annotations.Nullable Object value) {
+          assertTrue(observed.size() < limit, "observer received a value after stopping");
+          observed.add(java.util.Arrays.asList(index, type, value));
+        }
+        @Override public void unavailable() { throw new AssertionError("framework binder is opaque"); }
+      };
+      assertEquals(6, plan.parameterBinder().bindObserved(statement, 4, argument(TABLE, repeated),
+          JdbcWriteContext.EMPTY, limited));
+      assertEquals(List.of(List.of(4, "Mimi"), List.of(5, "Mimi")), bindings);
+      assertEquals(limit, observed.size());
+      assertEquals(limit + 1, demands.get(), "binder kept polling a stopped observer");
+    }
   }
 
   @Test
@@ -383,6 +413,21 @@ class EntityPlanSetTest {
             + "WHERE \"pet\".\"id\" >= ? AND \"pet\".\"pet_name\" LIKE ?",
         plan.sql());
     assertEquals(List.of(List.of("setLong", 1, 1L), List.of("setString", 2, "Mi%")), bindings);
+    List<List<Object>> observed = new ArrayList<>();
+    bindings.clear();
+    assertEquals(3, plan.parameterBinder().bindObserved(statement, 1, argument(TABLE, predicate),
+        JdbcWriteContext.EMPTY, bindingObserver(observed)));
+    assertEquals(List.of(List.of("setLong", 1, 1L), List.of("setString", 2, "Mi%")), bindings);
+    assertEquals(List.of(List.of(1, Long.class, 1L), List.of(2, String.class, "Mi%")), observed);
+  }
+
+  private static ParameterBindingObserver bindingObserver(List<List<Object>> observed) {
+    return new ParameterBindingObserver() {
+      @Override public void bound(int index, Class<?> type, @org.jspecify.annotations.Nullable Object value) {
+        observed.add(java.util.Arrays.asList(index, type, value));
+      }
+      @Override public void unavailable() { throw new AssertionError("framework binder must be observable"); }
+    };
   }
 
   @Test

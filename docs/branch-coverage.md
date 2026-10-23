@@ -1,9 +1,34 @@
 # 分支覆盖率与逐模块棘轮
 
-0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。2026-10-22 已取得权威报告，
-当前 `.github/quality/branch-baseline.json` 采用 CI 39738254300 的候选原文，状态为 `active`；没有手填覆盖率。
-该候选将 skis-query 门槛从 7314（73.14%）提升至 7337（73.37%），保留首次登记及其他 14 个模块的门槛和证据。
-更新后的登记尚待提交后 CI 的来源认证与当前测量比较，不能据本地文件状态宣称门禁已经全部通过。
+0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。当前 `.github/quality/branch-baseline.json` 状态为 `active`。
+2026-10-23 从 CI 39887845595 的真实候选登记 core、processor 和 jdbc 的提升；首次登记、统计口径及其余 12 个模块的
+历史门槛与证据保持不变。该候选同时含 mutation 的下降行，该行未采用，保留 73.40% 并补充缺失的合同测试。
+新增登记的来源认证及测试修复后的当前测量仍待提交后 CI，不能据本地文件状态宣称门禁已经全部通过。
+
+本轮报告来自 [CI 39887845595 的权威作业](https://github.com/xhufang/skis/actions/runs/39887845595/job/120200120805)，
+PR #75 head 为 `b1d4405e6d1747d7c57416dbdf2582c302a50a3b`，实际测试合并提交为
+`7659b45476031bc6926711f9f04284f60c8d77c6`，比较基线为 `0f77a65c5ad5f75b561b6373cfc7ad69f1ebcf4f`。
+[覆盖率工件](https://github.com/xhufang/skis/actions/runs/39887845595/artifacts/12473448389)名为
+`branch-coverage-java-21-39887845595-1`，归档 SHA-256 为
+`36123cfba1800481966e10b630b4e7749dbeebca0c14406f93e59eb21cf42971`。
+已核对 GitHub 工作流身份、尝试次数、合并父提交与会话、七项采集输入 Git blob ID，以及 15 模块 XML 哈希、
+类数、逐类与汇总 branch 计数、整数门槛及 HTML 存在性；首次登记与可信比较历史一致。
+
+| 模块 | 原门槛 | 本轮 covered/missed | 登记门槛 |
+| --- | ---: | ---: | ---: |
+| skis-core | 65.97% | 401/154 | 72.25% |
+| skis-processor | 72.24% | 836/318 | 72.44% |
+| skis-jdbc | 75.00% | 217/59 | 78.62% |
+
+该轮 Java 21/25 构建、单元/APT/nullness/架构检查、45 项覆盖率脚本夹具、真实 PG 双路径及独立消费者通过，
+权威采集和两份工件上传成功。棘轮首先因 core 应抬未抬而失败，后续模块尚未走到认证。
+完整工件另显示 mutation 为 67/27（71.27%），低于历史 69/25（73.40%）；两条未覆盖分支均为
+`MutationPlanCompiler.DeleteParameterBinder.bindObserved` 中 `needsMore()` 的 true/false 路径。
+新增 `MutationParameterBindingTest` 通过实际编译的 delete Binder 验证这两条路径：JDBC 始终且仅绑定一次、
+观察发生在绑定之后、最终下标/声明类型/原始局部值一致，预算耗尽时停止观察并仍返回正确下标。
+仅补充测试，未改生产入口或降低门槛，未在本地编译运行；分支恢复及所有新登记仍待下一次 CI。
+
+此前 CI 39738254300 的候选将 skis-query 门槛从 7314（73.14%）提升至 7337（73.37%），该行及原证据继续保留。
 
 登记验证 [CI 39740005226](https://github.com/xhufang/skis/actions/runs/39740005226/job/119694664049) 已通过构建、
 必需报告及覆盖率采集，但 query 为 1291/474，低于登记报告的 1295/470；其余模块计数一致。
