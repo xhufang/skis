@@ -10,7 +10,7 @@ T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
 
 
-## PR #82：query 棘轮抬线与并发覆盖稳定化（待 CI）
+## PR #82：query 棘轮抬线与并发覆盖稳定化（合入后已通过）
 
 [CI 39962078076 的权威作业](https://github.com/xhufang/skis/actions/runs/39962078076/job/120442308744)
 在 branch 历史比较阶段拒绝 skis-query 的应抬未抬；Java 21/25 构建、必需报告、PG 双路径、消费者和覆盖率采集已执行通过。
@@ -40,7 +40,7 @@ covered/missed 从 1298/471 变为 1299/470。原 publishesOnePlanIdentityUnderC
 
 2026-10-23 从 CI 39887845595 的真实候选登记 core、processor 和 jdbc 的提升；首次登记、统计口径及其余 12 个模块的
 历史门槛与证据保持不变。该候选同时含 mutation 的下降行，该行未采用，保留 73.40% 并补充缺失的合同测试。
-当时新增登记的来源认证及测试修复后测量仍待 CI；后续最终验证结论见本文开头的 9dbb932 记录。
+当时新增登记的来源认证及测试修复后测量待 CI；2026-10-24 已核实合入提交 3afa2f0 的新 CI 39965355009 通过。9dbb932 仅证明原始历史基线。
 
 本轮报告来自 [CI 39887845595 的权威作业](https://github.com/xhufang/skis/actions/runs/39887845595/job/120200120805)，
 PR #75 head 为 `b1d4405e6d1747d7c57416dbdf2582c302a50a3b`，实际测试合并提交为
@@ -73,7 +73,7 @@ PR #75 head 为 `b1d4405e6d1747d7c57416dbdf2582c302a50a3b`，实际测试合并�
 `ProjectionPlanCache.compileOrAwait` 的准入后 `putIfAbsent` 竞争及额外许可释放路径。
 已补充 `admittedWaiterJoinsAnOwnerRegisteredBeforeItsFlightInsertion`，用维护锁固定竞争窗口，
 核对等待者复用唯一编译、miss 统计及两个许可全部归还。测试仅使用现有生产锁与测试侧反射，
-不改生产代码或 73.37% 门槛，未本地编译运行，修复及登记认证仍待 CI。
+不改生产代码或 73.37% 门槛，未本地编译运行；该轮待验证状态后由 3afa2f0 的 CI 39965355009 关闭。
 
 本次抬线报告来自 [CI 39738254300 的权威作业](https://github.com/xhufang/skis/actions/runs/39738254300/job/119688979310)，
 PR head 为 `ae4355c6e40e318298215fef144193b794acbc4f`，实际测试合并提交为
@@ -122,7 +122,7 @@ annotations 的 10 个类确无 branch，记 N/A，其余 14 个模块均有真�
 同步和反射均只在测试侧，不修改生产热路径。上述测试已通过 CI 39718331626 的 Java 21/25 构建，未在本地编译运行。
 该轮 core 恢复为 285/147，query 提高为 1291/474；相较首份报告，ProjectionPlanCache.evictOldest
 和 QueryPlanKey.equals 各多覆盖一个分支。门禁按预期在 query 应抬未抬时失败，尚未执行来源认证；
-已审阅本轮工件并采用真实候选抬线，更新后的登记仍待 CI 验证。
+已审阅本轮工件并采用真实候选抬线；更新后的登记已通过合入提交 3afa2f0 的 CI 39965355009 工程门禁。
 
 ## 权威环境与统计范围
 

@@ -911,6 +911,40 @@
         "removedAnchors": [],
         "removedContracts": []
       }
+    },
+    {
+      "id": "ADR-0021",
+      "title": "聚合结果身份、分组证明与计数计划",
+      "status": "Accepted",
+      "decisionVersion": "0.2.9-SNAPSHOT",
+      "targetVersion": "0.2.9-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "聚合结果 Codec 与结构键扩展、解析后分组身份、复杂 count 包装及验证未实现",
+      "task": "0.2.9:T02—T09",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryPlanKey.java",
+          "type": "io.skis.query.internal.QueryPlanKey"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryPlanCompiler.java",
+          "type": "io.skis.query.internal.QueryPlanCompiler"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryPlanKeyTest.java",
+          "type": "io.skis.query.internal.QueryPlanKeyTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryPaginationCompilationTest.java",
+          "type": "io.skis.query.internal.QueryPaginationCompilationTest"
+        }
+      ]
     }
   ]
 }
