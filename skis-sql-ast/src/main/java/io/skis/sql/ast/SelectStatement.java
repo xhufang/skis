@@ -21,7 +21,7 @@ public final class SelectStatement implements StatementAst {
   private final List<OrderByItem> orderBy;
   private final @Nullable SelectPagination pagination;
 
-  /** Creates a complete immutable SELECT tree, including reserved grouping structure. */
+  /** Creates a complete immutable SELECT tree, including GROUP BY and HAVING. */
   public SelectStatement(
       boolean distinct,
       List<? extends SqlExpression<?>> selections,
@@ -73,7 +73,7 @@ public final class SelectStatement implements StatementAst {
         pagination);
   }
 
-  /** Creates a complete single-table SELECT tree, including reserved grouping structure. */
+  /** Creates a complete single-table SELECT tree, including GROUP BY and HAVING. */
   public SelectStatement(
       boolean distinct,
       List<? extends SqlExpression<?>> selections,

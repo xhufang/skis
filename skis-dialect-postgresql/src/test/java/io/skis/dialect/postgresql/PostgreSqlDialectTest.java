@@ -12,6 +12,7 @@ import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.dialect.spi.StatementParameterLimit;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.sql.ast.ArithmeticExpression;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.CaseExpression;
@@ -37,6 +38,7 @@ import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
@@ -47,6 +49,21 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class PostgreSqlDialectTest {
+
+  @Test
+  void rendersPostgreSqlRealSumWithInputWidening() {
+    PetAstTable pet = PetAstTable.PET;
+    var real = new CastExpression<>(pet.id(), Float.class, SqlType.REAL);
+    var rendered = PostgreSqlTestRendering.render(new SelectStatement(
+        List.of(AggregateExpression.sumAsDouble(real), AggregateExpression.avgAsDouble(real)), pet));
+    assertEquals("SELECT SUM(CAST(CAST(\"pet\".\"id\" AS REAL) AS DOUBLE PRECISION)), "
+        + "AVG(CAST(\"pet\".\"id\" AS REAL)) FROM \"shelter\".\"pet\"", rendered.sql());
+    for (DialectFeature feature : List.of(DialectFeature.GROUP_BY, DialectFeature.HAVING,
+        DialectFeature.COUNT_AGGREGATE, DialectFeature.SUM_AGGREGATE, DialectFeature.AVG_AGGREGATE,
+        DialectFeature.MIN_AGGREGATE, DialectFeature.MAX_AGGREGATE)) {
+      assertTrue(PostgreSqlDialect.INSTANCE.capabilities().supports(feature));
+    }
+  }
 
   @Test
   void exposesTheInitialPostgreSqlContract() {

@@ -104,6 +104,11 @@ public final class ResolvedStatement {
     return analysis != null;
   }
 
+  // Compilation-owned transformations share this analysis; it never becomes a public stage input.
+  @Nullable QueryBlockAnalysis queryAnalysis() {
+    return analysis;
+  }
+
   /** Root resolved structure key for a query stage; empty for mutation-only statements. */
   public Optional<ResolvedStructureKey> structureKey() {
     return Optional.ofNullable(structureKey);

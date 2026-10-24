@@ -9,6 +9,7 @@ import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.RenderInput;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
@@ -22,6 +23,7 @@ import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.DecimalPrecision;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedOutputColumn;
@@ -49,6 +51,7 @@ import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
+import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ScalarSubqueryExpression;
@@ -81,10 +84,32 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private final String dialectId;
   private final IdentifierRules identifierRules;
   private final DialectCapabilities capabilities;
+  private final TypeFormat typeFormat;
 
-  /** Creates a renderer bound to exactly one dialect composition root. */
+  private enum TypeFormat {
+    STANDARD,
+    POSTGRESQL,
+    H2
+  }
+
+  /** Creates a renderer with standard type spellings, bound to one dialect composition root. */
   public StandardSqlRenderer(Dialect dialect) {
+    this(dialect, TypeFormat.STANDARD);
+  }
+
+  /** Creates a renderer with PostgreSQL type spellings, independently of the dialect ID. */
+  public static StandardSqlRenderer postgresql(Dialect dialect) {
+    return new StandardSqlRenderer(dialect, TypeFormat.POSTGRESQL);
+  }
+
+  /** Creates a renderer with H2 decimal and temporal formats, independently of the dialect ID. */
+  public static StandardSqlRenderer h2(Dialect dialect) {
+    return new StandardSqlRenderer(dialect, TypeFormat.H2);
+  }
+
+  private StandardSqlRenderer(Dialect dialect, TypeFormat typeFormat) {
     this.dialect = Objects.requireNonNull(dialect, "dialect");
+    this.typeFormat = typeFormat;
     String id = Objects.requireNonNull(dialect.id(), "dialect.id");
     if (id.isBlank() || !id.equals(id.toLowerCase(Locale.ROOT))) {
       throw new IllegalArgumentException("dialect id must be lowercase and non-blank");
@@ -135,17 +160,6 @@ public final class StandardSqlRenderer implements SqlRenderer {
     if (!outputAliases.isEmpty() && outputAliases.size() != statement.selections().size()) {
       throw invalid("derived SELECT alias count does not match its visible output count");
     }
-    if (!statement.groupBy().isEmpty() || statement.having().isPresent()) {
-      throw SqlRenderException.of(
-          SkisErrorCode.DIALECT_RESERVED_STRUCTURE,
-          dialectId,
-          "GROUP BY/HAVING",
-          "dialect '"
-              + dialectId
-              + "' cannot render reserved "
-              + "GROUP BY/HAVING"
-              + " before that capability is enabled");
-    }
     context.sql.append("SELECT ");
     if (statement.distinct()) {
       context.sql.append("DISTINCT ");
@@ -192,6 +206,22 @@ public final class StandardSqlRenderer implements SqlRenderer {
         }
       }
     }
+    if (!statement.groupBy().isEmpty()) {
+      context.sql.append(" GROUP BY ");
+      for (int index = 0; index < statement.groupBy().size(); index++) {
+        if (index > 0) {
+          context.sql.append(", ");
+        }
+        renderExpression(statement.groupBy().get(index), context);
+      }
+    }
+    statement
+        .having()
+        .ifPresent(
+            having -> {
+              context.sql.append(" HAVING ");
+              renderPredicate(having, context);
+            });
     if (!statement.orderBy().isEmpty()) {
       context.sql.append(" ORDER BY ");
       for (int index = 0; index < statement.orderBy().size(); index++) {
@@ -354,6 +384,18 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void renderExpression(SqlExpression<?> expression, RenderContext context) {
     switch (expression) {
+      case AggregateExpression<?> aggregate -> {
+        context.sql.append(aggregate.kind().name()).append('(');
+        if (aggregate.distinct()) {
+          context.sql.append("DISTINCT ");
+        }
+        if (aggregate.operand().isEmpty()) {
+          context.sql.append('*');
+        } else {
+          renderExpression(aggregate.operand().orElseThrow(), context);
+        }
+        context.sql.append(')');
+      }
       case ColumnExpression<?, ?> column -> renderColumn(column, context);
       case DerivedColumnExpression<?> column -> renderDerivedColumn(column, context);
       case ParameterSlot<?> ignored -> context.sql.append('?');
@@ -490,7 +532,13 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderCast(CastExpression<?> expression, RenderContext context) {
     context.sql.append("CAST(");
     renderExpression(expression.operand(), context);
-    context.sql.append(" AS ").append(renderCastType(expression.sqlType())).append(')');
+    context
+        .sql
+        .append(" AS ")
+        .append(
+            renderCastType(
+                expression.sqlType(), expression.javaType(), expression.decimalPrecision()))
+        .append(')');
   }
 
   private void renderCoalesce(CoalesceExpression<?> expression, RenderContext context) {
@@ -612,7 +660,11 @@ public final class StandardSqlRenderer implements SqlRenderer {
     };
   }
 
-  private String renderCastType(SqlType type) {
+  private String renderCastType(
+      SqlType type, Class<?> javaType, @Nullable DecimalPrecision precision) {
+    if (precision != null) {
+      return "DECIMAL(" + precision.precision() + "," + precision.scale() + ")";
+    }
     return switch (type) {
       case BOOLEAN -> "BOOLEAN";
       case TINYINT, SMALLINT -> "SMALLINT";
@@ -620,16 +672,24 @@ public final class StandardSqlRenderer implements SqlRenderer {
       case BIGINT -> "BIGINT";
       case REAL -> "REAL";
       case DOUBLE -> "DOUBLE PRECISION";
-      case DECIMAL -> "DECIMAL";
+      // H2's unconstrained NUMERIC defaults to scale zero. DECFLOAT retains variable scale
+      // within the engine's native precision instead of silently rounding arbitrary decimals.
+      case DECIMAL ->
+          typeFormat == TypeFormat.H2 && javaType == java.math.BigDecimal.class
+              ? "DECFLOAT"
+              : "DECIMAL";
       case CHARACTER -> "CHAR";
       case VARCHAR -> "VARCHAR";
       case UUID -> "UUID";
       case DATE -> "DATE";
-      case TIME -> "TIME";
-      case TIME_WITH_TIME_ZONE -> "TIME WITH TIME ZONE";
-      case TIMESTAMP -> "TIMESTAMP";
-      case TIMESTAMP_WITH_TIME_ZONE -> "TIMESTAMP WITH TIME ZONE";
-      case VARBINARY, OTHER -> throw invalid("cannot render CAST target " + type);
+      case TIME -> typeFormat == TypeFormat.H2 ? "TIME(9)" : "TIME";
+      case TIME_WITH_TIME_ZONE ->
+          typeFormat == TypeFormat.H2 ? "TIME(9) WITH TIME ZONE" : "TIME WITH TIME ZONE";
+      case TIMESTAMP -> typeFormat == TypeFormat.H2 ? "TIMESTAMP(9)" : "TIMESTAMP";
+      case TIMESTAMP_WITH_TIME_ZONE ->
+          typeFormat == TypeFormat.H2 ? "TIMESTAMP(9) WITH TIME ZONE" : "TIMESTAMP WITH TIME ZONE";
+      case VARBINARY -> typeFormat == TypeFormat.POSTGRESQL ? "BYTEA" : "VARBINARY";
+      case OTHER -> throw invalid("cannot render CAST target " + type);
     };
   }
 
@@ -704,6 +764,33 @@ public final class StandardSqlRenderer implements SqlRenderer {
             .sql
             .append(") AS ")
             .append(identifierRules.quote(derived.reference().alias().value()));
+      }
+      case ParameterRelationSource parameters -> {
+        context.sql.append("(VALUES (");
+        for (int index = 0; index < parameters.parameters().size(); index++) {
+          if (index > 0) {
+            context.sql.append(", ");
+          }
+          var parameter = parameters.parameters().get(index);
+          context
+              .sql
+              .append("CAST(? AS ")
+              .append(renderCastType(parameter.sqlType(), parameter.javaType(), null))
+              .append(')');
+        }
+        context
+            .sql
+            .append(")) AS ")
+            .append(identifierRules.quote(parameters.reference().alias().value()))
+            .append('(');
+        for (int index = 0; index < parameters.reference().outputs().size(); index++) {
+          if (index > 0) {
+            context.sql.append(", ");
+          }
+          context.sql.append(
+              identifierRules.quote(parameters.reference().output(index).name().value()));
+        }
+        context.sql.append(')');
       }
     }
   }

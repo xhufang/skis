@@ -6,6 +6,7 @@ import io.skis.query.QueryCondition;
 import io.skis.query.QueryParameter;
 import io.skis.query.SelectDescription;
 import io.skis.query.Selectable;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
@@ -173,6 +174,48 @@ final class FrameworkQueryCondition implements QueryCondition {
 
   boolean containsSubquery() {
     return containsSubquery;
+  }
+
+  @Nullable AggregateExpression<?> localAggregate(IdentityHashMap<Object, Boolean> visited) {
+    return localAggregate(root, visited);
+  }
+
+  private static @Nullable AggregateExpression<?> localAggregate(Selectable<?> selectable) {
+    return selectable instanceof ExpressionSelectable<?> expression
+        ? expression.localAggregate(new IdentityHashMap<>())
+        : null;
+  }
+
+  private static @Nullable AggregateExpression<?> localAggregate(
+      Selectable<?> selectable, IdentityHashMap<Object, Boolean> visited) {
+    return selectable instanceof ExpressionSelectable<?> expression
+        ? expression.localAggregate(visited)
+        : null;
+  }
+
+  private static @Nullable AggregateExpression<?> localAggregate(
+      Node node, IdentityHashMap<Object, Boolean> visited) {
+    if (visited.put(node, Boolean.TRUE) != null) {
+      return null;
+    }
+    return switch (node) {
+      case ValueComparisonNode<?> value -> localAggregate(value.left(), visited);
+      case ExpressionComparisonNode<?> value -> {
+        AggregateExpression<?> first = localAggregate(value.left(), visited);
+        yield first != null ? first : localAggregate(value.right(), visited);
+      }
+      case NullNode value -> localAggregate(value.selectable(), visited);
+      case BetweenNode<?> value -> localAggregate(value.value(), visited);
+      case LikeNode<?> value -> localAggregate(value.value(), visited);
+      case InNode<?> value -> localAggregate(value.value(), visited);
+      case InSubqueryNode<?> value -> localAggregate(value.value(), visited);
+      case LogicalNode value -> {
+        AggregateExpression<?> first = localAggregate(value.left(), visited);
+        yield first != null ? first : localAggregate(value.right(), visited);
+      }
+      case NotNode value -> localAggregate(value.operand(), visited);
+      case ExistsNode ignored -> null;
+    };
   }
 
   private static boolean containsSubquery(Node node) {
@@ -353,6 +396,10 @@ final class FrameworkQueryCondition implements QueryCondition {
     @Override
     public SqlPredicate compile(QueryConditionCompiler compiler) {
       if (candidates.isEmpty() && compiler.releaseOriginalExpressions()) {
+        AggregateExpression<?> aggregate = localAggregate(value);
+        if (aggregate != null) {
+          return aggregate.emptyMembership(negated);
+        }
         return new InPredicate<>(LiteralExpression.trueLiteral(), List.of(), negated);
       }
       SqlExpression<V> expression = compiler.expression(value);

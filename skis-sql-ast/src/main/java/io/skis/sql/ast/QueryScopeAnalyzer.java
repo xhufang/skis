@@ -90,6 +90,11 @@ final class QueryScopeAnalyzer {
     private @Nullable ExpressionPath invalidGroupKey;
     private int aggregateDepth;
     private boolean hasAggregate;
+    private boolean realSum;
+    private boolean smallIntegerAverage;
+    private boolean doubleAggregate;
+    private boolean standardExpressionStructure;
+    private boolean expressionNeedsLiteralTyping;
     private boolean retainGrouping;
 
     private Analyzer(
@@ -181,11 +186,51 @@ final class QueryScopeAnalyzer {
             new QueryBlockAnalysis.SourceOccurrence(
                 source.identity, source.source, source.nullExtended));
       }
+      boolean grouped = hasAggregate || !groupBy().isEmpty() || having().isPresent();
+      boolean aggregateStructure = grouped;
+      for (QueryBlockAnalysis.NestedBlock nested : nestedBlocks) {
+        QueryBlockAnalysis child = nested.analysis();
+        aggregateStructure |= child.hasAggregateStructure();
+        standardExpressionStructure |= child.requiresStandardExpressionLowering();
+        realSum |= child.hasRealSum();
+        smallIntegerAverage |= child.hasSmallIntegerAverage();
+        doubleAggregate |= child.hasDoubleAggregate();
+      }
       return new QueryBlockAnalysis(
-          path, occurrences, expressions, nestedBlocks, buildBlockKey(), clauseScopes);
+          path,
+          occurrences,
+          expressions,
+          nestedBlocks,
+          buildBlockKey(),
+          clauseScopes,
+          aggregateStructure,
+          grouped || statement instanceof CountAst,
+          standardExpressionStructure,
+          realSum,
+          smallIntegerAverage,
+          doubleAggregate);
     }
 
     private void resolveRelationSource(RelationSource source, int sourceOrdinal) {
+      if (source
+          instanceof
+          ParameterRelationSource(
+              List<ParameterSlot<?>> parameters,
+              DerivedRelationReference reference)) {
+        requirePortableDerivedOutputs(reference, sourceOrdinal);
+        for (int index = 0; index < parameters.size(); index++) {
+          ParameterSlot<?> parameter = parameters.get(index);
+          statementParameters.register(
+              new ResolvedParameterIdentity(
+                  path,
+                  parameter.ordinal(),
+                  parameter.javaType().getName(),
+                  parameter.sqlType(),
+                  parameter.nullability()),
+              new ExpressionPath(path, QueryClause.JOIN_SOURCE, sourceOrdinal).operand(index));
+        }
+        return;
+      }
       if (!(source instanceof DerivedRelationSource derived)) {
         return;
       }
@@ -272,6 +317,15 @@ final class QueryScopeAnalyzer {
         int itemOrdinal,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       ExpressionPath position = new ExpressionPath(path, clause, itemOrdinal);
+      boolean precedingExpressionTyping = standardExpressionStructure;
+      standardExpressionStructure = false;
+      expressionNeedsLiteralTyping =
+          clause == QueryClause.GROUP_BY && expression instanceof LiteralExpression<?>;
+      if ((clause == QueryClause.SELECT || clause == QueryClause.GROUP_BY)
+          && (expression instanceof ParameterSlot<?> || expression instanceof LiteralExpression<?>)
+          && !(statement instanceof CountAst count && count.distinctExpression().isEmpty())) {
+        standardExpressionStructure = true;
+      }
       retainGrouping =
           switch (clause) {
             case SELECT, GROUP_BY, HAVING, ORDER_BY -> true;
@@ -281,6 +335,12 @@ final class QueryScopeAnalyzer {
       expressionColumns = new LinkedHashSet<>();
       expressionParameters = new LinkedHashSet<>();
       Resolution resolution = resolveExpression(expression, position, scope);
+      // Native expressions over columns do not need the dedicated typing traversal. Reuse
+      // this clause's collected parameters and literal facts instead of rescanning its tree.
+      standardExpressionStructure =
+          precedingExpressionTyping
+              || (standardExpressionStructure
+                  && (!expressionParameters.isEmpty() || expressionNeedsLiteralTyping));
       if (resolution.effectiveNullability.isNullable() && expression.javaType().isPrimitive()) {
         throw new IllegalArgumentException(
             position
@@ -296,6 +356,10 @@ final class QueryScopeAnalyzer {
               resolution.effectiveNullability);
       expressions.add(resolved);
       if (clause == QueryClause.GROUP_BY) {
+        // Boolean predicates also form parameterized row-dependent keys. Reuse the
+        // dependencies collected above instead of inferring this from expression kinds.
+        standardExpressionStructure |=
+            resolution.hasLocalColumns && !expressionParameters.isEmpty();
         groupKeys.add(resolution);
       } else if (retainGrouping) {
         groupedOutputs.add(resolution);
@@ -320,8 +384,12 @@ final class QueryScopeAnalyzer {
         case DerivedColumnExpression<?> column -> resolveDerivedColumn(column, position, scope);
         case ParameterSlot<?> parameter -> resolveParameter(parameter, position);
         case AggregateExpression<?> aggregate -> resolveAggregate(aggregate, position, scope);
-        case LiteralExpression<?> literal ->
-            leafLiteral(List.of(literal.kind().name()), expression, literal.nullability());
+        case LiteralExpression<?> literal -> {
+          expressionNeedsLiteralTyping |=
+              literal.kind() == LiteralExpression.Kind.NULL
+                  || (literal.sqlType() != SqlType.INTEGER && literal.sqlType() != SqlType.BOOLEAN);
+          yield leafLiteral(List.of(literal.kind().name()), expression, literal.nullability());
+        }
         case BooleanPredicate predicate ->
             leafLiteral(
                 List.of("BOOLEAN", Boolean.toString(predicate.value())),
@@ -332,48 +400,69 @@ final class QueryScopeAnalyzer {
                 List.of("SELECTED_OUTPUT", Integer.toString(reference.position())),
                 expression,
                 reference.nullability());
-        case ArithmeticExpression<?> arithmetic ->
-            binaryUnion(
-                "ARITHMETIC",
-                List.of(arithmetic.operator().name()),
-                expression,
-                resolveExpression(arithmetic.left(), position.operand(0), scope),
-                resolveExpression(arithmetic.right(), position.operand(1), scope));
-        case ConcatExpression concat ->
-            variadic(
-                "CONCAT",
-                List.of(),
-                expression,
-                concat.operands(),
-                position,
-                scope,
-                NullabilityMode.ANY_NULLABLE);
-        case CaseExpression<?> caseExpression -> resolveCase(caseExpression, position, scope);
+        case ArithmeticExpression<?> arithmetic -> {
+          standardExpressionStructure = true;
+          yield binaryUnion(
+              "ARITHMETIC",
+              List.of(arithmetic.operator().name()),
+              expression,
+              resolveExpression(arithmetic.left(), position.operand(0), scope),
+              resolveExpression(arithmetic.right(), position.operand(1), scope));
+        }
+        case ConcatExpression concat -> {
+          standardExpressionStructure = true;
+          yield variadic(
+              "CONCAT",
+              List.of(),
+              expression,
+              concat.operands(),
+              position,
+              scope,
+              NullabilityMode.ANY_NULLABLE);
+        }
+        case CaseExpression<?> caseExpression -> {
+          standardExpressionStructure = true;
+          yield resolveCase(caseExpression, position, scope);
+        }
         case CastExpression<?> cast -> {
+          standardExpressionStructure = true;
           Resolution operand = resolveExpression(cast.operand(), position.operand(0), scope);
+          var precision = cast.decimalPrecision();
           yield unary(
               "CAST",
-              List.of(cast.javaType().getName(), cast.sqlType().name()),
+              List.of(
+                  cast.javaType().getName(),
+                  cast.sqlType().name(),
+                  precision == null ? "" : precision.toString()),
               expression,
               operand,
               operand.effectiveNullability);
         }
-        case CoalesceExpression<?> coalesce ->
-            variadic(
-                "COALESCE",
-                List.of(),
-                expression,
-                coalesce.operands(),
-                position,
-                scope,
-                NullabilityMode.ALL_NULLABLE);
-        case ComparisonPredicate<?> comparison ->
-            binaryUnion(
-                "COMPARISON",
-                List.of(comparison.operator().name()),
-                expression,
-                resolveExpression(comparison.left(), position.operand(0), scope),
-                resolveExpression(comparison.right(), position.operand(1), scope));
+        case CoalesceExpression<?> coalesce -> {
+          standardExpressionStructure = true;
+          yield variadic(
+              "COALESCE",
+              List.of(),
+              expression,
+              coalesce.operands(),
+              position,
+              scope,
+              NullabilityMode.ALL_NULLABLE);
+        }
+        case ComparisonPredicate<?> comparison -> {
+          if ((comparison.left() instanceof ParameterSlot<?>
+                  || comparison.left() instanceof LiteralExpression<?>)
+              && (comparison.right() instanceof ParameterSlot<?>
+                  || comparison.right() instanceof LiteralExpression<?>)) {
+            standardExpressionStructure = true;
+          }
+          yield binaryUnion(
+              "COMPARISON",
+              List.of(comparison.operator().name()),
+              expression,
+              resolveExpression(comparison.left(), position.operand(0), scope),
+              resolveExpression(comparison.right(), position.operand(1), scope));
+        }
         case LogicalPredicate logical ->
             variadic(
                 "LOGICAL",
@@ -384,6 +473,10 @@ final class QueryScopeAnalyzer {
                 scope,
                 NullabilityMode.ANY_NULLABLE);
         case NullPredicate nullPredicate -> {
+          if (nullPredicate.operand() instanceof ParameterSlot<?>
+              || nullPredicate.operand() instanceof LiteralExpression<?>) {
+            standardExpressionStructure = true;
+          }
           Resolution operand =
               resolveExpression(nullPredicate.operand(), position.operand(0), scope);
           yield unary(
@@ -419,6 +512,7 @@ final class QueryScopeAnalyzer {
           yield unary("NOT", List.of(), expression, operand, operand.effectiveNullability);
         }
         case IncrementExpression<?> increment -> {
+          standardExpressionStructure = true;
           Resolution operand = resolveExpression(increment.operand(), position.operand(0), scope);
           yield unary("INCREMENT", List.of(), expression, operand, operand.effectiveNullability);
         }
@@ -555,6 +649,10 @@ final class QueryScopeAnalyzer {
         }
       }
 
+      if (target.source() instanceof ParameterRelationSource parameters) {
+        // A single non-correlated VALUES row contributes no row-dependent grouping identity.
+        return resolveParameter(parameters.parameters().get(column.outputOrdinal()), position);
+      }
       DerivedOutputColumn output = column.output();
       ResolvedDerivedColumnIdentity identity =
           new ResolvedDerivedColumnIdentity(
@@ -657,6 +755,23 @@ final class QueryScopeAnalyzer {
         throw aggregateFailure(aggregate, position, QuerySemanticReason.OUTER_ONLY_AGGREGATE);
       }
       hasAggregate = true;
+      SqlExpression<?> input = aggregate.operand().orElse(null);
+      if (input instanceof ParameterSlot<?> || input instanceof LiteralExpression<?>) {
+        standardExpressionStructure = true;
+      }
+      if (input != null) {
+        realSum |=
+            aggregate.kind() == AggregateExpression.Kind.SUM && input.sqlType() == SqlType.REAL;
+        smallIntegerAverage |=
+            aggregate.kind() == AggregateExpression.Kind.AVG
+                && (input.sqlType() == SqlType.TINYINT
+                    || input.sqlType() == SqlType.SMALLINT
+                    || input.sqlType() == SqlType.INTEGER);
+        doubleAggregate |=
+            (aggregate.kind() == AggregateExpression.Kind.SUM
+                    || aggregate.kind() == AggregateExpression.Kind.AVG)
+                && input.sqlType() == SqlType.DOUBLE;
+      }
       List<Resolution> children = operand == null ? List.of() : List.of(operand);
       return new Resolution(
           new ResolvedStructureKey.Node(
@@ -1306,6 +1421,21 @@ final class QueryScopeAnalyzer {
               "DERIVED_SOURCE",
               derivedSourceAttributes(source.identity, derived.reference()),
               List.of(child.structureKey()));
+        }
+        case ParameterRelationSource parameters -> {
+          List<ResolvedStructureKey> slots = new ArrayList<>(parameters.parameters().size());
+          for (ParameterSlot<?> parameter : parameters.parameters()) {
+            slots.add(
+                new ResolvedStructureKey.Atom(
+                    "PARAMETER",
+                    List.of(
+                        Integer.toString(parameter.ordinal()), parameter.javaType().getName(),
+                        parameter.sqlType().name(), parameter.nullability().name())));
+          }
+          yield new ResolvedStructureKey.Node(
+              "PARAMETER_SOURCE",
+              derivedSourceAttributes(source.identity, parameters.reference()),
+              slots);
         }
       };
     }

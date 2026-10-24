@@ -20,6 +20,10 @@ public final class FromClause {
   /** Creates a FROM clause and assigns stable occurrence ordinals in declaration order. */
   public FromClause(RelationSource root, List<JoinClause> joins) {
     this.root = Objects.requireNonNull(root, "root");
+    if (root instanceof ParameterRelationSource) {
+      throw new IllegalArgumentException(
+          "parameter relation must follow the original FROM/Join chain");
+    }
     this.joins = List.copyOf(Objects.requireNonNull(joins, "joins"));
     this.occurrences = createOccurrences(root, this.joins);
     this.nullExtendedTables = EffectiveNullabilityResolver.finalTableState(this);
@@ -134,8 +138,13 @@ public final class FromClause {
         ordinalsByDerivedReference,
         ordinalsByQualifier);
     for (int index = 0; index < joins.size(); index++) {
+      JoinClause join = joins.get(index);
+      if (join.right() instanceof ParameterRelationSource
+          && (index != joins.size() - 1 || join.type() != JoinType.CROSS)) {
+        throw new IllegalArgumentException("parameter relation must be the final CROSS JOIN");
+      }
       addOccurrence(
-          joins.get(index).right(),
+          join.right(),
           index + 1,
           result,
           ordinalsBySource,

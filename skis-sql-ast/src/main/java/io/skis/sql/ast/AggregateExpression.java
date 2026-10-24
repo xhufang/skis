@@ -128,6 +128,49 @@ public final class AggregateExpression<T> implements SqlExpression<T> {
     return Optional.ofNullable(operand);
   }
 
+  /** Rebuilds an aggregate during structural lowering while retaining its fixed result contract. */
+  public AggregateExpression<T> withOperand(SqlExpression<?> replacement) {
+    Objects.requireNonNull(replacement, "replacement");
+    if (operand == null) {
+      throw new IllegalArgumentException("COUNT(*) has no operand to replace");
+    }
+    return replacement == operand
+        ? this
+        : new AggregateExpression<>(kind, distinct, replacement, javaType);
+  }
+
+  /**
+   * Replaces an empty IN/NOT IN containing this block's aggregate without losing aggregation.
+   *
+   * <p>The result is constant even on empty input and retains no discarded columns or parameters.
+   */
+  public SqlPredicate emptyMembership(boolean negated) {
+    if (kind == Kind.COUNT) {
+      return new NullPredicate(
+          countAll(), negated ? NullOperator.IS_NOT_NULL : NullOperator.IS_NULL);
+    }
+    SqlExpression<?> input = Objects.requireNonNull(operand, "aggregate operand");
+    // Use one representative input domain for each fixed numeric result. This keeps the
+    // constant witness identical whether numeric widening happened before or after pruning.
+    Class<?> inputJavaType = input.javaType();
+    SqlType inputSqlType = input.sqlType();
+    if (kind == Kind.SUM || kind == Kind.AVG) {
+      if (kind == Kind.SUM && javaType == Long.class) {
+        inputJavaType = Integer.class;
+      } else if (kind == Kind.SUM && javaType == BigInteger.class) {
+        inputJavaType = Long.class;
+      } else {
+        inputJavaType = javaType;
+      }
+      inputSqlType = SqlType.fromJavaType(inputJavaType);
+    }
+    SqlExpression<?> typedNull =
+        new CastExpression<>(
+            LiteralExpression.nullLiteral(inputJavaType), inputJavaType, inputSqlType);
+    return new NullPredicate(
+        withOperand(typedNull), negated ? NullOperator.IS_NULL : NullOperator.IS_NOT_NULL);
+  }
+
   @Override
   public Class<T> javaType() {
     return javaType;

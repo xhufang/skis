@@ -28,6 +28,7 @@
       "io.skis.sql.ast.DerivedTableAstTest",
       "io.skis.sql.ast.IdentifierTest",
       "io.skis.sql.ast.JoinAstTest",
+      "io.skis.sql.ast.ParameterRelationAstTest",
       "io.skis.sql.ast.QueryScopeAnalysisTest",
       "io.skis.sql.ast.SqlAstStructureTest"
     ],
@@ -43,6 +44,7 @@
       "io.skis.jdbc.internal.ParameterLoggingTest"
     ],
     "skis-dialect-support": [
+      "io.skis.dialect.support.AggregateDialectTest",
       "io.skis.dialect.support.CompilationPipelineTest",
       "io.skis.dialect.support.DerivedTableSqlRendererTest",
       "io.skis.dialect.support.JoinSqlRendererTest",
@@ -106,6 +108,7 @@
     ],
     "skis-integration-tests": [
       "io.skis.architecture.ArchitectureContractTest",
+      "io.skis.integration.SkisAggregateH2ContractTest",
       "io.skis.integration.SkisEmployeeDepartmentScalarH2ContractTest",
       "io.skis.integration.SkisExecutorReadSliceTest",
       "io.skis.integration.SkisJdbcTypeH2ContractTest",

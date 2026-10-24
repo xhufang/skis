@@ -1,5 +1,6 @@
 package io.skis.dialect.spi;
 
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.BooleanPredicate;
@@ -29,6 +30,7 @@ import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
+import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ScalarSubqueryExpression;
@@ -176,11 +178,14 @@ public final class ParameterLayout {
     private void relation(RelationSource source) {
       if (source instanceof DerivedRelationSource derived) {
         select(derived.statement());
+      } else if (source instanceof ParameterRelationSource parameters) {
+        parameters.parameters().forEach(this::add);
       }
     }
 
     private void expression(SqlExpression<?> expression) {
       switch (expression) {
+        case AggregateExpression<?> aggregate -> aggregate.operand().ifPresent(this::expression);
         case ParameterSlot<?> parameter -> add(parameter);
         case BooleanPredicate ignored -> {}
         case SelectedOutputReference<?> ignored -> {}

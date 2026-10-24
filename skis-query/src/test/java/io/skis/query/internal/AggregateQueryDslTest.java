@@ -58,6 +58,25 @@ class AggregateQueryDslTest {
   private static final SampleTable TABLE = new SampleTable();
 
   @Test
+  void emptyMembershipPruningKeepsLocalAggregatesAndDropsTheirParameters() {
+    var unused = Sql.parameter(Integer.class);
+    var aggregate = Sql.sumAsLong(Sql.value(unused));
+    var nestedAggregate = Sql.caseWhen(Sql.countAll().gt(0L), Sql.value(1L), Sql.value(2L));
+    for (Selectable<Long> value : List.of(aggregate, nestedAggregate)) {
+      var result = Sql.caseWhen(value.in(List.of()), Sql.value(1), Sql.value(0));
+      ExpressionCapture capture = new ExpressionCapture();
+      var selected = capture.selectable(result);
+      CompiledQueryStructure structure =
+          QueryModels.description(Sql.select(selected).from(TABLE)).state().structure();
+      analyze(structure.validationStructure());
+      var statement = new SelectStatement(structure.selections(), structure.fromClause());
+      assertTrue(io.skis.sql.ast.SemanticValidator.analyzeComplete(statement).isGrouped());
+      assertFalse(structure.parameterReferences().contains(unused));
+      assertEquals(2, structure.parameterReferences().size());
+    }
+  }
+
+  @Test
   void aggregateFactoriesPreserveFixedResultsAndConservativeNullability() {
     assertResult(Sql.countAll(), Long.class, SqlType.BIGINT, false);
     assertResult(Sql.count(TABLE.label()), Long.class, SqlType.BIGINT, false);

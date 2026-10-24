@@ -6,8 +6,11 @@ import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.QueryBlockAnalysis;
+import io.skis.sql.ast.QueryClause;
+import io.skis.sql.ast.ResolvedStructureKey;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
 import java.util.Objects;
 
@@ -24,10 +27,8 @@ public final class DialectQueryFeatures {
     switch (statement) {
       case SelectStatement select ->
           validateBlock(dialectId, capabilities, select, SemanticValidator.analyzeComplete(select));
-      case CountAst count -> {
-        DialectJoinFeatures.validate(dialectId, capabilities, count);
-        validateNested(dialectId, capabilities, SemanticValidator.analyzeComplete(count));
-      }
+      case CountAst count ->
+          validateCount(dialectId, capabilities, count, SemanticValidator.analyzeComplete(count));
       default -> DialectJoinFeatures.validate(dialectId, capabilities, statement);
     }
   }
@@ -47,15 +48,35 @@ public final class DialectQueryFeatures {
     }
     switch (statement) {
       case SelectStatement select -> validateBlock(dialectId, capabilities, select, analysis);
-      case CountAst count -> {
-        DialectJoinFeatures.validate(dialectId, capabilities, count);
-        validateNested(dialectId, capabilities, analysis);
-      }
+      case CountAst count -> validateCount(dialectId, capabilities, count, analysis);
       default ->
           throw new IllegalArgumentException(
               "resolved query analysis cannot validate statement node "
                   + statement.getClass().getName());
     }
+  }
+
+  private static void validateCount(
+      String dialectId,
+      DialectCapabilities capabilities,
+      CountAst statement,
+      QueryBlockAnalysis analysis) {
+    DialectJoinFeatures.validate(dialectId, capabilities, statement);
+    require(
+        dialectId,
+        capabilities,
+        DialectFeature.COUNT_AGGREGATE,
+        "COUNT",
+        analysis.path().toString());
+    if (statement.distinctExpression().isPresent()) {
+      require(
+          dialectId,
+          capabilities,
+          DialectFeature.COUNT_DISTINCT,
+          "COUNT DISTINCT",
+          analysis.path().toString());
+    }
+    validateNested(dialectId, capabilities, analysis);
   }
 
   private static void validateBlock(
@@ -68,7 +89,76 @@ public final class DialectQueryFeatures {
     } else {
       DialectJoinFeatures.validate(dialectId, capabilities, statement, analysis.path().toString());
     }
+    if (!statement.groupBy().isEmpty()) {
+      require(
+          dialectId, capabilities, DialectFeature.GROUP_BY, "GROUP BY", analysis.path().toString());
+      for (int index = 0; index < statement.groupBy().size(); index++) {
+        if (statement.groupBy().get(index).sqlType() == SqlType.OTHER) {
+          throw SqlRenderException.of(
+              SkisErrorCode.DIALECT_INVALID_STRUCTURE,
+              dialectId,
+              "GROUP BY has no controlled equality type at query block "
+                  + analysis.path()
+                  + " GROUP BY item #"
+                  + index);
+        }
+      }
+    }
+    if (statement.having().isPresent()) {
+      require(dialectId, capabilities, DialectFeature.HAVING, "HAVING", analysis.path().toString());
+    }
+    if (analysis.hasAggregateStructure()) {
+      for (var expression : analysis.expressions()) {
+        validateAggregates(
+            dialectId,
+            capabilities,
+            expression.structureKey(),
+            analysis.path().toString(),
+            expression.position().clause());
+      }
+    }
     validateNested(dialectId, capabilities, analysis);
+  }
+
+  private static void validateAggregates(
+      String dialectId,
+      DialectCapabilities capabilities,
+      ResolvedStructureKey key,
+      String blockPath,
+      QueryClause clause) {
+    if (!(key
+            instanceof
+            ResolvedStructureKey.Node(
+                String kind1,
+                java.util.List<String> attributes,
+                java.util.List<ResolvedStructureKey> children))
+        || kind1.equals("SELECT_BLOCK")) {
+      return;
+    }
+    if (kind1.equals("AGGREGATE")) {
+      String kind = attributes.get(3);
+      DialectFeature feature =
+          switch (kind) {
+            case "COUNT" -> DialectFeature.COUNT_AGGREGATE;
+            case "SUM" -> DialectFeature.SUM_AGGREGATE;
+            case "AVG" -> DialectFeature.AVG_AGGREGATE;
+            case "MIN" -> DialectFeature.MIN_AGGREGATE;
+            case "MAX" -> DialectFeature.MAX_AGGREGATE;
+            default -> throw new IllegalArgumentException("unknown aggregate kind");
+          };
+      require(dialectId, capabilities, feature, kind + " in " + clause.displayName(), blockPath);
+      if (Boolean.parseBoolean(attributes.get(4))) {
+        require(
+            dialectId,
+            capabilities,
+            DialectFeature.COUNT_DISTINCT,
+            "COUNT DISTINCT in " + clause.displayName(),
+            blockPath);
+      }
+    }
+    for (ResolvedStructureKey child : children) {
+      validateAggregates(dialectId, capabilities, child, blockPath, clause);
+    }
   }
 
   private static void validateNested(

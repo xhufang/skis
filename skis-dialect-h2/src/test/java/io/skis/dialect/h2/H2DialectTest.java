@@ -12,6 +12,7 @@ import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.dialect.spi.StatementParameterLimit;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.sql.ast.ArithmeticExpression;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.CaseExpression;
@@ -37,6 +38,7 @@ import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
@@ -47,6 +49,22 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class H2DialectTest {
+
+  @Test
+  void rendersTheH2AggregateInputAndResultConversions() {
+    PetAstTable pet = PetAstTable.PET;
+    var integer = new CastExpression<>(pet.id(), Integer.class, SqlType.INTEGER);
+    var approximate = new CastExpression<>(pet.id(), Double.class, SqlType.DOUBLE);
+    var rendered = H2TestRendering.render(new SelectStatement(List.of(
+        AggregateExpression.avgAsBigDecimal(integer), AggregateExpression.sumAsDouble(approximate)), pet));
+    assertEquals("SELECT AVG(CAST(CAST(\"pet\".\"id\" AS INTEGER) AS DECIMAL(10,0))), "
+        + "CAST(SUM(CAST(\"pet\".\"id\" AS DOUBLE PRECISION)) AS DOUBLE PRECISION) FROM \"shelter\".\"pet\"", rendered.sql());
+    for (DialectFeature feature : List.of(DialectFeature.GROUP_BY, DialectFeature.HAVING,
+        DialectFeature.COUNT_AGGREGATE, DialectFeature.SUM_AGGREGATE, DialectFeature.AVG_AGGREGATE,
+        DialectFeature.MIN_AGGREGATE, DialectFeature.MAX_AGGREGATE)) {
+      assertTrue(H2Dialect.INSTANCE.capabilities().supports(feature));
+    }
+  }
 
   @Test
   void exposesTheInitialH2Contract() {

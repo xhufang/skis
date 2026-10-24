@@ -138,7 +138,9 @@ class StandardSqlRendererTest {
         RendererHarness.of(
             "test",
             DialectCapabilities.of(
-                DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.COUNT_DISTINCT));
+                DialectFeature.SCHEMA_QUALIFIED_TABLES,
+                DialectFeature.COUNT_AGGREGATE,
+                DialectFeature.COUNT_DISTINCT));
 
     RenderedSql rendered = renderer.render(new CountAst(pet, null, nullable, true));
 
@@ -537,7 +539,7 @@ class StandardSqlRendererTest {
   }
 
   @Test
-  void doesNotSilentlyDropReservedGroupingStructure() {
+  void rejectsGroupingWithoutAnExplicitCapability() {
     PetTable pet = new PetTable(PET);
     SelectStatement grouped =
         new SelectStatement(
@@ -554,7 +556,8 @@ class StandardSqlRendererTest {
     SqlRenderException failure =
         assertThrows(SqlRenderException.class, () -> RENDERER.render(grouped));
 
-    assertTrue(failure.getMessage().contains("GROUP BY/HAVING"));
+    assertTrue(failure.getMessage().contains("GROUP BY"));
+    assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, failure.code());
   }
 
   @Test
