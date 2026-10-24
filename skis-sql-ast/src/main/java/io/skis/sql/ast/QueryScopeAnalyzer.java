@@ -1,15 +1,21 @@
 package io.skis.sql.ast;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnostics;
+import io.skis.core.SkisDiagnostics.QuerySemanticReason;
+import io.skis.core.SkisErrorCode;
 import io.skis.metadata.PropertyMeta;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /** Query-block scope resolver used by the complete semantic-validation boundary. */
@@ -68,6 +74,11 @@ final class QueryScopeAnalyzer {
     private final List<MutableSource> currentSources = new ArrayList<>();
     private final List<QueryBlockAnalysis.ScopeSource> allBlockSources;
     private final List<ResolvedExpression> expressions = new ArrayList<>();
+    private final List<Resolution> groupKeys = new ArrayList<>();
+    private final List<Resolution> groupedOutputs = new ArrayList<>();
+    // Each clause expression owns one pair of sets; intermediate nodes retain no transitive sets.
+    private Set<ResolvedColumnReference> expressionColumns = Set.of();
+    private Set<ResolvedParameterIdentity> expressionParameters = Set.of();
     private final List<QueryBlockAnalysis.NestedBlock> nestedBlocks = new ArrayList<>();
     private final Map<QueryBlockAnalysis.ScopeSite, QueryBlockAnalysis.ScopeSnapshot> clauseScopes =
         new HashMap<>();
@@ -76,6 +87,10 @@ final class QueryScopeAnalyzer {
     private final Map<QueryBlockAnalysis.ScopeSite, Integer> nestedOrdinals = new HashMap<>();
     private final IdentityHashMap<DerivedRelationReference, QueryBlockAnalysis> derivedAnalyses =
         new IdentityHashMap<>();
+    private @Nullable ExpressionPath invalidGroupKey;
+    private int aggregateDepth;
+    private boolean hasAggregate;
+    private boolean retainGrouping;
 
     private Analyzer(
         StatementAst statement,
@@ -159,6 +174,7 @@ final class QueryScopeAnalyzer {
             orderBy().get(index).expression(), QueryClause.ORDER_BY, index, finalScope);
       }
       pagination().ifPresent(value -> resolvePagination(value, finalScope));
+      validateGrouping();
       List<QueryBlockAnalysis.SourceOccurrence> occurrences = new ArrayList<>();
       for (MutableSource source : currentSources) {
         occurrences.add(
@@ -255,7 +271,15 @@ final class QueryScopeAnalyzer {
         QueryClause clause,
         int itemOrdinal,
         QueryBlockAnalysis.ScopeSnapshot scope) {
-      ExpressionPosition position = new ExpressionPosition(path, clause, itemOrdinal, List.of());
+      ExpressionPath position = new ExpressionPath(path, clause, itemOrdinal);
+      retainGrouping =
+          switch (clause) {
+            case SELECT, GROUP_BY, HAVING, ORDER_BY -> true;
+            default -> false;
+          };
+      // Fresh sets avoid clearing an oversized table for every later small expression.
+      expressionColumns = new LinkedHashSet<>();
+      expressionParameters = new LinkedHashSet<>();
       Resolution resolution = resolveExpression(expression, position, scope);
       if (resolution.effectiveNullability.isNullable() && expression.javaType().isPrimitive()) {
         throw new IllegalArgumentException(
@@ -265,24 +289,37 @@ final class QueryScopeAnalyzer {
       }
       ResolvedExpression resolved =
           new ResolvedExpression(
-              position,
+              position.root,
               resolution.key,
-              List.copyOf(resolution.columns),
-              List.copyOf(resolution.parameters),
+              List.copyOf(expressionColumns),
+              List.copyOf(expressionParameters),
               resolution.effectiveNullability);
       expressions.add(resolved);
+      if (clause == QueryClause.GROUP_BY) {
+        groupKeys.add(resolution);
+      } else if (retainGrouping) {
+        groupedOutputs.add(resolution);
+      }
       expressionKeys.put(new QueryBlockAnalysis.ScopeSite(clause, itemOrdinal), resolution.key);
     }
 
     private Resolution resolveExpression(
         SqlExpression<?> expression,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       Objects.requireNonNull(expression, "expression");
+      if (position.clause() == QueryClause.GROUP_BY
+          && (expression instanceof SelectedOutputReference<?>
+              || expression instanceof ScalarSubqueryExpression<?>
+              || expression instanceof ExistsPredicate
+              || expression instanceof InSubqueryPredicate<?>)) {
+        rejectGroupKey(position);
+      }
       return switch (expression) {
         case ColumnExpression<?, ?> column -> resolveColumn(column, position, scope);
         case DerivedColumnExpression<?> column -> resolveDerivedColumn(column, position, scope);
         case ParameterSlot<?> parameter -> resolveParameter(parameter, position);
+        case AggregateExpression<?> aggregate -> resolveAggregate(aggregate, position, scope);
         case LiteralExpression<?> literal ->
             leafLiteral(List.of(literal.kind().name()), expression, literal.nullability());
         case BooleanPredicate predicate ->
@@ -395,7 +432,7 @@ final class QueryScopeAnalyzer {
 
     private Resolution resolveColumn(
         ColumnExpression<?, ?> column,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       List<QueryBlockAnalysis.ScopeFrame> frames = scope.frames();
       QueryBlockAnalysis.ScopeSource target = null;
@@ -436,6 +473,9 @@ final class QueryScopeAnalyzer {
       }
       if (targetFrame > 0) {
         rejectHarmfulQualifierShadow(position, column, target, targetFrame, frames);
+        if (position.clause() == QueryClause.GROUP_BY) {
+          rejectGroupKey(position);
+        }
       }
 
       PropertyMeta<?, ?> property = column.property();
@@ -448,7 +488,8 @@ final class QueryScopeAnalyzer {
               property.javaType().getName(),
               column.sqlType());
       Nullability nullability = column.nullability().union(Nullability.of(target.nullExtended()));
-      return new Resolution(
+      expressionColumns.add(identity);
+      return resolution(
           new ResolvedStructureKey.Atom(
               "COLUMN",
               concat(
@@ -459,14 +500,16 @@ final class QueryScopeAnalyzer {
                       Integer.toString(identity.propertyOrdinal()),
                       identity.propertyName(),
                       identity.columnName()))),
-          linkedSet(identity),
-          new LinkedHashSet<>(),
-          nullability);
+          nullability,
+          List.of(),
+          position,
+          identity,
+          null);
     }
 
     private Resolution resolveDerivedColumn(
         DerivedColumnExpression<?> column,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       List<QueryBlockAnalysis.ScopeFrame> frames = scope.frames();
       QueryBlockAnalysis.ScopeSource target = null;
@@ -507,6 +550,9 @@ final class QueryScopeAnalyzer {
       }
       if (targetFrame > 0) {
         rejectHarmfulQualifierShadow(position, column, target, targetFrame, frames);
+        if (position.clause() == QueryClause.GROUP_BY) {
+          rejectGroupKey(position);
+        }
       }
 
       DerivedOutputColumn output = column.output();
@@ -518,7 +564,8 @@ final class QueryScopeAnalyzer {
               output.javaType().getName(),
               output.sqlType());
       Nullability nullability = output.nullability().union(Nullability.of(target.nullExtended()));
-      return new Resolution(
+      expressionColumns.add(identity);
+      return resolution(
           new ResolvedStructureKey.Atom(
               "DERIVED_COLUMN",
               concat(
@@ -528,12 +575,14 @@ final class QueryScopeAnalyzer {
                       Integer.toString(identity.source().occurrenceOrdinal()),
                       Integer.toString(identity.outputOrdinal()),
                       identity.outputName()))),
-          linkedSet(identity),
-          new LinkedHashSet<>(),
-          nullability);
+          nullability,
+          List.of(),
+          position,
+          identity,
+          null);
     }
 
-    private Resolution resolveParameter(ParameterSlot<?> parameter, ExpressionPosition position) {
+    private Resolution resolveParameter(ParameterSlot<?> parameter, ExpressionPath position) {
       ResolvedParameterIdentity identity =
           new ResolvedParameterIdentity(
               path,
@@ -542,6 +591,7 @@ final class QueryScopeAnalyzer {
               parameter.sqlType(),
               parameter.nullability());
       statementParameters.register(identity, position);
+      expressionParameters.add(identity);
       return new Resolution(
           new ResolvedStructureKey.Atom(
               "PARAMETER",
@@ -551,14 +601,12 @@ final class QueryScopeAnalyzer {
                   parameter.javaType().getName(),
                   parameter.sqlType().name(),
                   parameter.nullability().name())),
-          new LinkedHashSet<>(),
-          linkedSet(identity),
           parameter.nullability());
     }
 
     private Resolution resolveCase(
         CaseExpression<?> expression,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       List<Resolution> children = new ArrayList<>();
       List<Resolution> results = new ArrayList<>();
@@ -583,9 +631,167 @@ final class QueryScopeAnalyzer {
       return combine("CASE", List.of(), expression, children, nullability);
     }
 
+    private Resolution resolveAggregate(
+        AggregateExpression<?> aggregate,
+        ExpressionPath position,
+        QueryBlockAnalysis.ScopeSnapshot scope) {
+      if (position.clause() != QueryClause.SELECT
+          && position.clause() != QueryClause.HAVING
+          && position.clause() != QueryClause.ORDER_BY) {
+        throw aggregateFailure(aggregate, position, QuerySemanticReason.AGGREGATE_IN_CLAUSE);
+      }
+      if (aggregateDepth != 0 || statement instanceof CountAst) {
+        throw aggregateFailure(aggregate, position, QuerySemanticReason.NESTED_AGGREGATE);
+      }
+      Resolution operand = null;
+      aggregateDepth++;
+      try {
+        if (aggregate.operand().isPresent()) {
+          operand =
+              resolveExpression(aggregate.operand().orElseThrow(), position.operand(0), scope);
+        }
+      } finally {
+        aggregateDepth--;
+      }
+      if (operand != null && operand.hasColumns && !operand.hasLocalColumns) {
+        throw aggregateFailure(aggregate, position, QuerySemanticReason.OUTER_ONLY_AGGREGATE);
+      }
+      hasAggregate = true;
+      List<Resolution> children = operand == null ? List.of() : List.of(operand);
+      return new Resolution(
+          new ResolvedStructureKey.Node(
+              "AGGREGATE",
+              concat(
+                  descriptor(aggregate),
+                  List.of(
+                      aggregate.kind().name(),
+                      Boolean.toString(aggregate.distinct()),
+                      path.toString())),
+              operand == null ? List.of() : List.of(operand.key)),
+          aggregate.nullability(),
+          children,
+          position,
+          aggregate.kind(),
+          null,
+          null);
+    }
+
+    private void rejectGroupKey(ExpressionPath position) {
+      if (invalidGroupKey == null) {
+        invalidGroupKey = position;
+      }
+    }
+
+    private void validateGrouping() {
+      if (invalidGroupKey != null) {
+        throw groupingFailure(invalidGroupKey, QuerySemanticReason.INVALID_GROUP_KEY, null);
+      }
+      if (groupBy().isEmpty() && having().isEmpty() && !hasAggregate) {
+        return;
+      }
+      Set<Resolution> keys =
+          groupBy().isEmpty() ? new HashSet<>() : HashSet.newHashSet(groupBy().size());
+      Set<ResolvedColumnReference> columns =
+          groupBy().isEmpty() ? new HashSet<>() : HashSet.newHashSet(groupBy().size());
+      for (int index = 0; index < groupKeys.size(); index++) {
+        Resolution resolution = groupKeys.get(index);
+        if (!keys.add(resolution)) {
+          throw groupingFailure(
+              new ExpressionPath(path, QueryClause.GROUP_BY, index),
+              QuerySemanticReason.DUPLICATE_GROUP_KEY,
+              null);
+        }
+        if (resolution.column != null) {
+          columns.add(resolution.column);
+        }
+      }
+      for (Resolution output : groupedOutputs) {
+        requireGrouped(output, keys, columns);
+      }
+    }
+
+    private void requireGrouped(
+        Resolution resolution, Set<Resolution> keys, Set<ResolvedColumnReference> groupedColumns) {
+      // Ancestor-only dependencies are checked at their owning block's embedding position.
+      if (resolution.aggregateKind != null
+          || !resolution.hasLocalColumns
+          || (!resolution.containsSubquery && !keys.isEmpty() && keys.contains(resolution))) {
+        return;
+      }
+      if (resolution.column != null) {
+        requireGroupedColumn(resolution.column, resolution.position, groupedColumns);
+      }
+      for (Resolution child : resolution.children) {
+        requireGrouped(child, keys, groupedColumns);
+      }
+      if (resolution.nested != null) {
+        for (ResolvedColumnReference dependency : resolution.nested.correlatedColumns) {
+          requireGroupedColumn(dependency, resolution.position, groupedColumns);
+        }
+      }
+    }
+
+    private void requireGroupedColumn(
+        ResolvedColumnReference dependency,
+        @Nullable ExpressionPath position,
+        Set<ResolvedColumnReference> groupedColumns) {
+      if (dependency.source().blockPath().equals(path) && !groupedColumns.contains(dependency)) {
+        throw groupingFailure(
+            Objects.requireNonNull(position, "column dependency position"),
+            QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+            dependency);
+      }
+    }
+
+    private QueryValidationException groupingFailure(
+        ExpressionPath position,
+        QuerySemanticReason reason,
+        @Nullable ResolvedColumnReference missing) {
+      SkisDiagnostics.QueryLocation dependency =
+          missing == null
+              ? null
+              : new SkisDiagnostics.QueryLocation(
+                  missing.source().blockPath().toString(),
+                  null,
+                  missing.source().occurrenceOrdinal(),
+                  null,
+                  null);
+      Integer propertyOrdinal =
+          missing instanceof ResolvedColumnIdentity column ? column.propertyOrdinal() : null;
+      Integer outputOrdinal =
+          missing instanceof ResolvedDerivedColumnIdentity column ? column.outputOrdinal() : null;
+      return semanticFailure(
+          SkisErrorCode.QUERY_GROUPING_CONTRACT,
+          position,
+          new SkisDiagnostics.QuerySemantics(
+              reason, null, null, dependency, propertyOrdinal, outputOrdinal));
+    }
+
+    private QueryValidationException aggregateFailure(
+        AggregateExpression<?> aggregate, ExpressionPath position, QuerySemanticReason reason) {
+      return semanticFailure(
+          SkisErrorCode.QUERY_AGGREGATE_CONTRACT,
+          position,
+          new SkisDiagnostics.QuerySemantics(
+              reason, aggregate.kind().name(), path.toString(), null, null, null));
+    }
+
+    private QueryValidationException semanticFailure(
+        SkisErrorCode code, ExpressionPath position, SkisDiagnostics.QuerySemantics semantics) {
+      return QueryValidationException.of(
+          code,
+          SkisDiagnostics.builder(code.defaultStage())
+              .queryBlock(position.blockPath().toString())
+              .clause(position.clause().displayName())
+              .expressionPath(position.toString())
+              .querySemantics(semantics)
+              .detail(code.description())
+              .build());
+    }
+
     private Resolution resolveIn(
         InPredicate<?> expression,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       List<Resolution> children = new ArrayList<>(expression.candidates().size() + 1);
       children.add(resolveExpression(expression.value(), position.operand(0), scope));
@@ -604,26 +810,28 @@ final class QueryScopeAnalyzer {
 
     private Resolution resolveExists(
         ExistsPredicate expression,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       NestedResolution nested =
           resolveNested(
               expression.subquery(), position, scope, QueryBlockAnalysis.NestedQueryKind.EXISTS);
-      return new Resolution(
+      return resolution(
           new ResolvedStructureKey.Node(
               "EXISTS",
               concat(
                   descriptor(expression),
                   List.of(Boolean.toString(expression.negated()), nested.location.toString())),
               List.of(nested.analysis.structureKey())),
-          nested.correlatedColumns,
-          nested.parameters,
-          Nullability.NON_NULL);
+          Nullability.NON_NULL,
+          List.of(),
+          position,
+          null,
+          nested);
     }
 
     private Resolution resolveInSubquery(
         InSubqueryPredicate<?> expression,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       SemanticValidator.validateInSubquery(expression.value(), expression.subquery());
       Resolution value = resolveExpression(expression.value(), position.operand(0), scope);
@@ -634,25 +842,23 @@ final class QueryScopeAnalyzer {
               scope,
               QueryBlockAnalysis.NestedQueryKind.IN_SUBQUERY);
       Nullability outputNullability = selectionNullability(nested.analysis);
-      LinkedHashSet<ResolvedColumnReference> columns = new LinkedHashSet<>(value.columns);
-      columns.addAll(nested.correlatedColumns);
-      LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>(value.parameters);
-      parameters.addAll(nested.parameters);
-      return new Resolution(
+      return resolution(
           new ResolvedStructureKey.Node(
               "IN_SUBQUERY",
               concat(
                   descriptor(expression),
                   List.of(Boolean.toString(expression.negated()), nested.location.toString())),
               List.of(value.key, nested.analysis.structureKey())),
-          columns,
-          parameters,
-          value.effectiveNullability.union(outputNullability));
+          value.effectiveNullability.union(outputNullability),
+          List.of(value),
+          position,
+          null,
+          nested);
     }
 
     private Resolution resolveScalarSubquery(
         ScalarSubqueryExpression<?> expression,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope) {
       SemanticValidator.validateScalarSubquery(expression.subquery());
       NestedResolution nested =
@@ -661,19 +867,21 @@ final class QueryScopeAnalyzer {
               position,
               scope,
               QueryBlockAnalysis.NestedQueryKind.SCALAR_SUBQUERY);
-      return new Resolution(
+      return resolution(
           new ResolvedStructureKey.Node(
               "SCALAR_SUBQUERY",
               concat(descriptor(expression), List.of(nested.location.toString())),
               List.of(nested.analysis.structureKey())),
-          nested.correlatedColumns,
-          nested.parameters,
-          Nullability.NULLABLE);
+          Nullability.NULLABLE,
+          List.of(),
+          position,
+          null,
+          nested);
     }
 
     private NestedResolution resolveNested(
         SelectStatement subquery,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope,
         QueryBlockAnalysis.NestedQueryKind kind) {
       QueryBlockAnalysis.ScopeSite site =
@@ -689,15 +897,19 @@ final class QueryScopeAnalyzer {
 
       LinkedHashSet<ResolvedColumnReference> correlatedColumns = new LinkedHashSet<>();
       LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>();
+      boolean hasLocalColumns = false;
       for (ResolvedExpression resolved : child.expressions()) {
         for (ResolvedColumnReference dependency : resolved.columnDependencies()) {
           if (!dependency.source().blockPath().equals(child.path())) {
             correlatedColumns.add(dependency);
+            hasLocalColumns |= dependency.source().blockPath().equals(path);
           }
         }
         parameters.addAll(resolved.parameterDependencies());
       }
-      return new NestedResolution(location, child, correlatedColumns, parameters);
+      expressionColumns.addAll(correlatedColumns);
+      expressionParameters.addAll(parameters);
+      return new NestedResolution(location, child, correlatedColumns, hasLocalColumns);
     }
 
     private Nullability selectionNullability(QueryBlockAnalysis child) {
@@ -721,8 +933,6 @@ final class QueryScopeAnalyzer {
         List<String> attributes, SqlExpression<?> expression, Nullability nullability) {
       return new Resolution(
           new ResolvedStructureKey.Atom("LITERAL", concat(descriptor(expression), attributes)),
-          new LinkedHashSet<>(),
-          new LinkedHashSet<>(),
           nullability);
     }
 
@@ -755,7 +965,7 @@ final class QueryScopeAnalyzer {
         List<String> attributes,
         SqlExpression<?> expression,
         List<? extends SqlExpression<?>> operands,
-        ExpressionPosition position,
+        ExpressionPath position,
         QueryBlockAnalysis.ScopeSnapshot scope,
         NullabilityMode mode) {
       List<Resolution> children = new ArrayList<>(operands.size());
@@ -780,20 +990,31 @@ final class QueryScopeAnalyzer {
         SqlExpression<?> expression,
         List<Resolution> children,
         Nullability nullability) {
-      LinkedHashSet<ResolvedColumnReference> columns = new LinkedHashSet<>();
-      LinkedHashSet<ResolvedParameterIdentity> parameters = new LinkedHashSet<>();
       List<ResolvedStructureKey> childKeys = new ArrayList<>(children.size());
       for (Resolution child : children) {
-        columns.addAll(child.columns);
-        parameters.addAll(child.parameters);
         childKeys.add(child.key);
       }
-      return new Resolution(
+      return resolution(
           new ResolvedStructureKey.Node(
               kind, concat(descriptor(expression), attributes), childKeys),
-          columns,
-          parameters,
-          nullability);
+          nullability,
+          children,
+          null,
+          null,
+          null);
+    }
+
+    private Resolution resolution(
+        ResolvedStructureKey key,
+        Nullability nullability,
+        List<Resolution> children,
+        @Nullable ExpressionPath position,
+        @Nullable ResolvedColumnReference column,
+        @Nullable NestedResolution nested) {
+      // Row-level clauses still resolve every node, but need no grouping tree or leaf positions.
+      return retainGrouping
+          ? new Resolution(key, nullability, children, position, null, column, nested)
+          : new Resolution(key, nullability);
     }
 
     private void registerSource(TableOccurrence occurrence) {
@@ -891,7 +1112,7 @@ final class QueryScopeAnalyzer {
     }
 
     private void rejectHarmfulQualifierShadow(
-        ExpressionPosition position,
+        ExpressionPath position,
         ColumnExpression<?, ?> column,
         QueryBlockAnalysis.ScopeSource target,
         int targetFrame,
@@ -915,7 +1136,7 @@ final class QueryScopeAnalyzer {
     }
 
     private void rejectHarmfulQualifierShadow(
-        ExpressionPosition position,
+        ExpressionPath position,
         DerivedColumnExpression<?> column,
         QueryBlockAnalysis.ScopeSource target,
         int targetFrame,
@@ -969,7 +1190,7 @@ final class QueryScopeAnalyzer {
     }
 
     private IllegalArgumentException scopeFailure(
-        ExpressionPosition position, ColumnExpression<?, ?> column, String reason) {
+        ExpressionPath position, ColumnExpression<?, ?> column, String reason) {
       String qualifier =
           column
               .table()
@@ -1007,7 +1228,7 @@ final class QueryScopeAnalyzer {
     }
 
     private IllegalArgumentException derivedScopeFailure(
-        ExpressionPosition position, DerivedColumnExpression<?> column, String reason) {
+        ExpressionPath position, DerivedColumnExpression<?> column, String reason) {
       return new IllegalArgumentException(
           position
               + " derived column '"
@@ -1277,12 +1498,6 @@ final class QueryScopeAnalyzer {
         expression.nullability().name());
   }
 
-  private static <T> LinkedHashSet<T> linkedSet(T value) {
-    LinkedHashSet<T> result = new LinkedHashSet<>();
-    result.add(value);
-    return result;
-  }
-
   private static <T> List<T> concat(List<T> first, List<T> second) {
     List<T> result = new ArrayList<>(first.size() + second.size());
     result.addAll(first);
@@ -1305,7 +1520,7 @@ final class QueryScopeAnalyzer {
 
     private final Map<Integer, ResolvedParameterIdentity> parametersByOrdinal = new HashMap<>();
 
-    private void register(ResolvedParameterIdentity identity, ExpressionPosition position) {
+    private void register(ResolvedParameterIdentity identity, ExpressionPath position) {
       ResolvedParameterIdentity existing =
           parametersByOrdinal.putIfAbsent(identity.parameterOrdinal(), identity);
       if (existing != null
@@ -1331,17 +1546,144 @@ final class QueryScopeAnalyzer {
     }
   }
 
-  private record Resolution(
-      ResolvedStructureKey key,
-      LinkedHashSet<ResolvedColumnReference> columns,
-      LinkedHashSet<ResolvedParameterIdentity> parameters,
-      Nullability effectiveNullability) {
+  /** Shared operand prefixes keep traversal and retained leaf paths linear in the node count. */
+  private static final class ExpressionPath {
+    private final ExpressionPosition root;
+    private final @Nullable ExpressionPath parent;
+    private final int ordinal;
+    private final int depth;
 
-    private Resolution {
-      Objects.requireNonNull(key, "key");
-      columns = new LinkedHashSet<>(columns);
-      parameters = new LinkedHashSet<>(parameters);
-      Objects.requireNonNull(effectiveNullability, "effectiveNullability");
+    private ExpressionPath(QueryBlockPath blockPath, QueryClause clause, int itemOrdinal) {
+      root = new ExpressionPosition(blockPath, clause, itemOrdinal, List.of());
+      parent = null;
+      ordinal = -1;
+      depth = 0;
+    }
+
+    private ExpressionPath(ExpressionPath parent, int ordinal) {
+      root = parent.root;
+      this.parent = parent;
+      this.ordinal = ordinal;
+      depth = parent.depth + 1;
+    }
+
+    private ExpressionPath operand(int ordinal) {
+      return new ExpressionPath(this, ordinal);
+    }
+
+    private QueryBlockPath blockPath() {
+      return root.blockPath();
+    }
+
+    private QueryClause clause() {
+      return root.clause();
+    }
+
+    private int itemOrdinal() {
+      return root.itemOrdinal();
+    }
+
+    @Override
+    public String toString() {
+      if (depth == 0) {
+        return root.toString();
+      }
+      // Only a failure formats operand paths; successful analysis publishes the clause root.
+      int[] ordinals = new int[depth];
+      ExpressionPath current = this;
+      for (int index = depth - 1; index >= 0; index--) {
+        ordinals[index] = current.ordinal;
+        current = Objects.requireNonNull(current.parent, "operand path parent");
+      }
+      StringBuilder text = new StringBuilder(root.toString());
+      for (int operand : ordinals) {
+        text.append(" operand #").append(operand);
+      }
+      return text.toString();
+    }
+  }
+
+  /** Analysis-local facts reuse resolved operands; they never escape into a shared plan or AST. */
+  private static final class Resolution {
+    private final ResolvedStructureKey key;
+    private final Nullability effectiveNullability;
+    private final List<Resolution> children;
+    private final @Nullable ExpressionPath position;
+    private final AggregateExpression.@Nullable Kind aggregateKind;
+    private final @Nullable ResolvedColumnReference column;
+    private final @Nullable NestedResolution nested;
+    private final boolean hasColumns;
+    private final boolean hasLocalColumns;
+    private final boolean containsSubquery;
+    private int groupingHash;
+    private boolean groupingHashComputed;
+
+    private Resolution(ResolvedStructureKey key, Nullability effectiveNullability) {
+      this(key, effectiveNullability, List.of(), null, null, null, null);
+    }
+
+    private Resolution(
+        ResolvedStructureKey key,
+        Nullability effectiveNullability,
+        List<Resolution> children,
+        @Nullable ExpressionPath position,
+        AggregateExpression.@Nullable Kind aggregateKind,
+        @Nullable ResolvedColumnReference column,
+        @Nullable NestedResolution nested) {
+      this.key = Objects.requireNonNull(key, "key");
+      this.effectiveNullability =
+          Objects.requireNonNull(effectiveNullability, "effectiveNullability");
+      this.children = children;
+      this.position = position;
+      this.aggregateKind = aggregateKind;
+      this.column = column;
+      this.nested = nested;
+      boolean columns = column != null || (nested != null && !nested.correlatedColumns.isEmpty());
+      boolean localColumns = nested != null && nested.hasLocalColumns;
+      if (column != null) {
+        QueryBlockPath blockPath = Objects.requireNonNull(position, "column position").blockPath();
+        localColumns |= column.source().blockPath().equals(blockPath);
+      }
+      boolean hasSubquery = nested != null;
+      for (Resolution child : children) {
+        columns |= child.hasColumns;
+        localColumns |= child.hasLocalColumns;
+        hasSubquery |= child.containsSubquery;
+      }
+      this.containsSubquery = hasSubquery;
+      this.hasColumns = columns;
+      this.hasLocalColumns = localColumns;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object other) {
+      return this == other || other instanceof Resolution that && key.equals(that.key);
+    }
+
+    @Override
+    public int hashCode() {
+      // Ordinary queries never request grouping hashes. Each required subtree is hashed once.
+      if (!groupingHashComputed) {
+        groupingHash =
+            switch (key) {
+              case ResolvedStructureKey.Atom atom -> atom.hashCode();
+              case ResolvedStructureKey.Node node -> {
+                // These summaries omit child facts; grouping never hashes them, but equals still
+                // requires the same hash for the same key if another internal use requests one.
+                if (containsSubquery || children.size() != node.children().size()) {
+                  yield node.hashCode();
+                }
+                int childrenHash = 1;
+                for (Resolution child : children) {
+                  childrenHash = 31 * childrenHash + child.hashCode();
+                }
+                yield 31 * (31 * node.kind().hashCode() + node.attributes().hashCode())
+                    + childrenHash;
+              }
+            };
+        groupingHashComputed = true;
+      }
+      return groupingHash;
     }
   }
 
@@ -1349,13 +1691,12 @@ final class QueryScopeAnalyzer {
       QueryBlockLocation location,
       QueryBlockAnalysis analysis,
       LinkedHashSet<ResolvedColumnReference> correlatedColumns,
-      LinkedHashSet<ResolvedParameterIdentity> parameters) {
+      boolean hasLocalColumns) {
 
     private NestedResolution {
       Objects.requireNonNull(location, "location");
       Objects.requireNonNull(analysis, "analysis");
       correlatedColumns = new LinkedHashSet<>(correlatedColumns);
-      parameters = new LinkedHashSet<>(parameters);
     }
   }
 }

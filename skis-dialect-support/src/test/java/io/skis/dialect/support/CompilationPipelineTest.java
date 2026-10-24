@@ -2,10 +2,13 @@ package io.skis.dialect.support;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnostics.QuerySemanticReason;
 import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
@@ -24,8 +27,10 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.BooleanPredicate;
 import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.FromClause;
@@ -42,8 +47,13 @@ import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.QueryBlockPath;
+import io.skis.sql.ast.QueryClause;
+import io.skis.sql.ast.ResolvedColumnIdentity;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
+import io.skis.sql.ast.SemanticValidator;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.TableExpression;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -121,6 +131,167 @@ class CompilationPipelineTest {
     assertEquals(List.of("validate", "lower", "render"), dialect.events);
     assertEquals(1, template.parameterCount());
     assertEquals(0, template.parameterLayout().slots().getFirst().ordinal());
+  }
+
+  @Test
+  void legalAggregatesRetainOccurrencesDependenciesAndEffectiveNullabilityInResolvedStage() {
+    PetTable pet = new PetTable(PET, Identifier.of("p"));
+    PetTable joined = new PetTable(PET, Identifier.of("j"));
+    ParameterSlot<Long> parameter = new ParameterSlot<>(0, Long.class, false);
+    AggregateExpression<Long> count = AggregateExpression.count(joined.id());
+    AggregateExpression<Long> maximum = AggregateExpression.max(joined.id());
+    SelectStatement statement =
+        new SelectStatement(
+            false,
+            List.of(
+                pet.id(),
+                count,
+                maximum,
+                AggregateExpression.max(parameter),
+                AggregateExpression.countAll()),
+            List.of(new HiddenSelection(count, Identifier.of("hidden_count"))),
+            new FromClause(
+                pet, List.of(new JoinClause(JoinType.LEFT, joined, pet.id().eq(joined.id())))),
+            pet.id().gt(parameter),
+            List.of(pet.id()),
+            new ComparisonPredicate<>(
+                count, ComparisonOperator.GREATER_THAN, LiteralExpression.zero(Long.class)),
+            List.of(new OrderByItem(maximum, OrderDirection.ASC, NullOrder.LAST)),
+            null);
+
+    ResolvedStatement resolved = ResolvedStatement.analyze(statement);
+    QueryBlockPath root = QueryBlockPath.root();
+    Occurrence counted = resolved.occurrenceAt(root, QueryClause.SELECT, 1);
+    Occurrence hidden = resolved.occurrenceAt(root, QueryClause.SELECT, 5);
+    ExpressionInfo countInfo = resolved.expressionInfo(counted);
+    ExpressionInfo maxInfo =
+        resolved.expressionInfo(resolved.occurrenceAt(root, QueryClause.SELECT, 2));
+    ExpressionInfo parameterInfo =
+        resolved.expressionInfo(resolved.occurrenceAt(root, QueryClause.SELECT, 3));
+
+    assertTrue(resolved.hasQueryBlockAnalysis());
+    assertEquals(
+        SemanticValidator.analyzeComplete(statement).structureKey(),
+        resolved.structureKey().orElseThrow());
+    assertEquals(2, resolved.sourceOccurrences().size());
+    assertTrue(resolved.sourceOccurrences().get(1).nullExtended());
+    assertSame(count, counted.expression());
+    assertSame(count, hidden.expression());
+    assertNotSame(counted, hidden);
+    assertEquals(Long.class, countInfo.javaType());
+    assertEquals(SqlType.BIGINT, countInfo.sqlType());
+    assertEquals(Nullability.NON_NULL, countInfo.effectiveNullability());
+    assertEquals(Nullability.NULLABLE, maxInfo.effectiveNullability());
+    assertFalse(countInfo.correlated());
+    assertEquals(1, countInfo.columnDependencies().size());
+    ResolvedColumnIdentity column =
+        (ResolvedColumnIdentity) countInfo.columnDependencies().getFirst();
+    assertEquals(root, column.source().blockPath());
+    assertEquals(1, column.source().occurrenceOrdinal());
+    assertEquals(ID.ordinal(), column.propertyOrdinal());
+    assertTrue(countInfo.parameterDependencies().isEmpty());
+    assertEquals(countInfo.columnDependencies(), maxInfo.columnDependencies());
+    assertEquals(countInfo.columnDependencies(), hidden.info().columnDependencies());
+    assertTrue(parameterInfo.columnDependencies().isEmpty());
+    assertEquals(Nullability.NULLABLE, parameterInfo.effectiveNullability());
+    assertEquals(1, parameterInfo.parameterDependencies().size());
+    assertEquals(0, parameterInfo.parameterDependencies().getFirst().parameterOrdinal());
+    assertEquals(root, parameterInfo.parameterDependencies().getFirst().blockPath());
+    ExpressionInfo countAllInfo =
+        resolved.expressionInfo(resolved.occurrenceAt(root, QueryClause.SELECT, 4));
+    assertTrue(countAllInfo.columnDependencies().isEmpty());
+    assertTrue(countAllInfo.parameterDependencies().isEmpty());
+    assertEquals(Nullability.NON_NULL, countAllInfo.effectiveNullability());
+    assertEquals(
+        parameterInfo.parameterDependencies(),
+        resolved.occurrenceAt(root, QueryClause.WHERE, 0).info().parameterDependencies());
+    ExpressionInfo groupInfo = resolved.occurrenceAt(root, QueryClause.GROUP_BY, 0).info();
+    ExpressionInfo orderInfo = resolved.occurrenceAt(root, QueryClause.ORDER_BY, 0).info();
+    assertTrue(groupInfo.parameterDependencies().isEmpty());
+    assertTrue(orderInfo.parameterDependencies().isEmpty());
+  }
+
+  @Test
+  void groupingFailureIsPreservedAcrossCompleteAnalysisAndCompilation() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement statement =
+        new SelectStatement(List.of(pet.name(), AggregateExpression.countAll()), pet);
+    TrackingDialect dialect = new TrackingDialect("grouping-failure", false, false);
+
+    QueryValidationException direct =
+        assertThrows(
+            QueryValidationException.class, () -> SemanticValidator.validateComplete(statement));
+    QueryValidationException resolved =
+        assertThrows(
+            QueryValidationException.class, () -> ResolvedStatement.analyze(statement));
+    QueryValidationException compiled =
+        assertThrows(
+            QueryValidationException.class, () -> SqlCompiler.compile(statement, dialect));
+
+    assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT, direct.code());
+    assertEquals(direct.code(), resolved.code());
+    assertEquals(direct.code(), compiled.code());
+    assertEquals(direct.diagnostics(), resolved.diagnostics());
+    assertEquals(direct.diagnostics(), compiled.diagnostics());
+    assertTrue(dialect.events.isEmpty());
+  }
+
+  @Test
+  void aggregateFailureIsDetectedBeforeEmptyInOrBooleanPruning() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement statement =
+        new SelectStatement(
+            List.of(pet.id()),
+            pet,
+            new LogicalPredicate(
+                LogicalOperator.AND,
+                List.of(
+                    new BooleanPredicate(false),
+                    new InPredicate<>(AggregateExpression.countAll(), List.of(), false))));
+    TrackingDialect dialect = new TrackingDialect("aggregate-failure", false, false);
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class, () -> SqlCompiler.compile(statement, dialect));
+
+    assertEquals(SkisErrorCode.QUERY_AGGREGATE_CONTRACT, failure.code());
+    assertEquals(
+        QuerySemanticReason.AGGREGATE_IN_CLAUSE, failure.diagnostics().querySemantics().reason());
+    assertTrue(dialect.events.isEmpty());
+  }
+
+  @Test
+  void groupingFailureIntroducedByLoweringKeepsItsSemanticCode() {
+    PetTable pet = new PetTable(PET);
+    SelectStatement statement = new SelectStatement(List.of(pet.id()), pet);
+    TrackingDialect dialect =
+        new TrackingDialect(
+            "lowered-grouping-failure",
+            false,
+            false,
+            input -> {
+              SelectStatement select = (SelectStatement) input.statement();
+              return new SelectStatement(
+                  select.distinct(),
+                  select.selections(),
+                  select.hiddenSelections(),
+                  select.fromClause(),
+                  select.where().orElse(null),
+                  List.of(pet.name()),
+                  select.having().orElse(null),
+                  select.orderBy(),
+                  select.pagination().orElse(null));
+            });
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class, () -> SqlCompiler.compile(statement, dialect));
+
+    assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT, failure.code());
+    assertEquals(
+        QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+        failure.diagnostics().querySemantics().reason());
+    assertEquals(List.of("validate", "lower"), dialect.events);
   }
 
   @Test

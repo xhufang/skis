@@ -455,7 +455,7 @@ class QueryScopeAnalysisTest {
             List.of(),
             outer,
             new NullPredicate(scalar, NullOperator.IS_NULL),
-            List.of(outer.id()),
+            List.of(outer.id(), outer.name()),
             new ComparisonPredicate<>(scalar, ComparisonOperator.EQUAL, outer.name()),
             List.of(new OrderByItem(scalar, OrderDirection.ASC, NullOrder.LAST)),
             null);
