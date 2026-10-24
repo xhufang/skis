@@ -19,6 +19,18 @@ public interface SelectQuery<R extends @Nullable Object> {
 
   SelectQuery<R> or(QueryCondition condition);
 
+  /** Declares one ordered, nonempty grouping list; repeating this call fails. */
+  SelectQuery<R> groupBy(Selectable<?>... expressions);
+
+  /** Starts HAVING independently of WHERE, with or without explicit GROUP BY. */
+  SelectQuery<R> having(QueryCondition condition);
+
+  /** Appends AND to an existing HAVING chain, with left association. */
+  SelectQuery<R> andHaving(QueryCondition condition);
+
+  /** Appends OR to an existing HAVING chain, with left association. */
+  SelectQuery<R> orHaving(QueryCondition condition);
+
   /** Starts an INNER JOIN whose ON condition is required before execution is available. */
   JoinOnStep<SelectQuery<R>> join(QueryTable<?> table);
 

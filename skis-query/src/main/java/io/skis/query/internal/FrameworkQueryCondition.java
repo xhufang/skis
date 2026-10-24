@@ -24,18 +24,24 @@ import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** The single condition implementation used by both physical columns and standard expressions. */
 final class FrameworkQueryCondition implements QueryCondition {
 
   private final Node root;
   private final QueryParameters parameters;
+  private final boolean capturesValues;
+  private final boolean containsSubquery;
 
   private FrameworkQueryCondition(Node root, QueryParameters parameters) {
     this.root = Objects.requireNonNull(root, "root");
     this.parameters = Objects.requireNonNull(parameters, "parameters");
+    this.capturesValues = !parameters.isEmpty() || capturesValues(root);
+    this.containsSubquery = containsSubquery(root);
   }
 
   static <V> FrameworkQueryCondition valueComparison(
@@ -154,11 +160,90 @@ final class FrameworkQueryCondition implements QueryCondition {
   }
 
   FrameworkQueryCondition structureOnly() {
-    return parameters.isEmpty() ? this : new FrameworkQueryCondition(root, QueryParameters.empty());
+    return (FrameworkQueryCondition) new ExpressionCapture().condition(this);
   }
 
-  QueryParameters parameters() {
-    return parameters;
+  boolean capturesValues() {
+    return capturesValues;
+  }
+
+  boolean capturesExpressionValues() {
+    return capturesValues(root);
+  }
+
+  boolean containsSubquery() {
+    return containsSubquery;
+  }
+
+  private static boolean containsSubquery(Node node) {
+    return switch (node) {
+      case ValueComparisonNode<?> value -> ExpressionCapture.containsSubquery(value.left());
+      case ExpressionComparisonNode<?> comparison ->
+          ExpressionCapture.containsSubquery(comparison.left())
+              || ExpressionCapture.containsSubquery(comparison.right());
+      case NullNode value -> ExpressionCapture.containsSubquery(value.selectable());
+      case BetweenNode<?> value -> ExpressionCapture.containsSubquery(value.value());
+      case LikeNode<?> value -> ExpressionCapture.containsSubquery(value.value());
+      case InNode<?> value -> ExpressionCapture.containsSubquery(value.value());
+      case LogicalNode logical -> logical.containsSubquery();
+      case NotNode not -> not.containsSubquery();
+      case InSubqueryNode<?> ignored -> true;
+      case ExistsNode ignored -> true;
+    };
+  }
+
+  FrameworkQueryCondition capture(ExpressionCapture capture) {
+    capture.include(parameters);
+    return new FrameworkQueryCondition(captureNode(root, capture), QueryParameters.empty());
+  }
+
+  private static boolean capturesValues(Node node) {
+    return switch (node) {
+      case ValueComparisonNode<?> value -> ExpressionCapture.capturesValues(value.left());
+      case ExpressionComparisonNode<?> comparison ->
+          ExpressionCapture.capturesValues(comparison.left())
+              || ExpressionCapture.capturesValues(comparison.right());
+      case NullNode value -> ExpressionCapture.capturesValues(value.selectable());
+      case BetweenNode<?> value -> ExpressionCapture.capturesValues(value.value());
+      case LikeNode<?> value -> ExpressionCapture.capturesValues(value.value());
+      case InNode<?> value -> ExpressionCapture.capturesValues(value.value());
+      case LogicalNode logical -> logical.capturesValues();
+      case NotNode not -> not.capturesValues();
+      case InSubqueryNode<?> value -> ExpressionCapture.capturesValues(value.value());
+      case ExistsNode ignored -> false;
+    };
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static Node captureNode(Node node, ExpressionCapture capture) {
+    if (!capturesValues(node)) {
+      return node;
+    }
+    return switch (node) {
+      case ValueComparisonNode value ->
+          new ValueComparisonNode(
+              capture.selectable(value.left()), value.operator(), value.parameter());
+      case ExpressionComparisonNode comparison ->
+          new ExpressionComparisonNode(
+              capture.selectable(comparison.left()),
+              comparison.operator(),
+              capture.selectable(comparison.right()));
+      case NullNode value -> new NullNode(capture.selectable(value.selectable()), value.operator());
+      case BetweenNode value ->
+          new BetweenNode(capture.selectable(value.value()), value.lower(), value.upper());
+      case LikeNode value -> new LikeNode(capture.selectable(value.value()), value.pattern());
+      case InNode value ->
+          new InNode(capture.selectable(value.value()), value.candidates(), value.negated());
+      case LogicalNode logical ->
+          new LogicalNode(
+              logical.operator(),
+              captureNode(logical.left(), capture),
+              captureNode(logical.right(), capture));
+      case NotNode not -> new NotNode(captureNode(not.operand(), capture));
+      case InSubqueryNode value ->
+          new InSubqueryNode(capture.selectable(value.value()), value.subquery(), value.negated());
+      case ExistsNode exists -> exists;
+    };
   }
 
   private static FrameworkQueryCondition requireFramework(QueryCondition condition) {
@@ -309,7 +394,24 @@ final class FrameworkQueryCondition implements QueryCondition {
     }
   }
 
-  private record LogicalNode(LogicalOperator operator, Node left, Node right) implements Node {
+  private record LogicalNode(
+      LogicalOperator operator,
+      Node left,
+      Node right,
+      boolean capturesValues,
+      boolean containsSubquery)
+      implements Node {
+
+    private LogicalNode(LogicalOperator operator, Node left, Node right) {
+      this(
+          operator,
+          left,
+          right,
+          FrameworkQueryCondition.capturesValues(left)
+              || FrameworkQueryCondition.capturesValues(right),
+          FrameworkQueryCondition.containsSubquery(left)
+              || FrameworkQueryCondition.containsSubquery(right));
+    }
 
     private LogicalNode {
       Objects.requireNonNull(operator, "operator");
@@ -324,7 +426,15 @@ final class FrameworkQueryCondition implements QueryCondition {
     }
   }
 
-  private record NotNode(Node operand) implements Node {
+  private record NotNode(Node operand, boolean capturesValues, boolean containsSubquery)
+      implements Node {
+
+    private NotNode(Node operand) {
+      this(
+          operand,
+          FrameworkQueryCondition.capturesValues(operand),
+          FrameworkQueryCondition.containsSubquery(operand));
+    }
 
     private NotNode {
       Objects.requireNonNull(operand, "operand");
@@ -347,17 +457,9 @@ final class QueryConditions {
     return framework(condition).compile(Objects.requireNonNull(compiler, "compiler"));
   }
 
-  static QueryCondition structure(QueryCondition condition) {
-    return framework(condition).structureOnly();
-  }
-
-  static QueryParameters parameters(QueryCondition condition) {
-    return framework(condition).parameters();
-  }
-
   static QueryCondition reusableStructure(QueryCondition condition) {
     FrameworkQueryCondition framework = framework(condition);
-    if (!framework.parameters().isEmpty()) {
+    if (framework.capturesValues()) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_CAPTURED_VALUE,
           "a reusable SELECT description cannot capture ordinary values; use Sql.parameter(...) "
@@ -383,6 +485,7 @@ final class QueryConditionCompiler {
   private final StatementParameterLayout layout;
   private final QueryParameterBindings bindings;
   private final StatementParameterLayout.QueryBlock queryBlock;
+  private @Nullable IdentityHashMap<Object, SqlExpression<?>> expressions;
 
   QueryConditionCompiler(StatementParameterLayout layout, QueryParameterBindings bindings) {
     this.layout = Objects.requireNonNull(layout, "layout");
@@ -410,6 +513,28 @@ final class QueryConditionCompiler {
     Objects.requireNonNull(selectable, "selectable");
     if (selectable instanceof ScalarSubquerySelectable<?> scalar) {
       return compileScalar(scalar);
+    }
+    if (selectable instanceof ExpressionSelectable<V> standard) {
+      if (!standard.composed()) {
+        return standard.expression();
+      }
+      if (standard.containsSubquery()) {
+        return standard.compile(this);
+      }
+      IdentityHashMap<Object, SqlExpression<?>> memo = expressions;
+      if (memo == null) {
+        memo = new IdentityHashMap<>();
+        expressions = memo;
+      }
+      Object identity = standard.compilationIdentity();
+      SqlExpression<?> existing = memo.get(identity);
+      if (existing == null) {
+        existing = standard.compile(this);
+        memo.put(identity, existing);
+      }
+      @SuppressWarnings("unchecked")
+      SqlExpression<V> typed = (SqlExpression<V>) existing;
+      return typed;
     }
     return SelectableSupport.expression(selectable);
   }

@@ -452,7 +452,8 @@ final class QueryPlanCompiler {
   }
 
   /**
-   * Validates original scopes before count, empty-IN pruning, or selected scalar ordering reuse.
+   * Validates original scopes before count, empty-IN pruning, or selected expression ordering
+   * reuse.
    */
   private ResolvedStatement validateSelectionSource(
       SelectedResult<?> selected,
@@ -460,6 +461,7 @@ final class QueryPlanCompiler {
       boolean distinct,
       TableRuntimeScope runtimeScope) {
     CompiledQueryStructure source = structure.validationStructure();
+    validateBuiltinParameterSources(source);
     TableRuntimeScope scope = runtimeScope.forFromClause(source.fromClause());
     List<SqlExpression<?>> expressions = selectionExpressions(source, selected);
     selected.resolve(scope, expressions);
@@ -481,6 +483,12 @@ final class QueryPlanCompiler {
     // final numbered/ordered/count statement prunes an operand or reuses a selected output.
     dialect.validate(resolved);
     return resolved;
+  }
+
+  private void validateBuiltinParameterSources(CompiledQueryStructure structure) {
+    for (Selectable<?> source : structure.builtinParameterSources()) {
+      ResolvedValueMapping.requireBuiltinParameterSource(source, runtimeRegistry);
+    }
   }
 
   private static List<OrderByItem> orderItems(
@@ -549,21 +557,32 @@ final class QueryPlanCompiler {
   private record QueryParameterBinder(List<RenderedBinding> bindings, int logicalParameterCount)
       implements ParameterBinder<Object> {
     @Override
-    public int bind(PreparedStatement statement, int firstIndex, Object argument,
-        JdbcWriteContext context) throws SQLException {
+    public int bind(
+        PreparedStatement statement, int firstIndex, Object argument, JdbcWriteContext context)
+        throws SQLException {
       var values = requireArguments(argument, logicalParameterCount);
       int index = firstIndex;
       for (RenderedBinding binding : bindings) {
-        binding.parameter().bind(statement, index,
-            values == null ? argument : values.get(binding.argumentOrdinal()), context);
+        binding
+            .parameter()
+            .bind(
+                statement,
+                index,
+                values == null ? argument : values.get(binding.argumentOrdinal()),
+                context);
         index++;
       }
       return index;
     }
 
     @Override
-    public int bindObserved(PreparedStatement statement, int firstIndex, Object argument,
-        JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {
+    public int bindObserved(
+        PreparedStatement statement,
+        int firstIndex,
+        Object argument,
+        JdbcWriteContext context,
+        ParameterBindingObserver observer)
+        throws SQLException {
       var values = requireArguments(argument, logicalParameterCount);
       int index = firstIndex;
       boolean observing = observer.needsMore();
@@ -849,6 +868,9 @@ final class QueryPlanCompiler {
 
     private InputsBuilder(TableRuntimeScope runtimeScope, CompiledQueryStructure structure) {
       this.runtimeScope = Objects.requireNonNull(runtimeScope, "runtimeScope");
+      if (structure.validationSource() == null) {
+        validateBuiltinParameterSources(structure);
+      }
       for (int index = 0; index < structure.parameterSources().size(); index++) {
         Selectable<?> source = structure.parameterSources().get(index);
         addConditionMapping(source, structure.parameterSlots().get(index));

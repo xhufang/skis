@@ -32,37 +32,43 @@ final class EffectiveNullabilityResolver {
       case ArithmeticExpression<?> arithmetic ->
           resolve(arithmetic.left(), nullExtendedTables, nullExtendedDerivedRelations)
               .union(resolve(arithmetic.right(), nullExtendedTables, nullExtendedDerivedRelations));
-      case ConcatExpression concat ->
-          concat.operands().stream()
-                  .anyMatch(
-                      item ->
-                          resolve(item, nullExtendedTables, nullExtendedDerivedRelations)
-                              .isNullable())
-              ? Nullability.NULLABLE
-              : Nullability.NON_NULL;
+      case ConcatExpression concat -> {
+        Nullability result = Nullability.NON_NULL;
+        for (SqlExpression<?> operand : concat.operands()) {
+          if (resolve(operand, nullExtendedTables, nullExtendedDerivedRelations).isNullable()) {
+            result = Nullability.NULLABLE;
+            break;
+          }
+        }
+        yield result;
+      }
       case CaseExpression<?> caseExpression ->
           caseNullability(caseExpression, nullExtendedTables, nullExtendedDerivedRelations);
       case CastExpression<?> cast ->
           resolve(cast.operand(), nullExtendedTables, nullExtendedDerivedRelations);
-      case CoalesceExpression<?> coalesce ->
-          coalesce.operands().stream()
-                  .allMatch(
-                      item ->
-                          resolve(item, nullExtendedTables, nullExtendedDerivedRelations)
-                              .isNullable())
-              ? Nullability.NULLABLE
-              : Nullability.NON_NULL;
+      case CoalesceExpression<?> coalesce -> {
+        Nullability result = Nullability.NULLABLE;
+        for (SqlExpression<?> operand : coalesce.operands()) {
+          if (!resolve(operand, nullExtendedTables, nullExtendedDerivedRelations).isNullable()) {
+            result = Nullability.NON_NULL;
+            break;
+          }
+        }
+        yield result;
+      }
       case ComparisonPredicate<?> comparison ->
           resolve(comparison.left(), nullExtendedTables, nullExtendedDerivedRelations)
               .union(resolve(comparison.right(), nullExtendedTables, nullExtendedDerivedRelations));
-      case LogicalPredicate logical ->
-          logical.operands().stream()
-                  .anyMatch(
-                      item ->
-                          resolve(item, nullExtendedTables, nullExtendedDerivedRelations)
-                              .isNullable())
-              ? Nullability.NULLABLE
-              : Nullability.NON_NULL;
+      case LogicalPredicate logical -> {
+        Nullability result = Nullability.NON_NULL;
+        for (SqlPredicate operand : logical.operands()) {
+          if (resolve(operand, nullExtendedTables, nullExtendedDerivedRelations).isNullable()) {
+            result = Nullability.NULLABLE;
+            break;
+          }
+        }
+        yield result;
+      }
       case NullPredicate ignored -> Nullability.NON_NULL;
       case BetweenPredicate<?> between ->
           resolve(between.value(), nullExtendedTables, nullExtendedDerivedRelations)

@@ -1,7 +1,7 @@
 # SKIS 运行时错误码与安全诊断
 
 本文以 0.2.7 T06 运行时诊断合同为基线，覆盖当前已接线失败入口。
-0.2.9 T03 新增两个分组/聚合语义码和结构诊断，已实现/待 CI；T04 构造码仍待实现，见 §6。
+0.2.9 T03 新增两个分组/聚合语义码和结构诊断，T04 新增两个分组/HAVING 构造码，均已实现/待 CI，见 §6。
 Java 调用方使用
 `SkisErrorCode` 枚举，日志和用户文档使用显式编码；测试断言 `code()` 与结构化字段，不匹配全文消息。
 APT 的 `SKISnnn` 编码独立，见 [`apt-error-codes.md`](apt-error-codes.md)。
@@ -170,24 +170,24 @@ cause/suppressed 和资源释放顺序、外部 SPI 仅凭公开合同构造诊�
 ## 6. 0.2.9 分组与聚合语义扩展
 
 2026-10-24 按 [ADR-0022](adr/0022-grouping-expressions-and-semantic-diagnostics.md)确定下表。
-SKISQ031/032 及其 AST 失败路径已接线，SkisErrorCode 当前共 86 个成员；新增实现与测试源码待当前 CI 验证。
-SKISQ033/034 仅保留设计，尚未增加枚举成员或构造失败路径。
+SKISQ031/032 及其 AST 失败路径、SKISQ033/034 及其 DSL 构造失败路径均已接线，SkisErrorCode 当前共 88 个成员；
+新增实现与测试源码待当前 CI 验证。
 适用异常均为既有 QueryValidationException，family 为 QUERY。
 
 | 编码 | 枚举成员 | 默认阶段 | 原因/触发 | 实现责任 |
 | --- | --- | --- | --- | --- |
 | SKISQ031 | QUERY_GROUPING_CONTRACT | SEMANTIC_VALIDATION | 非分组依赖、重复分组键、非法键形式 | T03 已实现/待 CI |
 | SKISQ032 | QUERY_AGGREGATE_CONTRACT | SEMANTIC_VALIDATION | 聚合出现在非法子句、同块嵌套、仅依赖祖先列 | T03 已实现/待 CI |
-| SKISQ033 | QUERY_GROUP_BY_CONTRACT | QUERY_CONSTRUCTION | groupBy 的 null/空输入、重复声明及非法调用形状 | T04 待实现 |
-| SKISQ034 | QUERY_HAVING_CONTRACT | QUERY_CONSTRUCTION | having 重复、缺少 HAVING 的 andHaving/orHaving 及 null 条件 | T04 待实现 |
+| SKISQ033 | QUERY_GROUP_BY_CONTRACT | QUERY_CONSTRUCTION | groupBy 的 null/空输入、重复声明及非法调用形状 | T04 已实现/待 CI |
+| SKISQ034 | QUERY_HAVING_CONTRACT | QUERY_CONSTRUCTION | having 重复、缺少 HAVING 的 andHaving/orHaving 及 null 条件 | T04 已实现/待 CI |
 
 SkisDiagnostics 已新增不可变 QuerySemantics 组和 QuerySemanticReason 嵌套枚举，完整字段与码/原因/必需字段矩阵
 以[聚合合同 §4.4](task/task0.2.9-contracts.md#44-完整验证与诊断)为唯一详细来源。
 该组包含强类型原因、受控聚合种类/书写块、首个缺失依赖位置以及物理属性或派生输出 ordinal；既有 query 组保存检测点。
 同码的不同查询块/子句通过字段区分，测试断言 code、reason 和位置，不匹配全文消息。
 
-T03 在 AST 检测点形成语义异常，受控分析及既有 query 原描述分析入口原样传播；公共聚合 DSL 仍归 T04。
-T04 将在调用捕获点形成构造异常。
+T03 在 AST 检测点形成语义异常，受控分析及既有 query 原描述分析入口原样传播；T04 已开放公共聚合 DSL，
+并在调用捕获点形成构造异常。方言及实际结果映射仍待 T05/T06 接线。
 类型/来源/nullability/参数错误使用既有专门码，count、映射和方言失败也保留自身分类。
 新增诊断只在失败时分配，不进入共享计划，不保存 AST、表达式、参数环境、绑定值或资源。
 AggregateGroupingTest、SkisDiagnosticsTest、CompilationPipelineTest 与 EntityPlanSetTest 覆盖新增合同，已登记必需回归清单。

@@ -48,6 +48,26 @@ final class DefaultSingleColumnSelect<R extends @Nullable Object>
   }
 
   @Override
+  public SingleColumnSelect<R> groupBy(Selectable<?>... expressions) {
+    return (SingleColumnSelect<R>) super.groupBy(expressions);
+  }
+
+  @Override
+  public SingleColumnSelect<R> having(QueryCondition condition) {
+    return (SingleColumnSelect<R>) super.having(condition);
+  }
+
+  @Override
+  public SingleColumnSelect<R> andHaving(QueryCondition condition) {
+    return (SingleColumnSelect<R>) super.andHaving(condition);
+  }
+
+  @Override
+  public SingleColumnSelect<R> orHaving(QueryCondition condition) {
+    return (SingleColumnSelect<R>) super.orHaving(condition);
+  }
+
+  @Override
   public JoinOnStep<SingleColumnSelect<R>> join(QueryTable<?> table) {
     return innerJoin(table);
   }

@@ -1664,6 +1664,116 @@ class JoinQueryDslTest {
                 }));
   }
 
+  @Test
+  void executableAggregateDslCapturesEveryExpressionBoundaryWithoutExecutingSql() {
+    QueryOperations operations = operations();
+    NonNullSelectable<Long> value = Sql.value(17L);
+    @SuppressWarnings("unchecked")
+    QueryParameter<Long> reference = (QueryParameter<Long>)
+        SelectableSupport.expressionIdentity(value).parameters().getFirst();
+    SelectQuery<Pet> base = operations.selectFrom(PET_TABLE);
+    List<SelectQuery<?>> captured = List.of(
+        operations.select(value).from(PET_TABLE),
+        base.groupBy(value),
+        base.having(Sql.countAll().ge(value)),
+        base.where(value.eq(PET_TABLE.ownerId())),
+        base.orderBy(value.asc()),
+        base.join(OWNER_TABLE).on(value.eq(OWNER_TABLE.id())));
+    for (SelectQuery<?> query : captured) {
+      assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
+          assertThrows(QueryValidationException.class, () -> query.bind(reference, 18L)).code());
+    }
+    // Reusing the same captured fragment across boundaries must retain its one binding identity.
+    SelectQuery<Long> shared = operations.select(value).from(PET_TABLE)
+        .groupBy(value).where(value.isNotNull()).having(value.isNotNull()).orderBy(value.asc());
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
+        assertThrows(QueryValidationException.class, () -> shared.bind(reference, 18L)).code());
+    assertTrue(((DefaultSelectQuery<Pet>) base).compilation(QueryPagination.None.INSTANCE)
+        .plan().sql().startsWith("SELECT"));
+  }
+
+  @Test
+  void executableGroupingConstructionPreservesBranchesAndItsOwnDiagnosticCodes() {
+    SelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
+    assertEquals(SkisErrorCode.QUERY_GROUP_BY_CONTRACT,
+        assertThrows(QueryValidationException.class, base::groupBy).code());
+    assertEquals(SkisErrorCode.QUERY_GROUP_BY_CONTRACT,
+        assertThrows(QueryValidationException.class,
+            () -> base.groupBy(PET_TABLE.id()).groupBy(PET_TABLE.name())).code());
+    assertEquals(SkisErrorCode.QUERY_HAVING_CONTRACT,
+        assertThrows(QueryValidationException.class, () -> base.having(null)).code());
+    assertEquals(SkisErrorCode.QUERY_HAVING_CONTRACT,
+        assertThrows(QueryValidationException.class, () -> base.andHaving(PET_TABLE.id().isNotNull())).code());
+    assertEquals(SkisErrorCode.QUERY_HAVING_CONTRACT,
+        assertThrows(QueryValidationException.class, () -> base.orHaving(PET_TABLE.id().isNotNull())).code());
+    QueryCondition condition = PET_TABLE.id().isNotNull();
+    SelectQuery<Pet> branch = base.having(condition).where(condition);
+    assertEquals(SkisErrorCode.QUERY_HAVING_CONTRACT,
+        assertThrows(QueryValidationException.class, () -> branch.having(condition)).code());
+    assertEquals(SkisErrorCode.QUERY_WHERE_CONTRACT,
+        assertThrows(QueryValidationException.class, () -> branch.where(condition)).code());
+    assertNotSame(base.groupBy(PET_TABLE.id()), base.groupBy(PET_TABLE.name()));
+    ((DefaultSelectQuery<Pet>) base).compilation(QueryPagination.None.INSTANCE);
+  }
+
+  @Test
+  void orderingOwnershipIsReleasedWhenLaterClausesCaptureTheSameValue() {
+    SelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
+    NonNullSelectable<Long> shared = Sql.value(13L);
+    @SuppressWarnings("unchecked")
+    QueryParameter<Long> parameter = (QueryParameter<Long>)
+        SelectableSupport.expressionIdentity(shared).parameters().getFirst();
+    SelectQuery<Pet> ordered = base.orderBy(shared.asc());
+    List<SelectQuery<Pet>> retained = List.of(
+        ordered.where(shared.isNotNull()),
+        ordered.groupBy(shared),
+        ordered.having(shared.isNotNull()),
+        ordered.join(OWNER_TABLE).on(shared.eq(OWNER_TABLE.id())));
+    for (SelectQuery<Pet> query : retained) {
+      SelectQuery<Pet> replaced = query.orderBy(PET_TABLE.id().asc());
+      assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
+          assertThrows(QueryValidationException.class, () -> replaced.bind(parameter, 14L)).code());
+    }
+    // Descendants cannot change the original ordering's exclusive ownership.
+    ((DefaultSelectQuery<Pet>) ordered.orderBy(PET_TABLE.id().asc()))
+        .compilation(QueryPagination.None.INSTANCE);
+    QueryParameter<Long> explicit = Sql.parameter(Long.class, "id");
+    SelectQuery<Pet> bound = ordered.where(PET_TABLE.id().eq(explicit)).bind(explicit, 7L);
+    QueryCompilation<Pet> compiled = ((DefaultSelectQuery<Pet>) bound
+        .orderBy(PET_TABLE.id().asc())).compilation(QueryPagination.None.INSTANCE);
+    assertEquals(List.of(7L), compiled.argument());
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
+        assertThrows(QueryValidationException.class, () -> bound.bind(explicit, 8L)).code());
+    SelectQuery<Pet> replacedTwice = ordered
+        .orderBy(Sql.value(14L).asc(), Sql.value(15L).desc())
+        .orderBy(PET_TABLE.id().asc());
+    ((DefaultSelectQuery<Pet>) replacedTwice).compilation(QueryPagination.None.INSTANCE);
+  }
+
+  @Test
+  void replacingOrderingReleasesOnlyValuesOwnedByTheOldOrdering() {
+    SelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
+    SelectQuery<Pet> ordered = base.orderBy(Sql.value(11L).asc());
+    SelectQuery<Pet> replacement = ordered.orderBy(PET_TABLE.id().asc());
+    ((DefaultSelectQuery<Pet>) replacement).compilation(QueryPagination.None.INSTANCE);
+    SelectQuery<Pet> withWhere = ordered.where(PET_TABLE.id().eq(7L));
+    QueryCompilation<Pet> compiled = ((DefaultSelectQuery<Pet>) withWhere
+        .orderBy(PET_TABLE.id().asc())).compilation(QueryPagination.None.INSTANCE);
+    assertTrue(compiled.plan().sql().contains("WHERE"));
+    SelectQuery<Pet> twice = ordered.orderBy(Sql.value(12L).desc()).distinct()
+        .orderBy(PET_TABLE.id().asc());
+    ((DefaultSelectQuery<Pet>) twice).compilation(QueryPagination.None.INSTANCE);
+    NonNullSelectable<Long> shared = Sql.value(13L);
+    @SuppressWarnings("unchecked")
+    QueryParameter<Long> parameter = (QueryParameter<Long>)
+        SelectableSupport.expressionIdentity(shared).parameters().getFirst();
+    SelectQuery<Long> retained = operations().select(shared).from(PET_TABLE)
+        .orderBy(shared.asc()).orderBy(PET_TABLE.id().asc());
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
+        assertThrows(QueryValidationException.class, () -> retained.bind(parameter, 14L)).code());
+    ((DefaultSelectQuery<Pet>) base).compilation(QueryPagination.None.INSTANCE);
+  }
+
   private static QueryPlanCatalog queryPlanCatalog() {
     EntityRuntimeRegistry registry =
         EntityRuntimeRegistry.of(List.of(petModel(), ownerModel(), readOnlyViewModel()));

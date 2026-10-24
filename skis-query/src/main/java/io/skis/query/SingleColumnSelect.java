@@ -11,6 +11,18 @@ public interface SingleColumnSelect<R extends @Nullable Object> extends SelectDe
 
   SingleColumnSelect<R> or(QueryCondition condition);
 
+  /** Declares one ordered, nonempty grouping list; repeating this call fails. */
+  SingleColumnSelect<R> groupBy(Selectable<?>... expressions);
+
+  /** Starts HAVING independently of WHERE, with or without explicit GROUP BY. */
+  SingleColumnSelect<R> having(QueryCondition condition);
+
+  /** Appends AND to an existing HAVING chain, with left association. */
+  SingleColumnSelect<R> andHaving(QueryCondition condition);
+
+  /** Appends OR to an existing HAVING chain, with left association. */
+  SingleColumnSelect<R> orHaving(QueryCondition condition);
+
   JoinOnStep<SingleColumnSelect<R>> join(QueryTable<?> table);
 
   JoinOnStep<SingleColumnSelect<R>> join(DerivedRelation relation);

@@ -50,6 +50,7 @@
       "io.skis.dialect.support.StandardSqlRendererTest"
     ],
     "skis-query": [
+      "io.skis.query.internal.AggregateQueryDslTest",
       "io.skis.query.internal.CachedQueryPlanRetentionTest",
       "io.skis.query.internal.CompiledQueryPlanConcurrencyTest",
       "io.skis.query.internal.DerivedRelationDslTest",

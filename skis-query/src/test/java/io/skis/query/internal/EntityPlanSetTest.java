@@ -32,6 +32,8 @@ import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcCodecs;
+import io.skis.mapping.spi.JdbcReadContext;
+import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.ParameterBindingObserver;
 import io.skis.mapping.spi.PropertyRuntime;
@@ -60,18 +62,29 @@ import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.OffsetTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class EntityPlanSetTest {
@@ -184,6 +197,7 @@ class EntityPlanSetTest {
             base.parameterSources(),
             base.parameterReferences(),
             base.parameterSlots(),
+            base.builtinParameterSources(),
             base.parameters(),
             null);
     QueryValidationException direct =
@@ -250,6 +264,7 @@ class EntityPlanSetTest {
             base.parameterSources(),
             base.parameterReferences(),
             base.parameterSlots(),
+            base.builtinParameterSources(),
             base.parameters(),
             null);
     CompiledQueryStructure pruned =
@@ -263,6 +278,7 @@ class EntityPlanSetTest {
             base.parameterSources(),
             base.parameterReferences(),
             base.parameterSlots(),
+            base.builtinParameterSources(),
             base.parameters(),
             original);
 
@@ -461,6 +477,128 @@ class EntityPlanSetTest {
   }
 
   @Test
+  void sharedParameterViewsUseTheMappedBuiltinBinderInBothEncounterOrders() throws Exception {
+    EntityRuntimeModel<Pet> runtimeModel = model();
+    QueryPlanCompiler compiler = QueryTestSupport.compiler(
+        EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
+    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
+    QueryCondition view = Sql.value(parameter).isNotNull();
+    QueryCondition column = TABLE.id().eq(parameter);
+    for (QueryCondition condition : List.of(view.and(column), column.and(view))) {
+      CompiledQueryStructure structure = QueryModels.description(
+          Sql.select(TABLE).from(TABLE).where(condition)).state().structure();
+      CompiledQueryPlan<Pet, Object> plan = compiler.compileQuery(
+          runtimeModel, TABLE, structure, null, StatementPurpose.PRIMARY);
+      assertEquals(List.of(0, 0),
+          plan.renderedSql().parameters().stream().map(ParameterSlot::ordinal).toList());
+      List<List<Object>> bindings = new ArrayList<>();
+      PreparedStatement statement = (PreparedStatement) Proxy.newProxyInstance(
+          EntityPlanSetTest.class.getClassLoader(), new Class<?>[] {PreparedStatement.class},
+          (ignored, method, arguments) -> {
+            if (method.getName().equals("setLong")) {
+              bindings.add(List.of(arguments[0], arguments[1]));
+            }
+            return null;
+          });
+      assertEquals(3, plan.parameterBinder().bind(statement, 1,
+          structure.arguments(QueryParameters.of(parameter, 7L)), JdbcWriteContext.EMPTY));
+      assertEquals(List.of(List.of(1, 7L), List.of(2, 7L)), bindings);
+    }
+  }
+
+  @Test
+  void sharedParameterCodecChecksCoverTheExactBuiltinRepresentations() {
+    for (BuiltinParameterCase<?> fixture : List.of(
+        new BuiltinParameterCase<>(Boolean.class, JdbcCodecs.BOOLEAN),
+        new BuiltinParameterCase<>(Byte.class, JdbcCodecs.BYTE),
+        new BuiltinParameterCase<>(Short.class, JdbcCodecs.SHORT),
+        new BuiltinParameterCase<>(Integer.class, JdbcCodecs.INTEGER),
+        new BuiltinParameterCase<>(Long.class, JdbcCodecs.LONG),
+        new BuiltinParameterCase<>(Float.class, JdbcCodecs.FLOAT),
+        new BuiltinParameterCase<>(Double.class, JdbcCodecs.DOUBLE),
+        new BuiltinParameterCase<>(BigInteger.class, JdbcCodecs.BIG_INTEGER),
+        new BuiltinParameterCase<>(BigDecimal.class, JdbcCodecs.BIG_DECIMAL),
+        new BuiltinParameterCase<>(Character.class, JdbcCodecs.CHARACTER),
+        new BuiltinParameterCase<>(String.class, JdbcCodecs.STRING),
+        new BuiltinParameterCase<>(byte[].class, JdbcCodecs.BYTES),
+        new BuiltinParameterCase<>(UUID.class, JdbcCodecs.UUID),
+        new BuiltinParameterCase<>(LocalDate.class, JdbcCodecs.LOCAL_DATE),
+        new BuiltinParameterCase<>(java.sql.Date.class, JdbcCodecs.SQL_DATE),
+        new BuiltinParameterCase<>(LocalTime.class, JdbcCodecs.LOCAL_TIME),
+        new BuiltinParameterCase<>(java.sql.Time.class, JdbcCodecs.SQL_TIME),
+        new BuiltinParameterCase<>(OffsetTime.class, JdbcCodecs.OFFSET_TIME),
+        new BuiltinParameterCase<>(LocalDateTime.class, JdbcCodecs.LOCAL_DATE_TIME),
+        new BuiltinParameterCase<>(java.sql.Timestamp.class, JdbcCodecs.SQL_TIMESTAMP),
+        new BuiltinParameterCase<>(Instant.class, JdbcCodecs.INSTANT),
+        new BuiltinParameterCase<>(OffsetDateTime.class, JdbcCodecs.OFFSET_DATE_TIME))) {
+      assertBuiltinParameterSource(fixture);
+    }
+  }
+
+  private static <V> void assertBuiltinParameterSource(BuiltinParameterCase<V> fixture) {
+    PropertyMeta<BuiltinValue, V> property = new PropertyMeta<>(
+        0, "value", fixture.javaType(), ColumnMeta.of("value", false));
+    EntityMeta<BuiltinValue> entity = EntityMeta.simple(BuiltinValue.class,
+        new TableMeta("", "", "builtin_value"), List.of(property),
+        new PrimaryKeyMeta<>(List.of(property)), false);
+    class ValueTable extends QueryTable<BuiltinValue> {
+      ValueTable(String alias) { super(entity, alias); }
+      @Override public ValueTable as(String alias) { return new ValueTable(alias); }
+      Selectable<V> value() { return queryColumn(property); }
+    }
+    EntityRuntimeModel<BuiltinValue> model = new EntityRuntimeModel<>(entity,
+        layout -> (rows, context) -> new BuiltinValue("unused"),
+        List.of(new PropertyRuntime<>(property, fixture.codec())));
+    EntityRuntimeRegistry registry = EntityRuntimeRegistry.of(List.of(model));
+    ResolvedValueMapping.requireBuiltinParameterSource(new ValueTable("b").value(), registry);
+  }
+
+  private record BuiltinValue(Object value) {}
+
+  private record BuiltinParameterCase<V>(Class<V> javaType, JdbcTypeCodec<V> codec) {}
+
+  @Test
+  void sharedParameterViewsRejectDelegatingCodecsBeforeContentCountOrPruning() {
+    JdbcTypeCodec<Long> delegated = new JdbcTypeCodec<>() {
+      @Override
+      public @Nullable Long read(ResultSet rows, int index, JdbcReadContext context)
+          throws SQLException {
+        return JdbcCodecs.LONG.read(rows, index, context);
+      }
+
+      @Override
+      public void bind(PreparedStatement statement, int index, @Nullable Long value,
+          JdbcWriteContext context) throws SQLException {
+        JdbcCodecs.LONG.bind(statement, index, value, context);
+      }
+    };
+    EntityRuntimeModel<Pet> runtimeModel = new EntityRuntimeModel<>(PET,
+        layout -> (rows, context) -> new Pet(1L, "Mimi"),
+        List.of(new PropertyRuntime<>(ID, delegated), new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
+    QueryPlanCompiler compiler = QueryTestSupport.compiler(
+        EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
+    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
+    Selectable<Long> view = Sql.value(parameter);
+    QueryCondition column = TABLE.id().eq(parameter);
+    for (QueryCondition condition : List.of(
+        view.isNotNull().and(column), column.and(view.isNotNull()),
+        view.inParameters(List.of()).and(column), column.and(view.inParameters(List.of())))) {
+      SelectQueryState<Pet> state = QueryModels.description(
+          Sql.select(TABLE).from(TABLE).where(condition)).state();
+      CompiledQueryStructure content = state.structure();
+      CompiledQueryStructure count = state.countStructure();
+      QueryParameters parameters = QueryParameters.of(parameter, 7L);
+      assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT,
+          assertThrows(QueryValidationException.class, () -> compiler.compileQuery(
+              runtimeModel, TABLE, content, null, StatementPurpose.PRIMARY)).code());
+      assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT,
+          assertThrows(QueryValidationException.class, () -> compiler.compileCount(
+              SelectedResult.entity(TABLE), count, false, count.arguments(parameters),
+              null, StatementPurpose.PAGE_COUNT)).code());
+    }
+  }
+
+  @Test
   void nullableQueryParametersBindNullThroughTheResolvedColumnCodec() throws Exception {
     EntityRuntimeModel<Pet> runtimeModel = model();
     QueryPlanCompiler compiler =
@@ -482,6 +620,7 @@ class EntityPlanSetTest {
             layout.parameterSources(),
             layout.parameterReferences(),
             layout.parameterSlots(),
+            layout.builtinParameterSources(),
             parameters,
             null);
     CompiledQueryPlan<Pet, Object> plan =

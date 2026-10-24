@@ -10,6 +10,43 @@ T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
 
 
+## PR #86：聚合 DSL 覆盖率抬线（登记后待 CI 认证）
+
+[CI 40097770979 的权威作业](https://github.com/xhufang/skis/actions/runs/40097770979/job/120883515859?pr=86)
+已通过 Java 21 构建、必需单元/APT/H2/既有真实 PG、nullness、架构、Enforcer 和报告检查，
+79 个普通回归套件均已执行。Java 25 完整构建、PG 外部 URL/容器及独立消费者作业均通过。
+本轮唯一原始失败为 skis-sql-ast 覆盖率应抬未抬；Java 21 单元/集成名称转发该权威失败。
+新增门槛的来源认证仍待登记提交验证。
+
+PR head 为 `f9fc4b98ce7d848614a462a4b17f24c169555bff`，实际测试合并提交为
+`5e5d32bc955332d4bebf5c909fd9ad31a87ca207`，比较 base 为
+`8fab2087ac36ebc0542e5e3c02aa530641a05f72`。已核对运行/尝试、合并父提交、七项采集输入 blob ID，
+以及提交内 policy/baseline 的字节摘要、15 模块 XML 哈希、逐类/汇总 branch 计数与类数，
+确认 XML 中的类均存在于对应 classes.json，并确认各模块 HTML 报告存在。
+
+[工件 12561048629](https://github.com/xhufang/skis/actions/runs/40097770979/artifacts/12561048629)
+为 `branch-coverage-java-21-40097770979-1`，归档 SHA-256 为
+`4afe19966550c350163eb6c34949b57065583b285b0a6ace94cb1ed74edca691`。
+原样采用真实候选，仅更新以下四行；其余 11 个模块行、首次登记、统计口径及生成排除保持不变。
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-sql-ast | 77.36% | 1063/295 | 98 | 78.27% |
+| skis-dialect-api | 76.37% | 525/158 | 30 | 76.86% |
+| skis-dialect-support | 78.29% | 203/55 | 7 | 78.68% |
+| skis-query | 73.43% | 1579/521 | 184 | 75.19% |
+
+对应 XML SHA-256：
+
+- skis-sql-ast：`b8ef650a30a41c6711bcfa3b5c864513f20734541423dff73761d3244d0ea622`。
+- skis-dialect-api：`1c62674fd66c5343f7b10e82811a1f5eb0de7840fbcb1fe2fce9ae26f8a06d67`。
+- skis-dialect-support：`6b65da5b3046ca739ff63b060a9f2dcf83f9d798d74fcc4cd9371ca01906eb20`。
+- skis-query：`013f612c6e7900d7d5fe2c95195a73b5305aeeadaec1ccf62054df28cd1f1683`。
+
+本地仅下载、静态核对工件并登记候选，未编译运行或执行项目检查器、benchmark；
+T04 保持已实现/待 CI，登记提交的来源认证及完整门禁尚未通过。
+取证保存在本地 `target/ci-coverage-40097770979/` 的归档、measurement、候选与 `verified-modules.json`。
+
 ## PR #85：分组语义覆盖率抬线（登记后待 CI 认证）
 
 [CI 40078097207 的权威作业](https://github.com/xhufang/skis/actions/runs/40078097207/job/120825728566?pr=85)

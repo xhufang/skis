@@ -77,7 +77,7 @@ public final class QueryDsl {
 
   /** Selects one declared non-null SQL value and preserves the one-column result shape. */
   public static <V> SelectFromStep<SingleColumnSelect<V>> select(NonNullSelectable<V> selectable) {
-    NonNullSelectable<V> selected = SelectableSupport.requireFramework(selectable);
+    NonNullSelectable<V> selected = ExpressionCapture.reusable(selectable);
     return fromStep(
         root ->
             new DefaultSingleColumnSelect<>(
@@ -87,7 +87,7 @@ public final class QueryDsl {
   /** Selects one conservatively nullable SQL value and preserves the one-column result shape. */
   public static <V> SelectFromStep<SingleColumnSelect<@Nullable V>> select(
       Selectable<V> selectable) {
-    Selectable<V> selected = SelectableSupport.requireFramework(selectable);
+    Selectable<V> selected = ExpressionCapture.reusable(selectable);
     return fromStep(
         root ->
             new DefaultSingleColumnSelect<>(
@@ -99,6 +99,7 @@ public final class QueryDsl {
   public static <R> SelectFromStep<SelectDescription<R>> select(ProjectionSelection<R> projection) {
     ProjectionSelection<R> selected =
         QueryModels.projection(Objects.requireNonNull(projection, "projection"));
+    selected.selections().forEach(ExpressionCapture::reusable);
     return fromStep(
         root ->
             new DefaultSelectDescription<>(
@@ -119,7 +120,7 @@ public final class QueryDsl {
   /** Explicitly permits a declared non-null value to become nullable in query context. */
   public static <V> SelectFromStep<SingleColumnSelect<@Nullable V>> selectNullable(
       NonNullSelectable<V> selectable) {
-    NonNullSelectable<V> selected = SelectableSupport.requireFramework(selectable);
+    NonNullSelectable<V> selected = ExpressionCapture.reusable(selectable);
     return fromStep(
         root ->
             new DefaultSingleColumnSelect<>(

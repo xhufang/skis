@@ -4,6 +4,7 @@ import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.query.Selectable;
@@ -14,6 +15,11 @@ import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
+import java.math.BigInteger;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -183,5 +189,42 @@ record ResolvedValueMapping<V>(
     return outputCodec(
         Objects.requireNonNull(selectable, "selectable"),
         Objects.requireNonNull(registry, "registry"));
+  }
+
+  static void requireBuiltinParameterSource(Selectable<?> source, EntityRuntimeRegistry registry) {
+    JdbcTypeCodec<?> expected = builtinCodec(source.javaType());
+    if (expected == null || codecFor(source, registry) != expected) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PARAMETER_LAYOUT,
+          "a parameter shared with a standard expression requires the exact built-in Codec for '"
+              + SelectableSupport.summary(source)
+              + "'");
+    }
+  }
+
+  private static @Nullable JdbcTypeCodec<?> builtinCodec(Class<?> javaType) {
+    return switch (SqlType.fromJavaType(javaType)) {
+      case BOOLEAN -> JdbcCodecs.BOOLEAN;
+      case TINYINT -> JdbcCodecs.BYTE;
+      case SMALLINT -> JdbcCodecs.SHORT;
+      case INTEGER -> JdbcCodecs.INTEGER;
+      case BIGINT -> JdbcCodecs.LONG;
+      case REAL -> JdbcCodecs.FLOAT;
+      case DOUBLE -> JdbcCodecs.DOUBLE;
+      case DECIMAL ->
+          javaType == BigInteger.class ? JdbcCodecs.BIG_INTEGER : JdbcCodecs.BIG_DECIMAL;
+      case CHARACTER -> JdbcCodecs.CHARACTER;
+      case VARCHAR -> JdbcCodecs.STRING;
+      case VARBINARY -> JdbcCodecs.BYTES;
+      case UUID -> JdbcCodecs.UUID;
+      case DATE -> javaType == LocalDate.class ? JdbcCodecs.LOCAL_DATE : JdbcCodecs.SQL_DATE;
+      case TIME -> javaType == LocalTime.class ? JdbcCodecs.LOCAL_TIME : JdbcCodecs.SQL_TIME;
+      case TIME_WITH_TIME_ZONE -> JdbcCodecs.OFFSET_TIME;
+      case TIMESTAMP ->
+          javaType == LocalDateTime.class ? JdbcCodecs.LOCAL_DATE_TIME : JdbcCodecs.SQL_TIMESTAMP;
+      case TIMESTAMP_WITH_TIME_ZONE ->
+          javaType == Instant.class ? JdbcCodecs.INSTANT : JdbcCodecs.OFFSET_DATE_TIME;
+      case OTHER -> null;
+    };
   }
 }

@@ -151,11 +151,18 @@ final class DefaultQueryOperations implements QueryOperations {
       SelectedResult<R> selected, DerivedRelation relation) {
     Objects.requireNonNull(selected, "selected");
     Objects.requireNonNull(relation, "relation");
+    SelectedResult<R> structure = selected;
+    QueryParameters selectedParameters = QueryParameters.empty();
+    if (selected.capturesValues()) {
+      ExpressionCapture capture = new ExpressionCapture();
+      structure = selected.capture(capture);
+      selectedParameters = capture.parameters();
+    }
     return DefaultSelectQuery.create(
         this,
         planCatalog.compiler(),
-        SelectQueryState.create(selected, relation),
-        QueryParameters.empty());
+        SelectQueryState.create(structure, relation),
+        selectedParameters);
   }
 
   private <R extends @Nullable Object> DefaultSelectQuery<R> executable(
@@ -168,52 +175,30 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   <R extends @Nullable Object> List<R> fetchList(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return fetchList(plan, argument, executionContext, null, StatementPurpose.PRIMARY);
-  }
-
-  <R extends @Nullable Object> List<R> fetchList(
       CompiledQueryPlan<R, Object> plan,
       Object argument,
       ExecutionContext executionContext,
-      @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
-    return jdbcExecutor.fetchList(plan, argument, executionContext, observation, purpose);
-  }
-
-  <R extends @Nullable Object> JdbcRow<R> fetchNullableOne(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return fetchNullableOne(plan, argument, executionContext, null, StatementPurpose.PRIMARY);
+      @Nullable OperationObservation observation) {
+    return jdbcExecutor.fetchList(
+        plan, argument, executionContext, observation, StatementPurpose.PRIMARY);
   }
 
   <R extends @Nullable Object> JdbcRow<R> fetchNullableOne(
       CompiledQueryPlan<R, Object> plan,
       Object argument,
       ExecutionContext executionContext,
-      @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
-    return jdbcExecutor.fetchNullableOne(plan, argument, executionContext, observation, purpose);
-  }
-
-  <R extends @Nullable Object> JdbcRow<R> fetchNullableFirst(
-      CompiledQueryPlan<R, Object> plan, Object argument, ExecutionContext executionContext) {
-    return fetchNullableFirst(plan, argument, executionContext, null, StatementPurpose.PRIMARY);
+      @Nullable OperationObservation observation) {
+    return jdbcExecutor.fetchNullableOne(
+        plan, argument, executionContext, observation, StatementPurpose.PRIMARY);
   }
 
   <R extends @Nullable Object> JdbcRow<R> fetchNullableFirst(
       CompiledQueryPlan<R, Object> plan,
       Object argument,
       ExecutionContext executionContext,
-      @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
-    return jdbcExecutor.fetchNullableFirst(plan, argument, executionContext, observation, purpose);
-  }
-
-  <R extends @Nullable Object> JdbcPageResult<R> fetchPage(
-      QueryCompilation<R> content,
-      QueryCompilation<Long> count,
-      ExecutionContext executionContext) {
-    return fetchPage(content, count, executionContext, null);
+      @Nullable OperationObservation observation) {
+    return jdbcExecutor.fetchNullableFirst(
+        plan, argument, executionContext, observation, StatementPurpose.PRIMARY);
   }
 
   <R extends @Nullable Object> JdbcPageResult<R> fetchPage(
@@ -234,28 +219,10 @@ final class DefaultQueryOperations implements QueryOperations {
       CompiledQueryPlan<R, Object> plan,
       Object argument,
       ExecutionContext executionContext,
-      int pageSize) {
-    return fetchSliceList(
-        plan, argument, executionContext, pageSize, null, StatementPurpose.PRIMARY);
-  }
-
-  <R extends @Nullable Object> List<R> fetchSliceList(
-      CompiledQueryPlan<R, Object> plan,
-      Object argument,
-      ExecutionContext executionContext,
       int pageSize,
-      @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
+      @Nullable OperationObservation observation) {
     return jdbcExecutor.fetchSliceList(
-        plan, argument, executionContext, pageSize, observation, purpose);
-  }
-
-  <R extends @Nullable Object> QueryCursor<R> cursor(
-      CompiledQueryPlan<R, Object> plan,
-      Object argument,
-      ExecutionContext executionContext,
-      boolean nullableResult) {
-    return cursor(plan, argument, executionContext, nullableResult, null, StatementPurpose.PRIMARY);
+        plan, argument, executionContext, pageSize, observation, StatementPurpose.PRIMARY);
   }
 
   <R extends @Nullable Object> QueryCursor<R> cursor(
@@ -263,10 +230,10 @@ final class DefaultQueryOperations implements QueryOperations {
       Object argument,
       ExecutionContext executionContext,
       boolean nullableResult,
-      @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
+      @Nullable OperationObservation observation) {
     return new DefaultQueryCursor<>(
-        jdbcExecutor.openCursor(plan, argument, executionContext, observation, purpose),
+        jdbcExecutor.openCursor(
+            plan, argument, executionContext, observation, StatementPurpose.PRIMARY),
         nullableResult);
   }
 

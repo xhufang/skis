@@ -953,7 +953,7 @@
       "decisionVersion": "0.2.9-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T03 语义诊断已实现/待 CI；公共入口、构造诊断、单行参数关系及后续合同验证未实现",
+      "remaining": "T03 语义诊断与 T04 公共入口/构造诊断已实现/待 CI；单行参数关系、方言/映射接线及后续合同验证未实现",
       "task": "0.2.9:T03—T09",
       "anchors": [
         {
@@ -982,6 +982,11 @@
           "kind": "java",
           "path": "skis-query/src/test/java/io/skis/query/internal/QueryDiagnosticContractTest.java",
           "type": "io.skis.query.internal.QueryDiagnosticContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/AggregateQueryDslTest.java",
+          "type": "io.skis.query.internal.AggregateQueryDslTest"
         },
         {
           "kind": "java",
