@@ -7,6 +7,7 @@ import io.skis.query.JoinOnStep;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryTable;
 import io.skis.query.SelectDescription;
+import io.skis.query.Selectable;
 import io.skis.query.SortDirection;
 import io.skis.query.SortSpecification;
 import io.skis.sql.ast.JoinType;
@@ -33,6 +34,27 @@ class DefaultSelectDescription<R extends @Nullable Object> implements SelectDesc
 
   public SelectDescription<R> or(QueryCondition condition) {
     return recreate(state.chainWhere(QueryConditions.reusableStructure(condition), false));
+  }
+
+  public SelectDescription<R> groupBy(Selectable<?>... expressions) {
+    java.util.List<Selectable<?>> items = SelectQueryState.groupItems(expressions);
+    items.forEach(ExpressionCapture::reusable);
+    return recreate(state.groupBy(items));
+  }
+
+  public SelectDescription<R> having(QueryCondition condition) {
+    SelectQueryState.requireHaving(condition);
+    return recreate(state.having(QueryConditions.reusableStructure(condition)));
+  }
+
+  public SelectDescription<R> andHaving(QueryCondition condition) {
+    SelectQueryState.requireHaving(condition);
+    return recreate(state.chainHaving(QueryConditions.reusableStructure(condition), true));
+  }
+
+  public SelectDescription<R> orHaving(QueryCondition condition) {
+    SelectQueryState.requireHaving(condition);
+    return recreate(state.chainHaving(QueryConditions.reusableStructure(condition), false));
   }
 
   public JoinOnStep<? extends SelectDescription<R>> join(QueryTable<?> table) {
@@ -85,6 +107,9 @@ class DefaultSelectDescription<R extends @Nullable Object> implements SelectDesc
 
   public SelectDescription<R> orderBy(SortSpecification... specifications) {
     Objects.requireNonNull(specifications, "specifications");
+    for (SortSpecification specification : specifications) {
+      ExpressionCapture.reusable(QueryModels.selectable(specification));
+    }
     return recreate(state.orderBy(Arrays.asList(specifications.clone())));
   }
 

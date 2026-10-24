@@ -5,10 +5,12 @@ import io.skis.core.SkisErrorCode;
 import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SqlType;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Assigns final statement-level logical slots while keeping reuse local to one query-block
@@ -20,14 +22,15 @@ import java.util.Objects;
  * query-level reference.
  *
  * <p>The first pass retains original expressions for validation. When it finds an empty-IN operand
- * or DISTINCT scalar ordering that can reuse a selected output, a second pass lays out only the
- * parameters needed by the final statement.
+ * or DISTINCT subquery-containing ordering that can reuse a selected output, a second pass lays out
+ * only the parameters needed by the final statement.
  */
 final class StatementParameterLayout {
 
   private final List<Selectable<?>> parameterSources = new ArrayList<>();
   private final List<QueryParameter<?>> parameterReferences = new ArrayList<>();
   private final List<ParameterSlot<?>> parameterSlots = new ArrayList<>();
+  private @Nullable List<Selectable<?>> builtinParameterSources;
   private final boolean retainOriginalExpressions;
   private boolean rewriteRequired;
 
@@ -71,6 +74,10 @@ final class StatementParameterLayout {
     return List.copyOf(parameterSlots);
   }
 
+  List<Selectable<?>> builtinParameterSources() {
+    return builtinParameterSources == null ? List.of() : List.copyOf(builtinParameterSources);
+  }
+
   final class QueryBlock {
 
     private final IdentityHashMap<QueryParameter<?>, RegisteredParameter> parameters =
@@ -99,14 +106,27 @@ final class StatementParameterLayout {
               SkisErrorCode.QUERY_PARAMETER_LAYOUT,
               "query parameter is used with conflicting Java type, SQL type or nullability");
         }
-        if (!SelectableSupport.sameOccurrence(registered.binderSource(), source)) {
-          throw QueryValidationException.of(
-              SkisErrorCode.QUERY_PARAMETER_LAYOUT,
-              "query parameter is reused with conflicting expression Codec sources '"
-                  + SelectableSupport.summary(registered.binderSource())
-                  + "' and '"
-                  + SelectableSupport.summary(source)
-                  + "'");
+        boolean registeredStandard = registered.binderSource() instanceof ExpressionSelectable<?>;
+        boolean sourceStandard = source instanceof ExpressionSelectable<?>;
+        if (registeredStandard != sourceStandard) {
+          Selectable<?> mappedSource = registeredStandard ? source : registered.binderSource();
+          if (mappedSource.sqlType() == SqlType.OTHER
+              || SqlType.fromJavaType(mappedSource.javaType()) != mappedSource.sqlType()) {
+            throw conflictingSources(registered.binderSource(), source);
+          }
+          if (!registered.requiresBuiltinCodec()) {
+            if (builtinParameterSources == null) {
+              builtinParameterSources = new ArrayList<>();
+            }
+            builtinParameterSources.add(mappedSource);
+            // Prefer the actual mapped source in either encounter order. Its built-in Codec
+            // identity is checked before plan lookup, including sources later pruned from SQL.
+            parameterSources.set(existing.ordinal(), mappedSource);
+            parameters.put(parameter, new RegisteredParameter(existing, mappedSource, true));
+          }
+        } else if (!registeredStandard
+            && !SelectableSupport.sameOccurrence(registered.binderSource(), source)) {
+          throw conflictingSources(registered.binderSource(), source);
         }
         @SuppressWarnings("unchecked")
         ParameterSlot<V> typed = (ParameterSlot<V>) existing;
@@ -116,7 +136,7 @@ final class StatementParameterLayout {
       ParameterSlot<V> slot =
           new ParameterSlot<>(
               ordinal, source.javaType(), source.sqlType(), parameter.nullability());
-      parameters.put(parameter, new RegisteredParameter(slot, source));
+      parameters.put(parameter, new RegisteredParameter(slot, source, false));
       parameterSources.add(source);
       parameterReferences.add(parameter);
       parameterSlots.add(slot);
@@ -124,7 +144,19 @@ final class StatementParameterLayout {
     }
   }
 
-  private record RegisteredParameter(ParameterSlot<?> slot, Selectable<?> binderSource) {
+  private static QueryValidationException conflictingSources(
+      Selectable<?> left, Selectable<?> right) {
+    return QueryValidationException.of(
+        SkisErrorCode.QUERY_PARAMETER_LAYOUT,
+        "query parameter is reused with conflicting expression Codec sources '"
+            + SelectableSupport.summary(left)
+            + "' and '"
+            + SelectableSupport.summary(right)
+            + "'");
+  }
+
+  private record RegisteredParameter(
+      ParameterSlot<?> slot, Selectable<?> binderSource, boolean requiresBuiltinCodec) {
 
     private RegisteredParameter {
       Objects.requireNonNull(slot, "slot");

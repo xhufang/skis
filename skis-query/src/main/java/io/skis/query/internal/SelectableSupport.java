@@ -205,6 +205,9 @@ public final class SelectableSupport {
       case ScalarSubquerySelectable<?> leftScalar
           when right instanceof ScalarSubquerySelectable<?> rightScalar ->
           expressionIdentity(leftScalar).equals(expressionIdentity(rightScalar));
+      case ExpressionSelectable<?> leftExpression
+          when right instanceof ExpressionSelectable<?> rightExpression ->
+          expressionIdentity(leftExpression).equals(expressionIdentity(rightExpression));
       default -> left == right;
     };
   }
@@ -214,7 +217,9 @@ public final class SelectableSupport {
         expression(selectable),
         selectable instanceof ScalarSubquerySelectable<?> scalar
             ? scalar.parameterReferences()
-            : List.of());
+            : selectable instanceof ExpressionSelectable<?> standard
+                ? standard.parameterReferences()
+                : List.of());
   }
 
   /** Local expression equality retains query references erased by standalone JDBC slot layout. */

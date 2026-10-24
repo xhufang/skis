@@ -49,6 +49,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -62,6 +63,10 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   private final @Nullable EntityPlanSet<?> fastPlans;
   private final SelectQueryState<R> state;
   private final QueryParameters parameters;
+
+  /** Only references captured exclusively by ORDER BY; values live in the one parameter table. */
+  private final Set<QueryParameter<?>> orderingOnlyParameters;
+
   private final ExecutionContext executionContext;
   private volatile @Nullable QueryAnalysis analysis;
   private volatile @Nullable QueryAnalysis countAnalysis;
@@ -75,12 +80,19 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       EntityPlanSet<?> plans,
       QueryTable<?> table,
       SelectedResult<R> selected) {
+    SelectedResult<R> structure = selected;
+    QueryParameters selectedParameters = QueryParameters.empty();
+    if (selected.capturesValues()) {
+      ExpressionCapture capture = new ExpressionCapture();
+      structure = selected.capture(capture);
+      selectedParameters = capture.parameters();
+    }
     return new DefaultSelectQuery<>(
         operations,
         plans.compiler(),
         plans,
-        SelectQueryState.create(selected, table),
-        QueryParameters.empty(),
+        SelectQueryState.create(structure, table),
+        selectedParameters,
         ExecutionContext.EMPTY);
   }
 
@@ -109,21 +121,32 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       SelectQueryState<R> state,
       QueryParameters parameters,
       ExecutionContext executionContext) {
+    this(operations, compiler, fastPlans, state, parameters, executionContext, Set.of());
+  }
+
+  private DefaultSelectQuery(
+      DefaultQueryOperations operations,
+      QueryPlanCompiler compiler,
+      @Nullable EntityPlanSet<?> fastPlans,
+      SelectQueryState<R> state,
+      QueryParameters parameters,
+      ExecutionContext executionContext,
+      Set<QueryParameter<?>> orderingOnlyParameters) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.compiler = Objects.requireNonNull(compiler, "compiler");
     this.fastPlans = fastPlans;
     this.state = Objects.requireNonNull(state, "state");
     this.parameters = Objects.requireNonNull(parameters, "parameters");
+    this.orderingOnlyParameters =
+        Objects.requireNonNull(orderingOnlyParameters, "orderingOnlyParameters");
     this.executionContext = Objects.requireNonNull(executionContext, "executionContext");
   }
 
   @Override
   public DefaultSelectQuery<R> where(QueryCondition newPredicate) {
     Objects.requireNonNull(newPredicate, "predicate");
-    return copy(
-        state.where(QueryConditions.structure(newPredicate)),
-        parameters.merge(QueryConditions.parameters(newPredicate)),
-        executionContext);
+    ExpressionCapture capture = new ExpressionCapture();
+    return copyCaptured(state.where(capture.condition(newPredicate)), capture.parameters());
   }
 
   @Override
@@ -134,6 +157,39 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   @Override
   public DefaultSelectQuery<R> or(QueryCondition newPredicate) {
     return chain(newPredicate, false);
+  }
+
+  @Override
+  public DefaultSelectQuery<R> groupBy(Selectable<?>... expressions) {
+    List<Selectable<?>> items = SelectQueryState.groupItems(expressions);
+    ExpressionCapture capture = new ExpressionCapture();
+    List<Selectable<?>> structures =
+        items.stream().<Selectable<?>>map(capture::selectable).toList();
+    return copyCaptured(state.groupBy(structures), capture.parameters());
+  }
+
+  @Override
+  public DefaultSelectQuery<R> having(QueryCondition condition) {
+    return having(condition, null);
+  }
+
+  @Override
+  public DefaultSelectQuery<R> andHaving(QueryCondition condition) {
+    return having(condition, true);
+  }
+
+  @Override
+  public DefaultSelectQuery<R> orHaving(QueryCondition condition) {
+    return having(condition, false);
+  }
+
+  private DefaultSelectQuery<R> having(QueryCondition condition, @Nullable Boolean conjunction) {
+    SelectQueryState.requireHaving(condition);
+    ExpressionCapture capture = new ExpressionCapture();
+    QueryCondition structure = capture.condition(condition);
+    SelectQueryState<R> replacement =
+        conjunction == null ? state.having(structure) : state.chainHaving(structure, conjunction);
+    return copyCaptured(replacement, capture.parameters());
   }
 
   @Override
@@ -208,9 +264,26 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   @Override
   public DefaultSelectQuery<R> orderBy(SortSpecification... specifications) {
     Objects.requireNonNull(specifications, "specifications");
-    SelectQueryState<R> replacement =
-        state.orderBy(List.copyOf(Arrays.asList(specifications.clone())));
-    return replacement == state ? this : copy(replacement, parameters, executionContext);
+    ExpressionCapture capture = new ExpressionCapture();
+    List<SortSpecification> items = new ArrayList<>(specifications.length);
+    for (SortSpecification specification : specifications) {
+      DefaultSortSpecification sort = QueryModels.sort(specification);
+      Selectable<?> source = sort.selectable();
+      items.add(
+          ExpressionCapture.capturesValues(source)
+              ? new DefaultSortSpecification(
+                  capture.selectable(source), sort.direction(), sort.nullPlacement())
+              : specification);
+    }
+    SelectQueryState<R> replacement = state.orderBy(items);
+    QueryParameters ordering = capture.parameters();
+    Set<QueryParameter<?>> exclusive =
+        parameters.replacementOnlyReferences(orderingOnlyParameters, ordering);
+    return copy(
+        replacement,
+        parameters.replace(orderingOnlyParameters, ordering),
+        executionContext,
+        exclusive);
   }
 
   @Override
@@ -249,18 +322,13 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 fastPlan(observation, StatementPurpose.PRIMARY).plan(),
                 fastArgument(),
                 executionContext,
-                observation,
-                StatementPurpose.PRIMARY);
+                observation);
       } else {
         QueryCompilation<R> query =
             compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
         row =
             operations.fetchNullableOne(
-                query.plan(),
-                query.argument(),
-                executionContext,
-                observation,
-                StatementPurpose.PRIMARY);
+                query.plan(), query.argument(), executionContext, observation);
       }
       SingleRow<R> result = singleRow(row);
       operations.completeSucceeded(observation);
@@ -281,11 +349,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       SingleRow<R> result =
           singleRow(
               operations.fetchNullableFirst(
-                  query.plan(),
-                  query.argument(),
-                  executionContext,
-                  observation,
-                  StatementPurpose.PRIMARY));
+                  query.plan(), query.argument(), executionContext, observation));
       operations.completeSucceeded(observation);
       return result;
     } catch (RuntimeException | Error failure) {
@@ -306,18 +370,12 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 fastPlan(observation, StatementPurpose.PRIMARY).plan(),
                 fastArgument(),
                 executionContext,
-                observation,
-                StatementPurpose.PRIMARY);
+                observation);
       } else {
         QueryCompilation<R> query =
             compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
         values =
-            operations.fetchList(
-                query.plan(),
-                query.argument(),
-                executionContext,
-                observation,
-                StatementPurpose.PRIMARY);
+            operations.fetchList(query.plan(), query.argument(), executionContext, observation);
       }
       requireAllowedNulls(values, "non-null query produced a null list item");
       operations.completeSucceeded(observation);
@@ -429,8 +487,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
           query.argument(),
           executionContext,
           state.selected().nullableResult(),
-          observation,
-          StatementPurpose.PRIMARY);
+          observation);
     } catch (RuntimeException | Error failure) {
       operations.completeFailed(observation, failure);
       throw failure;
@@ -610,12 +667,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
             new QueryPagination.Offset(limit, offset), observation, StatementPurpose.PRIMARY);
     List<R> rows =
         operations.fetchSliceList(
-            query.plan(),
-            query.argument(),
-            executionContext,
-            pageSize,
-            observation,
-            StatementPurpose.PRIMARY);
+            query.plan(), query.argument(), executionContext, pageSize, observation);
     boolean hasNext = rows.size() > pageSize;
     List<R> items = visibleRows(rows, pageSize);
     requireAllowedNulls(items, "non-null query produced a null slice item");
@@ -643,12 +695,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     List<OrderedRow<R>> rows =
         requireNonNullValues(
             operations.fetchSliceList(
-                query.plan(),
-                query.argument(),
-                executionContext,
-                pageSize,
-                observation,
-                StatementPurpose.PRIMARY));
+                query.plan(), query.argument(), executionContext, pageSize, observation));
     boolean hasNext = rows.size() > pageSize;
     List<R> items = new ArrayList<>(Math.min(rows.size(), pageSize));
     for (int index = 0; index < Math.min(rows.size(), pageSize); index++) {
@@ -991,23 +1038,46 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
 
   private DefaultSelectQuery<R> chain(QueryCondition newPredicate, boolean conjunction) {
     Objects.requireNonNull(newPredicate, "predicate");
-    QueryCondition structure = QueryConditions.structure(newPredicate);
-    return copy(
-        state.chainWhere(structure, conjunction),
-        parameters.merge(QueryConditions.parameters(newPredicate)),
-        executionContext);
+    ExpressionCapture capture = new ExpressionCapture();
+    QueryCondition structure = capture.condition(newPredicate);
+    return copyCaptured(state.chainWhere(structure, conjunction), capture.parameters());
   }
 
   private DefaultSelectQuery<R> copy(
       SelectQueryState<R> replacement,
       QueryParameters replacementParameters,
       ExecutionContext context) {
-    return replacement == state
-            && replacementParameters == parameters
-            && context == executionContext
-        ? this
-        : new DefaultSelectQuery<>(
-            operations, compiler, fastPlans, replacement, replacementParameters, context);
+    return copy(replacement, replacementParameters, context, orderingOnlyParameters);
+  }
+
+  private DefaultSelectQuery<R> copyCaptured(
+      SelectQueryState<R> replacement, QueryParameters captured) {
+    return copy(
+        replacement,
+        parameters.merge(captured),
+        executionContext,
+        captured.withoutBoundReferences(orderingOnlyParameters));
+  }
+
+  private DefaultSelectQuery<R> copy(
+      SelectQueryState<R> replacement,
+      QueryParameters replacementParameters,
+      ExecutionContext context,
+      Set<QueryParameter<?>> replacementOrderingOnly) {
+    if (replacement == state
+        && replacementParameters == parameters
+        && context == executionContext
+        && replacementOrderingOnly == orderingOnlyParameters) {
+      return this;
+    }
+    return new DefaultSelectQuery<>(
+        operations,
+        compiler,
+        fastPlans,
+        replacement,
+        replacementParameters,
+        context,
+        replacementOrderingOnly);
   }
 
   private JoinOnStep<SelectQuery<R>> joinOn(JoinType type, QueryRelation relation) {
@@ -1016,11 +1086,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
 
   DefaultSelectQuery<R> appendJoin(
       JoinType type, QueryRelation joinedRelation, @Nullable QueryCondition on) {
-    QueryCondition structure = on == null ? null : QueryConditions.structure(on);
-    QueryParameters appendedParameters =
-        on == null ? parameters : parameters.merge(QueryConditions.parameters(on));
-    return copy(
-        state.appendJoin(type, joinedRelation, structure), appendedParameters, executionContext);
+    ExpressionCapture capture = new ExpressionCapture();
+    QueryCondition structure = on == null ? null : capture.condition(on);
+    return copyCaptured(state.appendJoin(type, joinedRelation, structure), capture.parameters());
   }
 
   private void requireDeclaredParameter(QueryParameter<?> parameter) {

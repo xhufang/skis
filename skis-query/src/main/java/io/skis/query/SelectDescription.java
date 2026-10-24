@@ -11,6 +11,18 @@ public interface SelectDescription<R extends @Nullable Object> {
 
   SelectDescription<R> or(QueryCondition condition);
 
+  /** Declares one ordered, nonempty grouping list; repeating this call fails. */
+  SelectDescription<R> groupBy(Selectable<?>... expressions);
+
+  /** Starts HAVING independently of WHERE, with or without explicit GROUP BY. */
+  SelectDescription<R> having(QueryCondition condition);
+
+  /** Appends AND to an existing HAVING chain, with left association. */
+  SelectDescription<R> andHaving(QueryCondition condition);
+
+  /** Appends OR to an existing HAVING chain, with left association. */
+  SelectDescription<R> orHaving(QueryCondition condition);
+
   JoinOnStep<? extends SelectDescription<R>> join(QueryTable<?> table);
 
   JoinOnStep<? extends SelectDescription<R>> join(DerivedRelation relation);

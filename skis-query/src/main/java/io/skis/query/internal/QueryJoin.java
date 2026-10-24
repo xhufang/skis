@@ -160,6 +160,7 @@ final class QueryStructureCompiler {
         layout.parameterSources(),
         layout.parameterReferences(),
         layout.parameterSlots(),
+        layout.builtinParameterSources(),
         bindings.parameters(),
         null);
   }
@@ -172,20 +173,23 @@ final class QueryStructureCompiler {
     List<SelectableSupport.ExpressionIdentity> selectedIdentities =
         state.distinct() ? state.selected().expressionIdentities() : List.of();
     for (SortSpecification specification : state.orderBy()) {
+      Selectable<?> ordered = QueryModels.selectable(specification);
       if (state.distinct()
-          && QueryModels.selectable(specification) instanceof ScalarSubquerySelectable<?>) {
+          && (ordered instanceof ScalarSubquerySelectable<?>
+              || ordered instanceof ExpressionSelectable<?>)) {
         int selectedIndex =
-            selectedIdentities.indexOf(
-                SelectableSupport.expressionIdentity(QueryModels.selectable(specification)));
+            selectedIdentities.indexOf(SelectableSupport.expressionIdentity(ordered));
         if (selectedIndex >= 0) {
           if (compiler.releaseOriginalExpressions()) {
-            // DISTINCT scalar ordering renders the selected output ordinal. Reuse its final
+            // DISTINCT computed ordering renders the selected output ordinal. Reuse its final
             // expression/slots so no parameters exist only in the omitted ORDER BY subtree.
             result.add(QueryModels.sort(specification).ast(selections.get(selectedIndex)));
             continue;
           }
           // Preserve the original ordering occurrence for scope validation before sharing it.
-          compiler.recordSelectedOrdering();
+          if (ExpressionCapture.containsSubquery(ordered)) {
+            compiler.recordSelectedOrdering();
+          }
         }
       }
       result.add(
@@ -218,6 +222,7 @@ record CompiledQueryStructure(
     List<Selectable<?>> parameterSources,
     List<QueryParameter<?>> parameterReferences,
     List<ParameterSlot<?>> parameterSlots,
+    List<Selectable<?>> builtinParameterSources,
     QueryParameters parameters,
     @Nullable CompiledQueryStructure validationSource) {
 
@@ -229,6 +234,7 @@ record CompiledQueryStructure(
     parameterSources = List.copyOf(parameterSources);
     parameterReferences = List.copyOf(parameterReferences);
     parameterSlots = List.copyOf(parameterSlots);
+    builtinParameterSources = List.copyOf(builtinParameterSources);
     Objects.requireNonNull(parameters, "parameters");
     if (parameterSources.size() != parameterReferences.size()
         || parameterSources.size() != parameterSlots.size()) {
@@ -253,6 +259,7 @@ record CompiledQueryStructure(
         parameterSources,
         parameterReferences,
         parameterSlots,
+        builtinParameterSources,
         parameters,
         Objects.requireNonNull(source, "source").validationStructure());
   }

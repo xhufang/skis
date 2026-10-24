@@ -9,6 +9,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /** Internal immutable runtime values keyed by opaque {@link QueryParameter} identity. */
@@ -39,13 +40,17 @@ final class QueryParameters {
 
   <V> QueryParameters bind(QueryParameter<V> parameter, @Nullable V value) {
     Objects.requireNonNull(parameter, "parameter");
-    if (bindings.containsKey(parameter)) {
-      throw duplicate(parameter);
-    }
+    requireUnbound(parameter);
     Binding captured = capture(parameter, value);
     IdentityHashMap<QueryParameter<?>, Binding> appended = new IdentityHashMap<>(bindings);
     appended.put(parameter, captured);
     return new QueryParameters(appended);
+  }
+
+  void requireUnbound(QueryParameter<?> parameter) {
+    if (bindings.containsKey(parameter)) {
+      throw duplicate(parameter);
+    }
   }
 
   int size() {
@@ -73,15 +78,77 @@ final class QueryParameters {
     if (isEmpty()) {
       return other;
     }
+    IdentityHashMap<QueryParameter<?>, Binding> merged = null;
+    for (Map.Entry<QueryParameter<?>, Binding> entry : other.bindings.entrySet()) {
+      QueryParameter<?> parameter = entry.getKey();
+      Binding existing = bindings.get(parameter);
+      if (existing != null) {
+        if (existing != entry.getValue()) {
+          throw duplicate(parameter);
+        }
+      } else {
+        if (merged == null) {
+          merged = new IdentityHashMap<>(bindings);
+        }
+        merged.put(parameter, entry.getValue());
+      }
+    }
+    return merged == null ? this : new QueryParameters(merged);
+  }
+
+  /** Replaces exclusively owned bindings with one environment copy and no value recapture. */
+  QueryParameters replace(Set<QueryParameter<?>> removed, QueryParameters replacement) {
+    if (removed.isEmpty()) {
+      return merge(replacement);
+    }
     IdentityHashMap<QueryParameter<?>, Binding> merged = new IdentityHashMap<>(bindings);
-    other.bindings.forEach(
+    removed.forEach(merged::remove);
+    replacement.bindings.forEach(
         (parameter, binding) -> {
           Binding existing = merged.putIfAbsent(parameter, binding);
           if (existing != null && existing != binding) {
             throw duplicate(parameter);
           }
         });
-    return new QueryParameters(merged);
+    return merged.isEmpty() ? EMPTY : new QueryParameters(merged);
+  }
+
+  /** Records only replacement references which have no owner in the retained environment. */
+  Set<QueryParameter<?>> replacementOnlyReferences(
+      Set<QueryParameter<?>> removed, QueryParameters replacement) {
+    Set<QueryParameter<?>> exclusive = null;
+    for (QueryParameter<?> parameter : replacement.bindings.keySet()) {
+      if (!bindings.containsKey(parameter) || removed.contains(parameter)) {
+        if (exclusive == null) {
+          exclusive = Collections.newSetFromMap(new IdentityHashMap<>());
+        }
+        exclusive.add(parameter);
+      }
+    }
+    return exclusive == null ? Set.of() : Collections.unmodifiableSet(exclusive);
+  }
+
+  /** Releases exclusive ownership when another clause captures the same binding references. */
+  Set<QueryParameter<?>> withoutBoundReferences(Set<QueryParameter<?>> references) {
+    if (references.isEmpty() || bindings.isEmpty()) {
+      return references;
+    }
+    Set<QueryParameter<?>> remaining = null;
+    Set<QueryParameter<?>> candidates =
+        bindings.size() < references.size() ? bindings.keySet() : references;
+    for (QueryParameter<?> reference : candidates) {
+      if (references.contains(reference) && bindings.containsKey(reference)) {
+        if (remaining == null) {
+          remaining = Collections.newSetFromMap(new IdentityHashMap<>());
+          remaining.addAll(references);
+        }
+        remaining.remove(reference);
+      }
+    }
+    if (remaining == null) {
+      return references;
+    }
+    return remaining.isEmpty() ? Set.of() : Collections.unmodifiableSet(remaining);
   }
 
   /**
@@ -174,6 +241,16 @@ final class QueryParameters {
       this.bindings = new IdentityHashMap<>();
     }
 
+    void include(QueryParameters included) {
+      included.bindings.forEach(
+          (parameter, binding) -> {
+            Binding previous = bindings.putIfAbsent(parameter, binding);
+            if (previous != null && previous != binding) {
+              throw duplicate(parameter);
+            }
+          });
+    }
+
     /** Captures one value immediately and associates it with the reference by object identity. */
     <V> Builder bind(QueryParameter<V> parameter, @Nullable V value) {
       Objects.requireNonNull(parameter, "parameter");
@@ -194,13 +271,23 @@ final class QueryParameters {
 /** Statement compilation collector kept separate from the structural slot layout. */
 final class QueryParameterBindings {
 
-  private QueryParameters parameters = QueryParameters.empty();
+  private QueryParameters.@Nullable Builder parameters;
 
   void include(QueryParameters included) {
-    parameters = parameters.merge(Objects.requireNonNull(included, "included"));
+    Objects.requireNonNull(included, "included");
+    if (included.isEmpty()) {
+      return;
+    }
+    QueryParameters.Builder builder = parameters;
+    if (builder == null) {
+      builder = QueryParameters.builder();
+      parameters = builder;
+    }
+    builder.include(included);
   }
 
   QueryParameters parameters() {
-    return parameters;
+    QueryParameters.Builder builder = parameters;
+    return builder == null ? QueryParameters.empty() : builder.build();
   }
 }

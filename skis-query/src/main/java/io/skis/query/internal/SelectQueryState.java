@@ -181,6 +181,65 @@ final class SelectQueryState<R extends @Nullable Object> {
     return copy(appended, where, groupBy, having, orderBy, distinct);
   }
 
+  SelectQueryState<R> groupBy(List<Selectable<?>> expressions) {
+    if (expressions.isEmpty() || !groupBy.isEmpty()) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_GROUP_BY_CONTRACT,
+          "groupBy requires a nonempty list and may only be called once per query");
+    }
+    expressions.forEach(SelectableSupport::requireFramework);
+    return copy(joins, where, expressions, having, orderBy, distinct);
+  }
+
+  SelectQueryState<R> having(QueryCondition predicate) {
+    requireHaving(predicate);
+    if (having != null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_HAVING_CONTRACT, "having(...) may only be called once per query");
+    }
+    return copy(joins, where, groupBy, predicate, orderBy, distinct);
+  }
+
+  SelectQueryState<R> chainHaving(QueryCondition predicate, boolean conjunction) {
+    requireHaving(predicate);
+    if (having == null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_HAVING_CONTRACT,
+          "andHaving/orHaving requires an existing HAVING predicate");
+    }
+    return copy(
+        joins,
+        where,
+        groupBy,
+        conjunction ? having.and(predicate) : having.or(predicate),
+        orderBy,
+        distinct);
+  }
+
+  static void requireHaving(@Nullable QueryCondition predicate) {
+    if (predicate == null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_HAVING_CONTRACT, "HAVING condition must not be null");
+    }
+    QueryConditions.framework(predicate);
+  }
+
+  static List<Selectable<?>> groupItems(@Nullable Selectable<?> @Nullable [] expressions) {
+    if (expressions == null || expressions.length == 0) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_GROUP_BY_CONTRACT, "GROUP BY requires a nonempty expression array");
+    }
+    List<Selectable<?>> items = new ArrayList<>(expressions.length);
+    for (@Nullable Selectable<?> expression : expressions) {
+      if (expression == null) {
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_GROUP_BY_CONTRACT, "GROUP BY expression must not be null");
+      }
+      items.add(SelectableSupport.requireFramework(expression));
+    }
+    return List.copyOf(items);
+  }
+
   SelectQueryState<R> orderBy(List<SortSpecification> specifications) {
     List<SortSpecification> items = List.copyOf(specifications);
     validateOrderItems(items);

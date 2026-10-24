@@ -1,6 +1,7 @@
 package io.skis.dialect.support;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,6 +11,7 @@ import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
+import io.skis.dialect.spi.PortableLowering;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.SqlRenderer;
@@ -50,6 +52,8 @@ import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SqlExpression;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
@@ -349,6 +353,100 @@ class StandardSqlRendererTest {
         assertThrows(SqlRenderException.class, () -> scalarOnly.render(correlated));
     assertTrue(missingCorrelation.getMessage().contains("CORRELATED_SUBQUERY"));
     assertTrue(missingCorrelation.getMessage().contains("$/SELECT[1]#0"));
+  }
+
+  @Test
+  void distinctComputedOrderingRendersOneSelectedOutputAndOneParameterOccurrence() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable inner = new PetTable(OTHER_PET).as(Identifier.of("inner_pet"));
+    ParameterSlot<Long> number = new ParameterSlot<>(0, Long.class, true);
+    ParameterSlot<String> text = new ParameterSlot<>(0, String.class, true);
+    ScalarSubqueryExpression<Long> scalar = new ScalarSubqueryExpression<>(
+        new SelectStatement(List.of(inner.id()), inner, inner.id().eq(number)));
+    List<SqlExpression<?>> expressions = List.of(
+        number,
+        new ArithmeticExpression<>(outer.id(), ArithmeticOperator.ADD, number),
+        new CastExpression<>(number, Long.class, SqlType.BIGINT),
+        new CastExpression<>(scalar, Long.class, SqlType.BIGINT),
+        new ArithmeticExpression<>(scalar, ArithmeticOperator.ADD, outer.id()),
+        new CaseExpression<>(List.of(new CaseWhen<>(outer.id().isNotNull(), number)),
+            LiteralExpression.nullLiteral(Long.class)),
+        new CoalesceExpression<>(List.of(number, LiteralExpression.one(Long.class))),
+        new ConcatExpression(List.of(text, LiteralExpression.nullLiteral(String.class))));
+    RendererHarness renderer = RendererHarness.of("computed-distinct",
+        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES,
+            DialectFeature.SCALAR_SUBQUERY, DialectFeature.NULLS_FIRST_LAST));
+    for (SqlExpression<?> expression : expressions) {
+      SelectStatement statement = new SelectStatement(true, List.of(expression), List.of(),
+          outer, null,
+          List.of(new OrderByItem(expression, OrderDirection.ASC, NullOrder.LAST)), null);
+      RenderedSql rendered = renderer.render(statement);
+      assertTrue(rendered.sql().endsWith("ORDER BY 1 ASC NULLS LAST"));
+      assertEquals(1, rendered.parameters().size());
+      assertEquals(0, rendered.parameters().getFirst().ordinal());
+    }
+  }
+
+  @Test
+  void distinctNonNullComputedOrderingNeedsNoNativeNullPlacement() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> parameter = new ParameterSlot<>(0, Long.class, true);
+    List<SqlExpression<?>> expressions = List.of(
+        new CastExpression<>(pet.id(), Long.class, SqlType.BIGINT),
+        new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, LiteralExpression.one(Long.class)),
+        new CoalesceExpression<>(List.of(parameter, LiteralExpression.one(Long.class))));
+    for (SqlExpression<?> expression : expressions) {
+      for (NullOrder placement : List.of(NullOrder.FIRST, NullOrder.LAST, NullOrder.DIALECT_DEFAULT)) {
+        SelectStatement statement = new SelectStatement(true, List.of(expression), List.of(), pet,
+            null, List.of(new OrderByItem(expression, OrderDirection.DESC, placement)), null);
+        RenderedSql rendered = RENDERER.render(statement);
+        assertTrue(rendered.sql().endsWith("ORDER BY 1 DESC"));
+        assertEquals(expression instanceof CoalesceExpression<?> ? List.of(parameter) : List.of(),
+            rendered.parameters());
+      }
+    }
+  }
+
+  @Test
+  void distinctNullableComputedOrderingRetainsCaseEmulationAndPhysicalSlots() {
+    PetTable pet = new PetTable(PET);
+    ParameterSlot<Long> parameter = new ParameterSlot<>(0, Long.class, true);
+    List<SqlExpression<?>> expressions = List.of(
+        new CastExpression<>(pet.name(), String.class, SqlType.VARCHAR),
+        new ArithmeticExpression<>(pet.id(), ArithmeticOperator.ADD, parameter));
+    for (SqlExpression<?> expression : expressions) {
+      for (NullOrder placement : List.of(NullOrder.FIRST, NullOrder.LAST)) {
+        SelectStatement statement = new SelectStatement(true, List.of(expression), List.of(), pet,
+            null, List.of(new OrderByItem(expression, OrderDirection.DESC, placement)), null);
+        RenderedSql rendered = RENDERER.render(statement);
+        assertTrue(rendered.sql().contains("ORDER BY CASE WHEN "));
+        assertTrue(rendered.sql().contains(placement == NullOrder.FIRST
+            ? "THEN 0 ELSE 1 END ASC, " : "THEN 1 ELSE 0 END ASC, "));
+        assertTrue(rendered.sql().endsWith(" DESC"));
+        assertEquals(expression instanceof ArithmeticExpression<?>
+            ? List.of(parameter, parameter) : List.of(), rendered.parameters());
+        StatementAst normalized = PortableLowering.normalize(statement, RENDERER.dialect().capabilities());
+        assertSame(normalized, PortableLowering.normalize(normalized, RENDERER.dialect().capabilities()));
+      }
+    }
+  }
+
+  @Test
+  void distinctComputedOutputReferencePreservesEffectiveOuterJoinNullability() {
+    PetTable outer = new PetTable(PET).as(Identifier.of("outer_pet"));
+    PetTable joined = new PetTable(OTHER_PET).as(Identifier.of("joined_pet"));
+    CastExpression<Long> expression = new CastExpression<>(joined.id(), Long.class, SqlType.BIGINT);
+    SelectStatement statement = new SelectStatement(true, List.of(expression), List.of(),
+        new FromClause(outer,
+            List.of(new JoinClause(JoinType.LEFT, joined, outer.id().eq(joined.id())))),
+        null, List.of(new OrderByItem(expression, OrderDirection.ASC, NullOrder.LAST)), null);
+    RendererHarness renderer = RendererHarness.of("computed-left-distinct",
+        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES,
+            DialectFeature.LEFT_JOIN, DialectFeature.NULLS_FIRST_LAST));
+    assertTrue(renderer.render(statement).sql().endsWith("ORDER BY 1 ASC NULLS LAST"));
+    RendererHarness emulated = RendererHarness.of("computed-left-emulated",
+        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.LEFT_JOIN));
+    assertTrue(emulated.render(statement).sql().contains("ORDER BY CASE WHEN CAST("));
   }
 
   @Test

@@ -234,6 +234,17 @@ public enum SkisErrorCode {
       SkisDiagnosticStage.SEMANTIC_VALIDATION,
       "aggregate clause, nesting, or query-block ownership is invalid"),
 
+  QUERY_GROUP_BY_CONTRACT(
+      "SKISQ033",
+      SkisErrorFamily.QUERY,
+      SkisDiagnosticStage.QUERY_CONSTRUCTION,
+      "GROUP BY construction is empty, null, or repeated"),
+  QUERY_HAVING_CONTRACT(
+      "SKISQ034",
+      SkisErrorFamily.QUERY,
+      SkisDiagnosticStage.QUERY_CONSTRUCTION,
+      "HAVING construction is null, repeated, or lacks an initial predicate"),
+
   // SKISD: dialect capability, rendering, lowering, and structural conversion.
   DIALECT_FEATURE_UNSUPPORTED(
       "SKISD001",

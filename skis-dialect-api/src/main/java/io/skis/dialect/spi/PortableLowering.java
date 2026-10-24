@@ -31,6 +31,7 @@ import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
+import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
@@ -49,6 +50,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.UnaryOperator;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -93,85 +95,111 @@ public final class PortableLowering {
     }
 
     private SelectStatement select(SelectStatement select) {
-      boolean changed = false;
-      List<SqlExpression<?>> selections = new ArrayList<>(select.selections().size());
-      for (SqlExpression<?> selection : select.selections()) {
-        SqlExpression<?> normalized = expression(selection);
-        changed |= normalized != selection;
-        selections.add(normalized);
-      }
+      List<SqlExpression<?>> originalSelections = select.selections();
+      List<SqlExpression<?>> selections = mapIfChanged(originalSelections, this::expression);
+      List<HiddenSelection> originalHidden = select.hiddenSelections();
+      List<HiddenSelection> hidden =
+          mapIfChanged(
+              originalHidden,
+              item -> {
+                SqlExpression<?> original = item.expression();
+                SqlExpression<?> normalized = expression(original);
 
-      List<HiddenSelection> hidden = new ArrayList<>(select.hiddenSelections().size());
-      for (HiddenSelection item : select.hiddenSelections()) {
-        SqlExpression<?> normalized = expression(item.expression());
-        changed |= normalized != item.expression();
-        hidden.add(
-            normalized == item.expression() ? item : new HiddenSelection(normalized, item.alias()));
-      }
+                if (normalized == original) {
+                  return item;
+                }
 
-      FromClause fromClause = fromClause(select.fromClause());
-      changed |= fromClause != select.fromClause();
-
-      SqlPredicate where = select.where().map(this::predicate).orElse(null);
-      changed |= where != select.where().orElse(null);
-
-      List<SqlExpression<?>> groupBy = new ArrayList<>(select.groupBy().size());
-      for (SqlExpression<?> item : select.groupBy()) {
-        SqlExpression<?> normalized = expression(item);
-        changed |= normalized != item;
-        groupBy.add(normalized);
-      }
-
-      SqlPredicate having = select.having().map(this::predicate).orElse(null);
-      changed |= having != select.having().orElse(null);
-
-      List<OrderByItem> orderBy = new ArrayList<>(select.orderBy().size());
-      for (OrderByItem item : select.orderBy()) {
-        SqlExpression<?> normalized = expression(item.expression());
-        changed |= normalized != item.expression();
-
-        if (select.distinct() && normalized instanceof ScalarSubqueryExpression<?>) {
+                return new HiddenSelection(normalized, item.alias());
+              });
+      FromClause originalFrom = select.fromClause();
+      FromClause fromClause = fromClause(originalFrom);
+      SqlPredicate originalWhere = select.where().orElse(null);
+      SqlPredicate where = originalWhere == null ? null : predicate(originalWhere);
+      List<SqlExpression<?>> originalGroupBy = select.groupBy();
+      List<SqlExpression<?>> groupBy = mapIfChanged(originalGroupBy, this::expression);
+      SqlPredicate originalHaving = select.having().orElse(null);
+      SqlPredicate having = originalHaving == null ? null : predicate(originalHaving);
+      List<OrderByItem> originalOrderBy = select.orderBy();
+      List<OrderByItem> rewrittenOrderBy = null;
+      boolean distinct = select.distinct();
+      int index = 0;
+      for (OrderByItem item : originalOrderBy) {
+        SqlExpression<?> originalExpression = item.expression();
+        SqlExpression<?> normalized = expression(originalExpression);
+        NullOrder originalNullOrder = item.nullOrder();
+        NullOrder nullOrder = originalNullOrder;
+        boolean emulateNullOrdering = nullOrder != NullOrder.DIALECT_DEFAULT && !nativeNullOrdering;
+        SqlExpression<?> nullRankOperand = null;
+        if (distinct
+            && !(normalized instanceof ColumnExpression<?, ?>)
+            && !(normalized instanceof DerivedColumnExpression<?>)
+            && !(normalized instanceof SelectedOutputReference<?>)) {
           int selected = selectedIndex(selections, normalized);
-          if (selected < 0) {
+          if (selected >= 0) {
+            Nullability nullability = fromClause.effectiveNullability(normalized);
+            if (emulateNullOrdering && !nullability.isNullable()) {
+              nullOrder = NullOrder.DIALECT_DEFAULT;
+              emulateNullOrdering = false;
+            }
+            if (emulateNullOrdering && !(normalized instanceof ScalarSubqueryExpression<?>)) {
+              nullRankOperand = normalized;
+            }
+            normalized =
+                new SelectedOutputReference<>(
+                    selected + 1, normalized.javaType(), normalized.sqlType(), nullability);
+          } else if (normalized instanceof ScalarSubqueryExpression<?>) {
             throw new IllegalArgumentException(
                 "DISTINCT scalar ORDER BY must reference a selected expression");
           }
-          normalized = SelectedOutputReference.of(selected + 1, normalized);
-          changed = true;
         }
-
-        NullOrder nullOrder = item.nullOrder();
-        if (nullOrder != NullOrder.DIALECT_DEFAULT && !nativeNullOrdering) {
-          if (normalized instanceof SelectedOutputReference<?>) {
+        if (emulateNullOrdering) {
+          if (normalized instanceof SelectedOutputReference<?> && nullRankOperand == null) {
             throw new IllegalArgumentException(
-                "DISTINCT scalar output ordering requires native NULLS FIRST/LAST support");
+                "DISTINCT selected output ordering requires native NULLS FIRST/LAST support");
           }
-          orderBy.add(
+          if (rewrittenOrderBy == null) {
+            rewrittenOrderBy = new ArrayList<>(originalOrderBy.size() + 1);
+            rewrittenOrderBy.addAll(originalOrderBy.subList(0, index));
+          }
+          SqlExpression<?> rankExpression = nullRankOperand == null ? normalized : nullRankOperand;
+          rewrittenOrderBy.add(
               new OrderByItem(
-                  nullRank(normalized, nullOrder), OrderDirection.ASC, NullOrder.DIALECT_DEFAULT));
-          orderBy.add(new OrderByItem(normalized, item.direction(), NullOrder.DIALECT_DEFAULT));
-          changed = true;
-          continue;
+                  nullRank(rankExpression, nullOrder),
+                  OrderDirection.ASC,
+                  NullOrder.DIALECT_DEFAULT));
+          rewrittenOrderBy.add(
+              new OrderByItem(normalized, item.direction(), NullOrder.DIALECT_DEFAULT));
+        } else {
+          boolean itemChanged = normalized != originalExpression || nullOrder != originalNullOrder;
+          OrderByItem result =
+              itemChanged ? new OrderByItem(normalized, item.direction(), nullOrder) : item;
+          if (itemChanged && rewrittenOrderBy == null) {
+            rewrittenOrderBy = new ArrayList<>(originalOrderBy.size());
+            rewrittenOrderBy.addAll(originalOrderBy.subList(0, index));
+          }
+          if (rewrittenOrderBy != null) {
+            rewrittenOrderBy.add(result);
+          }
         }
-        orderBy.add(new OrderByItem(normalized, item.direction(), nullOrder));
+        index++;
       }
-
-      SelectPagination pagination = pagination(select.pagination().orElse(null));
-      changed |= pagination != select.pagination().orElse(null);
-
+      List<OrderByItem> orderBy = rewrittenOrderBy == null ? originalOrderBy : rewrittenOrderBy;
+      SelectPagination originalPagination = select.pagination().orElse(null);
+      SelectPagination pagination = pagination(originalPagination);
+      boolean changed =
+          selections != originalSelections
+              || hidden != originalHidden
+              || fromClause != originalFrom
+              || where != originalWhere
+              || groupBy != originalGroupBy
+              || having != originalHaving
+              || orderBy != originalOrderBy
+              || pagination != originalPagination;
       if (!changed) {
         return select;
       }
       return new SelectStatement(
-          select.distinct(),
-          selections,
-          hidden,
-          fromClause,
-          where,
-          groupBy,
-          having,
-          orderBy,
-          pagination);
+          distinct, selections, hidden, fromClause, where, groupBy, having, orderBy, pagination);
     }
 
     private CountAst count(CountAst count) {
@@ -292,113 +320,140 @@ public final class PortableLowering {
         case DerivedColumnExpression<?> column -> column;
         case LiteralExpression<?> literal -> literal;
         case ArithmeticExpression<?> arithmetic -> {
-          SqlExpression<?> left = expression(arithmetic.left());
-          SqlExpression<?> right = expression(arithmetic.right());
-          yield left == arithmetic.left() && right == arithmetic.right()
+          SqlExpression<?> originalLeft = arithmetic.left();
+          SqlExpression<?> originalRight = arithmetic.right();
+          SqlExpression<?> left = expression(originalLeft);
+          SqlExpression<?> right = expression(originalRight);
+          yield left == originalLeft && right == originalRight
               ? arithmetic
               : new ArithmeticExpression<>(
                   unchecked(left), arithmetic.operator(), unchecked(right));
         }
         case ConcatExpression concat -> {
-          List<SqlExpression<String>> operands = new ArrayList<>(concat.operands().size());
-          boolean changed = false;
-          for (SqlExpression<String> operand : concat.operands()) {
-            SqlExpression<?> normalized = expression(operand);
-            changed |= normalized != operand;
-            operands.add(stringExpression(normalized));
-          }
-          yield changed ? new ConcatExpression(operands) : concat;
+          List<SqlExpression<String>> originalOperands = concat.operands();
+          List<SqlExpression<String>> operands =
+              mapIfChanged(
+                  originalOperands,
+                  operand -> {
+                    SqlExpression<?> normalized = expression(operand);
+                    return normalized == operand ? operand : stringExpression(normalized);
+                  });
+          yield operands == originalOperands ? concat : new ConcatExpression(operands);
         }
         case CaseExpression<?> caseExpression -> {
-          boolean changed = false;
-          List<CaseWhen<?>> branches = new ArrayList<>(caseExpression.branches().size());
-          for (CaseWhen<?> branch : caseExpression.branches()) {
-            SqlPredicate condition = predicate(branch.condition());
-            SqlExpression<?> result = expression(branch.result());
-            changed |= condition != branch.condition() || result != branch.result();
-            branches.add(
-                condition == branch.condition() && result == branch.result()
-                    ? branch
-                    : new CaseWhen<>(condition, unchecked(result)));
+          List<? extends CaseWhen<?>> originalBranches = caseExpression.branches();
+          List<CaseWhen<?>> branches = null;
+          int index = 0;
+          for (CaseWhen<?> branch : originalBranches) {
+            SqlPredicate originalCondition = branch.condition();
+            SqlExpression<?> originalResult = branch.result();
+            SqlPredicate condition = predicate(originalCondition);
+            SqlExpression<?> result = expression(originalResult);
+            boolean branchChanged = condition != originalCondition || result != originalResult;
+            if (branches == null && branchChanged) {
+              branches = new ArrayList<>(originalBranches.size());
+              for (int i = 0; i < index; i++) {
+                branches.add(originalBranches.get(i));
+              }
+            }
+            if (branches != null) {
+              branches.add(branchChanged ? new CaseWhen<>(condition, unchecked(result)) : branch);
+            }
+            index++;
           }
+          SqlExpression<?> originalOtherwise = caseExpression.otherwise().orElse(null);
           SqlExpression<?> otherwise =
-              caseExpression.otherwise().map(this::expression).orElse(null);
-          changed |= otherwise != caseExpression.otherwise().orElse(null);
-          if (!changed) {
+              originalOtherwise == null ? null : expression(originalOtherwise);
+          if (branches == null && otherwise == originalOtherwise) {
             yield caseExpression;
+          }
+          if (branches == null) {
+            branches = new ArrayList<>(originalBranches);
           }
           yield caseExpression(branches, otherwise);
         }
         case CastExpression<?> cast -> {
-          SqlExpression<?> operand = expression(cast.operand());
-          yield operand == cast.operand()
+          SqlExpression<?> originalOperand = cast.operand();
+          SqlExpression<?> operand = expression(originalOperand);
+          yield operand == originalOperand
               ? cast
               : new CastExpression<>(operand, cast.javaType(), cast.sqlType());
         }
         case CoalesceExpression<?> coalesce -> coalesce(coalesce);
         case ComparisonPredicate<?> comparison -> {
-          SqlExpression<?> left = expression(comparison.left());
-          SqlExpression<?> right = expression(comparison.right());
-          yield left == comparison.left() && right == comparison.right()
+          SqlExpression<?> originalLeft = comparison.left();
+          SqlExpression<?> originalRight = comparison.right();
+          SqlExpression<?> left = expression(originalLeft);
+          SqlExpression<?> right = expression(originalRight);
+          yield left == originalLeft && right == originalRight
               ? comparison
               : new ComparisonPredicate<>(unchecked(left), comparison.operator(), unchecked(right));
         }
         case LogicalPredicate logical -> {
-          boolean changed = false;
-          List<SqlPredicate> operands = new ArrayList<>(logical.operands().size());
-          for (SqlPredicate operand : logical.operands()) {
-            SqlPredicate normalized = predicate(operand);
-            changed |= normalized != operand;
-            operands.add(normalized);
-          }
-          yield changed ? new LogicalPredicate(logical.operator(), operands) : logical;
+          List<SqlPredicate> originalOperands = logical.operands();
+          List<SqlPredicate> operands = mapIfChanged(originalOperands, this::predicate);
+          yield operands == originalOperands
+              ? logical
+              : new LogicalPredicate(logical.operator(), operands);
         }
         case NullPredicate nullPredicate -> {
-          SqlExpression<?> operand = expression(nullPredicate.operand());
-          yield operand == nullPredicate.operand()
+          SqlExpression<?> originalOperand = nullPredicate.operand();
+          SqlExpression<?> operand = expression(originalOperand);
+          yield operand == originalOperand
               ? nullPredicate
               : new NullPredicate(operand, nullPredicate.operator());
         }
         case BetweenPredicate<?> between -> {
-          SqlExpression<?> value = expression(between.value());
-          SqlExpression<?> lower = expression(between.lower());
-          SqlExpression<?> upper = expression(between.upper());
-          yield value == between.value() && lower == between.lower() && upper == between.upper()
+          SqlExpression<?> originalValue = between.value();
+          SqlExpression<?> originalLower = between.lower();
+          SqlExpression<?> originalUpper = between.upper();
+          SqlExpression<?> value = expression(originalValue);
+          SqlExpression<?> lower = expression(originalLower);
+          SqlExpression<?> upper = expression(originalUpper);
+          yield value == originalValue && lower == originalLower && upper == originalUpper
               ? between
               : new BetweenPredicate<>(unchecked(value), unchecked(lower), unchecked(upper));
         }
         case LikePredicate like -> {
-          SqlExpression<?> value = expression(like.value());
-          SqlExpression<?> pattern = expression(like.pattern());
-          yield value == like.value() && pattern == like.pattern()
+          SqlExpression<?> originalValue = like.value();
+          SqlExpression<?> originalPattern = like.pattern();
+          SqlExpression<?> value = expression(originalValue);
+          SqlExpression<?> pattern = expression(originalPattern);
+          yield value == originalValue && pattern == originalPattern
               ? like
               : new LikePredicate(value, pattern);
         }
         case InPredicate<?> in -> in(in);
         case InSubqueryPredicate<?> in -> {
-          SqlExpression<?> value = expression(in.value());
-          SelectStatement subquery = select(in.subquery());
-          yield value == in.value() && subquery == in.subquery()
+          SqlExpression<?> originalValue = in.value();
+          SelectStatement originalSubquery = in.subquery();
+          SqlExpression<?> value = expression(originalValue);
+          SelectStatement subquery = select(originalSubquery);
+          yield value == originalValue && subquery == originalSubquery
               ? in
               : new InSubqueryPredicate<>(unchecked(value), subquery, in.negated());
         }
         case ExistsPredicate exists -> {
-          SelectStatement subquery = select(exists.subquery());
-          yield subquery == exists.subquery()
+          SelectStatement originalSubquery = exists.subquery();
+          SelectStatement subquery = select(originalSubquery);
+          yield subquery == originalSubquery
               ? exists
               : new ExistsPredicate(subquery, exists.negated());
         }
         case ScalarSubqueryExpression<?> scalar -> {
-          SelectStatement subquery = select(scalar.subquery());
-          yield subquery == scalar.subquery() ? scalar : new ScalarSubqueryExpression<>(subquery);
+          SelectStatement originalSubquery = scalar.subquery();
+          SelectStatement subquery = select(originalSubquery);
+          yield subquery == originalSubquery ? scalar : new ScalarSubqueryExpression<>(subquery);
         }
         case NotPredicate not -> {
-          SqlPredicate operand = predicate(not.operand());
-          yield operand == not.operand() ? not : new NotPredicate(operand);
+          SqlPredicate originalOperand = not.operand();
+          SqlPredicate operand = predicate(originalOperand);
+          yield operand == originalOperand ? not : new NotPredicate(operand);
         }
         case IncrementExpression<?> increment -> {
-          SqlExpression<?> operand = expression(increment.operand());
-          yield operand == increment.operand()
+          SqlExpression<?> originalOperand = increment.operand();
+          SqlExpression<?> operand = expression(originalOperand);
+          yield operand == originalOperand
               ? increment
               : new IncrementExpression<>(unchecked(operand));
         }
@@ -407,6 +462,23 @@ public final class PortableLowering {
                 "portable normalization does not support expression node "
                     + expression.getClass().getName());
       };
+    }
+
+    private static <T> List<T> mapIfChanged(List<T> source, UnaryOperator<T> mapper) {
+      List<T> result = null;
+      int index = 0;
+      for (T item : source) {
+        T normalized = mapper.apply(item);
+        if (result == null && normalized != item) {
+          result = new ArrayList<>(source.size());
+          result.addAll(source.subList(0, index));
+        }
+        if (result != null) {
+          result.add(normalized);
+        }
+        index++;
+      }
+      return result == null ? source : result;
     }
 
     private SqlPredicate predicate(SqlPredicate predicate) {

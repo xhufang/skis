@@ -1105,6 +1105,77 @@ class QueryTypeSafetyCompilationTest {
             temporaryDirectory.resolve("invalid-derived-fast-path")));
   }
 
+  @Test
+  void aggregateAndStandardFactoriesRetainGenericMethodReferenceAndNonNullContracts() throws Exception {
+    String valid = """
+        package samples;
+        import io.skis.query.*;
+        import io.skis.sql.ast.SqlType;
+        import java.math.*;
+        import java.util.function.*;
+        import org.jspecify.annotations.Nullable;
+        final class AggregateCalls {
+          static <N extends Number> Selectable<Long> generic(Selectable<N> value) {
+            return Sql.sumAsLong(value);
+          }
+          static <N extends Number> NonNullSelectable<N> arithmetic(
+              NonNullSelectable<N> left, NonNullSelectable<N> right) {
+            return Sql.add(left, Sql.multiply(left, right));
+          }
+          static void calls(Selectable<Integer> value, NonNullSelectable<Integer> required,
+              Selectable<String> text, QueryCondition condition, QueryParameter<Integer> parameter) {
+            Function<Selectable<Integer>, Selectable<Long>> sum = Sql::sumAsLong;
+            Function<Selectable<Integer>, NonNullSelectable<Long>> count = Sql::count;
+            Function<Integer, NonNullSelectable<Integer>> literal = Sql::value;
+            Function<QueryParameter<Integer>, Selectable<Integer>> view = Sql::value;
+            BiFunction<Selectable<Integer>, Selectable<Integer>, Selectable<Integer>> add = Sql::add;
+            BiFunction<NonNullSelectable<Integer>, NonNullSelectable<Integer>, NonNullSelectable<Integer>> plus = Sql::add;
+            NonNullSelectable<Integer> result = Sql.caseWhen(condition, required, required);
+            NonNullSelectable<Integer> fallback = Sql.coalesce(value, required);
+            NonNullSelectable<String> combined = Sql.concat(Sql.value("a"), Sql.value("b"));
+            NonNullSelectable<BigDecimal> cast = Sql.cast(required, BigDecimal.class, SqlType.DECIMAL);
+            Selectable<Integer> nullable = Sql.value(Integer.class, null);
+            Selectable<Integer> parameterView = Sql.value(parameter);
+            Selectable<? extends Number> numericInput = nullable;
+            Selectable<Long> nullableInput = Sql.sumAsLong(numericInput);
+          }
+          static <R extends @Nullable Object> void chains(SelectQuery<R> query,
+              SingleColumnSelect<Integer> scalar, SelectDescription<R> description,
+              QueryCondition condition, Selectable<Integer> key) {
+            SelectQuery<R> grouped = query.having(condition).where(condition)
+                .groupBy(key).andHaving(condition).orHaving(condition);
+            SelectDescription<R> reusable = description.groupBy(key).having(condition);
+            SingleColumnSelect<Integer> single = scalar.groupBy(key).having(condition)
+                .andHaving(condition).orHaving(condition);
+            key.in(single);
+            Selectable<Integer> subquery = Sql.scalar(single);
+          }
+        }
+        """;
+    assertTrue(compile("samples.AggregateCalls", valid, temporaryDirectory.resolve("aggregate-calls")));
+    String prefix = """
+        package samples;
+        import io.skis.query.*;
+        final class RejectedAggregate {
+          static void calls(Selectable<String> text, Selectable<Integer> number,
+              SelectQuery<Integer> query, QueryTable<?> table) {
+        """;
+    for (var invalid : java.util.Map.of(
+        "text-sum", "Sql.sumAsLong(text);",
+        "nonnull-sum", "NonNullSelectable<Long> value = Sql.sumAsLong(number);",
+        "nonnull-parameter", "NonNullSelectable<Integer> value = Sql.value(Sql.parameter(Integer.class));",
+        "mixed-arithmetic", "Sql.add(number, Sql.value(1L));",
+        "count-distinct-arity", "Sql.countDistinct(number, number);",
+        "count-class", "Sql.count(number, Long.class);",
+        "sum-distinct", "Sql.sumAsLong(number, true);",
+        "group-before-from", "Sql.select(number).groupBy(number);",
+        "group-before-on", "query.join(table).groupBy(number);",
+        "description-execute", "Sql.select(number).from(table).fetchList();").entrySet()) {
+      assertFalse(compile("samples.RejectedAggregate", prefix + invalid.getValue() + "}}",
+          temporaryDirectory.resolve(invalid.getKey())));
+    }
+  }
+
   private static boolean compile(String className, String source, Path output) throws IOException {
     Files.createDirectories(output);
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();

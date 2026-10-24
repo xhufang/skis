@@ -17,7 +17,7 @@ class DefaultDerivedOutput<V> implements DerivedOutput<V> {
   private final Nullability nullability;
 
   DefaultDerivedOutput(Selectable<V> selectable, Identifier alias, Nullability nullability) {
-    this.selectable = SelectableSupport.requireFramework(selectable);
+    this.selectable = ExpressionCapture.reusable(selectable);
     this.alias = Objects.requireNonNull(alias, "alias");
     this.nullability = Objects.requireNonNull(nullability, "nullability");
     if (!nullability.isNullable() && selectable.nullability().isNullable()) {

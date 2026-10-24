@@ -16,6 +16,19 @@ import org.junit.jupiter.api.Test;
 class SkisDiagnosticsTest {
 
   @Test
+  void groupingAndHavingConstructionCodesAreIndependentOfSemanticReasons() {
+    for (SkisErrorCode code : java.util.List.of(
+        SkisErrorCode.QUERY_GROUP_BY_CONTRACT, SkisErrorCode.QUERY_HAVING_CONTRACT)) {
+      QueryValidationException failure = QueryValidationException.of(code, "invalid construction");
+      assertEquals(SkisErrorFamily.QUERY, code.family());
+      assertEquals(SkisDiagnosticStage.QUERY_CONSTRUCTION, failure.diagnostics().stage());
+      assertNull(failure.diagnostics().querySemantics());
+    }
+    assertEquals("SKISQ033", SkisErrorCode.QUERY_GROUP_BY_CONTRACT.code());
+    assertEquals("SKISQ034", SkisErrorCode.QUERY_HAVING_CONTRACT.code());
+  }
+
+  @Test
   void exposesAUniqueExplicitCodeForEveryFamily() {
     Set<String> codes = new HashSet<>();
     for (SkisErrorCode code : SkisErrorCode.values()) {

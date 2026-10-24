@@ -109,6 +109,41 @@ final class SelectedResult<R extends @Nullable Object> {
     return (SelectedResult<R>) resolved;
   }
 
+  /** Checks whether the selection needs a value-capture boundary. */
+  boolean capturesValues() {
+    return (scalar != null && ExpressionCapture.capturesValues(scalar))
+        || (projection != null
+            && projection.selections().stream().anyMatch(ExpressionCapture::capturesValues));
+  }
+
+  /** Detaches call-time fragments while retaining the selected result variant. */
+  SelectedResult<R> capture(ExpressionCapture capture) {
+    if (scalar != null) {
+      Selectable<?> replacement = capture.selectable(scalar);
+      return replacement == scalar
+          ? this
+          : new SelectedResult<>(table, replacement, projection, projectionType, kind);
+    }
+    if (projection != null) {
+      List<Selectable<?>> selections =
+          projection.selections().stream().<Selectable<?>>map(capture::selectable).toList();
+      boolean changed = false;
+      for (int i = 0; i < selections.size(); i++) {
+        changed |= selections.get(i) != projection.selections().get(i);
+      }
+      return changed
+          ? new SelectedResult<>(
+              table,
+              null,
+              new DefaultProjectionSelection<>(
+                  QueryModels.projection(projection).mapping(), selections),
+              projectionType,
+              kind)
+          : this;
+    }
+    return this;
+  }
+
   /** Derives the cache result contract from the authoritative selected-result variant. */
   Optional<QueryPlanKey.ResultShape> planKeyResultShape(QueryPlanKey.IdentityScope identities) {
     Objects.requireNonNull(identities, "identities");

@@ -316,6 +316,32 @@ class NullnessCompilationTest {
     return NullnessCompiler.compile(id, source(body), directory.resolve(id));
   }
 
+  @Test
+  void aggregateDslPreservesNullableResultsAndDeclaredNonNullOverloads() throws Exception {
+    check("aggregate-dsl-valid", """
+        static <E> void calls(QueryOperations operations, QueryTable<E> table,
+            Selectable<Integer> number, NonNullSelectable<Integer> required,
+            Selectable<String> text, QueryCondition condition) {
+          NonNullSelectable<Integer> sum = Sql.add(required, required);
+          NonNullSelectable<Integer> arithmetic = Sql.divide(Sql.multiply(sum, required), required);
+          NonNullSelectable<Integer> result = Sql.caseWhen(condition, sum, required);
+          NonNullSelectable<Integer> fallback = Sql.coalesce(number, required);
+          NonNullSelectable<String> concat = Sql.concat(Sql.value("a"), Sql.value("b"));
+          NonNullSelectable<Long> cast = Sql.cast(required, Long.class, io.skis.sql.ast.SqlType.BIGINT);
+          SelectQuery<@Nullable Long> aggregate = operations.select(Sql.sumAsLong(number)).from(table);
+          SelectQuery<Long> count = operations.select(Sql.count(number)).from(table);
+          List<@Nullable Long> rows = aggregate.groupBy(number).having(condition).fetchList();
+          Long value = count.fetchOne().get();
+        }
+        """).assertPass();
+    reject("aggregate-nullable-element", """
+        static <E> long invalid(QueryOperations operations, QueryTable<E> table, Selectable<Integer> number) {
+          return operations.select(Sql.sumAsLong(number)).from(table).fetchList().getFirst().longValue();
+        }
+        """);
+    reject("aggregate-null-value", "static void invalid() { Sql.value((@Nullable String) null); }");
+  }
+
   private void reject(String id, String body) throws Exception {
     check(id, body).assertRejected("NullAway", "Contract.java");
   }
