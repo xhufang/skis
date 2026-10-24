@@ -10,6 +10,47 @@ T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
 
 
+## PR #87：聚合方言 lowering 覆盖率抬线（登记后待 CI 认证）
+
+[CI 40142830953](https://github.com/xhufang/skis/actions/runs/40142830953/job/121017961102?pr=87)
+在测试修复后首次通过全部测试作业，权威棘轮因 skis-sql-ast 应抬未抬失败；核对候选另见 skis-query
+由 75.19% 降至 74.60%（1595/543），T05 新增的空成员本块聚合查找分支大多未执行。已补充 query 回归覆盖各条件节点、
+左右操作数、组合表达式操作数、重复节点及非表达式值，未降低任何门槛。
+
+[CI 40144002225 的权威作业](https://github.com/xhufang/skis/actions/runs/40144002225/job/121021399961?pr=87)
+已通过 Java 21 完整构建（含 static-analysis、nullness、架构、Enforcer 及真实 PG 合同）、必需回归、
+覆盖采集与工件上传；Java 25 构建、PG 外部 URL/容器及独立消费者作业均通过。
+本轮唯一原始失败为 skis-sql-ast 覆盖率应抬未抬；Java 21 单元/集成名称转发该权威失败。
+新增门槛的来源认证仍待登记提交验证。
+
+PR head 为 `3f8ec9375104a8617be718afdb98f0ee7d3165de`，实际测试合并提交为
+`c9339d8f6a1a2e75ced7e1ca3c61986d4f28e665`，比较 base 为
+`2fe80d0d9403738dc68fb8a3634d36cea307e283`。已核对合并父提交、四个模块 XML 哈希与候选 reportSha256 一致、
+各模块 HTML 报告存在，候选的 scope、首次登记、scopeChanges 及其余 11 个模块行与当前基线一致。
+
+[工件 12579543622](https://github.com/xhufang/skis/actions/runs/40144002225/artifacts/12579543622)
+为 `branch-coverage-java-21-40144002225-1`，归档 SHA-256 为
+`b45b588b3f0da7fa7c26e22f26a8725701eac2ea49eef8d45df54bff7a5dcb1a`。
+原样采用真实候选，仅更新以下四行；其余模块行、首次登记、统计口径及生成排除保持不变。
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-sql-ast | 78.27% | 1251/293 | 100 | 81.02% |
+| skis-dialect-api | 76.86% | 1077/261 | 39 | 80.49% |
+| skis-dialect-support | 78.68% | 261/32 | 8 | 89.07% |
+| skis-query | 75.19% | 1623/515 | 184 | 75.91% |
+
+对应 XML SHA-256：
+
+- skis-sql-ast：`5b10c454aaeeec0c42298af9a16128f9304bd5829454df38ecef931c5e12a159`。
+- skis-dialect-api：`f6c7cb168fa990637d1a10c51e58689eccb460f00ea6aaa6c9697bc66346671e`。
+- skis-dialect-support：`63007389bc6081fc43ac60b1dcc4f551cf25a10f047cd7f4500d75fdf1ed3e4b`。
+- skis-query：`84534a0194b9ae7e79179ff602079f48888ea33f10f00b2028658f9f768dd62f`。
+
+本地以 Java 21 执行 coverage/architecture 完整构建（无 static-analysis 与真实 PG），合并执行数据得到
+skis-query 1623/515，与 CI 一致；登记提交的来源认证及完整门禁尚未通过。
+取证保存在本地 `target/ci-coverage-40144002225/` 的归档内容、measurement 与候选。
+
 ## PR #86：聚合 DSL 覆盖率抬线（登记后待 CI 认证）
 
 [CI 40097770979 的权威作业](https://github.com/xhufang/skis/actions/runs/40097770979/job/120883515859?pr=86)
