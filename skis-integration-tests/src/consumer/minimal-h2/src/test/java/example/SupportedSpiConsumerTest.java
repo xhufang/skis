@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import example.skis.PetMeta;
 import io.skis.core.SkisErrorCode;
@@ -12,11 +13,13 @@ import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.SqlCompiler;
 import io.skis.dialect.support.SqlTemplate;
 import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlLowering;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.spi.JdbcReadContext;
@@ -28,6 +31,7 @@ import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.TableExpression;
+import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -39,6 +43,33 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class SupportedSpiConsumerTest {
+
+  @Test
+  void explicitH2FormatsPreserveDecimalValuesWithAnExternalDialectId() throws Exception {
+    Dialect dialect = new ExternalDialect();
+    var value = new ParameterSlot<>(0, BigDecimal.class, false);
+    SqlTemplate template = SqlCompiler.compile(
+        new SelectStatement(List.of(value), PetAstTable.PET), dialect);
+    assertEquals("external", dialect.id());
+    assertEquals("SELECT CAST(? AS DECFLOAT) FROM \"pet\"", template.sql());
+    JdbcDataSource source = new JdbcDataSource();
+    source.setURL("jdbc:h2:mem:external_decimal_format");
+    BigDecimal expected = new BigDecimal("12345678901234567890.123456789012345678901234567890");
+    try (Connection connection = source.getConnection()) {
+      try (var sql = connection.createStatement()) {
+        sql.execute("CREATE TABLE \"pet\" (\"id\" BIGINT)");
+        sql.execute("INSERT INTO \"pet\" VALUES (1)");
+      }
+      try (PreparedStatement statement = connection.prepareStatement(template.sql())) {
+        statement.setBigDecimal(1, expected);
+        try (ResultSet rows = statement.executeQuery()) {
+          assertTrue(rows.next());
+          assertEquals(0, expected.compareTo(rows.getBigDecimal(1)));
+          assertFalse(rows.next());
+        }
+      }
+    }
+  }
 
   @Test
   void implementsSupportedDialectCodecAndConnectionContractsFromOutsideSkisPackages()
@@ -90,9 +121,11 @@ class SupportedSpiConsumerTest {
     private static final DialectCapabilities CAPABILITIES =
         DialectCapabilities.of(
             DialectFeature.SCHEMA_QUALIFIED_TABLES,
+            DialectFeature.COUNT_AGGREGATE,
             DialectFeature.PARAMETERIZED_LIMIT,
             DialectFeature.PARAMETERIZED_OFFSET);
-    private final SqlRenderer renderer = new StandardSqlRenderer(this);
+    private static final DialectLowering LOWERING = StandardSqlLowering.h2(CAPABILITIES);
+    private final SqlRenderer renderer = StandardSqlRenderer.h2(this);
 
     @Override
     public String id() {
@@ -107,6 +140,11 @@ class SupportedSpiConsumerTest {
     @Override
     public DialectCapabilities capabilities() {
       return CAPABILITIES;
+    }
+
+    @Override
+    public DialectLowering lowering() {
+      return LOWERING;
     }
 
     @Override

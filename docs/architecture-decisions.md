@@ -61,6 +61,14 @@ python .github/scripts/run_architecture_contracts.py
 Java 锚点用 `kind=java`、`path`、完整 `type`，可加 `member={kind:method或field,name:成员名}`。
 解析实际包、类型与所属类型中的成员声明；注释、字符串、调用表达式、同名嵌套类型不能冒充。
 方法锚点表示该名字的声明存在，不承诺特定重载签名。Java 合同还要求测试源路径和 JUnit 测试注解。
+Java 合同登记实际声明测试方法的类；只继承测试、负责数据库装配的入口类登记为实现锚点，
+其公共抽象基类登记为合同归属。具体数据库套件继续由普通/PostgreSQL 必需报告清单检查执行及零跳过，
+不能用基类源码存在代替执行证据，也不为满足锚点检查增加重复测试或放宽声明检查。
+
+2026-10-25：PR #87 的 [Compliance 40131623909](https://github.com/xhufang/skis/actions/runs/40131623909/job/120984347065)
+在检查聚合 H2 入口类时报告没有直接测试声明；当前已按上述分工更正 ADR-0006/0022 的归属及入口锚点。
+相对 PR 可信基线 `2fe80d0d9403738dc68fb8a3634d36cea307e283` 没有移除原有锚点或合同，首次登记记录及状态保持。
+仅静态核对，未执行本地检查器；修复待后续 CI，历史通过记录不作为本次通过证据。
 
 POM 使用 `kind=xml` 和带 `m` 命名空间的 XPath；YAML/JSON 使用 `pointer` 段数组，可用单键对象按列表元素属性选择。
 可提供 `expected` 核对值；重复配置键失败。JSON/YAML 的数组、对象默认不得为空；可通过 `expectedType=array`

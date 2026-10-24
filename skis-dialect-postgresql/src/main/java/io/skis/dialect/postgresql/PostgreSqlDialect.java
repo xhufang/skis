@@ -33,17 +33,24 @@ public final class PostgreSqlDialect implements Dialect {
           DialectFeature.IN_SUBQUERY,
           DialectFeature.SCALAR_SUBQUERY,
           DialectFeature.CORRELATED_SUBQUERY,
-          DialectFeature.DERIVED_TABLE);
+          DialectFeature.DERIVED_TABLE,
+          DialectFeature.GROUP_BY,
+          DialectFeature.HAVING,
+          DialectFeature.COUNT_AGGREGATE,
+          DialectFeature.SUM_AGGREGATE,
+          DialectFeature.AVG_AGGREGATE,
+          DialectFeature.MIN_AGGREGATE,
+          DialectFeature.MAX_AGGREGATE);
   // PgJDBC 42.7.11 reports Integer.MAX_VALUE in simple mode and 65,535 otherwise.
   // Use the connection-independent value as the conservative framework cap.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.explicit(65_535);
-  private static final DialectLowering LOWERING = StandardSqlLowering.of(CAPABILITIES);
+  private static final DialectLowering LOWERING = StandardSqlLowering.postgresql(CAPABILITIES);
 
   /** Stateless shared dialect instance. */
   public static final PostgreSqlDialect INSTANCE = new PostgreSqlDialect();
 
-  private final SqlRenderer renderer = new StandardSqlRenderer(this);
+  private final SqlRenderer renderer = StandardSqlRenderer.postgresql(this);
 
   private PostgreSqlDialect() {}
 

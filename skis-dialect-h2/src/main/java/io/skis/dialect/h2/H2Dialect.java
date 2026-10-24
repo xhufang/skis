@@ -32,16 +32,23 @@ public final class H2Dialect implements Dialect {
           DialectFeature.IN_SUBQUERY,
           DialectFeature.SCALAR_SUBQUERY,
           DialectFeature.CORRELATED_SUBQUERY,
-          DialectFeature.DERIVED_TABLE);
+          DialectFeature.DERIVED_TABLE,
+          DialectFeature.GROUP_BY,
+          DialectFeature.HAVING,
+          DialectFeature.COUNT_AGGREGATE,
+          DialectFeature.SUM_AGGREGATE,
+          DialectFeature.AVG_AGGREGATE,
+          DialectFeature.MIN_AGGREGATE,
+          DialectFeature.MAX_AGGREGATE);
   // No stable dialect-level maximum has been accepted for the supported H2 contract.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.unknown();
-  private static final DialectLowering LOWERING = StandardSqlLowering.of(CAPABILITIES);
+  private static final DialectLowering LOWERING = StandardSqlLowering.h2(CAPABILITIES);
 
   /** Stateless shared dialect instance. */
   public static final H2Dialect INSTANCE = new H2Dialect();
 
-  private final SqlRenderer renderer = new StandardSqlRenderer(this);
+  private final SqlRenderer renderer = StandardSqlRenderer.h2(this);
 
   private H2Dialect() {}
 

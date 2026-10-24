@@ -320,7 +320,8 @@ class CompilationPipelineTest {
     SqlRenderException failure =
         assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(statement, dialect));
 
-    assertEquals(SkisErrorCode.DIALECT_RESERVED_STRUCTURE, failure.code());
+    assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, failure.code());
+    assertEquals("GROUP_BY", failure.diagnostics().dialect().missingCapability());
     assertEquals(List.of("validate", "lower"), dialect.events);
   }
 
@@ -414,7 +415,7 @@ class CompilationPipelineTest {
         assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(statement, dialect));
 
     assertEquals(SkisErrorCode.DIALECT_INVALID_STRUCTURE, failure.code());
-    assertTrue(failure.getMessage().contains("visible SELECT list"));
+    assertTrue(failure.getMessage().contains("output correspondence"));
     assertFalse(dialect.events.contains("render"));
   }
 
@@ -478,7 +479,7 @@ class CompilationPipelineTest {
         assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(statement, dialect));
 
     assertEquals(SkisErrorCode.DIALECT_INVALID_STRUCTURE, failure.code());
-    assertTrue(failure.getMessage().contains("hidden SELECT list"));
+    assertTrue(failure.getMessage().contains("output correspondence"));
     assertFalse(dialect.events.contains("render"));
   }
 
@@ -697,6 +698,7 @@ class CompilationPipelineTest {
               DialectFeature.SCHEMA_QUALIFIED_TABLES,
               DialectFeature.PARAMETERIZED_LIMIT,
               DialectFeature.PARAMETERIZED_OFFSET,
+              DialectFeature.COUNT_AGGREGATE,
               DialectFeature.COUNT_DISTINCT,
               DialectFeature.IN_SUBQUERY,
               DialectFeature.EXISTS_SUBQUERY,

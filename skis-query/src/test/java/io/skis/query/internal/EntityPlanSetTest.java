@@ -969,7 +969,8 @@ class EntityPlanSetTest {
     INSTANCE;
 
     private final DialectCapabilities capabilities =
-        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+        DialectCapabilities.of(
+            DialectFeature.SCHEMA_QUALIFIED_TABLES, DialectFeature.COUNT_AGGREGATE);
     private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override

@@ -12,8 +12,9 @@ import io.skis.sql.ast.StatementAst;
  * object is treated as a new structure and is semantically reanalyzed before final layout.
  *
  * <p>Implementations must preserve the statement kind and, for SELECT statements, the DISTINCT flag
- * and ordered visible/hidden output lists. Rewriting clauses outside that public result contract is
- * permitted and is checked again before rendering.
+ * and ordered visible/hidden output identities and descriptors. Supported conversions and portable
+ * output-reference/NULL-order normalization are verified against the original structure. Other
+ * clause rewrites remain subject to correspondence checks and complete validation before rendering.
  */
 @FunctionalInterface
 public interface DialectLowering {

@@ -187,7 +187,7 @@
       "decisionVersion": "0.2.5-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": "0.2.7-SNAPSHOT",
-      "remaining": "能力身份、参数上限与通用管线已验证；聚合专用类型及 CAST/lowering 规则未完成",
+      "remaining": "能力身份、参数上限与通用管线已验证；聚合专用类型及 CAST/lowering 源码已实现/待 CI，输入/结果映射及数据库证据未齐",
       "task": "0.2.9:聚合语义闭环",
       "anchors": [
         {
@@ -208,6 +208,26 @@
             "kind": "method",
             "name": "prepare"
           }
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/LoweringCorrespondence.java",
+          "type": "io.skis.dialect.spi.LoweringCorrespondence"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/main/java/io/skis/dialect/support/StandardSqlLowering.java",
+          "type": "io.skis.dialect.support.StandardSqlLowering"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregateH2ContractTest.java",
+          "type": "io.skis.integration.SkisAggregateH2ContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregatePostgreSqlContractTest.java",
+          "type": "io.skis.integration.SkisAggregatePostgreSqlContractTest"
         }
       ],
       "contracts": [
@@ -223,6 +243,21 @@
             "jobs",
             "engineering-gates"
           ]
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/test/java/io/skis/sql/ast/ParameterRelationAstTest.java",
+          "type": "io.skis.sql.ast.ParameterRelationAstTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/AggregateDialectTest.java",
+          "type": "io.skis.dialect.support.AggregateDialectTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
+          "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
       ]
     },
@@ -953,7 +988,7 @@
       "decisionVersion": "0.2.9-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T03 语义诊断与 T04 公共入口/构造诊断已实现/待 CI；单行参数关系、方言/映射接线及后续合同验证未实现",
+      "remaining": "T03—T05 源码已实现/待 CI；结果映射、分页/count、缓存及后续合同验证未实现",
       "task": "0.2.9:T03—T09",
       "anchors": [
         {
@@ -970,6 +1005,26 @@
           "kind": "java",
           "path": "skis-core/src/main/java/io/skis/core/SkisDiagnostics.java",
           "type": "io.skis.core.SkisDiagnostics"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/ParameterRelationSource.java",
+          "type": "io.skis.sql.ast.ParameterRelationSource"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/DecimalPrecision.java",
+          "type": "io.skis.sql.ast.DecimalPrecision"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregateH2ContractTest.java",
+          "type": "io.skis.integration.SkisAggregateH2ContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregatePostgreSqlContractTest.java",
+          "type": "io.skis.integration.SkisAggregatePostgreSqlContractTest"
         }
       ],
       "contracts": [
@@ -1007,6 +1062,21 @@
           "kind": "java",
           "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/CompilationPipelineTest.java",
           "type": "io.skis.dialect.support.CompilationPipelineTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/test/java/io/skis/sql/ast/ParameterRelationAstTest.java",
+          "type": "io.skis.sql.ast.ParameterRelationAstTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/AggregateDialectTest.java",
+          "type": "io.skis.dialect.support.AggregateDialectTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
+          "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
       ]
     }

@@ -4,6 +4,7 @@
       "io.skis.testsupport.PostgresEnvironmentPostgreSqlContractTest"
     ],
     "skis-integration-tests": [
+      "io.skis.integration.SkisAggregatePostgreSqlContractTest",
       "io.skis.integration.SkisProjectionPostgreSqlContractTest",
       "io.skis.integration.SkisJoinPostgreSqlContractTest",
       "io.skis.integration.SkisSpecialProjectionPostgreSqlContractTest",

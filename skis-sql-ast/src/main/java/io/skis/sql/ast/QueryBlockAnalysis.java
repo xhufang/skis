@@ -15,12 +15,20 @@ import org.jspecify.annotations.Nullable;
  */
 public final class QueryBlockAnalysis {
 
+  private static final int AGGREGATE_STRUCTURE = 1;
+  private static final int GROUPED = 1 << 1;
+  private static final int STANDARD_EXPRESSION_LOWERING = 1 << 2;
+  private static final int REAL_SUM = 1 << 3;
+  private static final int SMALL_INTEGER_AVERAGE = 1 << 4;
+  private static final int DOUBLE_AGGREGATE = 1 << 5;
+
   private final QueryBlockPath path;
   private final List<SourceOccurrence> sourceOccurrences;
   private final List<ResolvedExpression> expressions;
   private final List<NestedBlock> nestedBlocks;
   private final ResolvedStructureKey structureKey;
   private final Map<ScopeSite, ScopeSnapshot> clauseScopes;
+  private final int characteristics;
 
   QueryBlockAnalysis(
       QueryBlockPath path,
@@ -28,13 +36,56 @@ public final class QueryBlockAnalysis {
       List<ResolvedExpression> expressions,
       List<NestedBlock> nestedBlocks,
       ResolvedStructureKey structureKey,
-      Map<ScopeSite, ScopeSnapshot> clauseScopes) {
+      Map<ScopeSite, ScopeSnapshot> clauseScopes,
+      boolean aggregateStructure,
+      boolean grouped,
+      boolean standardExpressionLowering,
+      boolean realSum,
+      boolean smallIntegerAverage,
+      boolean doubleAggregate) {
     this.path = Objects.requireNonNull(path, "path");
     this.sourceOccurrences = List.copyOf(sourceOccurrences);
     this.expressions = List.copyOf(expressions);
     this.nestedBlocks = List.copyOf(nestedBlocks);
     this.structureKey = Objects.requireNonNull(structureKey, "structureKey");
     this.clauseScopes = Map.copyOf(clauseScopes);
+    this.characteristics =
+        (aggregateStructure ? AGGREGATE_STRUCTURE : 0)
+            | (grouped ? GROUPED : 0)
+            | (standardExpressionLowering ? STANDARD_EXPRESSION_LOWERING : 0)
+            | (realSum ? REAL_SUM : 0)
+            | (smallIntegerAverage ? SMALL_INTEGER_AVERAGE : 0)
+            | (doubleAggregate ? DOUBLE_AGGREGATE : 0);
+  }
+
+  /** Whether this block or a nested block contains explicit aggregate/grouping structure. */
+  public boolean hasAggregateStructure() {
+    return (characteristics & AGGREGATE_STRUCTURE) != 0;
+  }
+
+  /** Whether this block itself groups input rows; nested aggregates do not affect this fact. */
+  public boolean isGrouped() {
+    return (characteristics & GROUPED) != 0;
+  }
+
+  /** Whether this block tree needs standard expression typing or grouping normalization. */
+  public boolean requiresStandardExpressionLowering() {
+    return (characteristics & STANDARD_EXPRESSION_LOWERING) != 0;
+  }
+
+  /** Whether this block tree contains SUM with a REAL input. */
+  public boolean hasRealSum() {
+    return (characteristics & REAL_SUM) != 0;
+  }
+
+  /** Whether this block tree contains AVG with a TINYINT, SMALLINT or INTEGER input. */
+  public boolean hasSmallIntegerAverage() {
+    return (characteristics & SMALL_INTEGER_AVERAGE) != 0;
+  }
+
+  /** Whether this block tree contains SUM or AVG with a DOUBLE input. */
+  public boolean hasDoubleAggregate() {
+    return (characteristics & DOUBLE_AGGREGATE) != 0;
   }
 
   /** Stable structural path of this block. */
@@ -124,11 +175,6 @@ public final class QueryBlockAnalysis {
         throw new IllegalArgumentException(
             "nested block analysis path does not match its embedding location");
       }
-    }
-
-    public NestedBlock(
-        SelectStatement statement, QueryBlockLocation location, QueryBlockAnalysis analysis) {
-      this(statement, location, NestedQueryKind.EXISTS, analysis);
     }
   }
 

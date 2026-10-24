@@ -22,6 +22,7 @@ final class EffectiveNullabilityResolver {
     Objects.requireNonNull(nullExtendedTables, "nullExtendedTables");
     Objects.requireNonNull(nullExtendedDerivedRelations, "nullExtendedDerivedRelations");
     return switch (expression) {
+      case AggregateExpression<?> aggregate -> aggregate.nullability();
       case ColumnExpression<?, ?> column -> columnNullability(column, nullExtendedTables);
       case DerivedColumnExpression<?> column ->
           derivedColumnNullability(column, nullExtendedDerivedRelations);

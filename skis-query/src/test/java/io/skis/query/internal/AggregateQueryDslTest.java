@@ -58,6 +58,60 @@ class AggregateQueryDslTest {
   private static final SampleTable TABLE = new SampleTable();
 
   @Test
+  void emptyMembershipPruningKeepsLocalAggregatesAndDropsTheirParameters() {
+    var unused = Sql.parameter(Integer.class);
+    var aggregate = Sql.sumAsLong(Sql.value(unused));
+    var nestedAggregate = Sql.caseWhen(Sql.countAll().gt(0L), Sql.value(1L), Sql.value(2L));
+    for (Selectable<Long> value : List.of(aggregate, nestedAggregate)) {
+      var result = Sql.caseWhen(value.in(List.of()), Sql.value(1), Sql.value(0));
+      ExpressionCapture capture = new ExpressionCapture();
+      var selected = capture.selectable(result);
+      CompiledQueryStructure structure =
+          QueryModels.description(Sql.select(selected).from(TABLE)).state().structure();
+      analyze(structure.validationStructure());
+      var statement = new SelectStatement(structure.selections(), structure.fromClause());
+      assertTrue(io.skis.sql.ast.SemanticValidator.analyzeComplete(statement).isGrouped());
+      assertFalse(structure.parameterReferences().contains(unused));
+      assertEquals(2, structure.parameterReferences().size());
+    }
+  }
+
+  @Test
+  void emptyMembershipFindsLocalAggregatesThroughEveryConditionAndOperandShape() {
+    var count = Sql.countAll();
+    var inner = TABLE.as("i");
+    var plain = Sql.add(TABLE.id(), Sql.value(1));
+    var constant = Sql.value(1).gt(0);
+    List<QueryCondition> aggregated = List.of(count.gt(0L), count.gt(Sql.value(0L)),
+        Sql.value(0L).lt(count), count.isNull(), count.between(0L, 1L),
+        Sql.max(TABLE.label()).like("a%"), count.in(List.of(1L)),
+        count.in(Sql.select(Sql.countAll()).from(inner)), constant.and(count.gt(0L)),
+        count.gt(0L).or(constant), count.gt(0L).not());
+    for (QueryCondition condition : aggregated) {
+      assertTrue(groupedByEmptyMembership(Sql.caseWhen(condition, Sql.value(1L), Sql.value(2L))));
+    }
+    assertTrue(groupedByEmptyMembership(Sql.add(Sql.value(1L), count)));
+    assertTrue(groupedByEmptyMembership(Sql.caseWhen(constant, count, Sql.value(0L))));
+    List<QueryCondition> plainConditions = List.of(constant.and(constant), TABLE.id().isNull(),
+        plain.gt(Sql.value(0)), Sql.value(0).lt(plain), Sql.exists(Sql.selectFrom(inner)));
+    for (QueryCondition condition : plainConditions) {
+      assertFalse(groupedByEmptyMembership(Sql.caseWhen(condition, Sql.value(1L), Sql.value(2L))));
+    }
+    assertFalse(groupedByEmptyMembership(Sql.add(plain, plain)));
+    assertFalse(groupedByEmptyMembership(TABLE.id()));
+  }
+
+  private static <V> boolean groupedByEmptyMembership(Selectable<V> value) {
+    var result = Sql.caseWhen(value.in(List.<V>of()), Sql.value(1), Sql.value(0));
+    var selected = new ExpressionCapture().selectable(result);
+    CompiledQueryStructure structure =
+        QueryModels.description(Sql.select(selected).from(TABLE)).state().structure();
+    analyze(structure.validationStructure());
+    var statement = new SelectStatement(structure.selections(), structure.fromClause());
+    return io.skis.sql.ast.SemanticValidator.analyzeComplete(statement).isGrouped();
+  }
+
+  @Test
   void aggregateFactoriesPreserveFixedResultsAndConservativeNullability() {
     assertResult(Sql.countAll(), Long.class, SqlType.BIGINT, false);
     assertResult(Sql.count(TABLE.label()), Long.class, SqlType.BIGINT, false);

@@ -9,7 +9,8 @@ import java.util.Optional;
  * rendering. Entity tables are adapted through {@link EntityRelationSource}; later source kinds can
  * therefore share the FROM/Join structure without pretending to be entity metadata.
  */
-public sealed interface RelationSource permits EntityRelationSource, DerivedRelationSource {
+public sealed interface RelationSource
+    permits EntityRelationSource, DerivedRelationSource, ParameterRelationSource {
 
   /** Adapts an entity table while retaining the exact table-expression reference. */
   static RelationSource entity(TableExpression<?> table) {

@@ -561,6 +561,7 @@ class QueryPaginationCompilationTest {
             DialectFeature.PARAMETERIZED_LIMIT,
             DialectFeature.PARAMETERIZED_OFFSET,
             DialectFeature.NULLS_FIRST_LAST,
+            DialectFeature.COUNT_AGGREGATE,
             DialectFeature.COUNT_DISTINCT);
     private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
