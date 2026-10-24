@@ -2,6 +2,7 @@ package io.skis.core;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -69,6 +70,7 @@ class SkisDiagnosticsTest {
     SkisDiagnostics diagnostics = SkisDiagnostics.of(SkisDiagnosticStage.QUERY_CONSTRUCTION);
 
     assertNull(diagnostics.query());
+    assertNull(diagnostics.querySemantics());
     assertNull(diagnostics.dialect());
     assertNull(diagnostics.execution());
     assertNull(diagnostics.driver());
@@ -166,6 +168,280 @@ class SkisDiagnosticsTest {
     assertEquals(2, detailed.facts().observedCount());
     assertEquals("query expected at most one row", detailed.facts().detail());
     assertEquals(SkisDiagnosticStage.RESULT_DECODING, detailed.stage());
+  }
+
+  @Test
+  void semanticGroupsRemainImmutableAndSurviveAdditionalDetail() {
+    SkisDiagnostics.QueryLocation dependency =
+        new SkisDiagnostics.QueryLocation("$", null, 1, null, null);
+    SkisDiagnostics.QuerySemantics semantics =
+        new SkisDiagnostics.QuerySemantics(
+            SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+            null,
+            null,
+            dependency,
+            2,
+            null);
+    SkisDiagnostics base = semanticDiagnostics(semantics);
+    SkisDiagnostics detailed = base.withDetail("additional structural context");
+
+    assertEquals(semantics, detailed.querySemantics());
+    assertEquals(base.query(), detailed.query());
+    assertEquals(base, semanticDiagnostics(semantics));
+    assertEquals(base.hashCode(), semanticDiagnostics(semantics).hashCode());
+    assertNotEquals(
+        base,
+        semanticDiagnostics(
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.DUPLICATE_GROUP_KEY,
+                null,
+                null,
+                null,
+                null,
+                null)));
+    assertTrue(detailed.safeText().contains("semanticReason=NON_GROUPED_DEPENDENCY"));
+    assertTrue(detailed.safeText().contains("missingDependencySource=1"));
+    assertTrue(detailed.safeText().contains("missingPropertyOrdinal=2"));
+    assertFalse(detailed.safeText().contains("missingOutputOrdinal"));
+  }
+
+  @Test
+  void semanticDependenciesRequireExactlyOneTypedColumnOrdinal() {
+    SkisDiagnostics.QueryLocation dependency =
+        new SkisDiagnostics.QueryLocation("$", null, 0, null, null);
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+                null,
+                null,
+                dependency,
+                null,
+                null));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+                null,
+                null,
+                dependency,
+                0,
+                0));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+                null,
+                null,
+                dependency,
+                -1,
+                null));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+                null,
+                null,
+                new SkisDiagnostics.QueryLocation("$", null, null, null, null),
+                0,
+                null));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.DUPLICATE_GROUP_KEY,
+                null,
+                null,
+                dependency,
+                0,
+                null));
+    SkisDiagnostics.QuerySemantics derived =
+        new SkisDiagnostics.QuerySemantics(
+            SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+            null,
+            null,
+            dependency,
+            null,
+            3);
+    assertEquals(3, derived.missingOutputOrdinal());
+  }
+
+  @Test
+  void aggregateFactsAcceptOnlyFrameworkKindsAndAnActualWritingBlock() {
+    for (String kind : new String[] {"COUNT", "SUM", "AVG", "MIN", "MAX"}) {
+      SkisDiagnostics.QuerySemantics semantics =
+          new SkisDiagnostics.QuerySemantics(
+              SkisDiagnostics.QuerySemanticReason.OUTER_ONLY_AGGREGATE,
+              kind,
+              "$/SELECT[0]#0",
+              null,
+              null,
+              null);
+      QueryValidationException failure =
+          QueryValidationException.of(
+              SkisErrorCode.QUERY_AGGREGATE_CONTRACT, semanticDiagnostics(semantics));
+      assertEquals(kind, failure.diagnostics().querySemantics().aggregateKind());
+    }
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.AGGREGATE_IN_CLAUSE,
+                "COUNT(sensitive-value)",
+                "$",
+                null,
+                null,
+                null));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.NESTED_AGGREGATE,
+                "COUNT",
+                null,
+                null,
+                null,
+                null));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new SkisDiagnostics.QuerySemantics(
+                SkisDiagnostics.QuerySemanticReason.INVALID_GROUP_KEY,
+                "COUNT",
+                "$",
+                null,
+                null,
+                null));
+  }
+
+  @Test
+  void everySemanticReasonRequiresItsMatchingCodeAndFactShape() {
+    SkisDiagnostics.QueryLocation dependency =
+        new SkisDiagnostics.QueryLocation("$", null, 0, null, null);
+    for (SkisDiagnostics.QuerySemantics semantics :
+        new SkisDiagnostics.QuerySemantics[] {
+          new SkisDiagnostics.QuerySemantics(
+              SkisDiagnostics.QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+              null, null, dependency, 0, null),
+          new SkisDiagnostics.QuerySemantics(
+              SkisDiagnostics.QuerySemanticReason.DUPLICATE_GROUP_KEY,
+              null, null, null, null, null),
+          new SkisDiagnostics.QuerySemantics(
+              SkisDiagnostics.QuerySemanticReason.INVALID_GROUP_KEY,
+              null, null, null, null, null)
+        }) {
+      assertSame(
+          semantics,
+          QueryValidationException.of(
+                  SkisErrorCode.QUERY_GROUPING_CONTRACT, semanticDiagnostics(semantics))
+              .diagnostics()
+              .querySemantics());
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              QueryValidationException.of(
+                  SkisErrorCode.QUERY_AGGREGATE_CONTRACT, semanticDiagnostics(semantics)));
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              new SkisDiagnostics.QuerySemantics(
+                  semantics.reason(), "COUNT", "$", null, null, null));
+    }
+    for (SkisDiagnostics.QuerySemanticReason reason :
+        new SkisDiagnostics.QuerySemanticReason[] {
+          SkisDiagnostics.QuerySemanticReason.AGGREGATE_IN_CLAUSE,
+          SkisDiagnostics.QuerySemanticReason.NESTED_AGGREGATE,
+          SkisDiagnostics.QuerySemanticReason.OUTER_ONLY_AGGREGATE
+        }) {
+      SkisDiagnostics.QuerySemantics semantics =
+          new SkisDiagnostics.QuerySemantics(reason, "COUNT", "$", null, null, null);
+      assertSame(
+          semantics,
+          QueryValidationException.of(
+                  SkisErrorCode.QUERY_AGGREGATE_CONTRACT, semanticDiagnostics(semantics))
+              .diagnostics()
+              .querySemantics());
+      assertThrows(
+          IllegalArgumentException.class,
+          () ->
+              QueryValidationException.of(
+                  SkisErrorCode.QUERY_GROUPING_CONTRACT, semanticDiagnostics(semantics)));
+      assertThrows(
+          IllegalArgumentException.class,
+          () -> new SkisDiagnostics.QuerySemantics(reason, null, null, null, null, null));
+    }
+  }
+
+  @Test
+  void groupingAndAggregateCodesRequireMatchingReasonsAndDetectionLocations() {
+    SkisDiagnostics.QuerySemantics grouping =
+        new SkisDiagnostics.QuerySemantics(
+            SkisDiagnostics.QuerySemanticReason.DUPLICATE_GROUP_KEY,
+            null,
+            null,
+            null,
+            null,
+            null);
+    SkisDiagnostics.QuerySemantics aggregate =
+        new SkisDiagnostics.QuerySemantics(
+            SkisDiagnostics.QuerySemanticReason.NESTED_AGGREGATE,
+            "COUNT",
+            "$",
+            null,
+            null,
+            null);
+    assertEquals(
+        "SKISQ031",
+        QueryValidationException.of(
+                SkisErrorCode.QUERY_GROUPING_CONTRACT, semanticDiagnostics(grouping))
+            .errorCode());
+    assertEquals(
+        "SKISQ032",
+        QueryValidationException.of(
+                SkisErrorCode.QUERY_AGGREGATE_CONTRACT, semanticDiagnostics(aggregate))
+            .errorCode());
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> QueryValidationException.of(SkisErrorCode.QUERY_GROUPING_CONTRACT, "missing facts"));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            QueryValidationException.of(
+                SkisErrorCode.QUERY_GROUPING_CONTRACT, semanticDiagnostics(aggregate)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            QueryValidationException.of(
+                SkisErrorCode.QUERY_AGGREGATE_CONTRACT, semanticDiagnostics(grouping)));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            QueryValidationException.of(
+                SkisErrorCode.QUERY_TYPE_MISMATCH, semanticDiagnostics(grouping)));
+    SkisDiagnostics incomplete =
+        SkisDiagnostics.builder(SkisDiagnosticStage.SEMANTIC_VALIDATION)
+            .queryBlock("$")
+            .clause("SELECT")
+            .querySemantics(grouping)
+            .detail("missing expression")
+            .build();
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> QueryValidationException.of(SkisErrorCode.QUERY_GROUPING_CONTRACT, incomplete));
+  }
+
+  private static SkisDiagnostics semanticDiagnostics(SkisDiagnostics.QuerySemantics semantics) {
+    return SkisDiagnostics.builder(SkisDiagnosticStage.SEMANTIC_VALIDATION)
+        .queryBlock("$")
+        .clause("SELECT")
+        .expressionPath("$ SELECT item #0")
+        .querySemantics(semantics)
+        .detail("grouped expression is invalid")
+        .build();
   }
 
   private static final class SqlExceptionCategoryCodes {

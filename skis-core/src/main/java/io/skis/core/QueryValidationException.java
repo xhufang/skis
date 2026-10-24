@@ -69,6 +69,30 @@ public final class QueryValidationException extends SkisException {
     if (facts == null || facts.detail() == null || facts.detail().isBlank()) {
       throw new IllegalArgumentException(requiredCode.code() + " diagnostics require detail");
     }
+    SkisDiagnostics.QuerySemantics semantics = required.querySemantics();
+    boolean grouping = requiredCode == SkisErrorCode.QUERY_GROUPING_CONTRACT;
+    boolean aggregate = requiredCode == SkisErrorCode.QUERY_AGGREGATE_CONTRACT;
+    if (grouping || aggregate) {
+      SkisDiagnostics.QueryLocation location = required.query();
+      if (semantics == null
+          || location == null
+          || location.blockPath() == null
+          || location.blockPath().isBlank()
+          || location.clause() == null
+          || location.clause().isBlank()
+          || location.expressionPath() == null
+          || location.expressionPath().isBlank()) {
+        throw new IllegalArgumentException(
+            requiredCode.code() + " requires query semantics and a complete detection location");
+      }
+      if (aggregate != semantics.reason().isAggregate()) {
+        throw new IllegalArgumentException(
+            requiredCode.code() + " does not match the semantic reason");
+      }
+    } else if (semantics != null) {
+      throw new IllegalArgumentException(
+          "query semantics require a grouping or aggregate error code");
+    }
     return required;
   }
 

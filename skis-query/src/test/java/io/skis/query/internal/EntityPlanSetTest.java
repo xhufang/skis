@@ -5,12 +5,14 @@ import static io.skis.query.internal.QueryTestSupport.arguments;
 import static io.skis.query.internal.QueryTestSupport.selectPlan;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.ExecutionOptions;
 import io.skis.core.QueryValidationException;
+import io.skis.core.SkisDiagnostics.QuerySemanticReason;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.core.spi.StatementPurpose;
@@ -46,13 +48,17 @@ import io.skis.query.QueryTable;
 import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
 import io.skis.query.Sql;
+import io.skis.sql.ast.AggregateExpression;
+import io.skis.sql.ast.BooleanPredicate;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -158,6 +164,125 @@ class EntityPlanSetTest {
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
     assertEquals(List.of(), laterPhases);
+  }
+
+  @Test
+  void selectionAndCountKeepTheOriginalGroupingFailureAndItsDiagnostics() {
+    EntityRuntimeModel<Pet> runtimeModel = model();
+    QueryPlanCompiler compiler =
+        QueryTestSupport.compiler(
+            EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
+    CompiledQueryStructure base = QueryTestSupport.compile(TABLE, List.of(), null);
+    CompiledQueryStructure grouped =
+        new CompiledQueryStructure(
+            base.fromClause(),
+            base.selections(),
+            base.where(),
+            List.of(SelectableSupport.expression(TABLE.id())),
+            null,
+            List.of(),
+            base.parameterSources(),
+            base.parameterReferences(),
+            base.parameterSlots(),
+            base.parameters(),
+            null);
+    QueryValidationException direct =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                SemanticValidator.validateComplete(
+                    new SelectStatement(
+                        false,
+                        grouped.selections(),
+                        List.of(),
+                        grouped.fromClause(),
+                        null,
+                        grouped.groupBy(),
+                        null,
+                        List.of(),
+                        null)));
+    QueryValidationException selection =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                compiler.compileQuery(
+                    runtimeModel, TABLE, grouped, null, StatementPurpose.PRIMARY));
+    QueryValidationException count =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                compiler.compileCount(
+                    SelectedResult.entity(TABLE),
+                    grouped,
+                    false,
+                    arguments(grouped),
+                    null,
+                    StatementPurpose.PAGE_COUNT));
+
+    assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT, selection.code());
+    assertEquals(selection.code(), count.code());
+    assertEquals(direct.diagnostics(), selection.diagnostics());
+    assertEquals(direct.diagnostics(), count.diagnostics());
+    assertEquals(1, count.diagnostics().querySemantics().missingPropertyOrdinal());
+    assertNull(selection.getCause());
+    assertNull(count.getCause());
+  }
+
+  @Test
+  void countCannotHideAnIllegalAggregateInAPrunedOriginalPredicate() {
+    EntityRuntimeModel<Pet> runtimeModel = model();
+    QueryPlanCompiler compiler =
+        QueryTestSupport.compiler(
+            EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
+    CompiledQueryStructure base = QueryTestSupport.compile(TABLE, List.of(), null);
+    CompiledQueryStructure original =
+        new CompiledQueryStructure(
+            base.fromClause(),
+            base.selections(),
+            new LogicalPredicate(
+                LogicalOperator.AND,
+                List.of(
+                    new BooleanPredicate(false),
+                    new InPredicate<>(AggregateExpression.countAll(), List.of(), false))),
+            List.of(),
+            null,
+            List.of(),
+            base.parameterSources(),
+            base.parameterReferences(),
+            base.parameterSlots(),
+            base.parameters(),
+            null);
+    CompiledQueryStructure pruned =
+        new CompiledQueryStructure(
+            base.fromClause(),
+            base.selections(),
+            new BooleanPredicate(false),
+            List.of(),
+            null,
+            List.of(),
+            base.parameterSources(),
+            base.parameterReferences(),
+            base.parameterSlots(),
+            base.parameters(),
+            original);
+
+    QueryValidationException failure =
+        assertThrows(
+            QueryValidationException.class,
+            () ->
+                compiler.compileCount(
+                    SelectedResult.entity(TABLE),
+                    pruned,
+                    false,
+                    arguments(pruned),
+                    null,
+                    StatementPurpose.PAGE_COUNT));
+
+    assertEquals(SkisErrorCode.QUERY_AGGREGATE_CONTRACT, failure.code());
+    assertEquals(
+        QuerySemanticReason.AGGREGATE_IN_CLAUSE, failure.diagnostics().querySemantics().reason());
+    assertEquals("WHERE", failure.diagnostics().query().clause());
+    assertNull(failure.getCause());
   }
 
   @Test

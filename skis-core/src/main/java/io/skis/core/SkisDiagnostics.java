@@ -18,6 +18,7 @@ public final class SkisDiagnostics {
 
   private final SkisDiagnosticStage stage;
   private final @Nullable QueryLocation query;
+  private final @Nullable QuerySemantics querySemantics;
   private final @Nullable Dialect dialect;
   private final @Nullable Execution execution;
   private final @Nullable Driver driver;
@@ -26,12 +27,14 @@ public final class SkisDiagnostics {
   private SkisDiagnostics(
       SkisDiagnosticStage stage,
       @Nullable QueryLocation query,
+      @Nullable QuerySemantics querySemantics,
       @Nullable Dialect dialect,
       @Nullable Execution execution,
       @Nullable Driver driver,
       @Nullable Facts facts) {
     this.stage = Objects.requireNonNull(stage, "stage");
     this.query = query;
+    this.querySemantics = querySemantics;
     this.dialect = dialect;
     this.execution = execution;
     this.driver = driver;
@@ -40,12 +43,13 @@ public final class SkisDiagnostics {
 
   /** Creates diagnostics containing only the detection stage. */
   public static SkisDiagnostics of(SkisDiagnosticStage stage) {
-    return new SkisDiagnostics(stage, null, null, null, null, null);
+    return new SkisDiagnostics(stage, null, null, null, null, null, null);
   }
 
   /** Creates diagnostics with a safe structural detail. */
   public static SkisDiagnostics of(SkisDiagnosticStage stage, String detail) {
-    return new SkisDiagnostics(stage, null, null, null, null, new Facts(null, null, null, detail));
+    return new SkisDiagnostics(
+        stage, null, null, null, null, null, new Facts(null, null, null, detail));
   }
 
   /** Starts a diagnostics builder at the supplied stage. */
@@ -61,6 +65,11 @@ public final class SkisDiagnostics {
   /** Returns query location details, or {@code null} when the failure has no query location. */
   public @Nullable QueryLocation query() {
     return query;
+  }
+
+  /** Returns structured grouping or aggregate failure facts, absent on other failures. */
+  public @Nullable QuerySemantics querySemantics() {
+    return querySemantics;
   }
 
   /** Returns dialect details, or {@code null} when the failure has no dialect context. */
@@ -95,7 +104,7 @@ public final class SkisDiagnostics {
         facts == null
             ? new Facts(null, null, null, detail)
             : new Facts(facts.expectedType(), facts.actualType(), facts.observedCount(), detail);
-    return new SkisDiagnostics(stage, query, dialect, execution, driver, merged);
+    return new SkisDiagnostics(stage, query, querySemantics, dialect, execution, driver, merged);
   }
 
   /**
@@ -112,6 +121,18 @@ public final class SkisDiagnostics {
       append(text, "sourceIndex", query.sourceIndex());
       append(text, "sourceAlias", query.sourceAlias());
       append(text, "expressionPath", query.expressionPath());
+    }
+    if (querySemantics != null) {
+      append(text, "semanticReason", querySemantics.reason());
+      append(text, "aggregateKind", querySemantics.aggregateKind());
+      append(text, "aggregateBlock", querySemantics.aggregateBlockPath());
+      QueryLocation missing = querySemantics.missingDependency();
+      if (missing != null) {
+        append(text, "missingDependencyBlock", missing.blockPath());
+        append(text, "missingDependencySource", missing.sourceIndex());
+      }
+      append(text, "missingPropertyOrdinal", querySemantics.missingPropertyOrdinal());
+      append(text, "missingOutputOrdinal", querySemantics.missingOutputOrdinal());
     }
     if (dialect != null) {
       append(text, "dialect", dialect.dialectId());
@@ -154,6 +175,7 @@ public final class SkisDiagnostics {
     }
     return stage == that.stage
         && Objects.equals(query, that.query)
+        && Objects.equals(querySemantics, that.querySemantics)
         && Objects.equals(dialect, that.dialect)
         && Objects.equals(execution, that.execution)
         && Objects.equals(driver, that.driver)
@@ -162,7 +184,7 @@ public final class SkisDiagnostics {
 
   @Override
   public int hashCode() {
-    return Objects.hash(stage, query, dialect, execution, driver, facts);
+    return Objects.hash(stage, query, querySemantics, dialect, execution, driver, facts);
   }
 
   @Override
@@ -198,6 +220,74 @@ public final class SkisDiagnostics {
         throw new IllegalArgumentException("a query location requires at least one fact");
       }
       requireNonNegative(sourceIndex, "sourceIndex");
+    }
+  }
+
+  /** Stable causes of a grouped-query or aggregate-ownership failure. */
+  public enum QuerySemanticReason {
+    /** A grouped output depends on a column not covered by grouping or its owning aggregate. */
+    NON_GROUPED_DEPENDENCY,
+    /** Two declared grouping keys resolve to the same structure. */
+    DUPLICATE_GROUP_KEY,
+    /** A grouping key contains a prohibited reference or subquery. */
+    INVALID_GROUP_KEY,
+    /** An aggregate is written in a row-level or grouping-key clause. */
+    AGGREGATE_IN_CLAUSE,
+    /** An aggregate input contains another aggregate in the same query block. */
+    NESTED_AGGREGATE,
+    /** An aggregate has ancestor column inputs without any column from its writing block. */
+    OUTER_ONLY_AGGREGATE;
+
+    boolean isAggregate() {
+      return switch (this) {
+        case NON_GROUPED_DEPENDENCY, DUPLICATE_GROUP_KEY, INVALID_GROUP_KEY -> false;
+        case AGGREGATE_IN_CLAUSE, NESTED_AGGREGATE, OUTER_ONLY_AGGREGATE -> true;
+      };
+    }
+  }
+
+  /** Value-free facts about one grouping or aggregate failure. */
+  public record QuerySemantics(
+      QuerySemanticReason reason,
+      @Nullable String aggregateKind,
+      @Nullable String aggregateBlockPath,
+      @Nullable QueryLocation missingDependency,
+      @Nullable Integer missingPropertyOrdinal,
+      @Nullable Integer missingOutputOrdinal) {
+
+    /** Requires the structural facts appropriate to the selected reason. */
+    public QuerySemantics {
+      Objects.requireNonNull(reason, "reason");
+      if (reason.isAggregate()) {
+        if (aggregateKind == null
+            || !(aggregateKind.equals("COUNT")
+                || aggregateKind.equals("SUM")
+                || aggregateKind.equals("AVG")
+                || aggregateKind.equals("MIN")
+                || aggregateKind.equals("MAX"))
+            || aggregateBlockPath == null
+            || aggregateBlockPath.isBlank()) {
+          throw new IllegalArgumentException("aggregate semantics require a known kind and block");
+        }
+      } else if (aggregateKind != null || aggregateBlockPath != null) {
+        throw new IllegalArgumentException("grouping reasons do not describe aggregate ownership");
+      }
+      requireNonNegative(missingPropertyOrdinal, "missingPropertyOrdinal");
+      requireNonNegative(missingOutputOrdinal, "missingOutputOrdinal");
+      if (reason == QuerySemanticReason.NON_GROUPED_DEPENDENCY) {
+        if (missingDependency == null
+            || missingDependency.blockPath() == null
+            || missingDependency.blockPath().isBlank()
+            || missingDependency.sourceIndex() == null
+            || (missingPropertyOrdinal == null) == (missingOutputOrdinal == null)) {
+          throw new IllegalArgumentException(
+              "a non-grouped dependency requires a block, source, and one column ordinal");
+        }
+      } else if (missingDependency != null
+          || missingPropertyOrdinal != null
+          || missingOutputOrdinal != null) {
+        throw new IllegalArgumentException("this semantic reason has no missing column dependency");
+      }
     }
   }
 
@@ -287,6 +377,7 @@ public final class SkisDiagnostics {
     private @Nullable Integer sourceIndex;
     private @Nullable String sourceAlias;
     private @Nullable String expressionPath;
+    private @Nullable QuerySemantics querySemantics;
     private @Nullable String dialectId;
     private @Nullable String productName;
     private @Nullable String productVersion;
@@ -335,6 +426,12 @@ public final class SkisDiagnostics {
     /** Sets a structural expression path. */
     public Builder expressionPath(String expressionPath) {
       this.expressionPath = expressionPath;
+      return this;
+    }
+
+    /** Sets the immutable grouping or aggregate failure facts. */
+    public Builder querySemantics(QuerySemantics querySemantics) {
+      this.querySemantics = Objects.requireNonNull(querySemantics, "querySemantics");
       return this;
     }
 
@@ -430,7 +527,7 @@ public final class SkisDiagnostics {
       Execution execution = execution();
       Driver driver = driver();
       Facts facts = facts();
-      return new SkisDiagnostics(stage, query, dialect, execution, driver, facts);
+      return new SkisDiagnostics(stage, query, querySemantics, dialect, execution, driver, facts);
     }
 
     private @Nullable QueryLocation queryLocation() {

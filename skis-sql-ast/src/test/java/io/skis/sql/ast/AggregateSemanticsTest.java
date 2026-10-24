@@ -504,12 +504,17 @@ class AggregateSemanticsTest {
   }
 
   @Test
-  void localStatementTraversalAcceptsStructureButCompleteCompilationStaysClosed() {
+  void completeAnalysisAcceptsSelectAggregatesButMutationsStayClosed() {
     TestTable table = new TestTable();
     AggregateExpression<Long> aggregate = AggregateExpression.sumAsLong(table.id);
     SelectStatement statement = new SelectStatement(List.of(aggregate), table);
     assertSame(aggregate, statement.selections().getFirst());
-    assertThrows(IllegalArgumentException.class, () -> SemanticValidator.analyzeComplete(statement));
+    assertEquals(
+        Nullability.NULLABLE,
+        SemanticValidator.analyzeComplete(statement)
+            .expressions()
+            .getFirst()
+            .effectiveNullability());
     ParameterSlot<Long> limit = new ParameterSlot<>(0, Long.class, false);
     SqlPredicate comparison =
         new ComparisonPredicate<>(aggregate, ComparisonOperator.GREATER_THAN, limit);

@@ -223,6 +223,16 @@ public enum SkisErrorCode {
       SkisErrorFamily.QUERY,
       SkisDiagnosticStage.SEMANTIC_VALIDATION,
       "query operation requires primary-key or version metadata that is absent"),
+  QUERY_GROUPING_CONTRACT(
+      "SKISQ031",
+      SkisErrorFamily.QUERY,
+      SkisDiagnosticStage.SEMANTIC_VALIDATION,
+      "grouping keys or grouped expressions violate the query semantics"),
+  QUERY_AGGREGATE_CONTRACT(
+      "SKISQ032",
+      SkisErrorFamily.QUERY,
+      SkisDiagnosticStage.SEMANTIC_VALIDATION,
+      "aggregate clause, nesting, or query-block ownership is invalid"),
 
   // SKISD: dialect capability, rendering, lowering, and structural conversion.
   DIALECT_FEATURE_UNSUPPORTED(
