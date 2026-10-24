@@ -153,7 +153,7 @@ abstract class AbstractSkisAggregateContractTest {
             }
           }
           var outer = new SelectStatement(List.of(AggregateExpression.countAll(),
-              new ScalarSubqueryExpression<>(query)), table);
+              new ScalarSubqueryExpression<>(query)), new NumberTable("o"));
           try (PreparedStatement statement = prepare(connection, outer); ResultSet rows = statement.executeQuery()) {
             assertTrue(rows.next());
             assertEquals(3, rows.getLong(1));
@@ -490,8 +490,7 @@ abstract class AbstractSkisAggregateContractTest {
         List<String> values = arguments.get(index);
         for (boolean empty : List.of(false, true)) {
           var query = new SelectStatement(false, List.of(key, AggregateExpression.countAll()), List.of(),
-              table, new BooleanPredicate(!empty), List.of(key), null,
-              List.of(new OrderByItem(key, OrderDirection.ASC, NullOrder.LAST)), null);
+              table, new BooleanPredicate(!empty), List.of(key), null, List.of(), null);
           assertEquals(values.size(), SqlCompiler.compile(query, dialect()).parameterCount());
           try (PreparedStatement statement = prepare(connection, query, values.toArray());
               ResultSet rows = statement.executeQuery()) {
@@ -685,15 +684,27 @@ abstract class AbstractSkisAggregateContractTest {
       NumberTable table = new NumberTable("n");
       for (double value : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
         var parameter = new ParameterSlot<>(0, Double.class, false);
-        SelectStatement query = new SelectStatement(List.of(AggregateExpression.sumAsDouble(parameter), AggregateExpression.avgAsDouble(parameter)), table,
-            table.id.eq(LiteralExpression.one(Long.class)));
-        try (PreparedStatement statement = prepare(connection, query, value); ResultSet rows = statement.executeQuery()) {
-          assertTrue(rows.next());
-          for (int column = 1; column <= 2; column++) {
-            if (Double.isNaN(value)) {
-              assertTrue(Double.isNaN(rows.getDouble(column)));
-            } else {
-              assertEquals(value, rows.getDouble(column));
+        for (boolean average : List.of(false, true)) {
+          var aggregate = average ? AggregateExpression.avgAsDouble(parameter)
+              : AggregateExpression.sumAsDouble(parameter);
+          SelectStatement query = new SelectStatement(List.of(aggregate), table,
+              table.id.eq(LiteralExpression.one(Long.class)));
+          try (PreparedStatement statement = prepare(connection, query, value)) {
+            // H2 accumulates AVG(DOUBLE) through BigDecimal, which cannot represent NaN or Infinity.
+            if (average && dialect().id().equals("h2")) {
+              SQLException failure = assertThrows(SQLException.class, () -> {
+                try (ResultSet rows = statement.executeQuery()) { while (rows.next()) { rows.getDouble(1); } }
+              });
+              assertEquals("22018", failure.getSQLState());
+              continue;
+            }
+            try (ResultSet rows = statement.executeQuery()) {
+              assertTrue(rows.next());
+              if (Double.isNaN(value)) {
+                assertTrue(Double.isNaN(rows.getDouble(1)));
+              } else {
+                assertEquals(value, rows.getDouble(1));
+              }
             }
           }
         }

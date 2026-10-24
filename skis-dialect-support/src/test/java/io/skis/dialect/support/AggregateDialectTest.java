@@ -122,7 +122,8 @@ class AggregateDialectTest {
           AggregateExpression.sumAsLong(table.category))) {
         var query = new SelectStatement(true, List.of(output), List.of(), table, null, List.of(), null,
             List.of(new OrderByItem(output, OrderDirection.ASC, NullOrder.LAST)), null);
-        var nested = new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)), table);
+        var nested = new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)),
+            new NumberTable("o"));
         for (SelectStatement statement : List.of(query, nested)) {
           SqlTemplate expected = SqlCompiler.compile(statement, identity);
           SqlTemplate actual = SqlCompiler.compile(statement, normalized);
@@ -150,7 +151,8 @@ class AggregateDialectTest {
         var query = grouped(table, List.of(AggregateExpression.countAll()), keys);
         assertEquivalentNormalization(query, id, eager);
         assertEquivalentNormalization(
-            new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)), table), id, eager);
+            new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)), new NumberTable("o")),
+            id, eager);
         var reference = new DerivedRelationReference(Identifier.of("d"), List.of(
             new DerivedOutputColumn(Identifier.of("total"), Long.class, SqlType.BIGINT,
                 Nullability.NON_NULL)));
@@ -184,7 +186,8 @@ class AggregateDialectTest {
           var query = new SelectStatement(List.of(empty), table);
           assertEquivalentNormalization(query, id, eager);
           assertEquivalentNormalization(
-              new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)), table), id, eager);
+              new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)), new NumberTable("o")),
+              id, eager);
           var grouped = new SelectStatement(false, List.of(AggregateExpression.countAll()), List.of(),
               table, new InPredicate<>(table.id, List.of(), negated), List.of(table.category),
               empty, List.of(), null);
@@ -328,7 +331,7 @@ class AggregateDialectTest {
         AggregateExpression.avgAsDouble(table.approximate)), table);
     var nested = new SelectStatement(List.of(new ScalarSubqueryExpression<>(exact),
         new ScalarSubqueryExpression<>(new SelectStatement(
-            List.of(AggregateExpression.avgAsDouble(table.approximate)), table))), table);
+            List.of(AggregateExpression.avgAsDouble(table.approximate)), table))), new NumberTable("o"));
     for (SelectStatement query : List.of(exact, approximate, nested)) {
       var analysis = SemanticValidator.analyzeComplete(query);
       assertFalse(analysis.requiresStandardExpressionLowering());
@@ -427,7 +430,7 @@ class AggregateDialectTest {
       var grouped = grouped(table, List.of(expression, AggregateExpression.countAll()),
           List.of(expression));
       for (SelectStatement query : List.of(selected, grouped,
-          new SelectStatement(List.of(new ScalarSubqueryExpression<>(selected)), table))) {
+          new SelectStatement(List.of(new ScalarSubqueryExpression<>(selected)), new NumberTable("o")))) {
         assertFalse(SemanticValidator.analyzeComplete(query).requiresStandardExpressionLowering());
         ResolvedStatement resolved = ResolvedStatement.analyze(query);
         assertSame(query, StandardSqlLowering.postgresql(allFeatures()).lower(resolved));
@@ -523,9 +526,9 @@ class AggregateDialectTest {
   void countPredicatesAndDistinctExpressionsProtectTheirNestedOutputs() {
     NumberTable table = new NumberTable("n");
     NumberTable inner = new NumberTable("i");
-    var minimum = new ScalarSubqueryExpression<>(
+    ScalarSubqueryExpression<Long> minimum = new ScalarSubqueryExpression<>(
         new SelectStatement(List.of(AggregateExpression.min(inner.id)), inner));
-    var maximum = new ScalarSubqueryExpression<>(
+    ScalarSubqueryExpression<Long> maximum = new ScalarSubqueryExpression<>(
         new SelectStatement(List.of(AggregateExpression.max(inner.id)), inner));
     var predicate = new CountAst(table, table.id.gt(minimum), null);
     assertRejected(predicate, input -> new CountAst(table, table.id.gt(maximum), null));
@@ -633,7 +636,9 @@ class AggregateDialectTest {
         SqlTemplate template = compile(id, query);
         assertTrue(template.sql().contains("CROSS JOIN (VALUES (CAST(? AS"), template.sql());
         assertEquals(expected, template.parameterLayout().slots());
-        var nested = new SelectStatement(List.of(new ScalarSubqueryExpression<>(query)), table);
+        var counted = grouped(table, List.of(AggregateExpression.countAll()), List.of(key));
+        var nested = new SelectStatement(List.of(new ScalarSubqueryExpression<>(counted)),
+            new NumberTable("o"));
         assertEquals(expected, compile(id, nested).parameterLayout().slots());
       }
     }
@@ -767,7 +772,7 @@ class AggregateDialectTest {
       enabled.remove(missing);
       FixtureDialect dialect = new FixtureDialect("postgresql", DialectCapabilities.of(enabled.toArray(DialectFeature[]::new)), DialectLowering.identity());
       SqlRenderException failure = assertThrows(SqlRenderException.class,
-          () -> SqlCompiler.compile(new SelectStatement(List.of(scalar), table), dialect));
+          () -> SqlCompiler.compile(new SelectStatement(List.of(scalar), new NumberTable("o")), dialect));
       assertEquals(missing.name(), failure.diagnostics().dialect().missingCapability());
       assertTrue(failure.getMessage().contains("query block"));
     }
@@ -810,8 +815,9 @@ class AggregateDialectTest {
   @Test
   void hiddenAndNestedOutputsCannotBeSilentlyChanged() {
     NumberTable table = new NumberTable("n");
+    NumberTable outer = new NumberTable("o");
     var scalar = new ScalarSubqueryExpression<>(new SelectStatement(List.of(table.id), table));
-    SelectStatement statement = new SelectStatement(List.of(scalar), table);
+    SelectStatement statement = new SelectStatement(List.of(scalar), outer);
     assertRejected(statement, input -> replaceSelections(statement,
         List.of(new ScalarSubqueryExpression<>(new SelectStatement(List.of(table.otherId), table)))));
     var hidden = new SelectStatement(false, List.of(table.id), List.of(new HiddenSelection(table.otherId, Identifier.of("h"))),
