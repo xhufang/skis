@@ -472,6 +472,10 @@ class AggregateGroupingTest {
     SqlPredicate safe =
         new ExistsPredicate(
             new SelectStatement(List.of(inner.id), inner, inner.category.eq(outer.id)), false);
+    CaseExpression<Integer> safeOrder =
+        new CaseExpression<>(
+            List.of(new CaseWhen<>(safe, LiteralExpression.one(Integer.class))),
+            LiteralExpression.zero(Integer.class));
     valid(
         statement(
             FromClause.of(outer),
@@ -479,11 +483,15 @@ class AggregateGroupingTest {
             List.of(outer.id),
             null,
             safe,
-            List.of(order(safe)),
+            List.of(order(safeOrder)),
             List.of()));
     SqlPredicate unsafe =
         new ExistsPredicate(
             new SelectStatement(List.of(inner.id), inner, inner.category.eq(outer.amount)), false);
+    CaseExpression<Integer> unsafeOrder =
+        new CaseExpression<>(
+            List.of(new CaseWhen<>(unsafe, LiteralExpression.one(Integer.class))),
+            LiteralExpression.zero(Integer.class));
     grouping(
         statement(
             FromClause.of(outer),
@@ -495,17 +503,21 @@ class AggregateGroupingTest {
             List.of()),
         QuerySemanticReason.NON_GROUPED_DEPENDENCY,
         QueryClause.HAVING);
-    grouping(
-        statement(
-            FromClause.of(outer),
-            List.of(outer.id),
-            List.of(outer.id),
-            null,
-            null,
-            List.of(order(unsafe)),
-            List.of()),
-        QuerySemanticReason.NON_GROUPED_DEPENDENCY,
-        QueryClause.ORDER_BY);
+    QueryValidationException failure =
+        grouping(
+            statement(
+                FromClause.of(outer),
+                List.of(outer.id),
+                List.of(outer.id),
+                null,
+                null,
+                List.of(order(unsafeOrder)),
+                List.of()),
+            QuerySemanticReason.NON_GROUPED_DEPENDENCY,
+            QueryClause.ORDER_BY);
+    assertEquals(AMOUNT.ordinal(), failure.diagnostics().querySemantics().missingPropertyOrdinal());
+    assertEquals(
+        "$ ORDER BY item #0 operand #0", failure.diagnostics().query().expressionPath());
   }
 
   @Test
