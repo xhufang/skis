@@ -339,7 +339,10 @@ class NullnessCompilationTest {
           return operations.select(Sql.sumAsLong(number)).from(table).fetchList().getFirst().longValue();
         }
         """);
-    reject("aggregate-null-value", "static void invalid() { Sql.value((@Nullable String) null); }");
+    reject("aggregate-null-value", "static void invalid() { Sql.value((String) null); }");
+    reject("aggregate-nullable-value", """
+        static void invalid(@Nullable String value) { Sql.value(value); }
+        """);
   }
 
   private void reject(String id, String body) throws Exception {
