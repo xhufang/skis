@@ -230,7 +230,7 @@ final class SelectQueryState<R extends @Nullable Object> {
           SkisErrorCode.QUERY_GROUP_BY_CONTRACT, "GROUP BY requires a nonempty expression array");
     }
     List<Selectable<?>> items = new ArrayList<>(expressions.length);
-    for (@Nullable Selectable<?> expression : expressions) {
+    for (Selectable<?> expression : expressions) {
       if (expression == null) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_GROUP_BY_CONTRACT, "GROUP BY expression must not be null");

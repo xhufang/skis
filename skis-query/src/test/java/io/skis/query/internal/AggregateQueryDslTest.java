@@ -317,9 +317,11 @@ class AggregateQueryDslTest {
 
     SampleTable other = TABLE.as("other");
     QueryCondition conflicting = column.and(view.isNotNull()).and(other.id().eq(parameter));
-    assertCode(SkisErrorCode.QUERY_PARAMETER_LAYOUT, () -> QueryModels.description(
-        Sql.select(TABLE.id()).from(TABLE).where(conflicting))
-        .state().structure());
+    QueryValidationException failure = assertThrows(QueryValidationException.class,
+        () -> QueryModels.description(Sql.select(TABLE.id()).from(TABLE).where(conflicting))
+            .state().structure());
+    assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT, failure.code());
+    assertEquals(SkisDiagnosticStage.COMPILATION, failure.diagnostics().stage());
   }
 
   @Test
@@ -465,15 +467,15 @@ class AggregateQueryDslTest {
   @Test
   void groupingConstructionErrorsAndResolvedSemanticErrorsKeepSeparateCodes() {
     SingleColumnSelect<Integer> base = Sql.select(TABLE.id()).from(TABLE);
-    assertCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> base.groupBy());
-    assertCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> base.groupBy((Selectable<?>[]) null));
-    assertCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> base.groupBy((Selectable<?>) null));
+    assertConstructionCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> base.groupBy());
+    assertConstructionCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> base.groupBy((Selectable<?>[]) null));
+    assertConstructionCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> base.groupBy((Selectable<?>) null));
     SingleColumnSelect<Integer> grouped = base.groupBy(TABLE.id());
-    assertCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> grouped.groupBy(TABLE.id()));
-    assertCode(SkisErrorCode.QUERY_HAVING_CONTRACT, () -> base.having(null));
-    assertCode(SkisErrorCode.QUERY_HAVING_CONTRACT, () -> base.andHaving(TABLE.id().isNotNull()));
-    assertCode(SkisErrorCode.QUERY_HAVING_CONTRACT, () -> base.orHaving(TABLE.id().isNotNull()));
-    assertCode(SkisErrorCode.QUERY_HAVING_CONTRACT,
+    assertConstructionCode(SkisErrorCode.QUERY_GROUP_BY_CONTRACT, () -> grouped.groupBy(TABLE.id()));
+    assertConstructionCode(SkisErrorCode.QUERY_HAVING_CONTRACT, () -> base.having(null));
+    assertConstructionCode(SkisErrorCode.QUERY_HAVING_CONTRACT, () -> base.andHaving(TABLE.id().isNotNull()));
+    assertConstructionCode(SkisErrorCode.QUERY_HAVING_CONTRACT, () -> base.orHaving(TABLE.id().isNotNull()));
+    assertConstructionCode(SkisErrorCode.QUERY_HAVING_CONTRACT,
         () -> base.having(TABLE.id().isNotNull()).having(TABLE.id().isNull()));
     Selectable<?>[] keys = {TABLE.id()};
     SingleColumnSelect<Integer> copied = base.groupBy(keys);
@@ -530,7 +532,7 @@ class AggregateQueryDslTest {
     assertFalse(failure.getMessage().contains("sensitive-sentinel"));
   }
 
-  private static void assertCode(SkisErrorCode code, Runnable action) {
+  private static void assertConstructionCode(SkisErrorCode code, Runnable action) {
     QueryValidationException failure = assertThrows(QueryValidationException.class, action::run);
     assertEquals(code, failure.code());
     assertEquals(SkisDiagnosticStage.QUERY_CONSTRUCTION, failure.diagnostics().stage());
