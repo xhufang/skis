@@ -4,7 +4,6 @@ import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.CaseExpression;
-import io.skis.sql.ast.CaseWhen;
 import io.skis.sql.ast.CastExpression;
 import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ComparisonPredicate;
@@ -48,7 +47,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
@@ -376,14 +374,13 @@ final class AggregateLowering {
     if (expression instanceof ConcatExpression) {
       return false;
     }
-    if (expression
-        instanceof
-        CaseExpression<?>(List<CaseWhen<?>> branches, Optional<SqlExpression<?>> otherwise)) {
-      for (var branch : branches) {
+    if (expression instanceof CaseExpression<?> conditional) {
+      for (var branch : conditional.branches()) {
         if (inferableValue(branch.result())) {
           return false;
         }
       }
+      var otherwise = conditional.otherwise();
       return otherwise.isEmpty() || !inferableValue(otherwise.orElseThrow());
     }
     if (expression instanceof ComparisonPredicate<?>

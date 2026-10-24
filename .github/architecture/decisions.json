@@ -218,6 +218,16 @@
           "kind": "java",
           "path": "skis-dialect-support/src/main/java/io/skis/dialect/support/StandardSqlLowering.java",
           "type": "io.skis.dialect.support.StandardSqlLowering"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregateH2ContractTest.java",
+          "type": "io.skis.integration.SkisAggregateH2ContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregatePostgreSqlContractTest.java",
+          "type": "io.skis.integration.SkisAggregatePostgreSqlContractTest"
         }
       ],
       "contracts": [
@@ -246,13 +256,8 @@
         },
         {
           "kind": "java",
-          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregateH2ContractTest.java",
-          "type": "io.skis.integration.SkisAggregateH2ContractTest"
-        },
-        {
-          "kind": "java",
-          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregatePostgreSqlContractTest.java",
-          "type": "io.skis.integration.SkisAggregatePostgreSqlContractTest"
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
+          "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
       ]
     },
@@ -1010,6 +1015,16 @@
           "kind": "java",
           "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/DecimalPrecision.java",
           "type": "io.skis.sql.ast.DecimalPrecision"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregateH2ContractTest.java",
+          "type": "io.skis.integration.SkisAggregateH2ContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregatePostgreSqlContractTest.java",
+          "type": "io.skis.integration.SkisAggregatePostgreSqlContractTest"
         }
       ],
       "contracts": [
@@ -1060,13 +1075,8 @@
         },
         {
           "kind": "java",
-          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregateH2ContractTest.java",
-          "type": "io.skis.integration.SkisAggregateH2ContractTest"
-        },
-        {
-          "kind": "java",
-          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisAggregatePostgreSqlContractTest.java",
-          "type": "io.skis.integration.SkisAggregatePostgreSqlContractTest"
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
+          "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
       ]
     }
