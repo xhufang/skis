@@ -10,6 +10,42 @@ T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
 
 
+## PR #89：结果身份与分页覆盖率抬线（登记后待 CI 认证）
+
+[CI 40197870071 的权威作业](https://github.com/xhufang/skis/actions/runs/40197870071/job/121182551488?pr=89)
+已通过 Java 21 完整构建、85 个必需回归套件、覆盖采集及两项证据上传。
+上轮三个续页参数测试已通过；Java 25、PostgreSQL 外部 URL/容器、独立消费者及 Gradle 作业均通过。
+唯一原始失败为 skis-sql-ast 覆盖率应抬未抬，Java 21 单元/集成名称转发该权威失败。
+完整候选的 15 个模块均无覆盖率回退。
+
+PR head 为 `33869f4880a3c9182a7f5daa64d4fe0b8e7fa17d`，实际测试合并提交为
+`be7f4b40d02e9da7c8fa7d1cd398b2bf9fbb4472`，比较 base 为
+`707874d564610e4dcf266321e579fa5c5e6f0dbc`。已核对工件归属、七项采集输入 blob ID、
+提交内 policy/baseline 字节摘要、可信 comparison 基线、15 模块 XML 哈希、分支计数与类清单，以及 HTML 报告存在性。
+
+[工件 12600204891](https://github.com/xhufang/skis/actions/runs/40197870071/artifacts/12600204891)
+为 `branch-coverage-java-21-40197870071-1`，归档 SHA-256 为
+`525f546aae29184627e9129bd8bdd65bd8203a880dd16b63f8b154aace142c93`。
+原样采用完整真实候选，提升以下四项门槛；其余 11 行、首次登记、统计口径及口径历史与当前基线一致。
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-sql-ast | 81.34% | 1498/314 | 103 | 82.67% |
+| skis-dialect-api | 80.55% | 1107/261 | 39 | 80.92% |
+| skis-dialect-support | 89.07% | 263/30 | 8 | 89.76% |
+| skis-query | 76.11% | 1885/536 | 186 | 77.86% |
+
+对应 XML SHA-256：
+
+- skis-sql-ast：`567b56c83c758f485b44eff3d050b2de7016416b628008e689d71754b20499b9`。
+- skis-dialect-api：`4fea202e5565cc3d68add8c1a86c3c1d9599ac432e954e93825d0bdafaf31aaf`。
+- skis-dialect-support：`ce3c23138a73d140339518b7658e27d066a316b443de7594fa1446bee873fda4`。
+- skis-query：`8a9282f8d0c9dc294d339b8829a806fda86bd16e30260f58e3d2fc986d87e344`。
+
+本轮只登记候选并同步已有验证记录，未修改生产代码或测试，未本地编译运行。
+新登记来源认证及完整工程门禁待下一次 CI，T07 保持已实现/待 CI。
+工件保存在本地 `target/ci-40197870071-review/`。
+
 ## PR #88：聚合输入映射覆盖率抬线与补证（登记后待 CI 认证）
 
 ### CI 40167945334：回退补证通过，登记完整候选
