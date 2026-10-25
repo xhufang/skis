@@ -116,8 +116,9 @@ abstract class AbstractSkisAggregateContractTest {
       var ceiling = Sql.parameter(Long.class, "ceiling");
       var scalar = Sql.scalar(Sql.select(inner.id()).from(inner)
           .where(inner.id().eq(table.id())).and(inner.id().lt(ceiling)));
-      var query = executor(source, connection).select(scalar).from(table).distinct()
-          .orderBy(scalar.asc()).bind(ceiling, 10L);
+      var template = executor(source, connection).select(scalar).from(table).distinct()
+          .orderBy(scalar.asc());
+      var query = template.bind(ceiling, 10L);
       assertEquals(List.of(1L, 2L, 3L), query.fetchList());
       var page = query.fetchPage(PageRequest.page(1, 1));
       assertEquals(List.of(2L), page.items());
@@ -126,8 +127,11 @@ abstract class AbstractSkisAggregateContractTest {
       var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
       assertEquals(List.of(1L), first.items());
       assertEquals(List.of(2L), second.items());
+      assertEquals(second.items(), template.bind(ceiling, 10L)
+          .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
+      var changed = template.bind(ceiling, 20L);
       assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
-          assertThrows(QueryValidationException.class, () -> query.bind(ceiling, 20L)
+          assertThrows(QueryValidationException.class, () -> changed
               .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
     }
   }
@@ -155,8 +159,9 @@ abstract class AbstractSkisAggregateContractTest {
             "repeated_values", firstOutput, secondOutput);
         var firstValue = relation.column(firstOutput);
         var secondValue = relation.column(secondOutput);
-        var query = executor.select(secondValue).from(relation)
-            .orderBy(secondValue.asc().nullsFirst()).bind(ceiling, 10L);
+        var template = executor.select(secondValue).from(relation)
+            .orderBy(secondValue.asc().nullsFirst());
+        var query = template.bind(ceiling, 10L);
         var page = query.fetchPage(PageRequest.page(1, 1));
         assertEquals(List.of(2L), page.items());
         assertEquals(3, page.totalElements());
@@ -166,8 +171,11 @@ abstract class AbstractSkisAggregateContractTest {
         var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
         assertEquals(List.of(1L), first.items());
         assertEquals(List.of(2L), second.items());
+        assertEquals(second.items(), template.bind(ceiling, 10L)
+            .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
+        var changed = template.bind(ceiling, 20L);
         assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
-            assertThrows(QueryValidationException.class, () -> query.bind(ceiling, 20L)
+            assertThrows(QueryValidationException.class, () -> changed
                 .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
         var output = Sql.output(secondValue, "value");
         var outer = Sql.derived(Sql.select(secondValue).from(relation), "reexported_values", output);
@@ -427,15 +435,19 @@ abstract class AbstractSkisAggregateContractTest {
       var table = AggregateSampleTable.aggregateSampleTable;
       var shift = Sql.parameter(Integer.class, "shift");
       var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(shift));
-      var query = executor.select(key).from(table).groupBy(key).orderBy(key.asc()).bind(shift, 10);
+      var template = executor.select(key).from(table).groupBy(key).orderBy(key.asc());
+      var query = template.bind(shift, 10);
       var expected = query.fetchList();
       var first = query.fetchSlice(SliceRequest.offset(0, 1));
       var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
       var third = query.fetchSlice(SliceRequest.resume(second.nextContinuation().orElseThrow(), 1));
       assertEquals(expected, List.of(first.items().getFirst(), second.items().getFirst(), third.items().getFirst()));
       assertFalse(third.hasNext());
+      assertEquals(second.items(), template.bind(shift, 10)
+          .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
+      var changed = template.bind(shift, 20);
       assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
-          assertThrows(QueryValidationException.class, () -> query.bind(shift, 20)
+          assertThrows(QueryValidationException.class, () -> changed
               .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
       assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
           assertThrows(QueryValidationException.class,
