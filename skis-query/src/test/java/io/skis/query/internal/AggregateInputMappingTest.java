@@ -33,11 +33,11 @@ import io.skis.metadata.TableMeta;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
+import io.skis.query.SelectQuery;
 import io.skis.query.SliceRequest;
-import io.skis.query.Sql;
 import io.skis.query.spi.ProjectionMapping;
+import io.skis.query.Sql;
 import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
@@ -50,13 +50,13 @@ import java.math.BigInteger;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.Test;
 
 /** Actual mapping identity and result-reading contracts; compilation must never acquire JDBC. */
 class AggregateInputMappingTest {
@@ -487,11 +487,11 @@ class AggregateInputMappingTest {
   }
 
   @Test
-  void expressionAggregateAndDerivedOrderingRemainUnsupportedForSlices() {
+  void expressionAggregateAndDerivedOrderingRemainUnsupportedForKeysetSlices() {
     var operations = operations(false);
     var output = Sql.output(TABLE.id, "id");
     var derived = Sql.derived(Sql.select(TABLE.id).from(TABLE), "keyset_rows", output);
-    for (SliceRequest request : List.of(SliceRequest.offset(0, 2), SliceRequest.keysetFirst(2))) {
+    for (SliceRequest request : List.of(SliceRequest.keysetFirst(2))) {
       for (Selectable<?> ordered : List.of(Sql.add(TABLE.id, Sql.value(1L)), Sql.countAll())) {
         assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
             assertThrows(QueryValidationException.class, () -> operations.select(TABLE.id).from(TABLE)

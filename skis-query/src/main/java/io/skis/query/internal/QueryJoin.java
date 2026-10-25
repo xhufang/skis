@@ -15,6 +15,7 @@ import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -54,7 +55,8 @@ final class QueryStructureCompiler {
     StatementParameterLayout layout = new StatementParameterLayout(retainOriginalExpressions);
     QueryParameterBindings bindings = new QueryParameterBindings();
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
-    List<SqlExpression<?>> selections = state.selected().compileExpressions(compiler);
+    List<SqlExpression<?>> selections =
+        state.selected().compileExpressions(compiler, state.distinct());
     CompiledBlock block =
         compileBlock(
             state.root(), state.joins(), state.where(), state.groupBy(), state.having(), compiler);
@@ -70,13 +72,61 @@ final class QueryStructureCompiler {
     StatementParameterLayout layout = new StatementParameterLayout(false);
     QueryParameterBindings bindings = new QueryParameterBindings();
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
+    boolean grouped = !state.groupBy().isEmpty() || state.having() != null;
+    boolean orderingWitness = false;
+    if (!grouped) {
+      grouped = state.selected().hasLocalAggregate();
+      if (!grouped) {
+        orderingWitness = hasOrderingAggregate(state.orderBy());
+        grouped = orderingWitness;
+      }
+    }
+    boolean wrapped =
+        grouped
+            || (state.distinct()
+                && state.selected().requiresWrappedDistinctCount(!state.joins().isEmpty()));
     List<SqlExpression<?>> selections =
-        state.distinct() ? state.selected().compileExpressions(compiler) : List.of();
+        state.distinct() || wrapped
+            ? state.selected().compileExpressions(compiler, state.distinct())
+            : List.of();
     CompiledBlock block =
         compileBlock(
             state.root(), state.joins(), state.where(), state.groupBy(), state.having(), compiler);
-    return complete(selections, block, List.of(), layout, bindings)
+    // ORDER BY can be the only aggregate witness. Preserve that row-producing semantics.
+    List<OrderByItem> ordering =
+        orderingWitness ? compileOrderBy(state, selections, compiler) : List.of();
+    return complete(selections, block, ordering, layout, bindings)
         .withValidationSource(state.structure().validationStructure());
+  }
+
+  static boolean hasAggregate(List<Selectable<?>> selections) {
+    IdentityHashMap<Object, Boolean> visited = null;
+    for (Selectable<?> selectable : selections) {
+      if (selectable instanceof ExpressionSelectable<?> expression) {
+        if (visited == null) {
+          visited = new IdentityHashMap<>();
+        }
+        if (expression.localAggregate(visited) != null) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasOrderingAggregate(List<SortSpecification> ordering) {
+    IdentityHashMap<Object, Boolean> visited = null;
+    for (SortSpecification order : ordering) {
+      if (QueryModels.selectable(order) instanceof ExpressionSelectable<?> expression) {
+        if (visited == null) {
+          visited = new IdentityHashMap<>();
+        }
+        if (expression.localAggregate(visited) != null) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   static SelectStatement compileSubquery(
@@ -91,7 +141,8 @@ final class QueryStructureCompiler {
           "embedded SELECT descriptions do not yet support SQL pagination");
     }
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
-    List<SqlExpression<?>> selections = state.selected().compileExpressions(compiler);
+    List<SqlExpression<?>> selections =
+        state.selected().compileExpressions(compiler, state.distinct());
     CompiledBlock block =
         compileBlock(
             state.root(), state.joins(), state.where(), state.groupBy(), state.having(), compiler);

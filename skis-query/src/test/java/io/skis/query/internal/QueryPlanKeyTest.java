@@ -411,7 +411,8 @@ class QueryPlanKeyTest {
               pagination,
               QueryTestSupport.arguments(state.structure()).withPagination(pagination),
               null,
-              StatementPurpose.PRIMARY);
+              StatementPurpose.PRIMARY,
+              null);
       ResolvedStatement analysis = ResolvedStatement.analyze(query.ast());
       QueryPlanDependencies sources = QueryPlanDependencies.from(analysis);
       compiled.add(query);

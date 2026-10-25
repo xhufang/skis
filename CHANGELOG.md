@@ -14,6 +14,16 @@
 
 ### Added
 
+- 0.2.9 T07 实现最终结果身份证明、聚合/分组及派生来源的 offset Page/Slice，以及复杂查询的 AST 包装 count。
+  至多一行结果允许无序分页，DISTINCT 使用最终可见元组，非 DISTINCT 分组使用行相关分组键；
+  不静默追加排序，FULL JOIN 的全 NULL 身份需要可证明且显式排序的存在性分量。
+  offset continuation 支持解析后表达式排序签名；grouped/derived keyset 及非物理列 keyset 继续在 JDBC 前拒绝。
+  count 保留 GROUP BY/HAVING/DISTINCT、嵌套语义分页及仅 ORDER BY 触发的聚合行语义，独立布局参数且只读取外层 Long。
+  修复 DISTINCT 相关 scalar 排序因 occurrence 路径不同而误拒绝，以及 FULL JOIN 固定选择存在性输出的误拒绝；
+  保留完整原描述校验和逻辑参数身份，并将查询局部原解析阶段复用至 content/ordered/count 编译。
+  补齐分组后 DISTINCT 常量输出的至多一行证明，以及重复 scalar/标准包装输出跨派生层的排序和再次导出等价关系；独立参数仍分离。
+  修复外层 DISTINCT 丢失重复派生输出等价关系的误拒绝，支持任一原样别名排序和再次单别名导出；保留其它输出、独立参数及来源 occurrence 的覆盖检查。
+  补齐结构、SQL golden、分页/续页及 PG/H2 合同源码和必需套件登记；本地未编译运行，状态为已实现/待 CI。
 - 0.2.9 T06 接通聚合、标准表达式、参数视图及混合生成投影的内置结果 Codec，按最终 Java/SQL 类型装配按下标读取器。
   编译期递归检查受限聚合和标准表达式贡献值的实际内置 Codec 身份，保留直接自定义映射、纯分组、条件位置及普通 COUNT 的允许范围；
   原描述的 HAVING/ORDER BY、嵌套、隐藏选择及被裁剪的绑定来源不能绕过检查，输入拒绝统一为 QUERY_TYPE_MISMATCH。

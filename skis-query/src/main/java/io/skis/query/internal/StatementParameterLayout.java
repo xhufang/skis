@@ -19,7 +19,8 @@ import org.jspecify.annotations.Nullable;
  * <p>Nested-query traversal can create a fresh {@link QueryBlock} for every occurrence while
  * sharing this statement layout. Reusing one parameter inside a block then reuses its logical slot,
  * while embedding the same block twice can allocate distinct statement slots backed by the same
- * query-level reference.
+ * query-level reference. Identical repeated DISTINCT SELECT outputs share their compiled expression
+ * and slots; every output occurrence still undergoes complete scope and semantic analysis.
  *
  * <p>The first pass retains original expressions for validation. When it finds an empty-IN operand
  * or DISTINCT subquery-containing ordering that can reuse a selected output, a second pass lays out

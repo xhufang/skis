@@ -20,9 +20,14 @@ import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.GeneratedModelAbi;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.query.PageRequest;
+import io.skis.query.Selectable;
+import io.skis.query.SliceRequest;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.query.Sql;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
@@ -38,6 +43,11 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedOutputColumn;
+import io.skis.sql.ast.DerivedRelationReference;
+import io.skis.sql.ast.DerivedRelationSource;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
@@ -46,9 +56,10 @@ import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
-import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullOperator;
+import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
+import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
@@ -57,6 +68,7 @@ import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
+import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
 import io.skis.testmodel.pet.skis.AggregateIntegerResultPro;
 import io.skis.testmodel.pet.skis.AggregateSampleTable;
@@ -92,6 +104,494 @@ abstract class AbstractSkisAggregateContractTest {
   protected abstract DataSource createDataSource();
 
   protected abstract Dialect dialect();
+
+  @Test
+  void distinctCorrelatedScalarPagesAndOffsetContinuationsKeepLogicalParameters() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var inner = table.as("distinct_inner");
+      var ceiling = Sql.parameter(Long.class, "ceiling");
+      var scalar = Sql.scalar(Sql.select(inner.id()).from(inner)
+          .where(inner.id().eq(table.id())).and(inner.id().lt(ceiling)));
+      var query = executor(source, connection).select(scalar).from(table).distinct()
+          .orderBy(scalar.asc()).bind(ceiling, 10L);
+      assertEquals(List.of(1L, 2L, 3L), query.fetchList());
+      var page = query.fetchPage(PageRequest.page(1, 1));
+      assertEquals(List.of(2L), page.items());
+      assertEquals(3, page.totalElements());
+      var first = query.fetchSlice(SliceRequest.offset(0, 1));
+      var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
+      assertEquals(List.of(1L), first.items());
+      assertEquals(List.of(2L), second.items());
+      assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
+          assertThrows(QueryValidationException.class, () -> query.bind(ceiling, 20L)
+              .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
+    }
+  }
+
+  @Test
+  void repeatedDistinctScalarExportsKeepPagesContinuationsAndSingleAliasReexports() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var inner = table.as("repeated_inner");
+      var ceiling = Sql.parameter(Long.class, "ceiling");
+      var scalar = Sql.scalar(Sql.select(inner.id()).from(inner)
+          .where(inner.id().eq(table.id())).and(inner.id().lt(ceiling)));
+      var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, Object.class, "repeated-scalar",
+          List.of(new ProjectionMapping.Parameter(0, "first", Long.class, Nullability.NULLABLE, 0),
+              new ProjectionMapping.Parameter(1, "second", Long.class, Nullability.NULLABLE, 1)),
+          readers -> (rows, context) -> { throw new AssertionError("inner decoder executed"); });
+      for (Selectable<Long> expression : List.<Selectable<Long>>of(
+          scalar, Sql.cast(scalar, Long.class, SqlType.BIGINT))) {
+        var firstOutput = Sql.output(expression, "first_value");
+        var secondOutput = Sql.output(expression, "second_value");
+        var relation = Sql.derived(Sql.select(tuple.bind(expression, expression)).from(table).distinct(),
+            "repeated_values", firstOutput, secondOutput);
+        var firstValue = relation.column(firstOutput);
+        var secondValue = relation.column(secondOutput);
+        var query = executor.select(secondValue).from(relation)
+            .orderBy(secondValue.asc().nullsFirst()).bind(ceiling, 10L);
+        var page = query.fetchPage(PageRequest.page(1, 1));
+        assertEquals(List.of(2L), page.items());
+        assertEquals(3, page.totalElements());
+        assertEquals(List.of(1L), query.orderBy(firstValue.asc().nullsFirst())
+            .fetchPage(PageRequest.page(0, 1)).items());
+        var first = query.fetchSlice(SliceRequest.offset(0, 1));
+        var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
+        assertEquals(List.of(1L), first.items());
+        assertEquals(List.of(2L), second.items());
+        assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
+            assertThrows(QueryValidationException.class, () -> query.bind(ceiling, 20L)
+                .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
+        var output = Sql.output(secondValue, "value");
+        var outer = Sql.derived(Sql.select(secondValue).from(relation), "reexported_values", output);
+        var outerQuery = executor.select(outer.column(output)).from(outer)
+            .orderBy(outer.column(output).asc().nullsFirst()).bind(ceiling, 10L);
+        assertEquals(List.of(1L, 2L, 3L), outerQuery.fetchList());
+        assertEquals(3, outerQuery.fetchPage(PageRequest.page(0, 1)).totalElements());
+        assertEquals(List.of(2L), outerQuery.fetchSlice(SliceRequest.offset(1, 1)).items());
+      }
+    }
+  }
+
+  @Test
+  void countWrapperRetainsNestedOrderingAndPaginationWithItsOwnBindings() throws Exception {
+    try (Connection connection = createDataSource().getConnection()) {
+      createNumbers(connection);
+      var table = new NumberTable("nested_source");
+      var limit = new ParameterSlot<>(0, Integer.class, false);
+      var offset = new ParameterSlot<>(1, Long.class, false);
+      var nested = new SelectStatement(false, List.of(table.id), List.of(), table, null,
+          List.of(new OrderByItem(table.id, OrderDirection.ASC, NullOrder.DIALECT_DEFAULT)),
+          new OffsetLimit(limit, offset));
+      var nestedReference = new DerivedRelationReference(Identifier.of("limited"), List.of(
+          new DerivedOutputColumn(Identifier.of("id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL)));
+      var id = new DerivedColumnExpression<Long>(nestedReference, 0);
+      var grouped = new SelectStatement(false, List.of(id, AggregateExpression.countAll()), List.of(),
+          new FromClause(new DerivedRelationSource(nested, nestedReference), List.of()), null,
+          List.of(id), null, List.of(), null);
+      int expected = 0;
+      try (PreparedStatement statement = prepare(connection, grouped, 2, 1L);
+          ResultSet rows = statement.executeQuery()) {
+        while (rows.next()) {
+          expected++;
+        }
+      }
+      assertEquals(2, expected);
+      var result = new DerivedRelationReference(Identifier.of("final_rows"), List.of(
+          new DerivedOutputColumn(Identifier.of("id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL),
+          new DerivedOutputColumn(Identifier.of("count"), Long.class, SqlType.BIGINT, Nullability.NON_NULL)));
+      var count = new CountAst(new FromClause(new DerivedRelationSource(grouped, result), List.of()), null, null);
+      try (PreparedStatement statement = prepare(connection, count, 2, 1L);
+          ResultSet rows = statement.executeQuery()) {
+        assertTrue(rows.next());
+        assertEquals(expected, rows.getLong(1));
+        assertFalse(rows.next());
+      }
+    }
+  }
+
+  @Test
+  void multiColumnDistinctCountPreservesNullTuplesAndOnlyDecodesPageContent() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      try (var statement = connection.createStatement()) {
+        statement.executeUpdate("INSERT INTO \"aggregate_samples\" VALUES "
+            + "(4, 'B', NULL, NULL), (5, 'B', NULL, NULL)");
+      }
+      var decoded = new java.util.concurrent.atomic.AtomicInteger();
+      var mapping = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, CategoryNumber.class,
+          "category-number", List.of(
+              new ProjectionMapping.Parameter(0, "category", String.class, Nullability.NON_NULL, 0),
+              new ProjectionMapping.Parameter(1, "number", Integer.class, Nullability.NULLABLE, 1)),
+          readers -> (rows, context) -> {
+            decoded.incrementAndGet();
+            return new CategoryNumber(Objects.requireNonNull((String) readers.get(0).read(rows, context)),
+                (Integer) readers.get(1).read(rows, context));
+          });
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var query = executor(source, connection).select(mapping.bind(table.category(), table.number()))
+          .from(table).distinct().orderBy(table.category().asc(), table.number().asc().nullsFirst());
+      var expected = query.fetchList();
+      assertEquals(3, expected.size());
+      int before = decoded.get();
+      var page = query.fetchPage(PageRequest.page(0, 1));
+      assertEquals(expected.size(), page.totalElements());
+      assertEquals(before + page.items().size(), decoded.get());
+      assertEquals(expected.size(), query.fetchPage(PageRequest.page(0, 1), query.countQuery()).totalElements());
+    }
+  }
+
+  private record CategoryNumber(String category, @Nullable Integer number) {}
+
+  private record RepeatedNumber(@Nullable Integer first, @Nullable Integer second) {}
+
+  @Test
+  void wrappedCountFailureClosesContentStatementsAndPreservesReleaseFailure() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var prepared = new java.util.ArrayList<PreparedStatement>();
+      var releases = new java.util.concurrent.atomic.AtomicInteger();
+      SQLException countFailure = new SQLException("count failed", "42000");
+      SQLException releaseFailure = new SQLException("release failed", "08006");
+      Connection borrowed = (Connection) java.lang.reflect.Proxy.newProxyInstance(
+          getClass().getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, values) -> {
+            if (method.getName().equals("prepareStatement")
+                && ((String) values[0]).startsWith("SELECT COUNT(*) FROM (")) {
+              throw countFailure;
+            }
+            try {
+              Object result = method.invoke(connection, values);
+              if (result instanceof PreparedStatement statement) {
+                prepared.add(statement);
+              }
+              return result;
+            } catch (java.lang.reflect.InvocationTargetException failure) {
+              throw Objects.requireNonNull(failure.getCause());
+            }
+          });
+      SkisExecutor executor = Skis.builder(source).dialect(dialect())
+          .connectionProvider(new ConnectionProvider() {
+            @Override public Connection acquire(ExecutionContext context) { return borrowed; }
+            @Override public void release(Connection released, ExecutionContext context) throws SQLException {
+              assertSame(borrowed, released);
+              releases.incrementAndGet();
+              throw releaseFailure;
+            }
+          }).build();
+      var table = AggregateSampleTable.aggregateSampleTable;
+      RuntimeException failure = assertThrows(RuntimeException.class, () -> executor
+          .select(table.category()).from(table).groupBy(table.category()).orderBy(table.category().asc())
+          .fetchPage(PageRequest.page(0, 1)));
+      assertSame(countFailure, failure.getCause());
+      assertTrue(java.util.Arrays.asList(failure.getSuppressed()).contains(releaseFailure));
+      assertEquals(1, releases.get());
+      assertFalse(prepared.isEmpty());
+      for (PreparedStatement statement : prepared) {
+        assertTrue(statement.isClosed());
+      }
+      assertFalse(connection.isClosed());
+    }
+  }
+
+  @Test
+  void aggregatePagesCountFinalRowsOnEmptyInputHavingAndOutOfRangeOffsets() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var count = executor.select(Sql.countAll()).from(table).where(table.id().lt(0L));
+      var page = count.fetchPage(PageRequest.page(0, 2));
+      assertEquals(List.of(0L), page.items());
+      assertEquals(1, page.totalElements());
+      var beyond = count.fetchPage(PageRequest.page(2, 2));
+      assertTrue(beyond.items().isEmpty());
+      assertEquals(1, beyond.totalElements());
+      var removed = count.having(Sql.countAll().gt(0L)).fetchPage(PageRequest.page(0, 2));
+      assertEquals(0, removed.totalElements());
+      assertTrue(removed.items().isEmpty());
+      var nullSum = executor.select(Sql.sumAsLong(table.number())).from(table)
+          .where(table.id().lt(0L)).fetchPage(PageRequest.page(0, 2));
+      assertEquals(1, nullSum.totalElements());
+      assertEquals(1, nullSum.items().size());
+      assertNull(nullSum.items().getFirst());
+      assertEquals(1, count.distinct().fetchPage(PageRequest.page(0, 2)).totalElements());
+      var slice = count.fetchSlice(SliceRequest.offset(0, 1));
+      assertEquals(List.of(0L), slice.items());
+      assertFalse(slice.hasNext());
+    }
+  }
+
+  @Test
+  void groupedPagesCountHavingFilteredGroupsAndFinalDistinctTuples() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var grouped = executor.select(table.number()).from(table).groupBy(table.number())
+          .orderBy(table.number().asc().nullsFirst());
+      var expected = grouped.fetchList();
+      assertEquals(3, expected.size());
+      assertNull(expected.getFirst());
+      var page = grouped.fetchPage(PageRequest.page(0, 1));
+      assertEquals(expected.size(), page.totalElements());
+      assertNull(page.items().getFirst());
+      assertEquals(expected.size(), grouped.fetchPage(PageRequest.page(10, 1)).totalElements());
+      var category = executor.select(table.category()).from(table).groupBy(table.category())
+          .having(Sql.countAll().gt(1L)).orderBy(table.category().asc());
+      assertEquals(category.fetchList().size(), category.fetchPage(PageRequest.page(0, 1)).totalElements());
+      var counts = executor.select(Sql.countAll()).from(table).groupBy(table.category())
+          .distinct().orderBy(Sql.countAll().asc());
+      assertEquals(List.of(1L, 2L), counts.fetchList());
+      assertEquals(counts.fetchList().size(), counts.fetchPage(PageRequest.page(0, 1)).totalElements());
+      var empty = grouped.where(table.id().lt(0L)).fetchPage(PageRequest.page(0, 1));
+      assertEquals(0, empty.totalElements());
+    }
+  }
+
+  @Test
+  void groupedDistinctConstantsHaveAtMostOneFinalRowWithoutOrdering() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var query = executor.select(Sql.value(7L)).from(table).groupBy(table.category()).distinct();
+      var page = query.fetchPage(PageRequest.page(0, 1));
+      assertEquals(List.of(7L), page.items());
+      assertEquals(1, page.totalElements());
+      var beyond = query.fetchPage(PageRequest.page(1, 1));
+      assertTrue(beyond.items().isEmpty());
+      assertEquals(1, beyond.totalElements());
+      var slice = query.fetchSlice(SliceRequest.offset(0, 1));
+      assertEquals(List.of(7L), slice.items());
+      assertFalse(slice.hasNext());
+      var filtered = query.having(Sql.countAll().gt(1L)).fetchPage(PageRequest.page(0, 1));
+      assertEquals(List.of(7L), filtered.items());
+      assertEquals(1, filtered.totalElements());
+      var removed = query.having(Sql.countAll().gt(5L)).fetchPage(PageRequest.page(0, 1));
+      assertTrue(removed.items().isEmpty());
+      assertEquals(0, removed.totalElements());
+      var empty = query.where(table.id().lt(0L)).fetchPage(PageRequest.page(0, 1));
+      assertTrue(empty.items().isEmpty());
+      assertEquals(0, empty.totalElements());
+      assertEquals(SkisErrorCode.QUERY_PAGINATION_ORDER_REQUIRED,
+          assertThrows(QueryValidationException.class, () -> executor.select(Sql.countAll()).from(table)
+              .groupBy(table.category()).distinct().fetchPage(PageRequest.page(0, 1))).code());
+    }
+  }
+
+  @Test
+  void constantAndMixedKeysPreserveEmptyInputAndParameterGrouping() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var constant = Sql.value("all");
+      var query = executor.select(Sql.countAll()).from(table).groupBy(constant);
+      assertEquals(List.of(3L), query.fetchPage(PageRequest.page(0, 1)).items());
+      assertEquals(1, query.fetchPage(PageRequest.page(0, 1)).totalElements());
+      var empty = query.where(table.id().lt(0L)).fetchPage(PageRequest.page(0, 1));
+      assertTrue(empty.items().isEmpty());
+      assertEquals(0, empty.totalElements());
+      var mixed = executor.select(table.category()).from(table)
+          .groupBy(constant, table.category()).orderBy(table.category().asc());
+      assertEquals(mixed.fetchList().size(), mixed.fetchPage(PageRequest.page(0, 1)).totalElements());
+      var onlyOrderingAggregate = executor.select(Sql.value(7L)).from(table)
+          .where(table.id().lt(0L)).orderBy(Sql.countAll().asc());
+      assertEquals(List.of(7L), onlyOrderingAggregate.fetchPage(PageRequest.page(0, 1)).items());
+      assertEquals(1, onlyOrderingAggregate.fetchPage(PageRequest.page(0, 1)).totalElements());
+    }
+  }
+
+  @Test
+  void expressionOffsetSlicesResumeAndRejectChangedParametersWithoutKeyset() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var shift = Sql.parameter(Integer.class, "shift");
+      var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(shift));
+      var query = executor.select(key).from(table).groupBy(key).orderBy(key.asc()).bind(shift, 10);
+      var expected = query.fetchList();
+      var first = query.fetchSlice(SliceRequest.offset(0, 1));
+      var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
+      var third = query.fetchSlice(SliceRequest.resume(second.nextContinuation().orElseThrow(), 1));
+      assertEquals(expected, List.of(first.items().getFirst(), second.items().getFirst(), third.items().getFirst()));
+      assertFalse(third.hasNext());
+      assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
+          assertThrows(QueryValidationException.class, () -> query.bind(shift, 20)
+              .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
+      assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
+          assertThrows(QueryValidationException.class,
+              () -> query.fetchSlice(SliceRequest.keysetFirst(1))).code());
+    }
+  }
+
+  @Test
+  void derivedGroupingPropagatesOnlyItsCompleteRawIdentityForOffsetPages() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var category = Sql.output(table.category(), "category");
+      var relation = Sql.derived(Sql.select(table.category()).from(table).groupBy(table.category()),
+          "categories", category);
+      var query = executor.select(relation.column(category)).from(relation)
+          .orderBy(relation.column(category).asc());
+      assertEquals(query.fetchList().size(), query.fetchPage(PageRequest.page(0, 1)).totalElements());
+      var first = query.fetchSlice(SliceRequest.offset(0, 1));
+      assertEquals(List.of("A"), first.items());
+      assertEquals(List.of("B"), query.fetchSlice(
+          SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
+      var partial = Sql.derived(Sql.select(table.category()).from(table)
+          .groupBy(table.category(), table.number()), "partial_categories", category);
+      assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
+          assertThrows(QueryValidationException.class, () -> executor.select(partial.column(category))
+              .from(partial).orderBy(partial.column(category).asc())
+              .fetchPage(PageRequest.page(0, 1))).code());
+    }
+  }
+
+  @Test
+  void repeatedDerivedGroupingOutputsSupportPagesContinuationsAndReexport() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, Object.class, "repeated-group-key",
+          List.of(new ProjectionMapping.Parameter(0, "first", Integer.class, Nullability.NULLABLE, 0),
+              new ProjectionMapping.Parameter(1, "second", Integer.class, Nullability.NULLABLE, 1)),
+          readers -> (rows, context) -> { throw new AssertionError("inner decoder executed"); });
+      var firstOutput = Sql.output(table.number(), "first_key");
+      var secondOutput = Sql.output(table.number(), "second_key");
+      var relation = Sql.derived(Sql.select(tuple.bind(table.number(), table.number())).from(table)
+          .groupBy(table.number()), "repeated_groups", firstOutput, secondOutput);
+      var firstKey = relation.column(firstOutput);
+      var secondKey = relation.column(secondOutput);
+      var query = executor.select(secondKey).from(relation).orderBy(secondKey.asc().nullsFirst());
+      var expected = query.fetchList();
+      assertEquals(3, expected.size());
+      assertNull(expected.getFirst());
+      var page = query.fetchPage(PageRequest.page(0, 1));
+      assertEquals(expected.subList(0, 1), page.items());
+      assertEquals(expected.size(), page.totalElements());
+      assertEquals(expected, query.orderBy(firstKey.asc().nullsFirst()).fetchList());
+      var first = query.fetchSlice(SliceRequest.offset(0, 1));
+      var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
+      var third = query.fetchSlice(SliceRequest.resume(second.nextContinuation().orElseThrow(), 1));
+      assertEquals(expected.subList(0, 1), first.items());
+      assertEquals(expected.subList(1, 2), second.items());
+      assertEquals(expected.subList(2, 3), third.items());
+      assertFalse(third.hasNext());
+      var reexport = Sql.output(secondKey, "key");
+      var outer = Sql.derived(Sql.select(secondKey).from(relation), "reexported_groups", reexport);
+      var outerQuery = executor.select(outer.column(reexport)).from(outer)
+          .orderBy(outer.column(reexport).asc().nullsFirst());
+      assertEquals(expected, outerQuery.fetchList());
+      assertEquals(expected.size(), outerQuery.fetchPage(PageRequest.page(0, 1)).totalElements());
+    }
+  }
+
+  @Test
+  void distinctOverRepeatedDerivedOutputsKeepsNullPagesContinuationsAndReexports() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, RepeatedNumber.class,
+          "distinct-derived-numbers", List.of(
+              new ProjectionMapping.Parameter(0, "first", Integer.class, Nullability.NULLABLE, 0),
+              new ProjectionMapping.Parameter(1, "second", Integer.class, Nullability.NULLABLE, 1)),
+          readers -> (rows, context) -> new RepeatedNumber(
+              (Integer) readers.get(0).read(rows, context),
+              (Integer) readers.get(1).read(rows, context)));
+      var expectedValues = executor.select(table.number()).from(table).distinct()
+          .orderBy(table.number().asc().nullsFirst()).fetchList();
+      var expected = expectedValues.stream().map(value -> new RepeatedNumber(value, value)).toList();
+      assertEquals(3, expected.size());
+      assertNull(expected.getFirst().first());
+      var firstOutput = Sql.output(table.number(), "first_key");
+      var secondOutput = Sql.output(table.number(), "second_key");
+      for (var description : List.of(
+          Sql.select(tuple.bind(table.number(), table.number())).from(table).groupBy(table.number()),
+          Sql.select(tuple.bind(table.number(), table.number())).from(table).groupBy(table.id(), table.number()))) {
+        var relation = Sql.derived(description, "duplicate_numbers", firstOutput, secondOutput);
+        var firstKey = relation.column(firstOutput);
+        var secondKey = relation.column(secondOutput);
+        for (var ordered : List.of(firstKey, secondKey)) {
+          var query = executor.select(tuple.bind(firstKey, secondKey)).from(relation).distinct()
+              .orderBy(ordered.asc().nullsFirst());
+          assertEquals(expected, query.fetchList());
+          for (int index = 0; index < expected.size(); index++) {
+            var page = query.fetchPage(PageRequest.page(index, 1));
+            assertEquals(expected.subList(index, index + 1), page.items());
+            assertEquals(expected.size(), page.totalElements());
+          }
+          var beyond = query.fetchPage(PageRequest.page(10, 1));
+          assertTrue(beyond.items().isEmpty());
+          assertEquals(expected.size(), beyond.totalElements());
+          var first = query.fetchSlice(SliceRequest.offset(0, 1));
+          var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
+          var third = query.fetchSlice(SliceRequest.resume(second.nextContinuation().orElseThrow(), 1));
+          assertEquals(expected, List.of(
+              first.items().getFirst(), second.items().getFirst(), third.items().getFirst()));
+          assertFalse(third.hasNext());
+        }
+        var distinctFirst = Sql.output(firstKey, "first_key");
+        var distinctSecond = Sql.output(secondKey, "second_key");
+        var distinct = Sql.derived(Sql.select(tuple.bind(firstKey, secondKey)).from(relation).distinct(),
+            "distinct_numbers", distinctFirst, distinctSecond);
+        var chosen = distinct.column(distinctSecond);
+        var valueOutput = Sql.output(chosen, "number");
+        var reexported = Sql.derived(Sql.select(chosen).from(distinct), "one_number", valueOutput);
+        var value = reexported.column(valueOutput);
+        var query = executor.select(value).from(reexported).orderBy(value.asc().nullsFirst());
+        assertEquals(expectedValues, query.fetchList());
+        var page = query.fetchPage(PageRequest.page(0, 1));
+        assertEquals(expectedValues.subList(0, 1), page.items());
+        assertEquals(expectedValues.size(), page.totalElements());
+        assertEquals(expectedValues.subList(1, 2), query.fetchSlice(SliceRequest.offset(1, 1)).items());
+      }
+    }
+  }
+
+  @Test
+  void generatedMixedProjectionCountMatchesRowsAndKeepsNullableAggregateValues() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var inner = table.as("page_inner");
+      var query = executor.select(AggregateSummaryPro.of(
+          Sql.concat(table.category(), Sql.value("!")), Sql.countAll(),
+          Sql.sumAsBigInteger(table.id()), Sql.avgAsBigDecimal(table.amount()),
+          Sql.scalar(Sql.select(Sql.countAll()).from(inner))))
+          .from(table).groupBy(table.category()).orderBy(table.category().asc());
+      var rows = query.fetchList();
+      var first = query.fetchPage(PageRequest.page(0, 1));
+      var second = query.fetchPage(PageRequest.page(1, 1));
+      assertEquals(rows.size(), first.totalElements());
+      assertEquals(rows.size(), second.totalElements());
+      assertEquals(rows, List.of(first.items().getFirst(), second.items().getFirst()));
+      assertNull(second.items().getFirst().average());
+    }
+  }
 
   @Test
   void generatedAggregateProjectionReadsGroupingWideningDecimalsAndScalarCount() throws Exception {
@@ -1011,7 +1511,7 @@ abstract class AbstractSkisAggregateContractTest {
     }
   }
 
-  private PreparedStatement prepare(Connection connection, SelectStatement query, @Nullable Object... arguments) throws SQLException {
+  private PreparedStatement prepare(Connection connection, StatementAst query, @Nullable Object... arguments) throws SQLException {
     SqlTemplate template = SqlCompiler.compile(query, dialect());
     PreparedStatement statement = connection.prepareStatement(template.sql());
     try {

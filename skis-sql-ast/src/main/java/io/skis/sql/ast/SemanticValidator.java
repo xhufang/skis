@@ -60,7 +60,6 @@ public final class SemanticValidator {
    */
   public static QueryBlockAnalysis analyzeComplete(SelectStatement statement) {
     Objects.requireNonNull(statement, "statement");
-    validatePaginationOrdering(statement);
     validateSelectExpressions(statement, new ValidationContext(false));
     return QueryScopeAnalyzer.analyzeTopLevel(statement);
   }
@@ -68,16 +67,7 @@ public final class SemanticValidator {
   /** Validates invariants that do not require a parent or completed query-block scope. */
   static void validateLocal(SelectStatement statement) {
     Objects.requireNonNull(statement, "statement");
-    validatePaginationOrdering(statement);
     validateSelectExpressions(statement, new ValidationContext(false));
-  }
-
-  private static void validatePaginationOrdering(SelectStatement statement) {
-    if (statement.pagination().isPresent()
-        && !(statement.pagination().orElseThrow() instanceof Limit)
-        && statement.orderBy().isEmpty()) {
-      throw new IllegalArgumentException("paginated SELECT requires ORDER BY");
-    }
   }
 
   private static void validateSelectExpressions(

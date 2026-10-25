@@ -30,6 +30,7 @@
       "io.skis.sql.ast.JoinAstTest",
       "io.skis.sql.ast.ParameterRelationAstTest",
       "io.skis.sql.ast.QueryScopeAnalysisTest",
+      "io.skis.sql.ast.ResultIdentityTest",
       "io.skis.sql.ast.SqlAstStructureTest"
     ],
     "skis-dialect-api": [
@@ -58,6 +59,7 @@
       "io.skis.query.internal.CompiledQueryPlanConcurrencyTest",
       "io.skis.query.internal.DerivedRelationDslTest",
       "io.skis.query.internal.EntityPlanSetTest",
+      "io.skis.query.internal.GroupedPaginationTest",
       "io.skis.query.internal.JoinQueryDslTest",
       "io.skis.query.internal.PaginationValueTypesTest",
       "io.skis.query.internal.ProjectionPlanCacheTest",

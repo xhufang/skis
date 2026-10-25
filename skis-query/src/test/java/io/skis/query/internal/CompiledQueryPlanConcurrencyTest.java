@@ -158,7 +158,8 @@ class CompiledQueryPlanConcurrencyTest {
                 QueryPagination.None.INSTANCE,
                 QueryTestSupport.arguments(structure),
                 null,
-                StatementPurpose.PRIMARY)
+                StatementPurpose.PRIMARY,
+                null)
             .plan();
 
     List<Observation<OrderedRow<String>>> observations =
@@ -263,7 +264,8 @@ class CompiledQueryPlanConcurrencyTest {
             QueryPagination.None.INSTANCE,
             QueryTestSupport.arguments(structure),
             null,
-            StatementPurpose.PRIMARY);
+            StatementPurpose.PRIMARY,
+            null);
   }
 
   private static <R> List<Observation<R>> invokeConcurrently(

@@ -36,8 +36,8 @@ import io.skis.query.PageRequest;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
+import io.skis.query.SelectQuery;
 import io.skis.query.SliceContinuation;
 import io.skis.query.SliceRequest;
 import io.skis.query.SortSpecification;
@@ -258,7 +258,8 @@ class QueryPaginationCompilationTest {
                 pagination,
                 QueryTestSupport.arguments(structure).withPagination(pagination),
                 null,
-                StatementPurpose.PRIMARY);
+                StatementPurpose.PRIMARY,
+                null);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"nickname\" AS \"__skis_order_0\" "
@@ -275,7 +276,7 @@ class QueryPaginationCompilationTest {
   }
 
   @Test
-  void autoCountUsesSingleDistinctExpressionAndRejectsUnsafeTuples() {
+  void autoCountUsesProvenDirectPathsAndWrapsDistinctTuples() {
     CompilerFixture fixture = compilerFixture();
     QueryPlanCompiler compiler = fixture.compiler();
     QueryCompilation<Long> count =
@@ -309,16 +310,14 @@ class QueryPaginationCompilationTest {
                 new ProjectionMapping.Parameter(0, "id", Long.class, Nullability.NON_NULL, 0),
                 new ProjectionMapping.Parameter(1, "name", String.class, Nullability.NON_NULL, 1)),
             readers -> (resultSet, context) -> new Object());
-    assertThrows(
-        QueryValidationException.class,
-        () ->
-            compileCount(
+    QueryCompilation<Long> tupleCount = compileCount(
                 compiler,
                 TABLE,
                 SelectedResult.projection(unsafeTuple.bind(TABLE.id(), TABLE.name())),
                 List.of(),
                 null,
-                true));
+                true);
+    assertTrue(tupleCount.plan().sql().startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
   }
 
   @Test
@@ -342,6 +341,31 @@ class QueryPaginationCompilationTest {
                     .orderBy(TABLE.id().asc())
                     .fetchPage(PageRequest.page(0, 10), new CountQuery() {}));
     assertEquals(SkisErrorCode.QUERY_COUNT_CONTRACT, foreign.code());
+  }
+
+  @Test
+  void distinctEntityCountWrapsCompositeJoinIdentityAndKeylessVisibleTuples() {
+    EntityMeta<Pet> composite = EntityMeta.simple(Pet.class,
+        new TableMeta("", "shelter", "composite_pet"), List.of(ID, NAME, NICKNAME),
+        new PrimaryKeyMeta<>(List.of(ID, NAME)), false);
+    var left = new CountTable(composite, "left_pet");
+    var right = left.as("right_pet");
+    var operations = bind(QueryRuntime.compile(
+        EntityRuntimeRegistry.of(List.of(model(composite))), TestDialect.INSTANCE));
+    var joined = operations.selectFrom(left).crossJoin(right).distinct();
+    assertTrue(((DefaultCountQuery) joined.countQuery()).compilation().plan().sql()
+        .startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
+    var simple = operations.selectFrom(left).distinct();
+    assertEquals("SELECT COUNT(*) FROM \"shelter\".\"composite_pet\" AS \"left_pet\"",
+        ((DefaultCountQuery) simple.countQuery()).compilation().plan().sql());
+
+    EntityMeta<Pet> keyless = EntityMeta.simple(Pet.class,
+        new TableMeta("", "shelter", "pet_view"), List.of(ID, NAME, NICKNAME), null, true);
+    var view = new CountTable(keyless, "view_pet");
+    var viewOperations = bind(QueryRuntime.compile(
+        EntityRuntimeRegistry.of(List.of(model(keyless))), TestDialect.INSTANCE));
+    assertTrue(((DefaultCountQuery) viewOperations.selectFrom(view).distinct().countQuery())
+        .compilation().plan().sql().startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
   }
 
   @Test
@@ -455,7 +479,8 @@ class QueryPaginationCompilationTest {
         distinct,
         QueryTestSupport.arguments(structure),
         null,
-        StatementPurpose.PAGE_COUNT);
+        StatementPurpose.PAGE_COUNT,
+        null);
   }
 
   private static QueryCompilation<Pet> compileEntity(
@@ -507,8 +532,12 @@ class QueryPaginationCompilationTest {
   }
 
   private static EntityRuntimeModel<Pet> model() {
+    return model(PET);
+  }
+
+  private static EntityRuntimeModel<Pet> model(EntityMeta<Pet> metadata) {
     return new EntityRuntimeModel<>(
-        PET,
+        metadata,
         layout -> (resultSet, context) -> new Pet(1L, "unused", null),
         List.of(
             new PropertyRuntime<>(ID, JdbcCodecs.LONG),
@@ -519,6 +548,11 @@ class QueryPaginationCompilationTest {
   private record Pet(Long id, String name, String nickname) {}
 
   private record CompilerFixture(QueryPlanCompiler compiler) {}
+
+  private static final class CountTable extends QueryTable<Pet> {
+    private CountTable(EntityMeta<Pet> metadata, String alias) { super(metadata, alias); }
+    @Override public CountTable as(String alias) { return new CountTable(entity(), alias); }
+  }
 
   private static final class PetTable extends QueryTable<Pet> {
 
@@ -561,6 +595,8 @@ class QueryPaginationCompilationTest {
             DialectFeature.PARAMETERIZED_LIMIT,
             DialectFeature.PARAMETERIZED_OFFSET,
             DialectFeature.NULLS_FIRST_LAST,
+            DialectFeature.DERIVED_TABLE,
+            DialectFeature.CROSS_JOIN,
             DialectFeature.COUNT_AGGREGATE,
             DialectFeature.COUNT_DISTINCT);
     private final SqlRenderer renderer = new StandardSqlRenderer(this);

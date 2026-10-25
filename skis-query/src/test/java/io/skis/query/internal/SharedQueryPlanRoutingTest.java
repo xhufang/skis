@@ -443,7 +443,8 @@ class SharedQueryPlanRoutingTest {
                 firstPage,
                 QueryTestSupport.arguments(structure).withPagination(firstPage),
                 null,
-                StatementPurpose.PRIMARY);
+                StatementPurpose.PRIMARY,
+                null);
     QueryCompilation<OrderedRow<Long>> repeated =
         fixture
             .catalog()
@@ -456,7 +457,8 @@ class SharedQueryPlanRoutingTest {
                 laterPage,
                 QueryTestSupport.arguments(structure).withPagination(laterPage),
                 null,
-                StatementPurpose.PRIMARY);
+                StatementPurpose.PRIMARY,
+                null);
     QueryCompilation<Long> count =
         fixture
             .catalog()
@@ -467,7 +469,8 @@ class SharedQueryPlanRoutingTest {
                 false,
                 QueryTestSupport.arguments(structure),
                 null,
-                StatementPurpose.PAGE_COUNT);
+                StatementPurpose.PAGE_COUNT,
+                null);
     assertEquals(content.plan().sql(), ordered.plan().sql());
     assertNotSame(content.plan(), ordered.plan());
     assertSame(ordered.plan(), repeated.plan());
@@ -843,10 +846,11 @@ class SharedQueryPlanRoutingTest {
                           QueryPagination.None.INSTANCE,
                           arguments,
                           observation,
-                          purpose);
+                          purpose,
+                          null);
                   case 2 ->
                       compiler.compileCount(
-                          selected, structure, false, arguments, observation, purpose);
+                          selected, structure, false, arguments, observation, purpose, null);
                   default -> throw new AssertionError(planVariant);
                 }
               }));

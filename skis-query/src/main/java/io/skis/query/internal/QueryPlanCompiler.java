@@ -30,6 +30,10 @@ import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.DerivedOutputColumn;
+import io.skis.sql.ast.DerivedRelationReference;
+import io.skis.sql.ast.DerivedRelationSource;
+import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
@@ -119,11 +123,13 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryArguments statementArguments,
       @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
+      StatementPurpose purpose,
+      @Nullable ResolvedStatement resolvedSource) {
     CompilationObservation compilation =
         observation == null ? null : new CompilationObservation(observation, purpose);
     try {
-      return prepareCount(selected, structure, distinct, statementArguments, compilation);
+      return prepareCount(
+          selected, structure, distinct, statementArguments, compilation, resolvedSource);
     } catch (RuntimeException | Error failure) {
       if (compilation != null) {
         compilation.preparationFailed(failure);
@@ -137,20 +143,25 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       boolean distinct,
       QueryArguments statementArguments,
-      @Nullable CompilationObservation observation) {
+      @Nullable CompilationObservation observation,
+      @Nullable ResolvedStatement resolvedSource) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope sourceScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
     ResolvedStatement sourceContext =
-        validateSelectionSource(selected, structure, distinct, sourceScope);
+        validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
     TableRuntimeScope runtimeScope = sourceScope.forFromClause(structure.fromClause());
+    boolean wrapped =
+        sourceContext.isGrouped()
+            || (distinct
+                && selected.requiresWrappedDistinctCount(
+                    !structure.fromClause().joins().isEmpty()));
     SqlExpression<?> distinctExpression = null;
-    if (distinct) {
+    if (distinct && !wrapped) {
       List<SqlExpression<?>> compiledSelections = selectionExpressions(structure, selected);
-      ResolvedResultShape<R> selection = selected.resolve(runtimeScope, compiledSelections);
       distinctExpression =
           selected.automaticDistinctCountExpression(
-              !structure.fromClause().joins().isEmpty(), selection.expressions());
+              !structure.fromClause().joins().isEmpty(), compiledSelections);
     }
     return compileResolvedCount(
         selected,
@@ -159,6 +170,7 @@ final class QueryPlanCompiler {
         runtimeScope,
         statementArguments,
         distinctExpression,
+        wrapped,
         observation);
   }
 
@@ -169,15 +181,14 @@ final class QueryPlanCompiler {
       TableRuntimeScope runtimeScope,
       QueryArguments statementArguments,
       @Nullable SqlExpression<?> distinctExpression,
+      boolean wrapped,
       @Nullable CompilationObservation observation) {
-    if (!structure.groupBy().isEmpty() || structure.having() != null) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_COUNT_CONTRACT,
-          "countQuery does not yet support GROUP BY or HAVING descriptions");
-    }
     CountAst count =
         constructedStatement(
-            () -> new CountAst(structure.fromClause(), structure.where(), distinctExpression));
+            () ->
+                wrapped
+                    ? wrappedCount(sourceContext, structure, runtimeScope)
+                    : new CountAst(structure.fromClause(), structure.where(), distinctExpression));
     InputsBuilder inputs = new InputsBuilder(runtimeScope, structure);
     List<LogicalParameter> parameters = inputs.logicalParameters();
     validateLogicalParameters(parameters);
@@ -210,6 +221,50 @@ final class QueryPlanCompiler {
         observation);
   }
 
+  private static CountAst wrappedCount(
+      ResolvedStatement source, CompiledQueryStructure structure, TableRuntimeScope scope) {
+    SelectStatement inner =
+        new SelectStatement(
+            ((SelectStatement) source.statement()).distinct(),
+            structure.selections(),
+            List.of(),
+            structure.fromClause(),
+            structure.where(),
+            structure.groupBy(),
+            structure.having(),
+            structure.orderBy(),
+            null);
+    List<DerivedOutputColumn> outputs = new ArrayList<>(inner.selections().size());
+    for (int index = 0; index < inner.selections().size(); index++) {
+      SqlExpression<?> expression = inner.selections().get(index);
+      outputs.add(
+          new DerivedOutputColumn(
+              Identifier.of("__skis_count_" + index),
+              expression.javaType(),
+              expression.sqlType(),
+              scope.effectiveNullability(expression)));
+    }
+    var qualifiers = new java.util.HashSet<String>();
+    for (ResolvedStatement.SourceOccurrence occurrence : source.sourceOccurrences()) {
+      qualifiers.add(occurrence.source().effectiveQualifier().toLowerCase(java.util.Locale.ROOT));
+    }
+    String alias = "__skis_count";
+    for (int suffix = 0; qualifiers.contains(alias); suffix++) {
+      alias = "__skis_count_" + suffix;
+    }
+    DerivedRelationReference reference =
+        new DerivedRelationReference(Identifier.of(alias), outputs);
+    return new CountAst(
+        new FromClause(new DerivedRelationSource(inner, reference), List.of()), null, null);
+  }
+
+  ResolvedStatement resolvePagination(
+      SelectedResult<?> selected, CompiledQueryStructure structure, boolean distinct) {
+    TableRuntimeScope scope =
+        TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
+    return validateSelectionSource(selected, structure, distinct, scope);
+  }
+
   <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileOrdered(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
@@ -218,12 +273,20 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       QueryArguments statementArguments,
       @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
+      StatementPurpose purpose,
+      @Nullable ResolvedStatement resolvedSource) {
     CompilationObservation compilation =
         observation == null ? null : new CompilationObservation(observation, purpose);
     try {
       return prepareOrdered(
-          selected, structure, orderBy, distinct, pagination, statementArguments, compilation);
+          selected,
+          structure,
+          orderBy,
+          distinct,
+          pagination,
+          statementArguments,
+          compilation,
+          resolvedSource);
     } catch (RuntimeException | Error failure) {
       if (compilation != null) {
         compilation.preparationFailed(failure);
@@ -239,13 +302,14 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryPagination pagination,
       QueryArguments statementArguments,
-      @Nullable CompilationObservation observation) {
+      @Nullable CompilationObservation observation,
+      @Nullable ResolvedStatement resolvedSource) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope;
     if (structure.validationSource() != null) {
       TableRuntimeScope sourceScope =
           TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-      validateSelectionSource(selected, structure, distinct, sourceScope);
+      validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
       runtimeScope = sourceScope.forFromClause(structure.fromClause());
     } else {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
@@ -343,6 +407,30 @@ final class QueryPlanCompiler {
       QueryArguments statementArguments,
       @Nullable OperationObservation observation,
       StatementPurpose purpose) {
+    return compileSelection(
+        selected,
+        structure,
+        orderBy,
+        distinct,
+        pagination,
+        hidden,
+        statementArguments,
+        observation,
+        purpose,
+        null);
+  }
+
+  <R extends @Nullable Object> QueryCompilation<R> compileSelection(
+      SelectedResult<R> selected,
+      CompiledQueryStructure structure,
+      List<SortSpecification> orderBy,
+      boolean distinct,
+      QueryPagination pagination,
+      List<HiddenSelection> hidden,
+      QueryArguments statementArguments,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose,
+      @Nullable ResolvedStatement resolvedSource) {
     CompilationObservation compilation =
         observation == null ? null : new CompilationObservation(observation, purpose);
     try {
@@ -354,7 +442,8 @@ final class QueryPlanCompiler {
           pagination,
           hidden,
           statementArguments,
-          compilation);
+          compilation,
+          resolvedSource);
     } catch (RuntimeException | Error failure) {
       if (compilation != null) {
         compilation.preparationFailed(failure);
@@ -371,13 +460,14 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       List<HiddenSelection> hidden,
       QueryArguments statementArguments,
-      @Nullable CompilationObservation observation) {
+      @Nullable CompilationObservation observation,
+      @Nullable ResolvedStatement resolvedSource) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope;
     if (structure.validationSource() != null) {
       TableRuntimeScope sourceScope =
           TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-      validateSelectionSource(selected, structure, distinct, sourceScope);
+      validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
       runtimeScope = sourceScope.forFromClause(structure.fromClause());
     } else {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
@@ -491,23 +581,35 @@ final class QueryPlanCompiler {
       CompiledQueryStructure structure,
       boolean distinct,
       TableRuntimeScope runtimeScope) {
+    return validateSelectionSource(selected, structure, distinct, runtimeScope, null);
+  }
+
+  private ResolvedStatement validateSelectionSource(
+      SelectedResult<?> selected,
+      CompiledQueryStructure structure,
+      boolean distinct,
+      TableRuntimeScope runtimeScope,
+      @Nullable ResolvedStatement resolvedSource) {
     CompiledQueryStructure source = structure.validationStructure();
     TableRuntimeScope scope = runtimeScope.forFromClause(source.fromClause());
     List<SqlExpression<?>> expressions = selectionExpressions(source, selected);
-    SelectStatement statement =
-        constructedStatement(
-            () ->
-                new SelectStatement(
-                    distinct,
-                    expressions,
-                    List.of(),
-                    source.fromClause(),
-                    source.where(),
-                    source.groupBy(),
-                    source.having(),
-                    source.orderBy(),
-                    null));
-    ResolvedStatement resolved = prepareContext(statement);
+    ResolvedStatement resolved = resolvedSource;
+    if (resolved == null) {
+      SelectStatement statement =
+          constructedStatement(
+              () ->
+                  new SelectStatement(
+                      distinct,
+                      expressions,
+                      List.of(),
+                      source.fromClause(),
+                      source.where(),
+                      source.groupBy(),
+                      source.having(),
+                      source.orderBy(),
+                      null));
+      resolved = prepareContext(statement);
+    }
     if (resolved.hasAggregateStructure()) {
       QueryInputMappings.validate(resolved, runtimeRegistry);
     }

@@ -11,6 +11,15 @@ public record ResolvedExpression(
     List<ResolvedParameterIdentity> parameterDependencies,
     Nullability effectiveNullability) {
 
+  boolean hasLocalColumns(QueryBlockPath blockPath) {
+    for (ResolvedColumnReference column : columnDependencies) {
+      if (column.source().blockPath().equals(blockPath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public ResolvedExpression {
     Objects.requireNonNull(position, "position");
     Objects.requireNonNull(structureKey, "structureKey");
