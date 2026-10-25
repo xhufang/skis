@@ -428,18 +428,20 @@ class AggregateInputMappingTest {
   }
 
   @Test
-  void expressionAggregateAndDerivedOrderingRemainUnsupportedForKeysetSlices() {
+  void expressionAggregateAndDerivedOrderingRemainUnsupportedForSlices() {
     var operations = operations(false);
-    for (Selectable<?> ordered : List.of(Sql.add(TABLE.id, Sql.value(1L)), Sql.countAll())) {
-      assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
-          assertThrows(QueryValidationException.class, () -> operations.select(TABLE.id).from(TABLE)
-              .orderBy(TABLE.id.asc(), ordered.asc()).fetchSlice(SliceRequest.keysetFirst(2))).code());
-    }
     var output = Sql.output(TABLE.id, "id");
     var derived = Sql.derived(Sql.select(TABLE.id).from(TABLE), "keyset_rows", output);
-    assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
-        assertThrows(QueryValidationException.class, () -> operations.select(derived.column(output)).from(derived)
-            .orderBy(derived.column(output).asc()).fetchSlice(SliceRequest.keysetFirst(2))).code());
+    for (SliceRequest request : List.of(SliceRequest.offset(0, 2), SliceRequest.keysetFirst(2))) {
+      for (Selectable<?> ordered : List.of(Sql.add(TABLE.id, Sql.value(1L)), Sql.countAll())) {
+        assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
+            assertThrows(QueryValidationException.class, () -> operations.select(TABLE.id).from(TABLE)
+                .orderBy(TABLE.id.asc(), ordered.asc()).fetchSlice(request)).code());
+      }
+      assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
+          assertThrows(QueryValidationException.class, () -> operations.select(derived.column(output)).from(derived)
+              .orderBy(derived.column(output).asc()).fetchSlice(request)).code());
+    }
   }
 
   private static void assertTypeFailure(Executable operation) {

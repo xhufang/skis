@@ -445,11 +445,11 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     try {
       DefaultSliceRequest sliceRequest =
           QueryModels.sliceRequest(Objects.requireNonNull(request, "request"));
-      validatePaginationOrder(false);
       // Every Slice may need a continuation, including its first offset page.
       for (SortSpecification item : state.orderBy()) {
         requirePhysicalPaginationColumn(item);
       }
+      validatePaginationOrder(false);
       operations.validateRequestedRows(sliceRequest.pageSize(), executionContext);
       Slice<R> result =
           switch (sliceRequest.mode()) {
