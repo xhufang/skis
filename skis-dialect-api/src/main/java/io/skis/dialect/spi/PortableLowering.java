@@ -1,5 +1,6 @@
 package io.skis.dialect.spi;
 
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.BooleanPredicate;
@@ -43,6 +44,7 @@ import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
@@ -67,11 +69,39 @@ public final class PortableLowering {
 
   private PortableLowering() {}
 
+  /** Closed numeric conversion profiles used by the built-in aggregate lowering. */
+  public enum AggregateTarget {
+    POSTGRESQL,
+    H2
+  }
+
+  /** Lowers typed standard/aggregate expressions and grouping identities without reading values. */
+  public static StatementAst lowerAggregates(ResolvedStatement input, AggregateTarget target) {
+    Objects.requireNonNull(input, "input");
+    Objects.requireNonNull(target, "target");
+    return AggregateLowering.lower(input, target);
+  }
+
   /** Applies portable normalization for the target capability set. */
   public static StatementAst normalize(StatementAst statement, DialectCapabilities capabilities) {
     Objects.requireNonNull(statement, "statement");
     Objects.requireNonNull(capabilities, "capabilities");
     return new Normalizer(capabilities).statement(statement);
+  }
+
+  /** Canonical ordering only; correspondence checks the expression trees separately. */
+  static List<OrderByItem> normalizeOrdering(
+      SelectStatement select, DialectCapabilities capabilities) {
+    return new Normalizer(capabilities)
+        .orderBy(select, select.selections(), select.fromClause(), false);
+  }
+
+  /** The same local rewrite is used when validating an eagerly normalized dialect result. */
+  static SqlExpression<?> emptyMembership(InPredicate<?> in) {
+    AggregateExpression<?> aggregate = Normalizer.localAggregate(in.value());
+    return aggregate == null
+        ? new BooleanPredicate(in.negated())
+        : aggregate.emptyMembership(in.negated());
   }
 
   private record Normalizer(boolean nativeNullOrdering) {
@@ -116,16 +146,49 @@ public final class PortableLowering {
       SqlPredicate originalWhere = select.where().orElse(null);
       SqlPredicate where = originalWhere == null ? null : predicate(originalWhere);
       List<SqlExpression<?>> originalGroupBy = select.groupBy();
-      List<SqlExpression<?>> groupBy = mapIfChanged(originalGroupBy, this::expression);
+      List<SqlExpression<?>> groupBy = groupBy(originalGroupBy);
       SqlPredicate originalHaving = select.having().orElse(null);
       SqlPredicate having = originalHaving == null ? null : predicate(originalHaving);
+      List<OrderByItem> orderBy = orderBy(select, selections, fromClause, true);
+      SelectPagination originalPagination = select.pagination().orElse(null);
+      SelectPagination pagination = pagination(originalPagination);
+      boolean changed =
+          selections != originalSelections
+              || hidden != originalHidden
+              || fromClause != originalFrom
+              || where != originalWhere
+              || groupBy != originalGroupBy
+              || having != originalHaving
+              || orderBy != select.orderBy()
+              || pagination != originalPagination;
+      if (!changed) {
+        return select;
+      }
+      return new SelectStatement(
+          select.distinct(),
+          selections,
+          hidden,
+          fromClause,
+          where,
+          groupBy,
+          having,
+          orderBy,
+          pagination);
+    }
+
+    private List<OrderByItem> orderBy(
+        SelectStatement select,
+        List<SqlExpression<?>> selections,
+        FromClause fromClause,
+        boolean normalizeExpressions) {
       List<OrderByItem> originalOrderBy = select.orderBy();
       List<OrderByItem> rewrittenOrderBy = null;
       boolean distinct = select.distinct();
       int index = 0;
       for (OrderByItem item : originalOrderBy) {
         SqlExpression<?> originalExpression = item.expression();
-        SqlExpression<?> normalized = expression(originalExpression);
+        SqlExpression<?> normalized =
+            normalizeExpressions ? expression(originalExpression) : originalExpression;
         NullOrder originalNullOrder = item.nullOrder();
         NullOrder nullOrder = originalNullOrder;
         boolean emulateNullOrdering = nullOrder != NullOrder.DIALECT_DEFAULT && !nativeNullOrdering;
@@ -183,23 +246,47 @@ public final class PortableLowering {
         }
         index++;
       }
-      List<OrderByItem> orderBy = rewrittenOrderBy == null ? originalOrderBy : rewrittenOrderBy;
-      SelectPagination originalPagination = select.pagination().orElse(null);
-      SelectPagination pagination = pagination(originalPagination);
-      boolean changed =
-          selections != originalSelections
-              || hidden != originalHidden
-              || fromClause != originalFrom
-              || where != originalWhere
-              || groupBy != originalGroupBy
-              || having != originalHaving
-              || orderBy != originalOrderBy
-              || pagination != originalPagination;
-      if (!changed) {
-        return select;
+      return rewrittenOrderBy == null ? originalOrderBy : rewrittenOrderBy;
+    }
+
+    private List<SqlExpression<?>> groupBy(List<SqlExpression<?>> original) {
+      List<SqlExpression<?>> normalized =
+          mapIfChanged(
+              original,
+              key -> {
+                SqlExpression<?> value = expression(key);
+                // Empty membership can introduce a boolean constant after dialect lowering.
+                // PostgreSQL interprets bare GROUP BY constants using output-position rules.
+                return value instanceof BooleanPredicate predicate
+                    ? new CastExpression<>(predicate, Boolean.class)
+                    : value;
+              });
+      if (normalized == original) {
+        return original;
       }
-      return new SelectStatement(
-          distinct, selections, hidden, fromClause, where, groupBy, having, orderBy, pagination);
+      // Different original predicates can normalize to the same constant key. Two bits avoid
+      // allocating a hash set; preserve one key so empty input still produces zero groups.
+      int booleanConstants = 0;
+      List<SqlExpression<?>> result = null;
+      for (int index = 0; index < normalized.size(); index++) {
+        SqlExpression<?> key = normalized.get(index);
+        int constant =
+            key instanceof CastExpression<?> cast
+                    && cast.sqlType() == SqlType.BOOLEAN
+                    && cast.operand() instanceof BooleanPredicate(boolean value)
+                ? (value ? 1 : 2)
+                : 0;
+        boolean duplicate = (booleanConstants & constant) != 0;
+        booleanConstants |= constant;
+        if (duplicate && result == null) {
+          result = new ArrayList<>(normalized.size());
+          result.addAll(normalized.subList(0, index));
+        }
+        if (!duplicate && result != null) {
+          result.add(key);
+        }
+      }
+      return result == null ? normalized : result;
     }
 
     private CountAst count(CountAst count) {
@@ -313,6 +400,10 @@ public final class PortableLowering {
 
     private SqlExpression<?> expression(SqlExpression<?> expression) {
       return switch (expression) {
+        case AggregateExpression<?> aggregate -> {
+          SqlExpression<?> operand = aggregate.operand().orElse(null);
+          yield operand == null ? aggregate : aggregate.withOperand(expression(operand));
+        }
         case ParameterSlot<?> parameter -> parameter;
         case BooleanPredicate predicate -> predicate;
         case SelectedOutputReference<?> reference -> reference;
@@ -377,7 +468,8 @@ public final class PortableLowering {
           SqlExpression<?> operand = expression(originalOperand);
           yield operand == originalOperand
               ? cast
-              : new CastExpression<>(operand, cast.javaType(), cast.sqlType());
+              : new CastExpression<>(
+                  operand, cast.javaType(), cast.sqlType(), cast.decimalPrecision());
         }
         case CoalesceExpression<?> coalesce -> coalesce(coalesce);
         case ComparisonPredicate<?> comparison -> {
@@ -496,7 +588,7 @@ public final class PortableLowering {
 
     private <T> SqlExpression<?> in(InPredicate<T> in) {
       if (in.candidates().isEmpty()) {
-        return new BooleanPredicate(in.negated());
+        return emptyMembership(in);
       }
       SqlExpression<T> value = unchecked(expression(in.value()));
       boolean changed = value != in.value();
@@ -510,6 +602,20 @@ public final class PortableLowering {
         return in;
       }
       return new InPredicate<>(value, candidates, in.negated());
+    }
+
+    private static @Nullable AggregateExpression<?> localAggregate(SqlExpression<?> expression) {
+      if (expression instanceof AggregateExpression<?> aggregate) {
+        return aggregate;
+      }
+      // Operands exclude nested SELECT: their aggregates never group the enclosing block.
+      for (SqlExpression<?> operand : AstExpressions.operands(expression)) {
+        AggregateExpression<?> aggregate = localAggregate(operand);
+        if (aggregate != null) {
+          return aggregate;
+        }
+      }
+      return null;
     }
 
     private static int selectedIndex(

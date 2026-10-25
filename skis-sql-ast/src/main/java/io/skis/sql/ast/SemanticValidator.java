@@ -108,10 +108,20 @@ public final class SemanticValidator {
   private static void validateFromClause(FromClause fromClause, ValidationContext context) {
     validateRelationSource(fromClause.root());
     context.addVisible(fromClause.root());
+    if (fromClause.root() instanceof ParameterRelationSource parameters) {
+      parameters
+          .parameters()
+          .forEach(parameter -> context.validateExpression(parameter, "parameter relation"));
+    }
     for (int index = 0; index < fromClause.joins().size(); index++) {
       JoinClause join = fromClause.joins().get(index);
       validateRelationSource(join.right());
       context.addVisible(join.right());
+      if (join.right() instanceof ParameterRelationSource parameters) {
+        parameters
+            .parameters()
+            .forEach(parameter -> context.validateExpression(parameter, "parameter relation"));
+      }
       int position = index + 1;
       join.on()
           .ifPresent(
@@ -402,6 +412,13 @@ public final class SemanticValidator {
 
   static void validateCast(SqlExpression<?> operand, Class<?> javaType, SqlType sqlType) {
     requireJavaSqlDescriptor(javaType, sqlType, "CAST target");
+    // Internal typed parameter normalization needs this identity cast. The public Sql.cast
+    // target whitelist remains narrower and still excludes binary conversion requests.
+    if (sqlType == SqlType.VARBINARY
+        && operand.sqlType() == SqlType.VARBINARY
+        && javaType == byte[].class) {
+      return;
+    }
     if (!operand.sqlType().castableTo(sqlType)) {
       throw new IllegalArgumentException(
           "CAST from " + operand.sqlType() + " to " + sqlType + " is not portable");
@@ -593,6 +610,8 @@ public final class SemanticValidator {
         case EntityRelationSource entity -> addVisible(entity.table());
         case DerivedRelationSource derived ->
             visibleDerivedRelations.put(derived.reference(), Boolean.FALSE);
+        case ParameterRelationSource parameters ->
+            visibleDerivedRelations.put(parameters.reference(), Boolean.FALSE);
       }
     }
 
@@ -620,14 +639,15 @@ public final class SemanticValidator {
         case EntityRelationSource entity -> visibleTables.put(entity.table(), Boolean.TRUE);
         case DerivedRelationSource derived ->
             visibleDerivedRelations.put(derived.reference(), Boolean.TRUE);
+        case ParameterRelationSource parameters ->
+            visibleDerivedRelations.put(parameters.reference(), Boolean.TRUE);
       }
     }
 
     private void markLeftNullable(RelationSource right) {
       TableExpression<?> rightTable =
           right instanceof EntityRelationSource(TableExpression<?> table) ? table : null;
-      DerivedRelationReference rightDerived =
-          right instanceof DerivedRelationSource derived ? derived.reference() : null;
+      DerivedRelationReference rightDerived = right.derivedReference().orElse(null);
       for (TableExpression<?> table : visibleTables.keySet()) {
         if (table != rightTable) {
           visibleTables.put(table, Boolean.TRUE);

@@ -11,6 +11,7 @@ import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -64,6 +65,35 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
 
   final boolean composed() {
     return recipe != null;
+  }
+
+  /** Finds a grouping witness without compiling or binding an expression that will be discarded. */
+  final @Nullable AggregateExpression<?> localAggregate(IdentityHashMap<Object, Boolean> visited) {
+    if (visited.put(this, Boolean.TRUE) != null) {
+      return null;
+    }
+    if (descriptor instanceof AggregateExpression<?> aggregate) {
+      return aggregate;
+    }
+    Recipe<V> current = recipe;
+    if (current != null) {
+      if (current.condition() != null) {
+        AggregateExpression<?> aggregate =
+            QueryConditions.framework(current.condition()).localAggregate(visited);
+        if (aggregate != null) {
+          return aggregate;
+        }
+      }
+      for (Selectable<?> operand : current.operands()) {
+        if (operand instanceof ExpressionSelectable<?> expression) {
+          AggregateExpression<?> aggregate = expression.localAggregate(visited);
+          if (aggregate != null) {
+            return aggregate;
+          }
+        }
+      }
+    }
+    return null;
   }
 
   /** Shares detached compilation across capture boundaries without retaining a value owner. */

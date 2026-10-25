@@ -3,6 +3,7 @@ package io.skis.dialect.spi;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.SqlRenderException;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.BooleanPredicate;
@@ -33,6 +34,7 @@ import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
+import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.RelationSource;
@@ -97,7 +99,7 @@ public final class RenderInput {
     try {
       DialectLowering lowering = dialect.lowering();
       lowered = lowering.lower(resolved);
-      validateDialectLoweringContract(resolved.statement(), lowered, dialectId);
+      validateDialectLoweringContract(resolved, lowered, dialectId, dialect.capabilities());
       lowered = PortableLowering.normalize(lowered, dialect.capabilities());
     } catch (IllegalArgumentException failure) {
       throw invalid(dialectId, failure, "dialect lowering produced an invalid structure");
@@ -113,6 +115,16 @@ public final class RenderInput {
     try {
       finalResolved.validateCapabilities(dialectId, dialect.capabilities());
       PostValidator.validate(finalResolved.statement(), dialect.capabilities(), dialectId);
+      var originalAnalysis = resolved.queryAnalysis();
+      var finalAnalysis = finalResolved.queryAnalysis();
+      // Nested outputs are checked recursively by LoweringCorrespondence; portable empty-IN
+      // rewrites retain their own block's aggregate, never an aggregate from a nested SELECT.
+      if (originalAnalysis != null
+          && finalAnalysis != null
+          && originalAnalysis.isGrouped() != finalAnalysis.isGrouped()) {
+        throw new IllegalArgumentException(
+            "lowering changed the aggregate/grouping classification");
+      }
       validateResultShape(resolved, finalResolved, dialectId);
     } catch (IllegalArgumentException failure) {
       throw invalid(dialectId, failure, "lowered statement failed post-validation");
@@ -192,7 +204,11 @@ public final class RenderInput {
   }
 
   private static void validateDialectLoweringContract(
-      StatementAst original, StatementAst lowered, String dialectId) {
+      ResolvedStatement originalStage,
+      StatementAst lowered,
+      String dialectId,
+      DialectCapabilities capabilities) {
+    StatementAst original = originalStage.statement();
     if (original == lowered) {
       return;
     }
@@ -211,14 +227,10 @@ public final class RenderInput {
       if (originalSelect.distinct() != loweredSelect.distinct()) {
         throw changedResultShape(dialectId, "lowering changed SELECT DISTINCT semantics");
       }
-      if (!originalSelect.selections().equals(loweredSelect.selections())) {
-        throw changedResultShape(
-            dialectId, "lowering changed or reordered the visible SELECT list");
-      }
-      if (!originalSelect.hiddenSelections().equals(loweredSelect.hiddenSelections())) {
-        throw changedResultShape(dialectId, "lowering changed or reordered the hidden SELECT list");
-      }
     }
+    var analysis = originalStage.queryAnalysis();
+    LoweringCorrespondence.validate(
+        original, lowered, analysis != null && analysis.hasAggregateStructure(), capabilities);
   }
 
   private static void validateResultShape(
@@ -401,22 +413,14 @@ public final class RenderInput {
 
     private static void validateSelect(
         SelectStatement select, DialectCapabilities capabilities, String dialectId) {
-      if (!select.groupBy().isEmpty() || select.having().isPresent()) {
-        throw SqlRenderException.of(
-            SkisErrorCode.DIALECT_RESERVED_STRUCTURE,
-            dialectId,
-            "GROUP BY/HAVING",
-            "dialect '"
-                + dialectId
-                + "' cannot render reserved GROUP BY/HAVING structure before that capability "
-                + "is enabled");
-      }
       validateFromClause(select.fromClause(), capabilities, dialectId);
       select.selections().forEach(value -> validateExpression(value, capabilities, dialectId));
       select
           .hiddenSelections()
           .forEach(item -> validateExpression(item.expression(), capabilities, dialectId));
       select.where().ifPresent(value -> validateExpression(value, capabilities, dialectId));
+      select.groupBy().forEach(value -> validateExpression(value, capabilities, dialectId));
+      select.having().ifPresent(value -> validateExpression(value, capabilities, dialectId));
       for (OrderByItem item : select.orderBy()) {
         if (item.expression() instanceof SelectedOutputReference<?> reference) {
           validateSelectedOutputReference(select, reference, dialectId);
@@ -549,6 +553,10 @@ public final class RenderInput {
                   + ")");
         }
         validateSelect(derived.statement(), capabilities, dialectId);
+      } else if (source instanceof ParameterRelationSource parameters) {
+        parameters
+            .parameters()
+            .forEach(value -> validateExpression(value, capabilities, dialectId));
       } else {
         source.entityTable().ifPresent(table -> validateTable(table, capabilities, dialectId));
       }
@@ -587,6 +595,10 @@ public final class RenderInput {
     private static void validateExpression(
         SqlExpression<?> expression, DialectCapabilities capabilities, String dialectId) {
       switch (expression) {
+        case AggregateExpression<?> aggregate ->
+            aggregate
+                .operand()
+                .ifPresent(value -> validateExpression(value, capabilities, dialectId));
         case ParameterSlot<?> ignored -> {}
         case BooleanPredicate ignored -> {}
         case SelectedOutputReference<?> ignored ->

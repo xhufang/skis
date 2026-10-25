@@ -45,6 +45,7 @@ class JoinSqlRendererTest {
           "join-test",
           DialectCapabilities.of(
               DialectFeature.SCHEMA_QUALIFIED_TABLES,
+              DialectFeature.COUNT_AGGREGATE,
               DialectFeature.INNER_JOIN,
               DialectFeature.LEFT_JOIN,
               DialectFeature.RIGHT_JOIN,

@@ -48,5 +48,29 @@ public enum DialectFeature {
   CORRELATED_SUBQUERY,
 
   /** FROM and JOIN may contain an explicitly aliased SELECT-derived relation. */
-  DERIVED_TABLE
+  DERIVED_TABLE,
+
+  /** SELECT supports explicit grouping of supported scalar SQL values. */
+  GROUP_BY,
+
+  /** SELECT supports a separate HAVING predicate. */
+  HAVING,
+
+  /**
+   * COUNT(*) and COUNT(expression) are supported. COUNT(DISTINCT expression) additionally requires
+   * {@link #COUNT_DISTINCT}.
+   */
+  COUNT_AGGREGATE,
+
+  /** SUM(expression) is supported for numeric inputs under the aggregate type rules. */
+  SUM_AGGREGATE,
+
+  /** AVG(expression) is supported for numeric inputs under the aggregate type rules. */
+  AVG_AGGREGATE,
+
+  /** MIN(expression) is supported for orderable inputs under the aggregate type rules. */
+  MIN_AGGREGATE,
+
+  /** MAX(expression) is supported for orderable inputs under the aggregate type rules. */
+  MAX_AGGREGATE
 }
