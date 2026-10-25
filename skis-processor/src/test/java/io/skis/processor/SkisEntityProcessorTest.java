@@ -34,6 +34,62 @@ class SkisEntityProcessorTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void generatedProjectionAcceptsFixedAggregateDomainsAndRejectsNullableCountArguments() throws Exception {
+    Map<String, String> models = Map.of("samples.AggregateView", """
+        package samples;
+        import io.skis.annotations.ReusableProjection;
+        import java.math.*;
+        import org.jspecify.annotations.*;
+        @NullMarked @ReusableProjection public record AggregateView(
+            long count, @Nullable BigInteger sum, @Nullable BigDecimal average,
+            @Nullable Long scalar) {}
+        """);
+    CompilationResult generated = process(models, SkisProjectionProcessor.class.getName(),
+        temporaryDirectory.resolve("aggregate-projection"));
+    assertTrue(generated.success(), generated.diagnosticsText());
+    String caller = """
+        package samples;
+        import io.skis.query.*;
+        import samples.skis.AggregateViewPro;
+        import org.jspecify.annotations.NullMarked;
+        @NullMarked final class AggregateCaller {
+          static ProjectionSelection<AggregateView> bind(QueryTable<?> table,
+              Selectable<Integer> number, Selectable<Long> large) {
+            return AggregateViewPro.of(Sql.countAll(), Sql.sumAsBigInteger(large),
+                Sql.avgAsBigDecimal(number), Sql.scalar(Sql.select(Sql.countAll()).from(table)));
+          }
+        }
+        """;
+    Map<String, String> sources = new TreeMap<>(models);
+    sources.put("samples.AggregateCaller", caller);
+    CompilationResult valid = compileGenerated(sources, generated);
+    assertTrue(valid.success(), valid.diagnosticsText());
+    List<Path> generatedPaths;
+    try (var paths = Files.walk(generated.generatedSources())) {
+      generatedPaths = paths.filter(path -> path.toString().endsWith(".java")).sorted().toList();
+    }
+    if (Boolean.getBoolean("skis.staticAnalysis")) {
+      NullnessCompiler.compile("generated-aggregate-projection", sources, generatedPaths, List.of(),
+          temporaryDirectory.resolve("checked-aggregate-projection")).assertPass();
+      sources.put("samples.AggregateCaller", caller.replace("\n}", """
+
+            static int invalid(AggregateView row) { return row.sum().signum(); }
+          }
+          """));
+      NullnessCompiler.compile("generated-aggregate-null-result", sources, generatedPaths, List.of(),
+          temporaryDirectory.resolve("checked-aggregate-null-result"))
+          .assertRejected("NullAway", "AggregateCaller.java");
+    }
+    for (String invalid : List.of("Sql.sumAsLong(number)",
+        "Sql.scalar(Sql.select(Sql.countAll()).from(table))")) {
+      sources.put("samples.AggregateCaller", caller.replace("AggregateViewPro.of(Sql.countAll(),",
+          "AggregateViewPro.of(" + invalid + ","));
+      CompilationResult rejected = compileGenerated(sources, generated);
+      assertFalse(rejected.success(), "nullable aggregate/scalar accepted as non-null generated parameter");
+    }
+  }
+
+  @Test
   @EnabledIfSystemProperty(named = "skis.staticAnalysis", matches = "true")
   void checksGeneratedSourcesAndTheirCallersWithTheRealNullnessChecker() throws Exception {
     Map<String, String> models = Map.of(

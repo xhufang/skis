@@ -3,7 +3,6 @@ package io.skis.query.internal;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
-import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcCodecs;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.PropertyRuntime;
@@ -20,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.IdentityHashMap;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -73,6 +73,7 @@ record ResolvedValueMapping<V>(
       case QueryColumn<?, ?> column -> resolveColumnUntyped(column, expression, scope);
       case DerivedColumnSelectable<?> derived -> resolveDerivedUntyped(derived, expression, scope);
       case ScalarSubquerySelectable<?> scalar -> resolveScalarUntyped(scalar, expression, scope);
+      case ExpressionSelectable<?> ignored -> resolveExpression(selectable, expression, scope);
       default ->
           throw QueryValidationException.of(
               SkisErrorCode.QUERY_RESULT_MAPPING,
@@ -82,12 +83,31 @@ record ResolvedValueMapping<V>(
     };
   }
 
+  @SuppressWarnings("unchecked")
+  private static <V> ResolvedValueMapping<V> resolveExpression(
+      Selectable<V> selectable, SqlExpression<V> expression, TableRuntimeScope scope) {
+    JdbcTypeCodec<V> codec = (JdbcTypeCodec<V>) scope.outputCodec(selectable);
+    return new ResolvedValueMapping<>(
+        selectable,
+        expression,
+        selectable.javaType(),
+        selectable.sqlType(),
+        scope.effectiveNullability(expression),
+        codec,
+        -1);
+  }
+
   ProjectionMapping.ValueReader<@Nullable V> reader(int resultIndex, boolean requireNonNull) {
     if (resultIndex < 1) {
       throw new IllegalArgumentException("result index must be positive");
     }
     JdbcTypeCodec<V> readerCodec = codec;
-    String selectionSummary = SelectableSupport.summary(selectable);
+    // The compiled AST is authoritative; asking a standard selectable for its summary would
+    // materialize an independent preview just to describe a possible read failure.
+    String selectionSummary =
+        selectable instanceof QueryColumn<?, ?> || selectable instanceof DerivedColumnSelectable<?>
+            ? SelectableSupport.summary(selectable)
+            : expression.getClass().getSimpleName();
     return (resultSet, context) -> {
       Objects.requireNonNull(resultSet, "resultSet");
       Objects.requireNonNull(context, "context");
@@ -137,7 +157,7 @@ record ResolvedValueMapping<V>(
               + "output ordinal");
     }
     JdbcTypeCodec<V> codec =
-        (JdbcTypeCodec<V>) outputCodec(QueryModels.selectable(typed.output()), scope.registry());
+        (JdbcTypeCodec<V>) scope.outputCodec(QueryModels.selectable(typed.output()));
     return new ResolvedValueMapping<>(
         typed,
         expression,
@@ -157,24 +177,61 @@ record ResolvedValueMapping<V>(
           "compiled scalar selection is not backed by a scalar-subquery AST node");
     }
     ScalarSubquerySelectable<V> typed = (ScalarSubquerySelectable) scalar;
-    JdbcTypeCodec<V> codec = (JdbcTypeCodec<V>) outputCodec(typed.output(), scope.registry());
+    JdbcTypeCodec<V> codec = (JdbcTypeCodec<V>) scope.outputCodec(typed.output());
     return new ResolvedValueMapping<>(
         typed, expression, typed.javaType(), typed.sqlType(), Nullability.NULLABLE, codec, -1);
   }
 
-  @SuppressWarnings({"rawtypes", "unchecked"})
   private static JdbcTypeCodec<?> outputCodec(
       Selectable<?> output, EntityRuntimeRegistry registry) {
+    if (output instanceof QueryColumn<?, ?> column) {
+      return propertyCodec(column, registry);
+    }
+    return outputCodec(output, registry, new IdentityHashMap<>());
+  }
+
+  private static <E, V> JdbcTypeCodec<V> propertyCodec(
+      QueryColumn<E, V> column, EntityRuntimeRegistry registry) {
+    return registry.require(column.table().entity()).property(column.property()).codec();
+  }
+
+  static JdbcTypeCodec<?> outputCodec(
+      Selectable<?> output,
+      EntityRuntimeRegistry registry,
+      IdentityHashMap<Object, JdbcTypeCodec<?>> resolved) {
+    Object identity =
+        output instanceof ExpressionSelectable<?> expression ? expression.codecIdentity() : output;
+    JdbcTypeCodec<?> existing = resolved.get(identity);
+    if (existing != null) {
+      return existing;
+    }
+    JdbcTypeCodec<?> codec = resolveOutputCodec(output, registry, resolved);
+    resolved.put(identity, codec);
+    return codec;
+  }
+
+  private static JdbcTypeCodec<?> resolveOutputCodec(
+      Selectable<?> output,
+      EntityRuntimeRegistry registry,
+      IdentityHashMap<Object, JdbcTypeCodec<?>> resolved) {
     switch (output) {
       case QueryColumn<?, ?> column -> {
-        EntityRuntimeModel model = registry.require(column.table().entity());
-        return model.property(column.property()).codec();
+        return propertyCodec(column, registry);
       }
       case DerivedColumnSelectable<?> derived -> {
-        return outputCodec(QueryModels.selectable(derived.output()), registry);
+        return outputCodec(QueryModels.selectable(derived.output()), registry, resolved);
       }
       case ScalarSubquerySelectable<?> scalar -> {
-        return outputCodec(scalar.output(), registry);
+        return outputCodec(scalar.output(), registry, resolved);
+      }
+      case ExpressionSelectable<?> expression -> {
+        for (Selectable<?> source : expression.valueSources()) {
+          requireBuiltin(source, outputCodec(source, registry, resolved));
+        }
+        if (expression.decomposed()) {
+          QueryInputMappings.validateValue(expression.expression(), registry);
+        }
+        return requireBuiltinCodec(expression.javaType(), expression.sqlType());
       }
       default -> {}
     }
@@ -185,15 +242,47 @@ record ResolvedValueMapping<V>(
             + "'");
   }
 
+  private static void requireBuiltin(Selectable<?> source, JdbcTypeCodec<?> actual) {
+    if (actual != requireBuiltinCodec(source.javaType(), source.sqlType())) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
+          "standard expression input requires the exact built-in Codec for '"
+              + sourceSummary(source)
+              + "'");
+    }
+  }
+
+  private static String sourceSummary(Selectable<?> source) {
+    return switch (source) {
+      case ScalarSubquerySelectable<?> scalar -> "scalar output " + sourceSummary(scalar.output());
+      case DerivedColumnSelectable<?> derived ->
+          SelectableSupport.summary(derived)
+              + " from "
+              + sourceSummary(QueryModels.selectable(derived.output()));
+      default -> SelectableSupport.summary(source);
+    };
+  }
+
+  static JdbcTypeCodec<?> requireBuiltinCodec(Class<?> javaType, SqlType sqlType) {
+    JdbcTypeCodec<?> codec =
+        SqlType.fromJavaType(javaType) == sqlType ? builtinCodec(javaType) : null;
+    if (codec == null) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_TYPE_MISMATCH,
+          "no exact built-in Codec for " + javaType.getTypeName() + " / SQL " + sqlType);
+    }
+    return codec;
+  }
+
   static JdbcTypeCodec<?> codecFor(Selectable<?> selectable, EntityRuntimeRegistry registry) {
     return outputCodec(
         Objects.requireNonNull(selectable, "selectable"),
         Objects.requireNonNull(registry, "registry"));
   }
 
-  static void requireBuiltinParameterSource(Selectable<?> source, EntityRuntimeRegistry registry) {
+  static void requireBuiltinParameterSource(Selectable<?> source, JdbcTypeCodec<?> actual) {
     JdbcTypeCodec<?> expected = builtinCodec(source.javaType());
-    if (expected == null || codecFor(source, registry) != expected) {
+    if (expected == null || actual != expected) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_PARAMETER_LAYOUT,
           "a parameter shared with a standard expression requires the exact built-in Codec for '"

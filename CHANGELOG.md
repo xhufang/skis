@@ -14,6 +14,19 @@
 
 ### Added
 
+- 0.2.9 T06 接通聚合、标准表达式、参数视图及混合生成投影的内置结果 Codec，按最终 Java/SQL 类型装配按下标读取器。
+  编译期递归检查受限聚合和标准表达式贡献值的实际内置 Codec 身份，保留直接自定义映射、纯分组、条件位置及普通 COUNT 的允许范围；
+  原描述的 HAVING/ORDER BY、嵌套、隐藏选择及被裁剪的绑定来源不能绕过检查，输入拒绝统一为 QUERY_TYPE_MISMATCH。
+  参数复用保留每个标准表达式来源，结果与参数装配共享编译局部的 Codec 备忘；失败诊断补充查询块、子句及属性/输出来源。
+  Reader 使用已编译 AST 生成安全摘要，不为错误消息额外编译表达式 preview；字面值/显式参数的聚合绑定失败保留原描述位置，
+  覆盖嵌套、裁剪及 count；补充编译次数和 DSL/生成 Pro/JDBC 整数越界、NULL 与失败后连接复用的回归源码。
+  SELECT 结果映射提前失败时仅在失败路径回查原描述，保留 scalar/派生输出及 Pro 参数内部聚合的真实位置，补充普通/有序结果、count 与裁剪定位回归源码。
+  可空 Byte/Short/Integer/Long reader 将驱动 22003 转为 QUERY_RESULT_MAPPING 并保留 cause，成功路径不增加范围比较或分配。
+  补充映射、生成调用/nullness、PG/H2 混合投影、NULL 三态、精确整数/DECIMAL、浮点特殊值及整数驱动越界合同源码。
+  keyset 保持物理列排序边界，生成 ABI 仍为 8；本地未编译运行，当前状态为已实现/待 CI，分页/count 与完整缓存身份仍归 T07/T08。
+  根据执行失败日志修正 WHERE/纯描述参数夹具及共享缓存的旧映射预期；keyset 先检查物理列排序，使派生列排序按合同返回 QUERY_PAGINATION_UNSUPPORTED。
+  CI 复验发现 Slice 入口的通用分页校验仍先触发派生来源元数据错误；将入口既有物理列检查前移，并补齐 offset/keyset 两种 Slice 请求的排序拒绝回归源码。
+  补齐 QueryInputMappings 到 EntityRuntimeRegistry 的精确内部访问登记，记录编译期 Codec 来源校验用途、责任任务及退出条件。
 - 0.2.9 T05 接入递归聚合/GROUP BY/HAVING 能力检查、PG REAL SUM 输入扩宽、H2 小整数 AVG 精确输入及 DOUBLE 聚合结果 CAST。
   分组按 SQL 等值类型检查，参数化行相关键按解析结构和逻辑槽追加单行 VALUES 来源；保持原 Join/相关作用域与最终参数布局。
   受控 lowering 核验输出对应关系、顺序、描述、隐藏别名及原聚合/分组分类，拒绝同类型表达式或参数偷换。

@@ -103,8 +103,12 @@ public final class JdbcCodecs {
 
   public static @Nullable Byte readNullableByte(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    byte value = resultSet.getByte(index);
-    return resultSet.wasNull() ? null : value;
+    try {
+      byte value = resultSet.getByte(index);
+      return resultSet.wasNull() ? null : value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "byte", failure);
+    }
   }
 
   public static short readShort(ResultSet resultSet, int index, JdbcReadContext context)
@@ -120,8 +124,12 @@ public final class JdbcCodecs {
 
   public static @Nullable Short readNullableShort(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    short value = resultSet.getShort(index);
-    return resultSet.wasNull() ? null : value;
+    try {
+      short value = resultSet.getShort(index);
+      return resultSet.wasNull() ? null : value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "short", failure);
+    }
   }
 
   public static int readInt(ResultSet resultSet, int index, JdbcReadContext context)
@@ -137,8 +145,12 @@ public final class JdbcCodecs {
 
   public static @Nullable Integer readNullableInt(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    int value = resultSet.getInt(index);
-    return resultSet.wasNull() ? null : value;
+    try {
+      int value = resultSet.getInt(index);
+      return resultSet.wasNull() ? null : value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "int", failure);
+    }
   }
 
   public static long readLong(ResultSet resultSet, int index, JdbcReadContext context)
@@ -154,8 +166,12 @@ public final class JdbcCodecs {
 
   public static @Nullable Long readNullableLong(
       ResultSet resultSet, int index, JdbcReadContext context) throws SQLException {
-    long value = resultSet.getLong(index);
-    return resultSet.wasNull() ? null : value;
+    try {
+      long value = resultSet.getLong(index);
+      return resultSet.wasNull() ? null : value;
+    } catch (SQLException failure) {
+      throw numericRangeFailure(index, "long", failure);
+    }
   }
 
   public static float readFloat(ResultSet resultSet, int index, JdbcReadContext context)
@@ -596,7 +612,7 @@ public final class JdbcCodecs {
     }
   }
 
-  private static char requireSingleCharacter(String value, int index) throws SQLException {
+  private static char requireSingleCharacter(String value, int index) {
     if (value.length() != 1) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_RESULT_MAPPING,

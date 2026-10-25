@@ -4,37 +4,52 @@ import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.query.DerivedRelation;
 import io.skis.query.QueryTable;
+import io.skis.query.Selectable;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Nullability;
+import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.TableOccurrence;
 import java.util.IdentityHashMap;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
-/** Immutable query-local mapping from stable table occurrences to generated runtime models. */
+/** Query-local source bindings and a lazy compilation-only memo of output Codecs. */
 final class TableRuntimeScope {
 
   private final EntityRuntimeRegistry registry;
   private final FromClause fromClause;
   private final IdentityHashMap<TableExpression<?>, Occurrence<?>> occurrencesByTable;
   private final IdentityHashMap<DerivedRelationReference, Integer> ordinalsByDerivedRelation;
+  private final @Nullable TableRuntimeScope codecOwner;
+  private @Nullable IdentityHashMap<Object, JdbcTypeCodec<?>> outputCodecs;
 
   private TableRuntimeScope(
       EntityRuntimeRegistry registry,
       FromClause fromClause,
       IdentityHashMap<TableExpression<?>, Occurrence<?>> occurrencesByTable,
-      IdentityHashMap<DerivedRelationReference, Integer> ordinalsByDerivedRelation) {
+      IdentityHashMap<DerivedRelationReference, Integer> ordinalsByDerivedRelation,
+      @Nullable TableRuntimeScope codecOwner) {
     this.registry = Objects.requireNonNull(registry, "registry");
     this.fromClause = Objects.requireNonNull(fromClause, "fromClause");
     this.occurrencesByTable = occurrencesByTable;
     this.ordinalsByDerivedRelation = ordinalsByDerivedRelation;
+    this.codecOwner = codecOwner;
   }
 
   static TableRuntimeScope resolve(EntityRuntimeRegistry registry, FromClause fromClause) {
+    return resolve(registry, fromClause, null);
+  }
+
+  private static TableRuntimeScope resolve(
+      EntityRuntimeRegistry registry,
+      FromClause fromClause,
+      @Nullable TableRuntimeScope codecOwner) {
     Objects.requireNonNull(registry, "registry");
     Objects.requireNonNull(fromClause, "fromClause");
     IdentityHashMap<TableExpression<?>, Occurrence<?>> entities = new IdentityHashMap<>();
@@ -65,7 +80,7 @@ final class TableRuntimeScope {
               + occurrence.occurrenceOrdinal()
               + " has no supported runtime source kind");
     }
-    return new TableRuntimeScope(registry, fromClause, entities, derived);
+    return new TableRuntimeScope(registry, fromClause, entities, derived, codecOwner);
   }
 
   /** Reuses resolved runtime models when a validation copy has the same source occurrences. */
@@ -79,26 +94,52 @@ final class TableRuntimeScope {
       if (sourceTable != null) {
         Occurrence<?> resolved = occurrencesByTable.get(sourceTable);
         if (resolved == null || resolved.occurrenceOrdinal() != occurrence.occurrenceOrdinal()) {
-          return resolve(registry, candidate);
+          return resolve(registry, candidate, codecOwner == null ? this : codecOwner);
         }
         continue;
       }
       DerivedRelationReference reference = occurrence.derivedReference().orElse(null);
       Integer ordinal = reference == null ? null : ordinalsByDerivedRelation.get(reference);
       if (ordinal == null || ordinal != occurrence.occurrenceOrdinal()) {
-        return resolve(registry, candidate);
+        return resolve(registry, candidate, codecOwner == null ? this : codecOwner);
       }
     }
     if (candidate.occurrences().size()
         != occurrencesByTable.size() + ordinalsByDerivedRelation.size()) {
-      return resolve(registry, candidate);
+      return resolve(registry, candidate, codecOwner == null ? this : codecOwner);
     }
     return new TableRuntimeScope(
-        registry, candidate, occurrencesByTable, ordinalsByDerivedRelation);
+        registry,
+        candidate,
+        occurrencesByTable,
+        ordinalsByDerivedRelation,
+        codecOwner == null ? this : codecOwner);
   }
 
-  EntityRuntimeRegistry registry() {
-    return registry;
+  JdbcTypeCodec<?> outputCodec(Selectable<?> selectable) {
+    if (selectable instanceof QueryColumn<?, ?>) {
+      return ResolvedValueMapping.codecFor(selectable, registry);
+    }
+    if (codecOwner != null) {
+      return codecOwner.outputCodec(selectable);
+    }
+    IdentityHashMap<Object, JdbcTypeCodec<?>> codecs = outputCodecs;
+    if (codecs == null) {
+      codecs = new IdentityHashMap<>();
+      outputCodecs = codecs;
+    }
+    return ResolvedValueMapping.outputCodec(selectable, registry, codecs);
+  }
+
+  Nullability effectiveNullability(SqlExpression<?> expression) {
+    try {
+      return fromClause.effectiveNullability(expression);
+    } catch (IllegalArgumentException failure) {
+      throw QueryValidationException.ofCause(
+          SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
+          failure,
+          "standard expression references a source outside the result scope");
+    }
   }
 
   <E> Occurrence<E> require(QueryTable<E> table) {

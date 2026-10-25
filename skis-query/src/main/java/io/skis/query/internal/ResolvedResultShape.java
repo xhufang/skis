@@ -92,7 +92,7 @@ record ResolvedResultShape<R extends @Nullable Object>(
 
   static <R> ResolvedResultShape<R> scalar(
       Selectable<R> selectable, SqlExpression<R> expression, TableRuntimeScope scope) {
-    ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
+    ResolvedValueMapping<R> mapping = resolveSelection(selectable, expression, scope, 0);
     if (mapping.effectiveNullability().isNullable()) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
@@ -111,7 +111,7 @@ record ResolvedResultShape<R extends @Nullable Object>(
 
   static <R> ResolvedResultShape<@Nullable R> nullableScalar(
       Selectable<R> selectable, SqlExpression<R> expression, TableRuntimeScope scope) {
-    ResolvedValueMapping<R> mapping = ResolvedValueMapping.resolve(selectable, expression, scope);
+    ResolvedValueMapping<R> mapping = resolveSelection(selectable, expression, scope, 0);
     ProjectionMapping.ValueReader<@Nullable R> reader = mapping.reader(1, false);
     RowDecoder<@Nullable R> decoder = reader::read;
     return new ResolvedResultShape<>(
@@ -149,8 +149,11 @@ record ResolvedResultShape<R extends @Nullable Object>(
       ResolvedValueMapping<?> valueMapping;
       String location = resolutionLocation(selectable, scope);
       try {
-        valueMapping = resolveUntyped(selectable, compiledExpression, scope);
+        valueMapping = resolveUntyped(selectable, compiledExpression, scope, ordinal);
       } catch (QueryValidationException failure) {
+        if (failure.code() == SkisErrorCode.QUERY_TYPE_MISMATCH) {
+          throw failure;
+        }
         throw projectionFailure(
             mapping,
             parameter,
@@ -219,8 +222,20 @@ record ResolvedResultShape<R extends @Nullable Object>(
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static ResolvedValueMapping<?> resolveUntyped(
-      Selectable<?> selectable, SqlExpression<?> expression, TableRuntimeScope scope) {
-    return ResolvedValueMapping.resolve((Selectable) selectable, (SqlExpression) expression, scope);
+      Selectable<?> selectable,
+      SqlExpression<?> expression,
+      TableRuntimeScope scope,
+      int ordinal) {
+    return resolveSelection((Selectable) selectable, (SqlExpression) expression, scope, ordinal);
+  }
+
+  private static <V> ResolvedValueMapping<V> resolveSelection(
+      Selectable<V> selectable, SqlExpression<V> expression, TableRuntimeScope scope, int ordinal) {
+    try {
+      return ResolvedValueMapping.resolve(selectable, expression, scope);
+    } catch (QueryValidationException failure) {
+      throw QueryInputMappings.failureAt(failure, "$", "SELECT", ordinal);
+    }
   }
 
   private static String resolutionLocation(Selectable<?> selectable, TableRuntimeScope scope) {

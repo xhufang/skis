@@ -445,11 +445,11 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     try {
       DefaultSliceRequest sliceRequest =
           QueryModels.sliceRequest(Objects.requireNonNull(request, "request"));
-      validatePaginationOrder(false);
       // Every Slice may need a continuation, including its first offset page.
       for (SortSpecification item : state.orderBy()) {
         requirePhysicalPaginationColumn(item);
       }
+      validatePaginationOrder(false);
       operations.validateRequestedRows(sliceRequest.pageSize(), executionContext);
       Slice<R> result =
           switch (sliceRequest.mode()) {
@@ -726,6 +726,20 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     }
     CompiledQueryStructure structure = analysis().structure();
     validateOrderScope(structure.fromClause());
+    // Reject unsupported keyset expressions before entity-only identity checks inspect sources.
+    if (keyset) {
+      for (SortSpecification item : state.orderBy()) {
+        QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
+        if (structure.fromClause().effectiveNullability(column.expression()).isNullable()
+            && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
+          throw QueryValidationException.of(
+              SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
+              "effectively nullable keyset ordering property '"
+                  + column.property().name()
+                  + "' must declare nullsFirst() or nullsLast()");
+        }
+      }
+    }
     if (state.distinct()) {
       if (!hasStableDistinctOrdering()) {
         SqlExpression<?> missing =
@@ -749,19 +763,6 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       }
     } else {
       validateOccurrencePrimaryKeys(structure.fromClause());
-    }
-    if (keyset) {
-      for (SortSpecification item : state.orderBy()) {
-        QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
-        if (structure.fromClause().effectiveNullability(column.expression()).isNullable()
-            && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
-          throw QueryValidationException.of(
-              SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
-              "effectively nullable keyset ordering property '"
-                  + column.property().name()
-                  + "' must declare nullsFirst() or nullsLast()");
-        }
-      }
     }
   }
 

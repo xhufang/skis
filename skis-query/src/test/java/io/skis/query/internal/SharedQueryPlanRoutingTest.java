@@ -997,7 +997,7 @@ class SharedQueryPlanRoutingTest {
   }
 
   @Test
-  void assemblerReportsUnsafeIdentitiesWithoutClaimingUnmappedExpressionsCanExecute() {
+  void assemblerReportsUnsafeIdentitiesForMappedStandardExpressions() throws Exception {
     PetTable table = new PetTable();
     NonNullSelectable<Long> literal =
         new NonNullExpressionSelectable<>(LiteralExpression.one(Long.class));
@@ -1035,14 +1035,14 @@ class SharedQueryPlanRoutingTest {
                     structure.parameterSlots().getFirst(), JdbcCodecs.LONG)),
             structure.parameterSources()));
 
-    // These are assembler defense cases. The current compiler rejects an unmapped literal earlier.
+    // Standard literals have built-in mappings; their shared result/binder identities bypass L1.
     Fixture fixture = fixture(16, true);
-    assertThrows(
-        QueryValidationException.class,
-        () -> compile(fixture.operations().select(literal).from(table)));
-    assertThrows(
-        QueryValidationException.class,
-        () -> compile(fixture.operations().select(table.id).from(table).where(literal.eq(1L))));
+    QueryCompilation<Long> literalResult = compile(fixture.operations().select(literal).from(table));
+    assertEquals(0, literalResult.plan().parameterCount());
+    QueryCompilation<Long> literalParameter =
+        compile(fixture.operations().select(table.id).from(table).where(literal.eq(1L)));
+    assertEquals(List.of(1L), bindings(literalParameter));
+    assertEquals(2, fixture.dialect().renders.get());
     assertEquals(new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 16), fixture.stats());
   }
 
