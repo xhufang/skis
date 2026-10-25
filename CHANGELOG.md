@@ -24,6 +24,7 @@
   可空 Byte/Short/Integer/Long reader 将驱动 22003 转为 QUERY_RESULT_MAPPING 并保留 cause，成功路径不增加范围比较或分配。
   补充映射、生成调用/nullness、PG/H2 混合投影、NULL 三态、精确整数/DECIMAL、浮点特殊值及整数驱动越界合同源码。
   keyset 保持物理列排序边界，生成 ABI 仍为 8；本地未编译运行，当前状态为已实现/待 CI，分页/count 与完整缓存身份仍归 T07/T08。
+  根据执行失败日志修正 WHERE/纯描述参数夹具及共享缓存的旧映射预期；keyset 先检查物理列排序，使派生列排序按合同返回 QUERY_PAGINATION_UNSUPPORTED。
 - 0.2.9 T05 接入递归聚合/GROUP BY/HAVING 能力检查、PG REAL SUM 输入扩宽、H2 小整数 AVG 精确输入及 DOUBLE 聚合结果 CAST。
   分组按 SQL 等值类型检查，参数化行相关键按解析结构和逻辑槽追加单行 VALUES 来源；保持原 Join/相关作用域与最终参数布局。
   受控 lowering 核验输出对应关系、顺序、描述、隐藏别名及原聚合/分组分类，拒绝同类型表达式或参数偷换。

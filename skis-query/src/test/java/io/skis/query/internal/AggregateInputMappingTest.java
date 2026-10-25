@@ -301,7 +301,7 @@ class AggregateInputMappingTest {
               Sql.value(BigInteger.ONE), Sql.value(BigDecimal.ONE), scalar)).from(TABLE)
           : operations.select(scalar).from(TABLE);
       String block = projection ? "$/SELECT[4]#0" : "$/SELECT[0]#0";
-      for (var candidate : List.of(query, query.and(TABLE.id.in(List.of())))) {
+      for (var candidate : List.of(query, query.where(TABLE.id.in(List.of())))) {
         for (Executable action : List.<Executable>of(
             () -> compile(candidate),
             () -> compileCount(candidate),
@@ -335,22 +335,19 @@ class AggregateInputMappingTest {
           assertFalse(failure.diagnostics().safeText().contains("987654321"));
         }
       }
+    }
 
-      var inner = TABLE.as("bound_inner");
-      var innerSum = Sql.sumAsLong(inner.number);
-      var description = Sql.select(Sql.countAll()).from(inner)
-          .having(explicit ? innerSum.gt(parameter) : innerSum.gt(987654321L));
-      var nested = operations.select(TABLE.id).from(TABLE).where(Sql.exists(description));
-      if (explicit) {
-        nested = nested.bind(parameter, 987654321L);
-      }
-      for (var candidate : List.of(nested, nested.and(TABLE.id.in(List.of())))) {
-        for (Executable action : List.<Executable>of(
-            () -> compile(candidate), () -> compileCount(candidate))) {
-          QueryValidationException failure = assertThrows(QueryValidationException.class, action);
-          assertMappingLocation(failure, "$/WHERE[0]#0", "HAVING", "bound_inner.number");
-          assertFalse(failure.diagnostics().safeText().contains("987654321"));
-        }
+    var inner = TABLE.as("bound_inner");
+    var innerSum = Sql.sumAsLong(inner.number);
+    var description = Sql.select(Sql.countAll()).from(inner).having(innerSum.gt(parameter));
+    var nested = operations.select(TABLE.id).from(TABLE).where(Sql.exists(description))
+        .bind(parameter, 987654321L);
+    for (var candidate : List.of(nested, nested.and(TABLE.id.in(List.of())))) {
+      for (Executable action : List.<Executable>of(
+          () -> compile(candidate), () -> compileCount(candidate))) {
+        QueryValidationException failure = assertThrows(QueryValidationException.class, action);
+        assertMappingLocation(failure, "$/WHERE[0]#0", "HAVING", "bound_inner.number");
+        assertFalse(failure.diagnostics().safeText().contains("987654321"));
       }
     }
   }
