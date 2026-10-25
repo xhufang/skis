@@ -158,8 +158,8 @@ class AggregateInputMappingTest {
     assertTypeFailure(() -> compile(operations.select(Sql.countAll()).from(TABLE).having(sum.gt(0L))));
     assertTypeFailure(() -> compile(operations.select(Sql.countAll()).from(TABLE).orderBy(sum.asc())));
     assertTypeFailure(() -> compile(operations.select(Sql.countAll()).from(TABLE).having(sum.in(List.of()))));
-    assertTypeFailure(() -> QueryModels.query(operations.select(TABLE.id).from(TABLE)
-        .groupBy(TABLE.id).orderBy(sum.asc())).countCompilation());
+    assertTypeFailure(() -> compileCount(operations.select(TABLE.id).from(TABLE)
+        .groupBy(TABLE.id).orderBy(sum.asc())));
     var hidden = new SelectStatement(false, List.of(AggregateExpression.countAll()),
         List.of(new HiddenSelection(SelectableSupport.expression(sum), Identifier.of("hidden_sum"))),
         QueryTableModel.of(TABLE).tableExpression(), null, List.of(), null, List.of(), null);
@@ -224,7 +224,7 @@ class AggregateInputMappingTest {
           operations.select(TABLE.id).from(TABLE)
               .where(condition.and(TABLE.id.in(List.of()))).bind(parameter, 5))) {
         assertTypeFailure(() -> compile(query));
-        assertTypeFailure(() -> QueryModels.query(query).countCompilation());
+        assertTypeFailure(() -> compileCount(query));
       }
       // Replacing the standard binder with a physical built-in source must not discard it either.
       var physicalParameter = Sql.parameter(Long.class);
@@ -253,7 +253,7 @@ class AggregateInputMappingTest {
       // Both physical occurrences of p retain the same logical descriptor after mapping validation.
       assertEquals(3, compiled.plan().renderedSql().parameters().stream()
           .map(slot -> slot.ordinal()).distinct().count());
-      QueryModels.query(query).countCompilation();
+      compileCount(query);
     }
     compile(operations.select(computed).from(TABLE).where(computed.eq(parameter)).bind(parameter, 5));
     assertTypeFailure(() -> compile(operations(true).select(computed).from(TABLE)
@@ -304,7 +304,7 @@ class AggregateInputMappingTest {
       for (var candidate : List.of(query, query.and(TABLE.id.in(List.of())))) {
         for (Executable action : List.<Executable>of(
             () -> compile(candidate),
-            () -> QueryModels.query(candidate).countCompilation(),
+            () -> compileCount(candidate),
             () -> candidate.orderBy(TABLE.id.asc()).fetchSlice(SliceRequest.keysetFirst(2)))) {
           QueryValidationException failure = assertThrows(QueryValidationException.class, action);
           assertMappingLocation(failure, block, "SELECT", "selected_inner.number");
@@ -329,7 +329,7 @@ class AggregateInputMappingTest {
       }
       for (var candidate : List.of(query, query.andHaving(Sql.countAll().in(List.of())))) {
         for (Executable action : List.<Executable>of(
-            () -> compile(candidate), () -> QueryModels.query(candidate).countCompilation())) {
+            () -> compile(candidate), () -> compileCount(candidate))) {
           QueryValidationException failure = assertThrows(QueryValidationException.class, action);
           assertMappingLocation(failure, "$", "HAVING", "s.number");
           assertFalse(failure.diagnostics().safeText().contains("987654321"));
@@ -346,7 +346,7 @@ class AggregateInputMappingTest {
       }
       for (var candidate : List.of(nested, nested.and(TABLE.id.in(List.of())))) {
         for (Executable action : List.<Executable>of(
-            () -> compile(candidate), () -> QueryModels.query(candidate).countCompilation())) {
+            () -> compile(candidate), () -> compileCount(candidate))) {
           QueryValidationException failure = assertThrows(QueryValidationException.class, action);
           assertMappingLocation(failure, "$/WHERE[0]#0", "HAVING", "bound_inner.number");
           assertFalse(failure.diagnostics().safeText().contains("987654321"));
@@ -451,7 +451,11 @@ class AggregateInputMappingTest {
   }
 
   private static <R extends @Nullable Object> QueryCompilation<R> compile(SelectQuery<R> query) {
-    return QueryModels.query(query).compilation(QueryPagination.None.INSTANCE);
+    return ((DefaultSelectQuery<R>) query).compilation(QueryPagination.None.INSTANCE);
+  }
+
+  private static <R extends @Nullable Object> QueryCompilation<Long> compileCount(SelectQuery<R> query) {
+    return ((DefaultSelectQuery<R>) query).countCompilation();
   }
 
   private static QueryOperations operations(boolean custom) {
