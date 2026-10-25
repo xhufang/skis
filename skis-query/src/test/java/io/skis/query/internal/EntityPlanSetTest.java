@@ -550,7 +550,11 @@ class EntityPlanSetTest {
         layout -> (rows, context) -> new BuiltinValue("unused"),
         List.of(new PropertyRuntime<>(property, fixture.codec())));
     EntityRuntimeRegistry registry = EntityRuntimeRegistry.of(List.of(model));
-    ResolvedValueMapping.requireBuiltinParameterSource(new ValueTable("b").value(), registry);
+    ValueTable table = new ValueTable("b");
+    TableRuntimeScope scope = TableRuntimeScope.resolve(
+        registry, FromClause.of(QueryTableModel.of(table).tableExpression()));
+    Selectable<V> value = table.value();
+    ResolvedValueMapping.requireBuiltinParameterSource(value, scope.outputCodec(value));
   }
 
   private record BuiltinValue(Object value) {}

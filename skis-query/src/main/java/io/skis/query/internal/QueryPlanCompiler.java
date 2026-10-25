@@ -251,7 +251,7 @@ final class QueryPlanCompiler {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     }
     ResolvedResultShape<R> selection =
-        selected.resolve(runtimeScope, selectionExpressions(structure, selected));
+        resolveSelection(selected, structure, distinct, runtimeScope);
     return compileResolvedOrdered(
         selected,
         structure,
@@ -383,7 +383,7 @@ final class QueryPlanCompiler {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     }
     ResolvedResultShape<R> selection =
-        selected.resolve(runtimeScope, selectionExpressions(structure, selected));
+        resolveSelection(selected, structure, distinct, runtimeScope);
     return compileResolvedSelection(
         selected,
         QueryPlanKey.PlanVariant.content(QueryPaginationShape.from(pagination)),
@@ -396,6 +396,23 @@ final class QueryPlanCompiler {
         hidden,
         statementArguments,
         observation);
+  }
+
+  private <R extends @Nullable Object> ResolvedResultShape<R> resolveSelection(
+      SelectedResult<R> selected,
+      CompiledQueryStructure structure,
+      boolean distinct,
+      TableRuntimeScope runtimeScope) {
+    try {
+      return selected.resolve(runtimeScope, selectionExpressions(structure, selected));
+    } catch (QueryValidationException failure) {
+      if (failure.code() == SkisErrorCode.QUERY_TYPE_MISMATCH) {
+        // Resolving a scalar/derived output can reach an inner aggregate before its occurrence
+        // is analyzed. Recover that location only on failure, as with bound aggregate inputs.
+        validateSelectionSource(selected, structure, distinct, runtimeScope);
+      }
+      throw failure;
+    }
   }
 
   private <R extends @Nullable Object> QueryCompilation<R> compileResolvedSelection(
@@ -411,7 +428,17 @@ final class QueryPlanCompiler {
       QueryArguments statementArguments,
       @Nullable CompilationObservation observation) {
     List<OrderByItem> orderAst = orderItems(structure, orderBy);
-    InputsBuilder inputs = new InputsBuilder(runtimeScope, structure);
+    InputsBuilder inputs;
+    try {
+      inputs = new InputsBuilder(runtimeScope, structure);
+    } catch (QueryValidationException failure) {
+      if (failure.code() == SkisErrorCode.QUERY_TYPE_MISMATCH) {
+        // A bound aggregate can fail before the final statement is analyzed. Only on failure,
+        // validate its complete original occurrence so the error retains its clause/block.
+        validateSelectionSource(selected, structure, distinct, runtimeScope);
+      }
+      throw failure;
+    }
     SelectPagination paginationAst = inputs.pagination(orderBy, orderAst, pagination);
     SelectStatement statement =
         constructedStatement(
@@ -434,6 +461,10 @@ final class QueryPlanCompiler {
         parameters.size(),
         variant.pagination());
     ResolvedStatement compilationContext = prepareContext(statement);
+    if (compilationContext.hasAggregateStructure()
+        && (structure.validationSource() == null || !hidden.isEmpty())) {
+      QueryInputMappings.validate(compilationContext, runtimeRegistry);
+    }
     return plans.resolve(
         compilationContext,
         compilationContext.statement(),
@@ -461,10 +492,8 @@ final class QueryPlanCompiler {
       boolean distinct,
       TableRuntimeScope runtimeScope) {
     CompiledQueryStructure source = structure.validationStructure();
-    validateBuiltinParameterSources(source);
     TableRuntimeScope scope = runtimeScope.forFromClause(source.fromClause());
     List<SqlExpression<?>> expressions = selectionExpressions(source, selected);
-    selected.resolve(scope, expressions);
     SelectStatement statement =
         constructedStatement(
             () ->
@@ -479,15 +508,26 @@ final class QueryPlanCompiler {
                     source.orderBy(),
                     null));
     ResolvedStatement resolved = prepareContext(statement);
+    if (resolved.hasAggregateStructure()) {
+      QueryInputMappings.validate(resolved, runtimeRegistry);
+    }
+    validateBuiltinParameterSources(source, runtimeScope);
+    for (Selectable<?> parameterSource : source.parameterSources()) {
+      if (!(parameterSource instanceof QueryColumn<?, ?>)) {
+        runtimeScope.outputCodec(parameterSource);
+      }
+    }
+    selected.resolve(scope, expressions);
     // The original description keeps its complete dialect capability validation even when the
     // final numbered/ordered/count statement prunes an operand or reuses a selected output.
     dialect.validate(resolved);
     return resolved;
   }
 
-  private void validateBuiltinParameterSources(CompiledQueryStructure structure) {
+  private static void validateBuiltinParameterSources(
+      CompiledQueryStructure structure, TableRuntimeScope runtimeScope) {
     for (Selectable<?> source : structure.builtinParameterSources()) {
-      ResolvedValueMapping.requireBuiltinParameterSource(source, runtimeRegistry);
+      ResolvedValueMapping.requireBuiltinParameterSource(source, runtimeScope.outputCodec(source));
     }
   }
 
@@ -860,7 +900,7 @@ final class QueryPlanCompiler {
     }
   }
 
-  private final class InputsBuilder {
+  private static final class InputsBuilder {
 
     private final TableRuntimeScope runtimeScope;
     private final List<LogicalParameter> logicalParameters = new ArrayList<>();
@@ -869,7 +909,7 @@ final class QueryPlanCompiler {
     private InputsBuilder(TableRuntimeScope runtimeScope, CompiledQueryStructure structure) {
       this.runtimeScope = Objects.requireNonNull(runtimeScope, "runtimeScope");
       if (structure.validationSource() == null) {
-        validateBuiltinParameterSources(structure);
+        validateBuiltinParameterSources(structure, runtimeScope);
       }
       for (int index = 0; index < structure.parameterSources().size(); index++) {
         Selectable<?> source = structure.parameterSources().get(index);
@@ -1011,7 +1051,7 @@ final class QueryPlanCompiler {
     }
 
     private JdbcTypeCodec<?> parameterCodec(Selectable<?> source) {
-      return ResolvedValueMapping.codecFor(source, runtimeRegistry);
+      return runtimeScope.outputCodec(source);
     }
 
     private List<LogicalParameter> logicalParameters() {

@@ -3,19 +3,29 @@ package io.skis.integration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
+import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.support.SqlCompiler;
 import io.skis.dialect.support.SqlTemplate;
+import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.mapping.spi.JdbcCodecs;
+import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.metadata.ColumnMeta;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
+import io.skis.query.Sql;
+import io.skis.runtime.Skis;
+import io.skis.runtime.SkisExecutor;
 import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.ArithmeticOperator;
@@ -48,6 +58,9 @@ import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.TableExpression;
+import io.skis.testmodel.pet.skis.AggregateIntegerResultPro;
+import io.skis.testmodel.pet.skis.AggregateSampleTable;
+import io.skis.testmodel.pet.skis.AggregateSummaryPro;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.Connection;
@@ -69,7 +82,7 @@ import javax.sql.DataSource;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
-/** T05 database arithmetic/metadata evidence, independent of T06's generated result mapping. */
+/** Shared database contracts for aggregate arithmetic, metadata and generated result mapping. */
 abstract class AbstractSkisAggregateContractTest {
 
   private static final BooleanPredicate FALSE = new BooleanPredicate(false);
@@ -79,6 +92,260 @@ abstract class AbstractSkisAggregateContractTest {
   protected abstract DataSource createDataSource();
 
   protected abstract Dialect dialect();
+
+  @Test
+  void generatedAggregateProjectionReadsGroupingWideningDecimalsAndScalarCount() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var inner = table.as("inner_sample");
+      var label = Sql.concat(table.category(), Sql.value("!"));
+      var scalar = Sql.scalar(Sql.select(Sql.countAll()).from(inner));
+      var query = executor.select(AggregateSummaryPro.of(label, Sql.countAll(),
+              Sql.sumAsBigInteger(table.id()), Sql.avgAsBigDecimal(table.amount()), scalar))
+          .from(table).groupBy(table.category()).orderBy(table.category().asc());
+      var rows = query.fetchList();
+      assertEquals(List.of("A!", "B!"), rows.stream().map(row -> row.category()).toList());
+      assertEquals(2, rows.getFirst().count());
+      assertEquals(BigInteger.valueOf(3), rows.getFirst().idSum());
+      assertEquals(0, Objects.requireNonNull(rows.getFirst().average()).compareTo(new BigDecimal("2")));
+      assertEquals(3L, rows.getFirst().scalarCount());
+      assertEquals(1, rows.get(1).count());
+      assertNull(rows.get(1).average());
+      // The same immutable query rebinds its captured suffix and keeps its detached generated reader.
+      assertEquals(rows, query.fetchList());
+      var reused = executor.select(AggregateSummaryPro.of(
+              Sql.concat(table.category(), Sql.value("?")), Sql.countAll(),
+              Sql.sumAsBigInteger(table.id()), Sql.avgAsBigDecimal(table.amount()), scalar))
+          .from(table).groupBy(table.category()).orderBy(table.category().asc()).fetchList();
+      assertEquals(List.of("A?", "B?"), reused.stream().map(row -> row.category()).toList());
+    }
+  }
+
+  @Test
+  void nullableAggregateScalarAndDerivedOutputsKeepTheirRowPresence() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var sum = executor.select(Sql.sumAsLong(table.number())).from(table);
+      assertTrue(sum.fetchOne().isPresent());
+      assertEquals(3L, sum.fetchOne().orElseThrow());
+      var empty = sum.where(table.id().lt(0L)).fetchOne();
+      assertTrue(empty.hasRow());
+      assertTrue(empty.isNull());
+      assertFalse(sum.where(table.id().lt(0L)).having(Sql.countAll().gt(0L)).fetchOne().hasRow());
+      assertEquals(0L, executor.select(Sql.countAll()).from(table).where(table.id().lt(0L)).fetchOne().orElseThrow());
+
+      var inner = table.as("inner_count");
+      var count = Sql.countAll();
+      var output = Sql.output(count, "count");
+      var derived = Sql.derived(Sql.select(count).from(inner), "derived_count", output);
+      var outerCount = executor.selectNullable(derived.column(output)).from(table)
+          .leftJoin(derived).on(table.id().lt(0L)).where(table.id().eq(1L)).fetchOne();
+      assertTrue(outerCount.hasRow());
+      assertTrue(outerCount.isNull());
+      var scalar = Sql.scalar(Sql.select(inner.id()).from(inner).where(inner.id().lt(table.id())));
+      assertTrue(executor.select(scalar).from(table).where(table.id().eq(1L)).fetchOne().isNull());
+    }
+  }
+
+  @Test
+  void standardResultsAndParameterRowsUseTheirDeclaredReaders() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(10));
+      assertEquals(List.of(10, 11, 12), executor.select(key).from(table).groupBy(key)
+          .orderBy(key.asc()).fetchList());
+      var value = Sql.parameter(BigDecimal.class);
+      assertEquals(0, executor.select(Sql.value(value)).from(table)
+          .where(table.id().eq(1L)).bind(value, new BigDecimal("1.2500")).fetchOne().orElseThrow()
+          .compareTo(new BigDecimal("1.2500")));
+      assertEquals("A!", executor.select(Sql.caseWhen(table.number().gt(0),
+              Sql.concat(table.category(), Sql.value("!")), Sql.value("none")))
+          .from(table).where(table.id().eq(1L)).fetchOne().orElseThrow());
+      assertEquals(2L, executor.select(Sql.cast(table.number(), Long.class, SqlType.BIGINT))
+          .from(table).where(table.id().eq(2L)).fetchOne().orElseThrow());
+    }
+  }
+
+  @Test
+  void standardNullValuesCaseConcatAndCoalesceKeepTheirSqlNullContracts() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      assertTrue(executor.select(Sql.value(Integer.class, null)).from(table)
+          .where(table.id().eq(1L)).fetchOne().isNull());
+      assertTrue(executor.select(Sql.concat(table.category(), Sql.value(String.class, null))).from(table)
+          .where(table.id().eq(1L)).fetchOne().isNull());
+      assertTrue(executor.select(Sql.caseWhen(table.id().eq(1L),
+              Sql.value(Long.class, null), Sql.value(2L))).from(table)
+          .where(table.id().eq(1L)).fetchOne().isNull());
+      assertEquals(9L, executor.select(Sql.coalesce(Sql.value(Long.class, null), Sql.value(9L)))
+          .from(table).where(table.id().eq(1L)).fetchOne().orElseThrow());
+      assertTrue(executor.select(Sql.cast(table.number(), Long.class, SqlType.BIGINT))
+          .from(table).where(table.id().eq(3L)).fetchOne().isNull());
+    }
+  }
+
+  @Test
+  void nullableAndRequiredIntegerReadersRejectBothRangeEndsInTheLockedDriver() throws Exception {
+    try (Connection connection = createDataSource().getConnection()) {
+      List<BigInteger> maxima = List.of(BigInteger.valueOf(Byte.MAX_VALUE), BigInteger.valueOf(Short.MAX_VALUE),
+          BigInteger.valueOf(Integer.MAX_VALUE), BigInteger.valueOf(Long.MAX_VALUE));
+      List<String> widerSqlTypes = List.of("SMALLINT", "INTEGER", "BIGINT", "NUMERIC");
+      List<IntegerReader> required = List.of(
+          rows -> JdbcCodecs.readByte(rows, 1, JdbcReadContext.EMPTY),
+          rows -> JdbcCodecs.readShort(rows, 1, JdbcReadContext.EMPTY),
+          rows -> JdbcCodecs.readInt(rows, 1, JdbcReadContext.EMPTY),
+          rows -> JdbcCodecs.readLong(rows, 1, JdbcReadContext.EMPTY));
+      List<IntegerReader> nullable = List.of(
+          rows -> JdbcCodecs.readNullableByte(rows, 1, JdbcReadContext.EMPTY),
+          rows -> JdbcCodecs.readNullableShort(rows, 1, JdbcReadContext.EMPTY),
+          rows -> JdbcCodecs.readNullableInt(rows, 1, JdbcReadContext.EMPTY),
+          rows -> JdbcCodecs.readNullableLong(rows, 1, JdbcReadContext.EMPTY));
+      for (int index = 0; index < maxima.size(); index++) {
+        BigInteger maximum = maxima.get(index);
+        BigInteger minimum = maximum.negate().subtract(BigInteger.ONE);
+        for (IntegerReader reader : List.of(required.get(index), nullable.get(index))) {
+          for (String sqlType : java.util.stream.Stream.of("NUMERIC", widerSqlTypes.get(index))
+              .distinct().toList()) {
+            for (BigInteger value : List.of(minimum, maximum,
+                minimum.subtract(BigInteger.ONE), maximum.add(BigInteger.ONE))) {
+              try (var statement = connection.prepareStatement("SELECT CAST(? AS " + sqlType + ")")) {
+                statement.setBigDecimal(1, new BigDecimal(value));
+                try (ResultSet rows = statement.executeQuery()) {
+                  assertTrue(rows.next());
+                  if (value.compareTo(minimum) < 0 || value.compareTo(maximum) > 0) {
+                    QueryValidationException failure =
+                        assertThrows(QueryValidationException.class, () -> reader.read(rows));
+                    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
+                    assertEquals("22003",
+                        assertInstanceOf(SQLException.class, failure.getCause()).getSQLState());
+                  } else {
+                    assertEquals(value.toString(), Objects.requireNonNull(reader.read(rows)).toString());
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @Test
+  void generatedIntegerProjectionRejectsExpressionRangeOverflowAndKeepsNullRows() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      // The wider physical column lets SQL produce values beyond the declared Integer domain.
+      // The failure must come from the generated projection's reader, rather than SQL arithmetic.
+      try (var statement = connection.createStatement()) {
+        statement.execute("CREATE TEMPORARY TABLE \"aggregate_samples\" (\"id\" BIGINT PRIMARY KEY, "
+            + "\"category\" VARCHAR(20) NOT NULL, \"number\" BIGINT, \"amount\" NUMERIC(30, 10))");
+        statement.executeUpdate("INSERT INTO \"aggregate_samples\" VALUES "
+            + "(1, 'A', -2147483648, NULL), (2, 'A', 2147483647, NULL), "
+            + "(3, 'A', -2147483649, NULL), (4, 'A', 2147483648, NULL), (5, 'A', NULL, NULL)");
+      }
+      SkisExecutor executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var query = executor.select(AggregateIntegerResultPro.of(Sql.add(table.number(), Sql.value(0))))
+          .from(table);
+      assertEquals(Integer.MIN_VALUE,
+          query.where(table.id().eq(1L)).fetchOne().orElseThrow().value());
+      assertEquals(Integer.MAX_VALUE,
+          query.where(table.id().eq(2L)).fetchOne().orElseThrow().value());
+      for (long id : List.of(3L, 4L)) {
+        QueryValidationException failure = assertThrows(QueryValidationException.class,
+            () -> query.where(table.id().eq(id)).fetchOne());
+        assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
+        assertEquals("22003", assertInstanceOf(SQLException.class, failure.getCause()).getSQLState());
+        assertFalse(failure.diagnostics().safeText().contains("2147483649"));
+        assertFalse(failure.diagnostics().safeText().contains("2147483648"));
+        // A read failure must leave the borrowed connection usable by the same immutable query.
+        assertEquals(Integer.MAX_VALUE,
+            query.where(table.id().eq(2L)).fetchOne().orElseThrow().value());
+      }
+      var nullRow = query.where(table.id().eq(5L)).fetchOne();
+      assertTrue(nullRow.hasRow());
+      assertNull(nullRow.orElseThrow().value());
+    }
+  }
+
+  @Test
+  void exactIntegerAndDecimalReadersRejectFractionsAndPreserveNativeScale() throws Exception {
+    try (Connection connection = createDataSource().getConnection();
+        var statement = connection.prepareStatement("SELECT CAST(? AS NUMERIC(60, 10))")) {
+      statement.setBigDecimal(1, new BigDecimal("123456789012345678901234567890.125"));
+      try (ResultSet rows = statement.executeQuery()) {
+        assertTrue(rows.next());
+        QueryValidationException failure = assertThrows(QueryValidationException.class,
+            () -> JdbcCodecs.BIG_INTEGER.read(rows, 1, JdbcReadContext.EMPTY));
+        assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
+        assertInstanceOf(ArithmeticException.class, failure.getCause());
+        assertEquals(rows.getBigDecimal(1), JdbcCodecs.BIG_DECIMAL.read(rows, 1, JdbcReadContext.EMPTY));
+      }
+      statement.setBigDecimal(1, new BigDecimal(LARGE_INTEGER));
+      try (ResultSet rows = statement.executeQuery()) {
+        assertTrue(rows.next());
+        assertEquals(LARGE_INTEGER, JdbcCodecs.BIG_INTEGER.read(rows, 1, JdbcReadContext.EMPTY));
+      }
+    }
+  }
+
+  @Test
+  void approximateCodecsPreserveSupportedSpecialValuesWithoutReplacingThem() throws Exception {
+    try (Connection connection = createDataSource().getConnection()) {
+      for (double value : new double[] {Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY}) {
+        try (var statement = connection.prepareStatement("SELECT CAST(? AS REAL), CAST(? AS DOUBLE PRECISION)")) {
+          statement.setFloat(1, (float) value);
+          statement.setDouble(2, value);
+          try (ResultSet rows = statement.executeQuery()) {
+            assertTrue(rows.next());
+            float real = Objects.requireNonNull(JdbcCodecs.FLOAT.read(rows, 1, JdbcReadContext.EMPTY));
+            double approximate = Objects.requireNonNull(JdbcCodecs.DOUBLE.read(rows, 2, JdbcReadContext.EMPTY));
+            if (Double.isNaN(value)) {
+              assertTrue(Float.isNaN(real));
+              assertTrue(Double.isNaN(approximate));
+            } else {
+              assertEquals((float) value, real);
+              assertEquals(value, approximate);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private SkisExecutor executor(DataSource source, Connection connection) {
+    return Skis.builder(source).dialect(dialect()).connectionProvider(new ConnectionProvider() {
+      @Override public Connection acquire(ExecutionContext context) { return connection; }
+      @Override public void release(Connection borrowed, ExecutionContext context) {
+        assertSame(connection, borrowed);
+      }
+    }).build();
+  }
+
+  private static void createRuntimeSamples(Connection connection) throws SQLException {
+    try (var statement = connection.createStatement()) {
+      statement.execute("CREATE TEMPORARY TABLE \"aggregate_samples\" (\"id\" BIGINT PRIMARY KEY, "
+          + "\"category\" VARCHAR(20) NOT NULL, \"number\" INTEGER, \"amount\" NUMERIC(30, 10))");
+      statement.executeUpdate("INSERT INTO \"aggregate_samples\" VALUES (1, 'A', 1, 1.25), (2, 'A', 2, 2.75), (3, 'B', NULL, NULL)");
+    }
+  }
+
+  @FunctionalInterface
+  private interface IntegerReader {
+    @Nullable Number read(ResultSet rows) throws SQLException;
+  }
 
   @Test
   void distinctAggregateOrderingKeepsValuesAndNullRows() throws Exception {

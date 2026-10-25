@@ -63,8 +63,23 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
     return recipe != null && recipe.capturesValues();
   }
 
-  final boolean composed() {
-    return recipe != null;
+  final boolean decomposed() {
+    return recipe == null;
+  }
+
+  /** Capture changes value ownership, while Codec provenance keeps the same descriptor identity. */
+  final Object codecIdentity() {
+    return descriptor;
+  }
+
+  /** Value provenance excludes CASE conditions and ordinary COUNT's input. */
+  final List<Selectable<?>> valueSources() {
+    if (descriptor instanceof AggregateExpression<?> aggregate
+        && aggregate.kind() == AggregateExpression.Kind.COUNT
+        && !aggregate.distinct()) {
+      return List.of();
+    }
+    return recipe == null ? List.of() : recipe.operands();
   }
 
   /** Finds a grouping witness without compiling or binding an expression that will be discarded. */

@@ -104,6 +104,11 @@ public final class ResolvedStatement {
     return analysis != null;
   }
 
+  /** Whether the completed analysis found grouping or aggregates in this tree, including children. */
+  public boolean hasAggregateStructure() {
+    return analysis != null && analysis.hasAggregateStructure();
+  }
+
   // Compilation-owned transformations share this analysis; it never becomes a public stage input.
   @Nullable QueryBlockAnalysis queryAnalysis() {
     return analysis;

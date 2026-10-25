@@ -360,7 +360,9 @@ class AggregateQueryDslTest {
           Sql.select(TABLE.id()).from(TABLE).where(condition)).state().structure();
       assertEquals(List.of(parameter), structure.parameterReferences());
       assertTrue(SelectableSupport.sameOccurrence(TABLE.id(), structure.parameterSources().getFirst()));
-      assertEquals(1, structure.builtinParameterSources().size());
+      assertEquals(2, structure.builtinParameterSources().size());
+      assertTrue(structure.builtinParameterSources().stream()
+          .anyMatch(source -> source instanceof ExpressionSelectable<?>));
       analyze(structure);
     }
     CompiledQueryStructure selectedView = QueryModels.description(

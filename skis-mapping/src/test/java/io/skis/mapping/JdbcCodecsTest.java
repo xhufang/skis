@@ -3,6 +3,7 @@ package io.skis.mapping;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.skis.core.MutationException;
@@ -27,10 +28,40 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.OffsetTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class JdbcCodecsTest {
+
+  @Test
+  void nullableAndRequiredIntegerReadersTranslateOnlyNumericRangeFailures() {
+    List<JdbcReadAttempt> readers = List.of(
+        result -> JdbcCodecs.readByte(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readNullableByte(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readShort(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readNullableShort(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readInt(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readNullableInt(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readLong(result, 1, JdbcReadContext.EMPTY),
+        result -> JdbcCodecs.readNullableLong(result, 1, JdbcReadContext.EMPTY));
+    for (JdbcReadAttempt reader : readers) {
+      for (String state : List.of("22003", "08006")) {
+        SQLException cause = new SQLException("driver-only detail", state);
+        ResultSet result = (ResultSet) Proxy.newProxyInstance(
+            ResultSet.class.getClassLoader(), new Class<?>[] {ResultSet.class},
+            (proxy, method, arguments) -> { throw cause; });
+        if (state.equals("22003")) {
+          QueryValidationException failure =
+              assertThrows(QueryValidationException.class, () -> reader.read(result));
+          assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
+          assertSame(cause, failure.getCause());
+        } else {
+          assertSame(cause, assertThrows(SQLException.class, () -> reader.read(result)));
+        }
+      }
+    }
+  }
 
   @Test
   void readsAndBindsPrimitiveNumericAndBooleanValues() throws Exception {
@@ -501,6 +532,11 @@ class JdbcCodecsTest {
     InvocationRecorder recorder = new InvocationRecorder(null);
     binder.bind(recorder.proxy(PreparedStatement.class));
     recorder.assertInvocation(expectedMethod, expectedArguments);
+  }
+
+  @FunctionalInterface
+  private interface JdbcReadAttempt {
+    void read(ResultSet resultSet) throws SQLException;
   }
 
   @FunctionalInterface

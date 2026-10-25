@@ -562,7 +562,7 @@ final class QueryConditionCompiler {
       return compileScalar(scalar);
     }
     if (selectable instanceof ExpressionSelectable<V> standard) {
-      if (!standard.composed()) {
+      if (standard.decomposed()) {
         return standard.expression();
       }
       if (standard.containsSubquery()) {

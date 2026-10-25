@@ -834,7 +834,7 @@ class JoinQueryDslTest {
   }
 
   @Test
-  void frameworkExpressionSelectableUsesSharedPredicatesOrderingAndFailsClosedForMapping() {
+  void frameworkExpressionSelectableUsesSharedPredicatesOrderingAndBuiltInMapping() {
     ExpressionSelectable<Long> nullable =
         new ExpressionSelectable<>(LiteralExpression.nullLiteral(Long.class));
     ExpressionSelectable<Long> zero =
@@ -870,13 +870,11 @@ class JoinQueryDslTest {
         TableRuntimeScope.resolve(
             EntityRuntimeRegistry.of(List.of(petModel())),
             io.skis.sql.ast.FromClause.of(QueryTableModel.of(PET_TABLE).tableExpression()));
-    QueryValidationException failure =
-        assertThrows(
-            QueryValidationException.class, () -> ResolvedValueMapping.resolve(one, scope));
-    assertEquals(SkisErrorCode.QUERY_RESULT_MAPPING, failure.code());
-    assertEquals(
-        "no query-local value mapping is registered for framework expression 'LiteralExpression'",
-        failure.diagnostics().facts().detail());
+    assertSame(JdbcCodecs.LONG, ResolvedValueMapping.resolve(one, scope).codec());
+    assertEquals(Nullability.NON_NULL,
+        ResolvedValueMapping.resolve(one, scope).effectiveNullability());
+    assertEquals(Nullability.NULLABLE,
+        ResolvedValueMapping.resolve(nullable, scope).effectiveNullability());
   }
 
   @Test

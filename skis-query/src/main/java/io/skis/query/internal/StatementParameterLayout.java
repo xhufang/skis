@@ -31,6 +31,7 @@ final class StatementParameterLayout {
   private final List<QueryParameter<?>> parameterReferences = new ArrayList<>();
   private final List<ParameterSlot<?>> parameterSlots = new ArrayList<>();
   private @Nullable List<Selectable<?>> builtinParameterSources;
+  private @Nullable IdentityHashMap<Object, Boolean> builtinSourceIdentities;
   private final boolean retainOriginalExpressions;
   private boolean rewriteRequired;
 
@@ -78,6 +79,18 @@ final class StatementParameterLayout {
     return builtinParameterSources == null ? List.of() : List.copyOf(builtinParameterSources);
   }
 
+  private void requireBuiltinSource(Selectable<?> source) {
+    if (builtinSourceIdentities == null) {
+      builtinSourceIdentities = new IdentityHashMap<>();
+      builtinParameterSources = new ArrayList<>();
+    }
+    Object identity =
+        source instanceof ExpressionSelectable<?> expression ? expression.codecIdentity() : source;
+    if (builtinSourceIdentities.put(identity, Boolean.TRUE) == null) {
+      Objects.requireNonNull(builtinParameterSources).add(source);
+    }
+  }
+
   final class QueryBlock {
 
     private final IdentityHashMap<QueryParameter<?>, RegisteredParameter> parameters =
@@ -108,6 +121,11 @@ final class StatementParameterLayout {
         }
         boolean registeredStandard = registered.binderSource() instanceof ExpressionSelectable<?>;
         boolean sourceStandard = source instanceof ExpressionSelectable<?>;
+        // A reused slot keeps one binder, but every discarded standard source still has to
+        // prove its value provenance. In particular, a prior value(p) cannot hide a custom input.
+        if (sourceStandard && source != registered.binderSource()) {
+          requireBuiltinSource(source);
+        }
         if (registeredStandard != sourceStandard) {
           Selectable<?> mappedSource = registeredStandard ? source : registered.binderSource();
           if (mappedSource.sqlType() == SqlType.OTHER
@@ -115,10 +133,10 @@ final class StatementParameterLayout {
             throw conflictingSources(registered.binderSource(), source);
           }
           if (!registered.requiresBuiltinCodec()) {
-            if (builtinParameterSources == null) {
-              builtinParameterSources = new ArrayList<>();
+            if (registeredStandard) {
+              requireBuiltinSource(registered.binderSource());
             }
-            builtinParameterSources.add(mappedSource);
+            requireBuiltinSource(mappedSource);
             // Prefer the actual mapped source in either encounter order. Its built-in Codec
             // identity is checked before plan lookup, including sources later pruned from SQL.
             parameterSources.set(existing.ordinal(), mappedSource);
