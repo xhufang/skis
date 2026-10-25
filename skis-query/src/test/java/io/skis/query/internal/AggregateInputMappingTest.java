@@ -152,6 +152,65 @@ class AggregateInputMappingTest {
   }
 
   @Test
+  void restrictedAggregatesAcceptBuiltInInputsAcrossStandardExpressions() throws Exception {
+    var operations = operations(false);
+    for (Selectable<?> input : List.of(
+        Sql.add(TABLE.number, Sql.value(1)),
+        Sql.caseWhen(TABLE.number.eq(7), Sql.value(1), TABLE.number),
+        Sql.coalesce(Sql.value(Integer.class, null), TABLE.number),
+        Sql.cast(TABLE.number, Long.class, SqlType.BIGINT),
+        Sql.concat(Sql.value("prefix"), TABLE.label))) {
+      var compiled = compile(operations.select(Sql.countDistinct(input)).from(TABLE));
+      assertEquals(2L,
+          compiled.plan().rowDecoder().decode(resultSet(Map.of(1, 2L)), RowReadContext.EMPTY));
+    }
+  }
+
+  @Test
+  void standardExpressionsCheckCustomInputsAfterBuiltInOperands() {
+    var operations = operations(true);
+    for (Selectable<?> input : List.of(
+        Sql.add(Sql.value(1), TABLE.number),
+        Sql.coalesce(Sql.value(0), TABLE.number),
+        Sql.caseWhen(TABLE.id.eq(TABLE.id), Sql.value(1), TABLE.number),
+        Sql.concat(Sql.value("prefix"), TABLE.label))) {
+      assertTypeFailure(() -> compile(operations.select(Sql.countDistinct(input)).from(TABLE)));
+    }
+  }
+
+  @Test
+  void restrictedAggregatesAcceptBuiltInDerivedAndScalarInputs() throws Exception {
+    var operations = operations(false);
+    var inner = TABLE.as("builtin_inner");
+    var output = Sql.output(inner.number, "number");
+    var derived = Sql.derived(Sql.select(inner.number).from(inner), "builtin_rows", output);
+    var derivedPlan = compile(operations.select(Sql.countDistinct(derived.column(output))).from(derived));
+    var scalar = Sql.scalar(Sql.select(inner.number).from(inner));
+    var scalarPlan = compile(operations.select(Sql.countDistinct(scalar)).from(TABLE));
+    for (var compiled : List.of(derivedPlan, scalarPlan)) {
+      assertEquals(0, compiled.plan().parameterCount());
+      assertEquals(2L,
+          compiled.plan().rowDecoder().decode(resultSet(Map.of(1, 2L)), RowReadContext.EMPTY));
+    }
+  }
+
+  @Test
+  void aggregateInputsAreValidatedInsideRangeNegationLikeAndSubqueryPredicates() {
+    var builtin = operations(false);
+    var custom = operations(true);
+    var inner = TABLE.as("predicate_inner");
+    var sum = Sql.sumAsLong(TABLE.number);
+    for (var condition : List.of(
+        sum.between(1L, 10L),
+        sum.isNull().not(),
+        Sql.min(TABLE.label).like("prefix%"),
+        sum.in(Sql.select(inner.id).from(inner)))) {
+      compile(builtin.select(Sql.countAll()).from(TABLE).having(condition));
+      assertTypeFailure(() -> compile(custom.select(Sql.countAll()).from(TABLE).having(condition)));
+    }
+  }
+
+  @Test
   void validatesHavingOrderingCountAndPrunedOriginalOccurrencesWithoutReadingTheirResults() {
     var operations = operations(true);
     var sum = Sql.sumAsLong(TABLE.number);

@@ -33,6 +33,7 @@ import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
@@ -131,6 +132,31 @@ class CompilationPipelineTest {
     assertEquals(List.of("validate", "lower", "render"), dialect.events);
     assertEquals(1, template.parameterCount());
     assertEquals(0, template.parameterLayout().slots().getFirst().ordinal());
+  }
+
+  @Test
+  void aggregateStructureFlagDistinguishesMutationPlainGroupedAndNestedQueries() {
+    PetTable pet = new PetTable(PET);
+    assertFalse(
+        ResolvedStatement.analyze(new DeleteStatement(pet, new BooleanPredicate(true)))
+            .hasAggregateStructure());
+    assertFalse(
+        ResolvedStatement.analyze(new SelectStatement(List.of(pet.id()), pet))
+            .hasAggregateStructure());
+    assertTrue(
+        ResolvedStatement.analyze(new SelectStatement(List.of(AggregateExpression.countAll()), pet))
+            .hasAggregateStructure());
+    SelectStatement grouped =
+        new SelectStatement(
+            false, List.of(pet.id()), List.of(), new FromClause(pet, List.of()),
+            null, List.of(pet.id()), null, List.of(), null);
+    assertTrue(ResolvedStatement.analyze(grouped).hasAggregateStructure());
+    PetTable inner = pet.as(Identifier.of("aggregate_inner"));
+    SelectStatement nested =
+        new SelectStatement(
+            List.of(pet.id()), pet,
+            new ExistsPredicate(new SelectStatement(List.of(AggregateExpression.countAll()), inner), false));
+    assertTrue(ResolvedStatement.analyze(nested).hasAggregateStructure());
   }
 
   @Test

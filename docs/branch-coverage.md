@@ -10,6 +10,47 @@ T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 本轮只读取 CI 工件与静态核对文档，未在本地编译运行；下述记录保留各历史失败与抬线时点。
 
 
+## PR #88：聚合输入映射覆盖率抬线与补证（待 CI 复验）
+
+[CI 40166923586 的权威作业](https://github.com/xhufang/skis/actions/runs/40166923586/job/121089778804?pr=88)
+已通过 Java 21 完整构建、架构检查、83 个必需回归套件、覆盖采集及两项证据上传。
+AggregateInputMappingTest 的 17 项及 ArchitectureContractTest 的 10 项均通过且零跳过；
+Java 25、PG 外部 URL/容器、独立消费者及 Gradle 作业均通过。
+本轮唯一原始失败为 skis-sql-ast 覆盖率应抬未抬，Java 21 单元/集成名称转发该权威失败。
+
+PR head 为 `203e3c2c26177c3a7cf9a85628d2a8002591aa25`，实际测试合并提交为
+`c99cf918b8da33e0dce66cdf5a5c5a314daddc7e`，比较 base 为
+`204a05f6a971f6515d04bcda090b6ef407aa1c49`。已核对合并父提交、七项采集输入 blob ID、
+提交内 policy/baseline 的原始字节摘要、15 模块 XML 哈希、逐类/汇总分支计数、类清单及 HTML 报告存在性。
+
+[工件 12588384114](https://github.com/xhufang/skis/actions/runs/40166923586/artifacts/12588384114)
+为 `branch-coverage-java-21-40166923586-1`，归档 SHA-256 为
+`82d0a15cc492da2826ed3280eb5fe6974cb3f261210cd2a9216a04a039f4dcd0`。
+仅从真实候选原样采用下列两条提升行及其来源；其余 13 行、首次登记、统计口径和生成排除不变。
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-sql-ast | 81.02% | 1256/288 | 100 | 81.34% |
+| skis-mapping | 88.02% | 126/16 | 22 | 88.73% |
+
+对应 XML SHA-256：
+
+- skis-sql-ast：`63227dd8f7347340b965d5b1fff672de65b71ea71ada1ac29ccbc5fa1bb5cde9`。
+- skis-mapping：`e164125be8e0adcacf59d87cc5e86f69cf5bada011eb1ed4c08bf1aaaacd6f8d`。
+
+完整候选还暴露以下回退，未采用其降线行，不能把首个失败修复等同于棘轮通过：
+
+| 模块 | 保留门槛 | 本轮 covered/missed | 本轮覆盖率 |
+| --- | ---: | ---: | ---: |
+| skis-dialect-api | 80.49% | 1080/262 | 80.47% |
+| skis-query | 75.91% | 1759/573 | 75.42% |
+
+CompilationPipelineTest 新增无查询分析的 mutation、普通 SELECT、分组、本块及嵌套聚合标志合同；
+AggregateInputMappingTest 新增内置组合表达式、派生/标量来源正例、后续操作数中自定义 Codec 拒绝，
+以及 HAVING 的 BETWEEN/NOT/LIKE/IN 子查询遍历正反例。上述新增源码未本地编译运行，
+修复后的计数、后续应抬门槛和本次登记的来源认证均待新 CI；不预测或手填新计数。
+取证保存在本地 `target/ci-coverage-40166923586/` 的归档、measurement、候选及 `verified-modules.json`。
+
 ## PR #87：聚合方言 lowering 覆盖率抬线（登记后待 CI 认证）
 
 [CI 40142830953](https://github.com/xhufang/skis/actions/runs/40142830953/job/121017961102?pr=87)
