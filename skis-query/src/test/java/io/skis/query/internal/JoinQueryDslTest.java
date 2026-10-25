@@ -427,6 +427,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class, () -> query.fetchSlice(SliceRequest.keysetFirst(10)));
 
+    assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER, failure.code());
     assertTrue(failure.getMessage().contains("effectively nullable keyset ordering property 'id'"));
   }
 
@@ -529,6 +530,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () -> incompleteTuple.fetchSlice(SliceRequest.offset(0, 10)));
+    assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER, failure.code());
     assertTrue(failure.getMessage().contains("must cover every selected expression"));
     assertTrue(failure.getMessage().contains("pet.ownerId"));
   }

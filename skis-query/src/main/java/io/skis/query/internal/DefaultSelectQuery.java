@@ -750,7 +750,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
             && item.nullPlacement() == NullPlacement.DIALECT_DEFAULT) {
           throw QueryValidationException.of(
               SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
-              "effectively nullable keyset ordering must declare nullsFirst() or nullsLast()");
+              "effectively nullable keyset ordering property '"
+                  + column.property().name()
+                  + "' must declare nullsFirst() or nullsLast()");
         }
       }
     }
@@ -792,7 +794,9 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
           if (!covered[representative]) {
             throw QueryValidationException.of(
                 SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
-                "pagination ORDER BY is missing a selected DISTINCT expression");
+                "distinct pagination ORDER BY must cover every selected expression; missing '"
+                    + expressionSummary(outputs.get(representative).expression())
+                    + "'");
           }
         }
         return;

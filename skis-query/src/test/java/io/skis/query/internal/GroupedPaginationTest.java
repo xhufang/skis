@@ -470,7 +470,10 @@ class GroupedPaginationTest {
   void paginationReusesTheOriginalResolvedStageForContentOrderedAndCountCompilation() {
     for (boolean keyset : List.of(false, true)) {
       var dialect = new RecordingDialect();
-      var query = operations(dialect).select(TABLE.id).from(TABLE)
+      var operations = operations(dialect);
+      // Catalog assembly prewarms findById; measure only this query's original stage.
+      dialect.validated.clear();
+      var query = operations.select(TABLE.id).from(TABLE)
           .where(TABLE.id.in(List.of())).orderBy(TABLE.id.asc());
       if (keyset) {
         assertReachesJdbc(() -> query.fetchSlice(SliceRequest.keysetFirst(2)));
