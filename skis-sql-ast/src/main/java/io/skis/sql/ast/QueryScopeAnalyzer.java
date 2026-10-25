@@ -90,6 +90,7 @@ final class QueryScopeAnalyzer {
     private @Nullable ExpressionPath invalidGroupKey;
     private int aggregateDepth;
     private boolean hasAggregate;
+    private boolean hasSelectedAggregate;
     private boolean realSum;
     private boolean smallIntegerAverage;
     private boolean doubleAggregate;
@@ -196,19 +197,77 @@ final class QueryScopeAnalyzer {
         smallIntegerAverage |= child.hasSmallIntegerAverage();
         doubleAggregate |= child.hasDoubleAggregate();
       }
-      return new QueryBlockAnalysis(
-          path,
-          occurrences,
-          expressions,
-          nestedBlocks,
-          buildBlockKey(),
-          clauseScopes,
-          aggregateStructure,
-          grouped || statement instanceof CountAst,
-          standardExpressionStructure,
-          realSum,
-          smallIntegerAverage,
-          doubleAggregate);
+      QueryBlockAnalysis analysis =
+          new QueryBlockAnalysis(
+              path,
+              occurrences,
+              expressions,
+              nestedBlocks,
+              buildBlockKey(),
+              clauseScopes,
+              aggregateStructure,
+              grouped || statement instanceof CountAst,
+              standardExpressionStructure,
+              realSum,
+              smallIntegerAverage,
+              doubleAggregate,
+              atMostOneRow(grouped));
+      if (statement instanceof SelectStatement select
+          && select.pagination().isPresent()
+          && !(select.pagination().orElseThrow() instanceof Limit)
+          && select.orderBy().isEmpty()
+          && !analysis.atMostOneRow()) {
+        throw new IllegalArgumentException("paginated SELECT requires ORDER BY");
+      }
+      return analysis;
+    }
+
+    private boolean atMostOneRow(boolean grouped) {
+      if (statement instanceof CountAst) {
+        return true;
+      }
+      if (grouped) {
+        boolean independent = true;
+        for (Resolution key : groupKeys) {
+          if (key.hasLocalColumns) {
+            independent = false;
+            break;
+          }
+        }
+        if (independent) {
+          return true;
+        }
+      }
+      // Aggregates without column inputs still vary between groups (for example COUNT(*)).
+      if (distinct() && !hasSelectedAggregate) {
+        boolean independent = true;
+        for (ResolvedExpression expression : expressions) {
+          if (expression.position().clause() == QueryClause.SELECT
+              && expression.hasLocalColumns(path)) {
+            independent = false;
+            break;
+          }
+        }
+        if (independent) {
+          return true;
+        }
+      }
+      for (MutableSource source : currentSources) {
+        if (source.source instanceof ParameterRelationSource) {
+          continue;
+        }
+        if (!(source.source instanceof DerivedRelationSource derived)
+            || !Objects.requireNonNull(derivedAnalyses.get(derived.reference()), "derived analysis")
+                .atMostOneRow()) {
+          return false;
+        }
+      }
+      for (JoinClause join : joins()) {
+        if (join.type() == JoinType.FULL) {
+          return false;
+        }
+      }
+      return true;
     }
 
     private void resolveRelationSource(RelationSource source, int sourceOrdinal) {
@@ -755,6 +814,7 @@ final class QueryScopeAnalyzer {
         throw aggregateFailure(aggregate, position, QuerySemanticReason.OUTER_ONLY_AGGREGATE);
       }
       hasAggregate = true;
+      hasSelectedAggregate |= position.clause() == QueryClause.SELECT;
       SqlExpression<?> input = aggregate.operand().orElse(null);
       if (input instanceof ParameterSlot<?> || input instanceof LiteralExpression<?>) {
         standardExpressionStructure = true;

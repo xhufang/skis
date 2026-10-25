@@ -566,14 +566,14 @@ class SqlAstStructureTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new SelectStatement(
+            SemanticValidator.validateComplete(new SelectStatement(
                 false,
                 List.of(table.id()),
                 List.of(),
                 table,
                 null,
                 List.of(),
-                new OffsetLimit(limit, offset)));
+                new OffsetLimit(limit, offset))));
   }
 
   @Test

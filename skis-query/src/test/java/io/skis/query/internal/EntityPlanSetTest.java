@@ -231,7 +231,8 @@ class EntityPlanSetTest {
                     false,
                     arguments(grouped),
                     null,
-                    StatementPurpose.PAGE_COUNT));
+                    StatementPurpose.PAGE_COUNT,
+                    null));
 
     assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT, selection.code());
     assertEquals(selection.code(), count.code());
@@ -292,7 +293,8 @@ class EntityPlanSetTest {
                     false,
                     arguments(pruned),
                     null,
-                    StatementPurpose.PAGE_COUNT));
+                    StatementPurpose.PAGE_COUNT,
+                    null));
 
     assertEquals(SkisErrorCode.QUERY_AGGREGATE_CONTRACT, failure.code());
     assertEquals(
@@ -598,7 +600,7 @@ class EntityPlanSetTest {
       assertEquals(SkisErrorCode.QUERY_PARAMETER_LAYOUT,
           assertThrows(QueryValidationException.class, () -> compiler.compileCount(
               SelectedResult.entity(TABLE), count, false, count.arguments(parameters),
-              null, StatementPurpose.PAGE_COUNT)).code());
+              null, StatementPurpose.PAGE_COUNT, null)).code());
     }
   }
 

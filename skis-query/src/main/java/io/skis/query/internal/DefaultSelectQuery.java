@@ -7,12 +7,11 @@ import io.skis.core.internal.OperationObservation;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.core.spi.ExecutionOperationKind;
 import io.skis.core.spi.StatementPurpose;
+import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcPageResult;
 import io.skis.jdbc.internal.JdbcRow;
 import io.skis.metadata.GeneratedModelAbi;
-import io.skis.metadata.PrimaryKeyMeta;
-import io.skis.metadata.PropertyMeta;
 import io.skis.query.CountQuery;
 import io.skis.query.DerivedRelation;
 import io.skis.query.JoinOnStep;
@@ -39,8 +38,6 @@ import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
-import io.skis.sql.ast.TableExpression;
-import io.skis.sql.ast.TableOccurrence;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -74,6 +71,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   private final LocalPlanCache<R> plansByPagination = new LocalPlanCache<>();
   private final LocalPlanCache<OrderedRow<R>> orderedPlansByPagination = new LocalPlanCache<>();
   private final AtomicReference<@Nullable CachedPlan<Long>> countPlan = new AtomicReference<>();
+  private volatile @Nullable ResolvedStatement paginationContext;
+  private volatile boolean offsetOrderingValidated;
 
   static <R extends @Nullable Object> DefaultSelectQuery<R> create(
       DefaultQueryOperations operations,
@@ -445,11 +444,12 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     try {
       DefaultSliceRequest sliceRequest =
           QueryModels.sliceRequest(Objects.requireNonNull(request, "request"));
-      // Every Slice may need a continuation, including its first offset page.
-      for (SortSpecification item : state.orderBy()) {
-        requirePhysicalPaginationColumn(item);
-      }
-      validatePaginationOrder(false);
+      boolean keyset =
+          sliceRequest.mode() == DefaultSliceRequest.Mode.KEYSET_FIRST
+              || (sliceRequest.mode() == DefaultSliceRequest.Mode.RESUME
+                  && QueryModels.continuation(sliceRequest.continuation()).mode()
+                      == DefaultSliceContinuation.Mode.KEYSET);
+      validatePaginationOrder(keyset);
       operations.validateRequestedRows(sliceRequest.pageSize(), executionContext);
       Slice<R> result =
           switch (sliceRequest.mode()) {
@@ -521,7 +521,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 List.of(),
                 statementArguments,
                 observation,
-                purpose),
+                purpose,
+                paginationContext),
         statementArguments.planArgument());
   }
 
@@ -546,7 +547,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 pagination,
                 statementArguments,
                 observation,
-                StatementPurpose.PRIMARY),
+                StatementPurpose.PRIMARY,
+                paginationContext),
         statementArguments.planArgument());
   }
 
@@ -613,7 +615,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
             state.distinct(),
             countArguments,
             observation,
-            StatementPurpose.PAGE_COUNT);
+            StatementPurpose.PAGE_COUNT,
+            paginationContext);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     if (published == null) {
@@ -719,15 +722,28 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   }
 
   private void validatePaginationOrder(boolean keyset) {
-    if (state.orderBy().isEmpty()) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PAGINATION_ORDER_REQUIRED,
-          "pagination requires explicit stable ORDER BY");
+    if (keyset) {
+      // Keep unsupported seek expressions ahead of identity or entity metadata diagnostics.
+      for (SortSpecification item : state.orderBy()) {
+        requirePhysicalPaginationColumn(item);
+      }
     }
     CompiledQueryStructure structure = analysis().structure();
     validateOrderScope(structure.fromClause());
-    // Reject unsupported keyset expressions before entity-only identity checks inspect sources.
+    ResolvedStatement context = paginationContext();
     if (keyset) {
+      if (context.isGrouped()
+          || structure.fromClause().occurrences().stream()
+              .anyMatch(occurrence -> occurrence.source().entityTable().isEmpty())) {
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
+            "grouped and derived keyset pagination is not supported");
+      }
+      if (state.orderBy().isEmpty()) {
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_PAGINATION_ORDER_REQUIRED,
+            "keyset pagination requires explicit stable ORDER BY");
+      }
       for (SortSpecification item : state.orderBy()) {
         QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
         if (structure.fromClause().effectiveNullability(column.expression()).isNullable()
@@ -740,46 +756,68 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         }
       }
     }
-    if (state.distinct()) {
-      if (!hasStableDistinctOrdering()) {
-        SqlExpression<?> missing =
-            state.selected().expressionIdentities().stream()
-                .filter(
-                    expression ->
-                        state.orderBy().stream()
-                            .noneMatch(
-                                item ->
-                                    SelectableSupport.expressionIdentity(
-                                            QueryModels.selectable(item))
-                                        .equals(expression)))
-                .map(SelectableSupport.ExpressionIdentity::expression)
-                .findFirst()
-                .orElseThrow();
-        throw QueryValidationException.of(
-            SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
-            "distinct pagination ORDER BY must cover every selected expression; missing '"
-                + expressionSummary(missing)
-                + "'");
+    if (!offsetOrderingValidated) {
+      if (state.distinct() && !context.atMostOneRow()) {
+        validateDistinctPaginationOrder(context);
+      } else {
+        context.validateOffsetOrdering();
       }
-    } else {
-      validateOccurrencePrimaryKeys(structure.fromClause());
+      offsetOrderingValidated = true;
     }
   }
 
-  private boolean hasStableDistinctOrdering() {
-    if (!state.distinct()) {
-      return false;
+  private void validateDistinctPaginationOrder(ResolvedStatement context) {
+    if (state.orderBy().isEmpty()) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_PAGINATION_ORDER_REQUIRED,
+          "pagination requires explicit stable ORDER BY");
     }
-    List<SelectableSupport.ExpressionIdentity> expressions =
-        state.selected().expressionIdentities();
-    return expressions.stream()
-        .allMatch(
-            expression ->
-                state.orderBy().stream()
-                    .anyMatch(
-                        item ->
-                            SelectableSupport.expressionIdentity(QueryModels.selectable(item))
-                                .equals(expression)));
+    // The complete original occurrence has been validated by paginationContext(). The DSL
+    // still owns the logical parameter references that separate nested occurrence layouts erase.
+    Set<SelectableSupport.ExpressionIdentity> ordered = new java.util.HashSet<>();
+    for (SortSpecification order : state.orderBy()) {
+      ordered.add(SelectableSupport.expressionIdentity(QueryModels.selectable(order)));
+    }
+    List<SelectableSupport.ExpressionIdentity> outputs = state.selected().expressionIdentities();
+    for (SelectableSupport.ExpressionIdentity output : outputs) {
+      if (!ordered.contains(output)) {
+        // Keep the exact DSL match fast path, including its logical parameter identities.
+        // Only a missing match needs the resolved equivalence of raw derived outputs.
+        List<Integer> representatives = context.distinctOutputRepresentatives();
+        boolean[] covered = new boolean[outputs.size()];
+        for (int index = 0; index < outputs.size(); index++) {
+          if (ordered.contains(outputs.get(index))) {
+            covered[representatives.get(index)] = true;
+          }
+        }
+        for (int representative : representatives) {
+          if (!covered[representative]) {
+            throw QueryValidationException.of(
+                SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
+                "distinct pagination ORDER BY must cover every selected expression; missing '"
+                    + expressionSummary(outputs.get(representative).expression())
+                    + "'");
+          }
+        }
+        return;
+      }
+    }
+  }
+
+  private ResolvedStatement paginationContext() {
+    ResolvedStatement existing = paginationContext;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = paginationContext;
+      if (existing == null) {
+        existing =
+            compiler.resolvePagination(state.selected(), analysis().structure(), state.distinct());
+        paginationContext = existing;
+      }
+      return existing;
+    }
   }
 
   private void validateOrderScope(FromClause fromClause) {
@@ -800,42 +838,6 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
             "ORDER BY expression '"
                 + expressionSummary(expression)
                 + "' is not visible in the final FROM/JOIN scope");
-      }
-    }
-  }
-
-  private void validateOccurrencePrimaryKeys(FromClause fromClause) {
-    for (TableOccurrence occurrence : fromClause.occurrences()) {
-      TableExpression<?> occurrenceTable = entityTable(occurrence);
-      PrimaryKeyMeta<?> primaryKey =
-          occurrenceTable
-              .entity()
-              .primaryKey()
-              .orElseThrow(
-                  () ->
-                      QueryValidationException.of(
-                          SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
-                          "pagination ORDER BY requires primary-key metadata for "
-                              + occurrenceDescription(occurrence)));
-      for (PropertyMeta<?, ?> property : primaryKey.properties()) {
-        boolean present =
-            state.orderBy().stream()
-                .anyMatch(
-                    item -> {
-                      Selectable<?> selectable = QueryModels.selectable(item);
-                      return selectable instanceof QueryColumn<?, ?> column
-                          && QueryTableModel.of(column.table()).tableExpression() == occurrenceTable
-                          && column.property() == property;
-                    });
-        if (!present) {
-          throw QueryValidationException.of(
-              SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
-              "pagination ORDER BY is not stable for "
-                  + occurrenceDescription(occurrence)
-                  + "; missing primary-key property '"
-                  + property.name()
-                  + "'");
-        }
       }
     }
   }
@@ -892,23 +894,11 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
         compilation(QueryPagination.None.INSTANCE, observation, StatementPurpose.PRIMARY);
     FromClause fromClause = analysis().structure().fromClause();
     MessageDigest digest = sha256();
-    updateDigest(digest, "join-query-fingerprint-v1");
+    updateDigest(digest, "query-fingerprint-v2");
     updateDigest(digest, structure.plan().dialectId());
     updateDigest(digest, structure.plan().sql());
     updateDigest(digest, state.selected().structuralIdentity());
-    for (TableOccurrence occurrence : fromClause.occurrences()) {
-      TableExpression<?> occurrenceTable = entityTable(occurrence);
-      var entity = occurrenceTable.entity();
-      var physicalTable = entity.table();
-      updateDigest(digest, Integer.toString(occurrence.occurrenceOrdinal()));
-      updateDigest(digest, entity.javaType().getName());
-      updateDigest(digest, entity.entityName());
-      updateDigest(digest, entity.mode().name());
-      updateDigest(digest, physicalTable.catalog());
-      updateDigest(digest, physicalTable.schema());
-      updateDigest(digest, physicalTable.name());
-      updateDigest(digest, occurrenceTable.alias().map(Identifier::value).orElse("<unaliased>"));
-    }
+    updateDigest(digest, paginationContext().structureKey().orElseThrow().canonicalForm());
     fromClause.joins().forEach(join -> updateDigest(digest, join.type().name()));
     structure
         .plan()
@@ -925,63 +915,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   }
 
   String orderSignature() {
-    FromClause fromClause = analysis().structure().fromClause();
-    StringBuilder signature = new StringBuilder();
-    for (SortSpecification item : state.orderBy()) {
-      QueryColumn<?, ?> column = requirePhysicalPaginationColumn(item);
-      TableOccurrence occurrence =
-          fromClause
-              .occurrenceOf(QueryTableModel.of(column.table()).tableExpression())
-              .orElseThrow(
-                  () ->
-                      QueryValidationException.of(
-                          SkisErrorCode.QUERY_SOURCE_OUT_OF_SCOPE,
-                          "ORDER BY expression '"
-                              + expressionSummary(QueryModels.sort(item).expression())
-                              + "' is not visible in the final FROM/JOIN scope"));
-      signature
-          .append(occurrence.occurrenceOrdinal())
-          .append(':')
-          .append(occurrence.effectiveQualifier())
-          .append(':')
-          .append(entityTable(occurrence).entity().javaType().getName())
-          .append(':')
-          .append(column.property().ordinal())
-          .append(':')
-          .append(column.property().name())
-          .append(':')
-          .append(QueryModels.selectable(item).javaType().getName())
-          .append(':')
-          .append(QueryModels.selectable(item).sqlType())
-          .append(':')
-          .append(item.direction())
-          .append(':')
-          .append(item.nullPlacement())
-          .append(';');
-    }
-    return signature.isEmpty() ? "unordered" : signature.toString();
-  }
-
-  private static String occurrenceDescription(TableOccurrence occurrence) {
-    return "table occurrence #"
-        + occurrence.occurrenceOrdinal()
-        + " with effective qualifier '"
-        + occurrence.effectiveQualifier()
-        + "' and entity '"
-        + entityTable(occurrence).entity().entityName()
-        + "'";
-  }
-
-  private static TableExpression<?> entityTable(TableOccurrence occurrence) {
-    return occurrence
-        .entityTable()
-        .orElseThrow(
-            () ->
-                QueryValidationException.of(
-                    SkisErrorCode.QUERY_METADATA_REQUIRED,
-                    "relation occurrence #"
-                        + occurrence.occurrenceOrdinal()
-                        + " is not backed by an entity table"));
+    return paginationContext().orderingSignature();
   }
 
   private static String expressionSummary(SqlExpression<?> expression) {
@@ -1176,7 +1110,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     }
     throw QueryValidationException.of(
         SkisErrorCode.QUERY_PAGINATION_UNSUPPORTED,
-        "pagination identity analysis does not yet support ORDER BY expression '"
+        "keyset pagination requires physical-column ORDER BY; unsupported expression '"
             + SelectableSupport.summary(QueryModels.selectable(item))
             + "'");
   }

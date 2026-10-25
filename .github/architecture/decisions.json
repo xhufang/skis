@@ -954,7 +954,7 @@
       "decisionVersion": "0.2.9-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T06 结果 Codec、输入映射检查及生成投影接线源码已实现/待 CI；结构键扩展、解析后分组身份、复杂 count 与后续验证未实现",
+      "remaining": "T02—T07 聚合、映射、解析后结果身份与复杂 count 源码已实现/待 CI；T08 完整缓存结构键/依赖及后续验证未实现",
       "task": "0.2.9:T02—T09",
       "anchors": [
         {
@@ -976,6 +976,11 @@
           "kind": "java",
           "path": "skis-query/src/main/java/io/skis/query/internal/QueryInputMappings.java",
           "type": "io.skis.query.internal.QueryInputMappings"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/ResultIdentity.java",
+          "type": "io.skis.sql.ast.ResultIdentity"
         }
       ],
       "contracts": [
@@ -988,6 +993,16 @@
           "kind": "java",
           "path": "skis-query/src/test/java/io/skis/query/internal/QueryPaginationCompilationTest.java",
           "type": "io.skis.query.internal.QueryPaginationCompilationTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/GroupedPaginationTest.java",
+          "type": "io.skis.query.internal.GroupedPaginationTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/test/java/io/skis/sql/ast/ResultIdentityTest.java",
+          "type": "io.skis.sql.ast.ResultIdentityTest"
         },
         {
           "kind": "java",
@@ -1008,7 +1023,7 @@
       "decisionVersion": "0.2.9-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T03—T06 源码已实现/待 CI；分页/count、缓存及后续合同验证未实现",
+      "remaining": "T03—T07 语义、映射及分页/count 源码已实现/待 CI；缓存及后续合同验证未实现",
       "task": "0.2.9:T03—T09",
       "anchors": [
         {

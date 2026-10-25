@@ -104,9 +104,61 @@ public final class ResolvedStatement {
     return analysis != null;
   }
 
-  /** Whether the completed analysis found grouping or aggregates in this tree, including children. */
+  /**
+   * Whether the completed analysis found grouping or aggregates in this tree, including children.
+   */
   public boolean hasAggregateStructure() {
     return analysis != null && analysis.hasAggregateStructure();
+  }
+
+  /** Whether the root query block groups rows, independently of nested aggregates. */
+  public boolean isGrouped() {
+    return analysis != null && analysis.isGrouped();
+  }
+
+  /** Whether the resolved root produces at most one row, independently of binding values. */
+  public boolean atMostOneRow() {
+    return analysis != null && analysis.atMostOneRow();
+  }
+
+  /** Proves stable offset ordering against this stage's exact complete query occurrence. */
+  public void validateOffsetOrdering() {
+    if (!(statement instanceof SelectStatement select) || analysis == null) {
+      throw new IllegalStateException("offset ordering requires a resolved SELECT");
+    }
+    analysis.validateOffsetOrdering(select);
+  }
+
+  /**
+   * Representative visible SELECT ordinal for each root DISTINCT output. The read-only proof
+   * preserves raw derived aliases without exposing the analysis or accepting external matches.
+   */
+  public List<Integer> distinctOutputRepresentatives() {
+    if (!(statement instanceof SelectStatement select) || analysis == null) {
+      throw new IllegalStateException("output equivalence requires a resolved DISTINCT SELECT");
+    }
+    return analysis.distinctOutputRepresentatives(select);
+  }
+
+  /** Value-independent signature of this root block's resolved ordering expressions. */
+  public String orderingSignature() {
+    if (!(statement instanceof SelectStatement select) || analysis == null) {
+      throw new IllegalStateException("ordering signature requires a resolved SELECT");
+    }
+    StringBuilder signature = new StringBuilder();
+    for (ResolvedExpression expression : analysis.expressions()) {
+      if (expression.position().clause() == QueryClause.ORDER_BY) {
+        OrderByItem order = select.orderBy().get(expression.position().itemOrdinal());
+        signature
+            .append(expression.structureKey().canonicalForm())
+            .append(':')
+            .append(order.direction())
+            .append(':')
+            .append(order.nullOrder())
+            .append(';');
+      }
+    }
+    return signature.isEmpty() ? "unordered" : signature.toString();
   }
 
   // Compilation-owned transformations share this analysis; it never becomes a public stage input.

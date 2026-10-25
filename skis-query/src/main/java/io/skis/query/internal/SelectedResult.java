@@ -12,6 +12,7 @@ import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.SqlExpression;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -116,6 +117,13 @@ final class SelectedResult<R extends @Nullable Object> {
             && projection.selections().stream().anyMatch(ExpressionCapture::capturesValues));
   }
 
+  boolean hasLocalAggregate() {
+    if (scalar != null) {
+      return QueryStructureCompiler.hasAggregate(List.of(scalar));
+    }
+    return projection != null && QueryStructureCompiler.hasAggregate(projection.selections());
+  }
+
   /** Detaches call-time fragments while retaining the selected result variant. */
   SelectedResult<R> capture(ExpressionCapture capture) {
     if (scalar != null) {
@@ -186,17 +194,32 @@ final class SelectedResult<R extends @Nullable Object> {
     };
   }
 
-  List<SqlExpression<?>> compileExpressions(QueryConditionCompiler compiler) {
+  List<SqlExpression<?>> compileExpressions(QueryConditionCompiler compiler, boolean distinct) {
     Objects.requireNonNull(compiler, "compiler");
     return switch (kind) {
       case REQUIRED_ENTITY, NULLABLE_ENTITY ->
           List.copyOf(QueryTableModel.of(requireTable()).selections());
       case REQUIRED_SCALAR, NULLABLE_SCALAR -> List.of(compiler.expression(requireScalar()));
       case GENERATED_PROJECTION -> {
-        List<SqlExpression<?>> expressions =
-            new ArrayList<>(requireProjection().selections().size());
-        for (Selectable<?> selectable : requireProjection().selections()) {
-          expressions.add(compiler.expression(selectable));
+        List<Selectable<?>> selections = requireProjection().selections();
+        List<SqlExpression<?>> expressions = new ArrayList<>(selections.size());
+        IdentityHashMap<Selectable<?>, SqlExpression<?>> repeated = null;
+        for (Selectable<?> selectable : selections) {
+          if (distinct && selections.size() > 1 && ExpressionCapture.containsSubquery(selectable)) {
+            if (repeated == null) {
+              repeated = new IdentityHashMap<>();
+            }
+            SqlExpression<?> expression = repeated.get(selectable);
+            if (expression == null) {
+              expression = compiler.expression(selectable);
+              repeated.put(selectable, expression);
+            }
+            // The same visible expression may share slots; semantic analysis still resolves
+            // every SELECT occurrence separately. Independent expressions keep their layouts.
+            expressions.add(expression);
+          } else {
+            expressions.add(compiler.expression(selectable));
+          }
         }
         yield List.copyOf(expressions);
       }
@@ -277,7 +300,22 @@ final class SelectedResult<R extends @Nullable Object> {
     };
   }
 
-  /** Returns the compiled expression usable by the current automatic DISTINCT count path. */
+  /** Whether DISTINCT needs an exact final-row wrapper rather than the proven direct count. */
+  boolean requiresWrappedDistinctCount(boolean hasJoins) {
+    return switch (kind) {
+      case REQUIRED_ENTITY, NULLABLE_ENTITY -> {
+        var primaryKey = requireTable().entity().primaryKey().orElse(null);
+        yield primaryKey == null
+            ? QueryTableModel.of(requireTable()).selections().size() != 1
+            : hasJoins && primaryKey.composite();
+      }
+      case REQUIRED_SCALAR, NULLABLE_SCALAR -> false;
+      case GENERATED_PROJECTION -> requireProjection().selections().size() != 1;
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
+    };
+  }
+
+  /** Returns the compiled expression usable by the proven direct DISTINCT count path. */
   @Nullable SqlExpression<?> automaticDistinctCountExpression(
       boolean hasJoins, List<SqlExpression<?>> compiledExpressions) {
     Objects.requireNonNull(compiledExpressions, "compiledExpressions");
@@ -285,37 +323,17 @@ final class SelectedResult<R extends @Nullable Object> {
       case REQUIRED_ENTITY, NULLABLE_ENTITY -> {
         var primaryKey = requireTable().entity().primaryKey().orElse(null);
         if (primaryKey == null) {
-          if (QueryTableModel.of(requireTable()).selections().size() == 1) {
-            yield QueryTableModel.of(requireTable()).selections().getFirst();
-          }
-          throw QueryValidationException.of(
-              SkisErrorCode.QUERY_COUNT_CONTRACT,
-              "automatic count cannot preserve a multi-expression distinct complete entity "
-                  + "without primary-key metadata; provide an explicit count query");
+          yield singleExpression(compiledExpressions);
         }
         if (!hasJoins) {
           yield null;
-        }
-        if (primaryKey.composite()) {
-          throw QueryValidationException.of(
-              SkisErrorCode.QUERY_COUNT_CONTRACT,
-              "automatic count cannot preserve a distinct complete entity with a composite "
-                  + "primary key after JOIN; provide an explicit count query");
         }
         yield QueryTableModel.of(requireTable())
             .selections()
             .get(primaryKey.properties().getFirst().ordinal());
       }
-      case REQUIRED_SCALAR, NULLABLE_SCALAR -> singleExpression(compiledExpressions);
-      case GENERATED_PROJECTION -> {
-        if (compiledExpressions.size() != 1) {
-          throw QueryValidationException.of(
-              SkisErrorCode.QUERY_COUNT_CONTRACT,
-              "automatic count cannot preserve a multi-expression distinct result; provide an "
-                  + "explicit count query");
-        }
-        yield compiledExpressions.getFirst();
-      }
+      case REQUIRED_SCALAR, NULLABLE_SCALAR, GENERATED_PROJECTION ->
+          singleExpression(compiledExpressions);
       case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
     };
   }

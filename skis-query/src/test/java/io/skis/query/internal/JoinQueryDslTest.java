@@ -21,8 +21,8 @@ import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
 import io.skis.dialect.support.StandardSqlRenderer;
-import io.skis.jdbc.QueryExecutionException;
 import io.skis.jdbc.internal.JdbcExecutor;
+import io.skis.jdbc.QueryExecutionException;
 import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -44,22 +44,22 @@ import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
+import io.skis.query.Selectable;
 import io.skis.query.SelectDescription;
 import io.skis.query.SelectQuery;
-import io.skis.query.Selectable;
 import io.skis.query.SingleColumnSelect;
 import io.skis.query.SingleRow;
 import io.skis.query.SliceRequest;
 import io.skis.query.SortDirection;
 import io.skis.query.SortSpecification;
-import io.skis.query.Sql;
 import io.skis.query.spi.ProjectionMapping;
+import io.skis.query.Sql;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
-import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.SelectStatement;
@@ -72,9 +72,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
@@ -427,6 +427,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class, () -> query.fetchSlice(SliceRequest.keysetFirst(10)));
 
+    assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER, failure.code());
     assertTrue(failure.getMessage().contains("effectively nullable keyset ordering property 'id'"));
   }
 
@@ -458,9 +459,8 @@ class JoinQueryDslTest {
     QueryValidationException missingJoinedKey =
         assertThrows(
             QueryValidationException.class, () -> rootOnly.fetchSlice(SliceRequest.offset(0, 10)));
-    assertTrue(missingJoinedKey.getMessage().contains("table occurrence #1"));
-    assertTrue(missingJoinedKey.getMessage().contains("effective qualifier 'owner'"));
-    assertTrue(missingJoinedKey.getMessage().contains("missing primary-key property 'id'"));
+    assertTrue(missingJoinedKey.getMessage().contains("COLUMN"));
+    assertTrue(missingJoinedKey.getMessage().contains("missing final identity component"));
 
     SelectQuery<Pet> missingMetadata =
         operations().selectFrom(PET_TABLE).crossJoin(VIEW_TABLE).orderBy(PET_TABLE.id().asc());
@@ -468,9 +468,8 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () -> missingMetadata.fetchPage(PageRequest.page(0, 10)));
-    assertTrue(missingViewKey.getMessage().contains("table occurrence #1"));
-    assertTrue(missingViewKey.getMessage().contains("effective qualifier 'read_only_view'"));
-    assertTrue(missingViewKey.getMessage().contains("requires primary-key metadata"));
+    assertTrue(missingViewKey.getMessage().contains("source occurrence #1"));
+    assertTrue(missingViewKey.getMessage().contains("has no primary-key identity"));
 
     AssertionError reachedJdbc =
         assertThrows(AssertionError.class, () -> stable.fetchSlice(SliceRequest.offset(0, 10)));
@@ -531,12 +530,13 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () -> incompleteTuple.fetchSlice(SliceRequest.offset(0, 10)));
+    assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER, failure.code());
     assertTrue(failure.getMessage().contains("must cover every selected expression"));
     assertTrue(failure.getMessage().contains("pet.ownerId"));
   }
 
   @Test
-  void complexDistinctJoinRequiresExplicitCountButStillAllowsSlice() {
+  void complexDistinctJoinUsesWrappedCountAndAllowsSlice() {
     ProjectionMapping<Object> tuple =
         ProjectionMapping.generated(
             GeneratedModelAbi.CURRENT,
@@ -556,12 +556,8 @@ class JoinQueryDslTest {
             .distinct()
             .orderBy(PET_TABLE.id().asc(), OWNER_TABLE.name().asc());
 
-    QueryValidationException countFailure =
-        assertThrows(
-            QueryValidationException.class,
-            () -> ((DefaultCountQuery) query.countQuery()).compilation());
-    assertTrue(countFailure.getMessage().contains("multi-expression distinct result"));
-    assertTrue(countFailure.getMessage().contains("explicit count query"));
+    assertTrue(((DefaultCountQuery) query.countQuery()).compilation().plan().sql()
+        .startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
 
     AssertionError reachedJdbc =
         assertThrows(AssertionError.class, () -> query.fetchSlice(SliceRequest.offset(0, 10)));
@@ -1350,7 +1346,7 @@ class JoinQueryDslTest {
   }
 
   @Test
-  void rejectsScalarSliceOrderingBeforeAcquiringJdbcRegardlessOfPageSize() {
+  void allowsStableScalarOffsetOrderingAndRejectsScalarKeysetOrdering() {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
     Selectable<Long> scalar =
         Sql.scalar(
@@ -1361,11 +1357,11 @@ class JoinQueryDslTest {
         operations().selectFrom(PET_TABLE).orderBy(scalar.asc().nullsLast(), PET_TABLE.id().asc());
 
     for (int pageSize : List.of(1, 100)) {
-      QueryValidationException failure =
+      AssertionError failure =
           assertThrows(
-              QueryValidationException.class,
+              AssertionError.class,
               () -> query.fetchSlice(SliceRequest.offset(0, pageSize)));
-      assertTrue(failure.getMessage().contains("pagination identity analysis"));
+      assertEquals("query compilation must not acquire JDBC", failure.getMessage());
     }
     assertThrows(
         QueryValidationException.class, () -> query.fetchSlice(SliceRequest.keysetFirst(1)));
@@ -2069,6 +2065,7 @@ class JoinQueryDslTest {
             DialectFeature.NULLS_FIRST_LAST,
             DialectFeature.COUNT_AGGREGATE,
             DialectFeature.COUNT_DISTINCT,
+            DialectFeature.DERIVED_TABLE,
             DialectFeature.EXISTS_SUBQUERY,
             DialectFeature.IN_SUBQUERY,
             DialectFeature.SCALAR_SUBQUERY,

@@ -21,6 +21,7 @@ public final class QueryBlockAnalysis {
   private static final int REAL_SUM = 1 << 3;
   private static final int SMALL_INTEGER_AVERAGE = 1 << 4;
   private static final int DOUBLE_AGGREGATE = 1 << 5;
+  private static final int AT_MOST_ONE_ROW = 1 << 6;
 
   private final QueryBlockPath path;
   private final List<SourceOccurrence> sourceOccurrences;
@@ -42,7 +43,8 @@ public final class QueryBlockAnalysis {
       boolean standardExpressionLowering,
       boolean realSum,
       boolean smallIntegerAverage,
-      boolean doubleAggregate) {
+      boolean doubleAggregate,
+      boolean atMostOneRow) {
     this.path = Objects.requireNonNull(path, "path");
     this.sourceOccurrences = List.copyOf(sourceOccurrences);
     this.expressions = List.copyOf(expressions);
@@ -55,7 +57,8 @@ public final class QueryBlockAnalysis {
             | (standardExpressionLowering ? STANDARD_EXPRESSION_LOWERING : 0)
             | (realSum ? REAL_SUM : 0)
             | (smallIntegerAverage ? SMALL_INTEGER_AVERAGE : 0)
-            | (doubleAggregate ? DOUBLE_AGGREGATE : 0);
+            | (doubleAggregate ? DOUBLE_AGGREGATE : 0)
+            | (atMostOneRow ? AT_MOST_ONE_ROW : 0);
   }
 
   /** Whether this block or a nested block contains explicit aggregate/grouping structure. */
@@ -66,6 +69,26 @@ public final class QueryBlockAnalysis {
   /** Whether this block itself groups input rows; nested aggregates do not affect this fact. */
   public boolean isGrouped() {
     return (characteristics & GROUPED) != 0;
+  }
+
+  /**
+   * Structural upper bound, independent of actual binding values and without folding arithmetic.
+   */
+  public boolean atMostOneRow() {
+    return (characteristics & AT_MOST_ONE_ROW) != 0;
+  }
+
+  /** Validates stable offset ordering using this completed occurrence's result identity. */
+  public void validateOffsetOrdering(SelectStatement statement) {
+    ResultIdentity.resolve(statement, this).requireStableOrdering(statement, this);
+  }
+
+  /** Representative SELECT ordinal for each DISTINCT output under proven raw equivalences. */
+  public List<Integer> distinctOutputRepresentatives(SelectStatement statement) {
+    if (!statement.distinct()) {
+      throw new IllegalArgumentException("output equivalence requires a DISTINCT SELECT");
+    }
+    return ResultIdentity.distinctOutputRepresentatives(statement, this);
   }
 
   /** Whether this block tree needs standard expression typing or grouping normalization. */
