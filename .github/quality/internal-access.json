@@ -303,6 +303,13 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
+      "caller": "io.skis.query.internal.QueryInputMappings",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves canonical runtime property Codecs at query compilation to validate aggregate and standard expression input provenance.",
+      "owner": "0.2.9:T06",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
       "caller": "io.skis.query.internal.QueryPlanCatalog",
       "target": "io.skis.core.internal.ExecutionListenerDispatcher",
       "reason": "Preserves operation lifecycle, listener isolation and reentry rejection.",
