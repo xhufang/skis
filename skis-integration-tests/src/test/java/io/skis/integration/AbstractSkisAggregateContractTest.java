@@ -59,6 +59,7 @@ import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
+import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
@@ -230,10 +231,13 @@ abstract class AbstractSkisAggregateContractTest {
           "category-number", List.of(
               new ProjectionMapping.Parameter(0, "category", String.class, Nullability.NON_NULL, 0),
               new ProjectionMapping.Parameter(1, "number", Integer.class, Nullability.NULLABLE, 1)),
-          readers -> (rows, context) -> {
-            decoded.incrementAndGet();
-            return new CategoryNumber(Objects.requireNonNull((String) readers.get(0).read(rows, context)),
-                (Integer) readers.get(1).read(rows, context));
+          readers -> {
+            ProjectionMapping.ValueReader<String> category = readers.reader(0, String.class);
+            ProjectionMapping.ValueReader<@Nullable Integer> number = readers.reader(1, Integer.class);
+            return (rows, context) -> {
+              decoded.incrementAndGet();
+              return new CategoryNumber(category.read(rows, context), number.read(rows, context));
+            };
           });
       var table = AggregateSampleTable.aggregateSampleTable;
       var query = executor(source, connection).select(mapping.bind(table.category(), table.number()))
@@ -517,9 +521,12 @@ abstract class AbstractSkisAggregateContractTest {
           "distinct-derived-numbers", List.of(
               new ProjectionMapping.Parameter(0, "first", Integer.class, Nullability.NULLABLE, 0),
               new ProjectionMapping.Parameter(1, "second", Integer.class, Nullability.NULLABLE, 1)),
-          readers -> (rows, context) -> new RepeatedNumber(
-              (Integer) readers.get(0).read(rows, context),
-              (Integer) readers.get(1).read(rows, context)));
+          readers -> {
+            ProjectionMapping.ValueReader<@Nullable Integer> first = readers.reader(0, Integer.class);
+            ProjectionMapping.ValueReader<@Nullable Integer> second = readers.reader(1, Integer.class);
+            return (rows, context) -> new RepeatedNumber(
+                first.read(rows, context), second.read(rows, context));
+          });
       var expectedValues = executor.select(table.number()).from(table).distinct()
           .orderBy(table.number().asc().nullsFirst()).fetchList();
       var expected = expectedValues.stream().map(value -> new RepeatedNumber(value, value)).toList();
