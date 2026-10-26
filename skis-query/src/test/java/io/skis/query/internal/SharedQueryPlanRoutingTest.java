@@ -1066,6 +1066,10 @@ class SharedQueryPlanRoutingTest {
       assertTrue(bindings(first).contains(11L), "shape " + shape);
       assertTrue(bindings(second).contains(22L), "shape " + shape);
       assertFalse(bindings(second).contains(11L));
+      if (shape == 12 || shape == 13) {
+        assertEquals(shape == 12 ? List.of(11L, 11L) : List.of(11L), bindings(first));
+        assertEquals(shape == 12 ? List.of(22L, 22L) : List.of(22L), bindings(second));
+      }
       assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
       assertEquals(1, fixture.dialect().renders.get());
       assertEquals(1, fixture.dialect().lowerings.get());
@@ -1356,6 +1360,7 @@ class SharedQueryPlanRoutingTest {
 
   private static SelectQuery<?> aggregateQuery(Fixture fixture, int shape, long value) {
     PetTable table = new PetTable();
+    QueryParameter<Long> ownerMinimum = Sql.parameter(Long.class, "ownerMinimum");
     Selectable<?> expression = switch (shape) {
       case 0 -> Sql.countAll();
       case 1 -> Sql.count(table.name);
@@ -1371,13 +1376,14 @@ class SharedQueryPlanRoutingTest {
       case 11 -> Sql.concat(table.name, Sql.value("suffix"));
       case 12 -> {
         OwnerTable owner = new OwnerTable().as("scalar_owner");
-        yield Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner).where(owner.id.ge(value)));
+        yield Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner).where(owner.id.ge(ownerMinimum)));
       }
       case 13 -> {
         OwnerTable owner = new OwnerTable().as("derived_owner");
         var maximum = Sql.max(owner.id);
         var output = Sql.output(maximum, "maximum");
-        var derived = Sql.derived(Sql.select(maximum).from(owner).where(owner.id.ge(value)), "totals", output);
+        var derived = Sql.derived(
+            Sql.select(maximum).from(owner).where(owner.id.ge(ownerMinimum)), "totals", output);
         yield derived.column(output);
       }
       case 14 -> Sql.value(value);
@@ -1385,9 +1391,10 @@ class SharedQueryPlanRoutingTest {
     };
     if (shape == 13) {
       var derived = ((DerivedColumnSelectable<?>) expression).relation();
-      return fixture.operations().select(expression).from(derived);
+      return fixture.operations().select(expression).from(derived).bind(ownerMinimum, value);
     }
-    return fixture.operations().select(expression).from(table).where(table.id.ge(value));
+    SelectQuery<?> query = fixture.operations().select(expression).from(table).where(table.id.ge(value));
+    return shape == 12 ? query.bind(ownerMinimum, value) : query;
   }
 
   private static DefaultSelectQuery<Long> grouped(Fixture fixture, long value) {
