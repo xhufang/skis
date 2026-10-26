@@ -2,6 +2,7 @@ package io.skis.query.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -10,10 +11,12 @@ import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlLowering;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -514,6 +517,91 @@ class GroupedPaginationTest {
             () -> query.fetchSlice(SliceRequest.keysetFirst(2))).code());
   }
 
+  @Test
+  void normalizedGroupedPageKeepsOneOriginalStageAndSeparateContentCountLoweringInputs() {
+    var dialect = new RecordingDialect();
+    var operations = operations(dialect);
+    dialect.validated.clear();
+    dialect.lowered.clear();
+    dialect.rendered.clear();
+    var key = Sql.concat(TABLE.category, Sql.value("!"));
+    var query = operations.select(key).from(TABLE).groupBy(key).orderBy(key.asc());
+    assertReachesJdbc(() -> query.fetchPage(PageRequest.page(0, 2)));
+    var originals = java.util.Collections.newSetFromMap(
+        new java.util.IdentityHashMap<ResolvedStatement, Boolean>());
+    for (var stage : dialect.validated) {
+      if (stage.statement() instanceof SelectStatement select && select.pagination().isEmpty()) {
+        originals.add(stage);
+      }
+    }
+    assertEquals(1, originals.size());
+    assertEquals(2, dialect.lowered.size());
+    assertEquals(2, dialect.rendered.size());
+    assertTrue(dialect.lowered.stream().anyMatch(stage -> stage.statement() instanceof io.skis.sql.ast.CountAst));
+    assertTrue(dialect.lowered.stream().anyMatch(stage -> stage.statement() instanceof SelectStatement));
+    for (int index = 0; index < dialect.lowered.size(); index++) {
+      assertFalse(originals.contains(dialect.lowered.get(index)));
+      org.junit.jupiter.api.Assertions.assertNotSame(dialect.lowered.get(index).statement(),
+          dialect.rendered.get(index), "parameterized grouping requires a newly analyzed structure");
+    }
+    assertReachesJdbc(() -> query.fetchPage(PageRequest.page(1, 2)));
+    assertEquals(2, dialect.lowered.size());
+    assertEquals(2, dialect.rendered.size());
+  }
+
+  @Test
+  void groupedListPageAndCountShareOneOriginalStageRegardlessOfTerminalOrder() {
+    for (int shape = 0; shape < 3; shape++) {
+      for (int firstTerminal = 0; firstTerminal < 3; firstTerminal++) {
+        var dialect = new RecordingDialect();
+        var operations = operations(dialect);
+        dialect.validated.clear();
+        dialect.lowered.clear();
+        dialect.rendered.clear();
+        SelectQuery<?> query;
+        if (shape == 1) {
+          var key = Sql.concat(TABLE.category, Sql.value("!"));
+          query = operations.select(key).from(TABLE).groupBy(key).orderBy(key.asc());
+        } else {
+          var grouped = operations.select(Sql.countAll()).from(TABLE)
+              .groupBy(TABLE.category).orderBy(TABLE.category.asc());
+          query = shape == 2 ? grouped.where(TABLE.id.in(List.of())) : grouped;
+        }
+
+        if (firstTerminal == 1) {
+          assertReachesJdbc(() -> query.fetchPage(PageRequest.page(0, 2)));
+          assertReachesJdbc(query::fetchList);
+        } else {
+          if (firstTerminal == 2) count(query);
+          assertReachesJdbc(query::fetchList);
+          assertReachesJdbc(() -> query.fetchPage(PageRequest.page(0, 2)));
+        }
+
+        ResolvedStatement original = dialect.validated.getFirst();
+        int sourceValidations = 0;
+        for (ResolvedStatement stage : dialect.validated) {
+          if (stage.statement().equals(original.statement())) {
+            assertSame(original, stage, "the same original occurrence must not be analyzed again");
+            sourceValidations++;
+          }
+        }
+        assertTrue(sourceValidations >= 3, "mapping and dialect validation must still execute");
+        assertEquals(3, dialect.lowered.size(), "content, offset and count compile independently");
+        assertEquals(3, dialect.rendered.size());
+        int validations = dialect.validated.size();
+        if (firstTerminal == 1) {
+          assertReachesJdbc(query::fetchList);
+        } else {
+          assertReachesJdbc(() -> query.fetchPage(PageRequest.page(1, 2)));
+        }
+        count(query);
+        assertEquals(validations, dialect.validated.size(), "L0 must not revalidate the source");
+        assertEquals(3, dialect.lowered.size());
+        assertEquals(3, dialect.rendered.size());
+      }
+    }
+  }
+
   private static QueryCompilation<Long> count(SelectQuery<?> query) {
     return ((DefaultSelectQuery<?>) query).countCompilation();
   }
@@ -562,11 +650,21 @@ class GroupedPaginationTest {
 
   private static final class RecordingDialect implements Dialect {
     private final List<ResolvedStatement> validated = new java.util.ArrayList<>();
+    private final List<ResolvedStatement> lowered = new java.util.ArrayList<>();
+    private final List<io.skis.sql.ast.StatementAst> rendered = new java.util.ArrayList<>();
     private final SqlRenderer renderer = new StandardSqlRenderer(this);
     @Override public String id() { return "pagination-stage-reuse"; }
     @Override public IdentifierRules identifierRules() { return StandardIdentifierRules.INSTANCE; }
     @Override public DialectCapabilities capabilities() { return TestDialect.INSTANCE.capabilities(); }
-    @Override public SqlRenderer renderer() { return renderer; }
+    @Override public SqlRenderer renderer() {
+      return input -> { rendered.add(input.statement()); return renderer.render(input); };
+    }
+    @Override public DialectLowering lowering() {
+      return input -> {
+        lowered.add(input);
+        return StandardSqlLowering.postgresql(capabilities()).lower(input);
+      };
+    }
     @Override public void validate(ResolvedStatement stage) {
       validated.add(stage);
       Dialect.super.validate(stage);

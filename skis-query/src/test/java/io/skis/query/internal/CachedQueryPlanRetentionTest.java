@@ -16,9 +16,11 @@ import io.skis.core.spi.OperationStartedEvent;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlLowering;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -37,6 +39,7 @@ import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryTable;
+import io.skis.query.Sql;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Nullability;
 import java.io.IOException;
@@ -89,17 +92,60 @@ class CachedQueryPlanRetentionTest {
 
   @Test
   void explicitClearReleasesAResultDecoderClassLoader() throws IOException {
-    LoaderFixture fixture = cacheLoaderScopedDecoder();
+    for (boolean aggregate : List.of(false, true)) {
+      LoaderFixture fixture = cacheLoaderScopedDecoder(aggregate);
+      encourageCollection(fixture.references(), 12);
+      assertNotNull(fixture.reference("loader").reference().get());
+      assertNotNull(fixture.reference("result class").reference().get());
+      assertNotNull(fixture.reference("row decoder").reference().get());
+      fixture.catalog().clearProjectionPlans();
+      assertCollected(fixture.references());
+      Reference.reachabilityFence(fixture.catalog());
+    }
+  }
 
-    encourageCollection(fixture.references(), 12);
-    assertNotNull(fixture.reference("loader").reference().get());
-    assertNotNull(fixture.reference("result class").reference().get());
-    assertNotNull(fixture.reference("row decoder").reference().get());
-
-    fixture.catalog().clearProjectionPlans();
-
+  @Test
+  void liveAggregatePlansReleaseCapturedExpressionsLoweredStagesAndContentCountInvocationGraphs() {
+    AggregateFixture fixture = aggregateFixture();
     assertCollected(fixture.references());
+    assertEquals(new QueryPlanCacheStatistics(2, 2, 0, 0, 2, 4),
+        fixture.catalog().projectionPlanCacheStatistics());
     Reference.reachabilityFence(fixture.catalog());
+    Reference.reachabilityFence(fixture.plans());
+  }
+
+  private static AggregateFixture aggregateFixture() {
+    List<TrackedReference> references = new ArrayList<>();
+    QueryPlanCatalog catalog = new QueryPlanCatalog(REGISTRY, new AggregateDialect(references),
+        4, Duration.ofMinutes(1));
+    references.clear(); // Catalog-owned Fast Path prewarming is outside the invocation boundary.
+    List<CachedQueryPlan<?>> first = aggregateInvocation(catalog, "first", references);
+    List<CachedQueryPlan<?>> second = aggregateInvocation(catalog, "second", references);
+    assertSame(first.get(0).plan(), second.get(0).plan());
+    assertSame(first.get(1).plan(), second.get(1).plan());
+    return new AggregateFixture(catalog, first, List.copyOf(references));
+  }
+
+  private static List<CachedQueryPlan<?>> aggregateInvocation(
+      QueryPlanCatalog catalog, String label, List<TrackedReference> references) {
+    Object marker = new Object();
+    RetentionTable table = new RetentionTable(marker);
+    String value = new String("aggregate-only-" + label);
+    var key = Sql.concat(table.name(), Sql.value(value));
+    var query = (DefaultSelectQuery<String>) QueryTestSupport.operations(catalog)
+        .select(key).from(table).groupBy(key).having(Sql.countAll().gt(1L)).orderBy(key.asc());
+    var content = query.compilation(new QueryPagination.Offset(2, 4));
+    var count = query.countCompilation();
+    assertTrue(content.plan().sql().contains("VALUES"));
+    references.addAll(List.of(tracked("aggregate query " + label, query),
+        tracked("aggregate expression " + label, key), tracked("aggregate value " + label, value),
+        tracked("aggregate table " + label, table), tracked("aggregate marker " + label, marker),
+        tracked("aggregate content " + label, content), tracked("aggregate count " + label, count),
+        tracked("aggregate content AST " + label, content.ast()),
+        tracked("aggregate count AST " + label, count.ast()),
+        tracked("aggregate content arguments " + label, content.argument()),
+        tracked("aggregate count arguments " + label, count.argument())));
+    return List.of(CachedQueryPlan.from(content), CachedQueryPlan.from(count));
   }
 
   @Test
@@ -215,7 +261,7 @@ class CachedQueryPlanRetentionTest {
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
-  private static LoaderFixture cacheLoaderScopedDecoder() throws IOException {
+  private static LoaderFixture cacheLoaderScopedDecoder(boolean aggregate) throws IOException {
     byte[] bytes = classBytes(LoaderScopedResult.class);
     ChildLoader loader = new ChildLoader();
     Class<?> loadedResultType = loader.define(LoaderScopedResult.class.getName(), bytes);
@@ -243,7 +289,7 @@ class CachedQueryPlanRetentionTest {
             "loader-scoped-retention",
             List.of(new ProjectionMapping.Parameter(0, "id", Long.class, Nullability.NON_NULL, 0)),
             ignored -> decoder);
-    ProjectionSelection<Object> selection = mapping.bind(KEY_TABLE.id());
+    ProjectionSelection<Object> selection = mapping.bind(aggregate ? Sql.countAll() : KEY_TABLE.id());
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
     QueryOperations operations = QueryTestSupport.operations(catalog);
@@ -359,6 +405,9 @@ class CachedQueryPlanRetentionTest {
 
   private record TrackedReference(String name, WeakReference<Object> reference) {}
 
+  private record AggregateFixture(QueryPlanCatalog catalog, List<CachedQueryPlan<?>> plans,
+      List<TrackedReference> references) {}
+
   private record RetentionEntity(Long id, String name) {}
 
   private record RetentionView(Long id, String name) {}
@@ -436,6 +485,29 @@ class CachedQueryPlanRetentionTest {
     @Override
     public SqlRenderer renderer() {
       return renderer;
+    }
+  }
+
+  private static final class AggregateDialect implements Dialect {
+    private final List<TrackedReference> references;
+    private final SqlRenderer renderer = new StandardSqlRenderer(this);
+    private AggregateDialect(List<TrackedReference> references) { this.references = references; }
+    @Override public String id() { return "aggregate-retention-test"; }
+    @Override public IdentifierRules identifierRules() { return StandardIdentifierRules.INSTANCE; }
+    @Override public DialectCapabilities capabilities() { return DialectCapabilities.of(DialectFeature.values()); }
+    @Override public boolean hasStablePlanCacheIdentity() { return true; }
+    @Override public DialectLowering lowering() {
+      return input -> {
+        references.add(tracked("aggregate lowering stage", input));
+        return StandardSqlLowering.postgresql(capabilities()).lower(input);
+      };
+    }
+    @Override public SqlRenderer renderer() {
+      return input -> {
+        references.add(tracked("aggregate render input", input));
+        references.add(tracked("aggregate lowered AST", input.statement()));
+        return renderer.render(input);
+      };
     }
   }
 }

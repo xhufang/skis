@@ -1,5 +1,6 @@
 package io.skis.query.internal;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -10,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisDiagnosticStage;
+import io.skis.core.SkisErrorCode;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.internal.OperationObservation;
 import io.skis.core.spi.CompilationCompletedEvent;
@@ -21,10 +23,12 @@ import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.IdentifierRules;
 import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.dialect.spi.SqlRenderer;
 import io.skis.dialect.support.StandardIdentifierRules;
+import io.skis.dialect.support.StandardSqlLowering;
 import io.skis.dialect.support.StandardSqlRenderer;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
@@ -55,6 +59,7 @@ import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
 import java.lang.reflect.Proxy;
 import java.sql.PreparedStatement;
@@ -1001,7 +1006,7 @@ class SharedQueryPlanRoutingTest {
   }
 
   @Test
-  void assemblerReportsUnsafeIdentitiesForMappedStandardExpressions() throws Exception {
+  void assemblerSignsBuiltInResultAndParameterIdentitiesWithoutBypassingL1() throws Exception {
     PetTable table = new PetTable();
     NonNullSelectable<Long> literal =
         new NonNullExpressionSelectable<>(LiteralExpression.one(Long.class));
@@ -1017,10 +1022,9 @@ class SharedQueryPlanRoutingTest {
             new SelectStatement(
                 List.of(SelectableSupport.expression(literal)),
                 QueryTableModel.of(table).tableExpression()));
-    assertEquals(
-        QueryPlanKeyAssembler.Bypass.UNSAFE_RESULT_IDENTITY,
-        assembler.assemble(
-            resultAnalysis, SelectedResult.requiredScalar(literal), variant, List.of(), List.of()));
+    assertTrue(assembler.assemble(
+        resultAnalysis, SelectedResult.requiredScalar(literal), variant, List.of(), List.of())
+        instanceof QueryPlanKeyAssembler.Cacheable);
 
     SelectedResult<Long> selected = SelectedResult.requiredScalar(table.id);
     CompiledQueryStructure structure =
@@ -1028,26 +1032,434 @@ class SharedQueryPlanRoutingTest {
     var parameterAnalysis =
         ResolvedStatement.analyze(
             new SelectStatement(structure.selections(), structure.fromClause(), structure.where()));
-    assertEquals(
-        QueryPlanKeyAssembler.Bypass.UNSAFE_PARAMETER_IDENTITY,
-        assembler.assemble(
+    assertTrue(assembler.assemble(
             parameterAnalysis,
             selected,
             variant,
             List.of(
                 QueryPlanCompiler.LogicalParameter.codec(
                     structure.parameterSlots().getFirst(), JdbcCodecs.LONG)),
-            structure.parameterSources()));
+            structure.parameterSources()) instanceof QueryPlanKeyAssembler.Cacheable);
 
-    // Standard literals have built-in mappings; their shared result/binder identities bypass L1.
+    // Standard literals use the same built-in identity for results and comparison binders.
     Fixture fixture = fixture(16, true);
     QueryCompilation<Long> literalResult = compile(fixture.operations().select(literal).from(table));
     assertEquals(0, literalResult.plan().parameterCount());
     QueryCompilation<Long> literalParameter =
         compile(fixture.operations().select(table.id).from(table).where(literal.eq(1L)));
     assertEquals(List.of(1L), bindings(literalParameter));
+    assertSame(literalResult.plan(), compile(fixture.operations().select(literal).from(table)).plan());
+    assertSame(literalParameter.plan(),
+        compile(fixture.operations().select(table.id).from(table).where(literal.eq(2L))).plan());
     assertEquals(2, fixture.dialect().renders.get());
+    assertEquals(new QueryPlanCacheStatistics(2, 2, 0, 0, 2, 16), fixture.stats());
+  }
+
+  @Test
+  void aggregateAndStandardResultFamiliesShareAcrossValuesAndFreshObjects() throws Exception {
+    for (int shape = 0; shape < 15; shape++) {
+      Fixture fixture = fixture(16, true, true);
+      QueryCompilation<?> first = compile(aggregateQuery(fixture, shape, 11L));
+      QueryCompilation<?> second = compile(aggregateQuery(fixture, shape, 22L));
+      assertSame(first.plan(), second.plan(), "shape " + shape);
+      assertNotSame(first.ast(), second.ast());
+      assertTrue(bindings(first).contains(11L), "shape " + shape);
+      assertTrue(bindings(second).contains(22L), "shape " + shape);
+      assertFalse(bindings(second).contains(11L));
+      if (shape == 12 || shape == 13) {
+        assertEquals(shape == 12 ? List.of(11L, 11L) : List.of(11L), bindings(first));
+        assertEquals(shape == 12 ? List.of(22L, 22L) : List.of(22L), bindings(second));
+      }
+      assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
+      assertEquals(1, fixture.dialect().renders.get());
+      assertEquals(1, fixture.dialect().lowerings.get());
+    }
+  }
+
+  @Test
+  void aggregateKindsDistinctGroupingResultTypesAndHavingRemainSeparate() {
+    Fixture fixture = fixture(32, true, true);
+    PetTable table = new PetTable();
+    List<Selectable<?>> expressions = List.of(Sql.countAll(), Sql.count(table.id),
+        Sql.countDistinct(table.id), Sql.min(table.id), Sql.max(table.id),
+        Sql.sumAsBigInteger(table.id), Sql.avgAsBigDecimal(table.id));
+    List<Object> plans = new ArrayList<>();
+    for (Selectable<?> expression : expressions) {
+      Object plan = compile(fixture.operations().select(expression).from(table)).plan();
+      for (Object previous : plans) assertNotSame(previous, plan);
+      plans.add(plan);
+    }
+    Object grouped = compile(fixture.operations().select(Sql.countAll()).from(table)
+        .groupBy(table.name)).plan();
+    Object otherGrouping = compile(fixture.operations().select(Sql.countAll()).from(table)
+        .groupBy(table.id)).plan();
+    Object having = compile(fixture.operations().select(Sql.countAll()).from(table)
+        .groupBy(table.name).having(Sql.countAll().gt(1L))).plan();
+    assertNotSame(grouped, otherGrouping);
+    assertNotSame(grouped, having);
+    assertNotSame(plans.getFirst(), grouped);
+    assertEquals(10, fixture.stats().size());
+    assertEquals(10, fixture.stats().missCount());
+  }
+
+  @Test
+  void groupedContentOffsetAndCountKeepIndependentLayoutsAndLocalReuse() throws Exception {
+    Fixture fixture = fixture(16, true, true);
+    DefaultSelectQuery<Long> first = grouped(fixture, 1L);
+    DefaultSelectQuery<Long> second = grouped(fixture, 2L);
+    QueryCompilation<Long> content = first.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> offset = first.compilation(new QueryPagination.Offset(3, 6));
+    QueryCompilation<Long> count = first.countCompilation();
+    assertNotSame(content.plan(), offset.plan());
+    assertNotSame(content.plan(), count.plan());
+    assertSame(content.plan(), second.compilation(QueryPagination.None.INSTANCE).plan());
+    QueryCompilation<Long> later = second.compilation(new QueryPagination.Offset(9, 18));
+    assertSame(offset.plan(), later.plan());
+    assertEquals(List.of(2L, 12L, 9, 18L), bindings(later));
+    QueryCompilation<Long> secondCount = second.countCompilation();
+    assertSame(count.plan(), secondCount.plan());
+    assertEquals(List.of(2L, 12L), bindings(secondCount));
+    assertFalse(secondCount.plan().sql().contains("OFFSET"));
+    assertSame(secondCount.plan(), second.countCompilation().plan());
+    assertSame(later.plan(), second.compilation(new QueryPagination.Offset(1, 2)).plan());
+    assertEquals(new QueryPlanCacheStatistics(3, 3, 0, 0, 3, 16), fixture.stats());
+    assertEquals(3, fixture.dialect().renders.get());
+  }
+
+  @Test
+  void parameterizedGroupingSharesTheLoweredRelationAndBindsOnlyCurrentValues() throws Exception {
+    Fixture fixture = fixture(16, true, true);
+    List<QueryCompilation<?>> compiled = new ArrayList<>();
+    for (long value : List.of(11L, 22L)) {
+      PetTable table = new PetTable();
+      QueryParameter<Long> parameter = Sql.parameter(Long.class, "delta");
+      var key = Sql.add(table.id, Sql.value(parameter));
+      var query = fixture.operations().select(key).from(table).groupBy(key)
+          .having(Sql.max(table.id).gt(parameter)).orderBy(key.asc()).bind(parameter, value);
+      QueryCompilation<?> content = compile(query);
+      assertTrue(content.plan().sql().contains("VALUES"));
+      assertTrue(bindings(content).stream().allMatch(binding -> Long.valueOf(value).equals(binding)));
+      assertEquals(List.of(0, 0), content.plan().renderedSql().parameters().stream()
+          .map(slot -> slot.ordinal()).toList());
+      compiled.add(content);
+    }
+    assertSame(compiled.getFirst().plan(), compiled.getLast().plan());
+    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
+  }
+
+  @Test
+  void sameNamedIndependentParametersStayDistinctAfterGroupingAndCacheReuse() throws Exception {
+    Fixture fixture = fixture(16, true, true);
+    for (long value : List.of(1L, 2L)) {
+      PetTable table = new PetTable();
+      var first = Sql.parameter(Long.class, "same");
+      var second = Sql.parameter(Long.class, "same");
+      var query = fixture.operations().select(Sql.countAll()).from(table)
+          .where(table.id.ge(first)).having(Sql.countAll().gt(second))
+          .bind(first, value).bind(second, value + 10);
+      assertEquals(List.of(value, value + 10), bindings(compile(query)));
+      var illegalKey = Sql.add(table.id, Sql.value(first));
+      var independentKey = Sql.add(table.id, Sql.value(second));
+      assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT,
+          assertThrows(QueryValidationException.class, () -> compile(fixture.operations()
+              .select(illegalKey).from(table).groupBy(independentKey)
+              .bind(first, value).bind(second, value))).code());
+    }
+    assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
+  }
+
+  @Test
+  void pruningRetainsAggregateSubqueryDependenciesForContentAndCountInvalidation() {
+    Fixture fixture = fixture(16, true, true);
+    PetTable table = new PetTable();
+    OwnerTable owner = new OwnerTable().as("aggregate_owner");
+    var aggregate = Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner));
+    var query = (DefaultSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
+        .having(aggregate.in(List.of()));
+    QueryCompilation<Long> first = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = query.countCompilation();
+    assertFalse(first.plan().sql().contains("aggregate_owner"));
+    assertFalse(count.plan().sql().contains("aggregate_owner"));
+    assertEquals(2, fixture.catalog().invalidateProjectionPlans(OWNER));
+    assertEquals(0, fixture.stats().size());
+    assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+    assertSame(count.plan(), query.countCompilation().plan());
+    var fresh = (DefaultSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
+        .having(aggregate.in(List.of()));
+    assertNotSame(first.plan(), fresh.compilation(QueryPagination.None.INSTANCE).plan());
+    assertNotSame(count.plan(), fresh.countCompilation().plan());
+  }
+
+  @Test
+  void orderedAggregatePlansKeepHiddenColumnsAndPrunedDependenciesWithAReusedSource() throws Exception {
+    for (boolean prune : List.of(false, true)) {
+      Fixture fixture = fixture(16, true, true);
+      List<QueryCompilation<OrderedRow<@Nullable Long>>> compiled = new ArrayList<>();
+      for (long value : List.of(11L, 22L)) {
+        PetTable table = new PetTable();
+        OwnerTable owner = new OwnerTable().as("pruned_order_owner");
+        var count = Sql.scalar(Sql.select(Sql.countAll()).from(table.as("count_pet")));
+        SelectedResult<@Nullable Long> selected = SelectedResult.nullableScalar(count);
+        var condition = table.id.ge(value);
+        if (prune) {
+          var maximum = Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner));
+          condition = condition.and(maximum.in(List.of()));
+        }
+        var state = SelectQueryState.create(selected, table)
+            .where(condition).orderBy(List.of(table.id.asc()));
+        CompiledQueryStructure structure = state.structure();
+        QueryPlanCompiler compiler = fixture.catalog().compiler();
+        ResolvedStatement source = compiler.resolveSource(selected, structure, false);
+        var invocation = compiler.compileOrdered(
+            selected, structure, state.orderBy(), false, QueryPagination.None.INSTANCE,
+            QueryTestSupport.arguments(structure), null, StatementPurpose.PRIMARY, () -> source);
+        SelectStatement statement = (SelectStatement) invocation.ast();
+        assertNotSame(source.statement(), statement, "hidden columns require their own final stage");
+        assertEquals(1, statement.hiddenSelections().size());
+        assertEquals(SelectableSupport.expression(table.id),
+            statement.hiddenSelections().getFirst().expression());
+        assertEquals(List.of(value), bindings(invocation));
+        assertFalse(invocation.plan().sql().contains("pruned_order_owner"));
+        compiled.add(invocation);
+      }
+      assertSame(compiled.getFirst().plan(), compiled.getLast().plan());
+      assertNotSame(compiled.getFirst().ast(), compiled.getLast().ast());
+      assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
+      assertEquals(1, fixture.dialect().lowerings.get());
+      assertEquals(1, fixture.dialect().renders.get());
+      assertEquals(prune ? 1 : 0, fixture.catalog().invalidateProjectionPlans(OWNER));
+      assertEquals(prune ? 0 : 1, fixture.stats().size());
+    }
+  }
+
+  @Test
+  void orderedDistinctPlanRejectsAnUnselectedSortBeforeSharedLookup() {
+    Fixture fixture = fixture(16, true);
+    PetTable table = new PetTable();
+    SelectedResult<Long> selected = SelectedResult.requiredScalar(table.id);
+    CompiledQueryStructure structure = QueryTestSupport.compile(selected, table, List.of(), null);
+    QueryValidationException failure = assertThrows(QueryValidationException.class,
+        () -> fixture.catalog().compiler().compileOrdered(
+            selected, structure, List.of(table.name.asc()), true, QueryPagination.None.INSTANCE,
+            QueryTestSupport.arguments(structure), null, StatementPurpose.PRIMARY, null));
+    assertEquals(SkisErrorCode.QUERY_ORDER_BY_NOT_SELECTED, failure.code());
     assertEquals(new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 16), fixture.stats());
+    assertEquals(0, fixture.dialect().lowerings.get());
+    assertEquals(0, fixture.dialect().renders.get());
+  }
+
+  @Test
+  void aggregateFailureBypassAndEvictionPreserveL0AndAllowFreshCompilation() throws Exception {
+    for (int mode = 0; mode < 3; mode++) {
+      Fixture fixture = fixture(mode == 1 ? 0 : 1, mode != 2, true);
+      var query = grouped(fixture, 1L);
+      QueryCompilation<Long> first = query.compilation(QueryPagination.None.INSTANCE);
+      assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+      QueryCompilation<Long> next = grouped(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+      if (mode == 0) {
+        assertSame(first.plan(), next.plan());
+        query.countCompilation();
+        assertEquals(1, fixture.stats().evictionCount());
+      } else {
+        assertNotSame(first.plan(), next.plan());
+        assertEquals(0, fixture.stats().missCount());
+        assertEquals(0, fixture.stats().hitCount());
+      }
+      fixture.catalog().clearProjectionPlans();
+      assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+      fixture.dialect().failNext = true;
+      assertThrows(QueryValidationException.class,
+          () -> grouped(fixture, 3L).compilation(QueryPagination.None.INSTANCE));
+      assertEquals(0, fixture.stats().size());
+      assertEquals(List.of(4L, 14L),
+          bindings(grouped(fixture, 4L).compilation(QueryPagination.None.INSTANCE)));
+    }
+  }
+
+  @Test
+  void clearingOrInvalidatingDuringAggregateCompilationPreventsStalePublication() throws Exception {
+    for (boolean clear : List.of(false, true)) {
+      Fixture fixture = fixture(2, true, true);
+      CountDownLatch entered = new CountDownLatch(1);
+      CountDownLatch release = new CountDownLatch(1);
+      fixture.dialect().entered = entered;
+      fixture.dialect().release = release;
+      try (var workers = Executors.newSingleThreadExecutor()) {
+        Future<QueryCompilation<Long>> old = workers.submit(
+            () -> grouped(fixture, 1L).compilation(QueryPagination.None.INSTANCE));
+        try {
+          assertTrue(entered.await(5, TimeUnit.SECONDS));
+          if (clear) fixture.catalog().clearProjectionPlans();
+          else assertEquals(0, fixture.catalog().invalidateProjectionPlans(PET));
+          fixture.dialect().entered = null;
+          fixture.dialect().release = null;
+          QueryCompilation<Long> fresh = grouped(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+          release.countDown();
+          assertNotSame(old.get(5, TimeUnit.SECONDS).plan(), fresh.plan());
+          assertSame(fresh.plan(), grouped(fixture, 3L).compilation(QueryPagination.None.INSTANCE).plan());
+          assertEquals(1, fixture.stats().size());
+          assertEquals(List.of(2L, 12L), bindings(fresh));
+        } finally {
+          release.countDown();
+        }
+      }
+    }
+  }
+
+  @Test
+  void freshAggregateMissesSingleFlightAndBindIndependentCallerValues() throws Exception {
+    Fixture fixture = fixture(16, true, true);
+    int callers = 8;
+    CountDownLatch start = new CountDownLatch(1);
+    CountDownLatch entered = new CountDownLatch(1);
+    CountDownLatch release = new CountDownLatch(1);
+    fixture.dialect().entered = entered;
+    fixture.dialect().release = release;
+    List<Future<QueryCompilation<Long>>> futures = new ArrayList<>();
+    try (var workers = Executors.newFixedThreadPool(callers)) {
+      try {
+        for (long value = 0; value < callers; value++) {
+          long ownValue = value;
+          futures.add(workers.submit(() -> {
+            assertTrue(start.await(5, TimeUnit.SECONDS));
+            var result = grouped(fixture, ownValue).compilation(QueryPagination.None.INSTANCE);
+            assertEquals(List.of(ownValue, ownValue + 10), bindings(result));
+            return result;
+          }));
+        }
+        start.countDown();
+        assertTrue(entered.await(5, TimeUnit.SECONDS));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (fixture.stats().missCount() < callers && System.nanoTime() < deadline) {
+          Thread.onSpinWait();
+        }
+        assertEquals(callers, fixture.stats().missCount());
+      } finally {
+        release.countDown();
+      }
+      var first = futures.getFirst().get(5, TimeUnit.SECONDS);
+      for (var future : futures) assertSame(first.plan(), future.get(5, TimeUnit.SECONDS).plan());
+    }
+    assertEquals(new QueryPlanCacheStatistics(0, callers, 0, 0, 1, 16), fixture.stats());
+    assertEquals(1, fixture.dialect().renders.get());
+    assertEquals(1, fixture.dialect().lowerings.get());
+  }
+
+  @Test
+  void lazyOriginalAnalysisFailureRemainsInsideCompilationObservation() {
+    List<CompilationCompletedEvent> events = new ArrayList<>();
+    CountingDialect dialect = new CountingDialect(true, true);
+    QueryPlanCatalog catalog = new QueryPlanCatalog(
+        REGISTRY, dialect, 16, Duration.ofMinutes(30), compilationListener(events));
+    dialect.renders.set(0);
+    events.clear();
+    PetTable table = new PetTable();
+    var query = QueryTestSupport.operations(catalog).select(table.id).from(table).groupBy(table.name);
+
+    QueryValidationException failure = assertThrows(QueryValidationException.class, query::fetchList);
+    assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT, failure.code());
+
+    assertEquals(1, events.size());
+    CompilationCompletedEvent event = events.getFirst();
+    assertEquals(StatementPurpose.PRIMARY, event.purpose());
+    assertEquals(ExecutionOutcome.FAILED, event.outcome());
+    assertEquals(failure.diagnostics().stage(), event.failureStage());
+    assertNull(event.sqlTemplate());
+    assertNull(event.sqlFingerprint());
+    assertEquals(0, dialect.renders.get());
+    assertEquals(0, catalog.projectionPlanCacheStatistics().size());
+  }
+
+  @Test
+  void aggregateL0AndL1ReuseSkipLoweringButKeepOriginalValidationAndNewFinalStages() {
+    Fixture fixture = fixture(16, true, true);
+    var first = grouped(fixture, 1L).andHaving(Sql.countAll().in(List.of()));
+    var content = first.compilation(QueryPagination.None.INSTANCE);
+    int validations = fixture.dialect().validations.get();
+    assertSame(content.plan(), first.compilation(QueryPagination.None.INSTANCE).plan());
+    assertEquals(validations, fixture.dialect().validations.get());
+    assertSame(content.plan(), grouped(fixture, 2L).andHaving(Sql.countAll().in(List.of()))
+        .compilation(QueryPagination.None.INSTANCE).plan());
+    assertTrue(fixture.dialect().validations.get() > validations,
+        "a new query still validates its original mapping and dialect contract");
+    assertEquals(1, fixture.dialect().lowerings.get());
+    assertEquals(1, fixture.dialect().renders.get());
+    var offset = first.compilation(new QueryPagination.Offset(2, 4));
+    var count = first.countCompilation();
+    assertNotSame(content.ast(), offset.ast());
+    assertNotSame(offset.ast(), count.ast());
+    assertTrue(count.ast() instanceof CountAst);
+    assertEquals(3, fixture.dialect().lowerings.get());
+    assertEquals(3, fixture.dialect().renders.get());
+    assertEquals(new QueryPlanCacheStatistics(1, 3, 0, 0, 3, 16), fixture.stats());
+  }
+
+  @Test
+  void capturedMutableValuesAndTypedNullsReuseOnlyValueFreePlans() throws Exception {
+    Fixture fixture = fixture(16, true, true);
+    PetTable table = new PetTable();
+    byte[] first = {1, 2};
+    byte[] second = {3, 4};
+    var a = fixture.operations().select(Sql.value(first)).from(table);
+    var b = fixture.operations().select(Sql.value(second)).from(table);
+    first[0] = 99;
+    second[0] = 88;
+    var compiledA = compile(a);
+    var compiledB = compile(b);
+    assertSame(compiledA.plan(), compiledB.plan());
+    assertArrayEquals(new byte[] {1, 2}, (byte[]) bindings(compiledA).getFirst());
+    assertArrayEquals(new byte[] {3, 4}, (byte[]) bindings(compiledB).getFirst());
+    var nullA = compile(fixture.operations().select(Sql.value(Long.class, null)).from(table));
+    var nullB = compile(fixture.operations().select(Sql.value(Long.class, null)).from(table));
+    assertSame(nullA.plan(), nullB.plan());
+    assertEquals(java.util.Collections.singletonList(null), bindings(nullB));
+    assertEquals(new QueryPlanCacheStatistics(2, 2, 0, 0, 2, 16), fixture.stats());
+  }
+
+  private static SelectQuery<?> aggregateQuery(Fixture fixture, int shape, long value) {
+    PetTable table = new PetTable();
+    QueryParameter<Long> ownerMinimum = Sql.parameter(Long.class, "ownerMinimum");
+    Selectable<?> expression = switch (shape) {
+      case 0 -> Sql.countAll();
+      case 1 -> Sql.count(table.name);
+      case 2 -> Sql.countDistinct(table.id);
+      case 3 -> Sql.min(table.id);
+      case 4 -> Sql.max(table.id);
+      case 5 -> Sql.sumAsBigInteger(table.id);
+      case 6 -> Sql.avgAsBigDecimal(table.id);
+      case 7 -> Sql.add(table.id, Sql.value(value));
+      case 8 -> Sql.coalesce(Sql.min(table.id), Sql.value(value));
+      case 9 -> Sql.cast(table.id, java.math.BigDecimal.class, SqlType.DECIMAL);
+      case 10 -> Sql.caseWhen(table.id.gt(value), table.id, Sql.value(value));
+      case 11 -> Sql.concat(table.name, Sql.value("suffix"));
+      case 12 -> {
+        OwnerTable owner = new OwnerTable().as("scalar_owner");
+        yield Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner).where(owner.id.ge(ownerMinimum)));
+      }
+      case 13 -> {
+        OwnerTable owner = new OwnerTable().as("derived_owner");
+        var maximum = Sql.max(owner.id);
+        var output = Sql.output(maximum, "maximum");
+        var derived = Sql.derived(
+            Sql.select(maximum).from(owner).where(owner.id.ge(ownerMinimum)), "totals", output);
+        yield derived.column(output);
+      }
+      case 14 -> Sql.value(value);
+      default -> throw new AssertionError(shape);
+    };
+    if (shape == 13) {
+      var derived = ((DerivedColumnSelectable<?>) expression).relation();
+      return fixture.operations().select(expression).from(derived).bind(ownerMinimum, value);
+    }
+    SelectQuery<?> query = fixture.operations().select(expression).from(table).where(table.id.ge(value));
+    return shape == 12 ? query.bind(ownerMinimum, value) : query;
+  }
+
+  private static DefaultSelectQuery<Long> grouped(Fixture fixture, long value) {
+    PetTable table = new PetTable();
+    return (DefaultSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
+        .where(table.id.ge(value)).groupBy(table.name).having(Sql.countAll().gt(value + 10))
+        .orderBy(table.name.asc());
   }
 
   @Test
@@ -1186,7 +1598,7 @@ class SharedQueryPlanRoutingTest {
             .orderBy(table.name.asc().nullsFirst(), table.id.asc());
   }
 
-  private static <R> QueryCompilation<R> compile(SelectQuery<R> query) {
+  private static <R extends @Nullable Object> QueryCompilation<R> compile(SelectQuery<R> query) {
     return ((DefaultSelectQuery<R>) query).compilation(QueryPagination.None.INSTANCE);
   }
 
@@ -1249,7 +1661,11 @@ class SharedQueryPlanRoutingTest {
   }
 
   private static Fixture fixture(int capacity, boolean stable) {
-    CountingDialect dialect = new CountingDialect(stable);
+    return fixture(capacity, stable, false);
+  }
+
+  private static Fixture fixture(int capacity, boolean stable, boolean aggregates) {
+    CountingDialect dialect = new CountingDialect(stable, aggregates);
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, dialect, capacity, Duration.ofMinutes(30));
     QueryOperations operations = QueryTestSupport.operations(catalog);
@@ -1257,6 +1673,7 @@ class SharedQueryPlanRoutingTest {
     dialect.validations.set(0);
     dialect.legacyRenders.set(0);
     dialect.legacyValidations.set(0);
+    dialect.lowerings.set(0);
     return new Fixture(catalog, operations, dialect);
   }
 
@@ -1329,7 +1746,9 @@ class SharedQueryPlanRoutingTest {
     private final AtomicInteger validations = new AtomicInteger();
     private final AtomicInteger legacyRenders = new AtomicInteger();
     private final AtomicInteger legacyValidations = new AtomicInteger();
+    private final AtomicInteger lowerings = new AtomicInteger();
     private final boolean stable;
+    private final boolean aggregates;
     private final DialectCapabilities capabilities =
         DialectCapabilities.of(DialectFeature.values());
     private final SqlRenderer delegate = new StandardSqlRenderer(this);
@@ -1339,7 +1758,12 @@ class SharedQueryPlanRoutingTest {
     private volatile @Nullable RenderSequence sequence;
 
     private CountingDialect(boolean stable) {
+      this(stable, false);
+    }
+
+    private CountingDialect(boolean stable, boolean aggregates) {
       this.stable = stable;
+      this.aggregates = aggregates;
     }
 
     @Override
@@ -1360,6 +1784,16 @@ class SharedQueryPlanRoutingTest {
     @Override
     public DialectCapabilities capabilities() {
       return capabilities;
+    }
+
+    @Override
+    public DialectLowering lowering() {
+      DialectLowering target = aggregates
+          ? StandardSqlLowering.postgresql(capabilities) : Dialect.super.lowering();
+      return resolved -> {
+        lowerings.incrementAndGet();
+        return target.lower(resolved);
+      };
     }
 
     @Override

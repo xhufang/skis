@@ -535,7 +535,11 @@ final class QueryPlanKey {
 
   /** Stable binder contract; no {@code JdbcTypeCodec}, metadata, or {@link Class} is retained. */
   private sealed interface BindingIdentity
-      permits CodecBindingIdentity, PaginationBindingIdentity {}
+      permits CodecBindingIdentity, BuiltInBindingIdentity, PaginationBindingIdentity {}
+
+  /** The exact built-in mapping; input-property dependencies remain in the resolved structure. */
+  private record BuiltInBindingIdentity(RuntimeTypeIdentity javaType, SqlType sqlType)
+      implements BindingIdentity {}
 
   private record CodecBindingIdentity(RuntimeTypeIdentity entityType, int propertyOrdinal)
       implements BindingIdentity {
@@ -561,6 +565,14 @@ final class QueryPlanKey {
       case DerivedColumnSelectable<?> derived ->
           codecBinding(identities, QueryModels.selectable(derived.output()));
       case ScalarSubquerySelectable<?> scalar -> codecBinding(identities, scalar.output());
+      case ExpressionSelectable<?> expression -> {
+        // Mapping legality was checked against the current registry before plan lookup. Only the
+        // descriptor is needed here: materializing expression() would compile a second preview.
+        ResolvedValueMapping.requireBuiltinCodec(expression.javaType(), expression.sqlType());
+        yield Optional.of(
+            new BuiltInBindingIdentity(
+                runtimeTypeIdentity(expression.javaType()), expression.sqlType()));
+      }
       default -> Optional.empty();
     };
   }

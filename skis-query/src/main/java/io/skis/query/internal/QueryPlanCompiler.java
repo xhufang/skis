@@ -124,7 +124,7 @@ final class QueryPlanCompiler {
       QueryArguments statementArguments,
       @Nullable OperationObservation observation,
       StatementPurpose purpose,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     CompilationObservation compilation =
         observation == null ? null : new CompilationObservation(observation, purpose);
     try {
@@ -144,7 +144,7 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryArguments statementArguments,
       @Nullable CompilationObservation observation,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope sourceScope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
@@ -258,11 +258,33 @@ final class QueryPlanCompiler {
         new FromClause(new DerivedRelationSource(inner, reference), List.of()), null, null);
   }
 
-  ResolvedStatement resolvePagination(
+  ResolvedStatement resolveSource(
       SelectedResult<?> selected, CompiledQueryStructure structure, boolean distinct) {
+    CompiledQueryStructure source = structure.validationStructure();
+    SelectStatement statement =
+        constructedStatement(
+            () ->
+                new SelectStatement(
+                    distinct,
+                    selectionExpressions(source, selected),
+                    List.of(),
+                    source.fromClause(),
+                    source.where(),
+                    source.groupBy(),
+                    source.having(),
+                    source.orderBy(),
+                    null));
+    return prepareContext(statement);
+  }
+
+  ResolvedStatement resolvePagination(
+      SelectedResult<?> selected,
+      CompiledQueryStructure structure,
+      boolean distinct,
+      Supplier<ResolvedStatement> resolvedSource) {
     TableRuntimeScope scope =
         TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-    return validateSelectionSource(selected, structure, distinct, scope);
+    return validateSelectionSource(selected, structure, distinct, scope, resolvedSource);
   }
 
   <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileOrdered(
@@ -274,7 +296,7 @@ final class QueryPlanCompiler {
       QueryArguments statementArguments,
       @Nullable OperationObservation observation,
       StatementPurpose purpose,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     CompilationObservation compilation =
         observation == null ? null : new CompilationObservation(observation, purpose);
     try {
@@ -303,19 +325,20 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       QueryArguments statementArguments,
       @Nullable CompilationObservation observation,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope;
+    ResolvedStatement keyContext = null;
     if (structure.validationSource() != null) {
       TableRuntimeScope sourceScope =
           TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-      validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
+      keyContext = validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
       runtimeScope = sourceScope.forFromClause(structure.fromClause());
     } else {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     }
     ResolvedResultShape<R> selection =
-        resolveSelection(selected, structure, distinct, runtimeScope);
+        resolveSelection(selected, structure, distinct, runtimeScope, resolvedSource);
     return compileResolvedOrdered(
         selected,
         structure,
@@ -325,7 +348,9 @@ final class QueryPlanCompiler {
         distinct,
         pagination,
         statementArguments,
-        observation);
+        observation,
+        keyContext,
+        resolvedSource);
   }
 
   private <R extends @Nullable Object> QueryCompilation<OrderedRow<R>> compileResolvedOrdered(
@@ -337,7 +362,9 @@ final class QueryPlanCompiler {
       boolean distinct,
       QueryPagination pagination,
       QueryArguments statementArguments,
-      @Nullable CompilationObservation observation) {
+      @Nullable CompilationObservation observation,
+      @Nullable ResolvedStatement keyContext,
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     List<OrderByItem> compiledOrder = orderItems(structure, orderBy);
     List<HiddenSelection> hidden = new ArrayList<>();
     int[] indexes = new int[orderBy.size()];
@@ -380,7 +407,9 @@ final class QueryPlanCompiler {
         pagination,
         hidden,
         statementArguments,
-        observation);
+        observation,
+        keyContext,
+        resolvedSource);
   }
 
   private static <R extends @Nullable Object> RowDecoder<OrderedRow<R>> orderedRowDecoder(
@@ -430,7 +459,7 @@ final class QueryPlanCompiler {
       QueryArguments statementArguments,
       @Nullable OperationObservation observation,
       StatementPurpose purpose,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     CompilationObservation compilation =
         observation == null ? null : new CompilationObservation(observation, purpose);
     try {
@@ -461,19 +490,20 @@ final class QueryPlanCompiler {
       List<HiddenSelection> hidden,
       QueryArguments statementArguments,
       @Nullable CompilationObservation observation,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     Objects.requireNonNull(structure, "structure");
     TableRuntimeScope runtimeScope;
+    ResolvedStatement keyContext = null;
     if (structure.validationSource() != null) {
       TableRuntimeScope sourceScope =
           TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-      validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
+      keyContext = validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
       runtimeScope = sourceScope.forFromClause(structure.fromClause());
     } else {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
     }
     ResolvedResultShape<R> selection =
-        resolveSelection(selected, structure, distinct, runtimeScope);
+        resolveSelection(selected, structure, distinct, runtimeScope, resolvedSource);
     return compileResolvedSelection(
         selected,
         QueryPlanKey.PlanVariant.content(QueryPaginationShape.from(pagination)),
@@ -485,21 +515,24 @@ final class QueryPlanCompiler {
         pagination,
         hidden,
         statementArguments,
-        observation);
+        observation,
+        keyContext,
+        resolvedSource);
   }
 
   private <R extends @Nullable Object> ResolvedResultShape<R> resolveSelection(
       SelectedResult<R> selected,
       CompiledQueryStructure structure,
       boolean distinct,
-      TableRuntimeScope runtimeScope) {
+      TableRuntimeScope runtimeScope,
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     try {
       return selected.resolve(runtimeScope, selectionExpressions(structure, selected));
     } catch (QueryValidationException failure) {
       if (failure.code() == SkisErrorCode.QUERY_TYPE_MISMATCH) {
         // Resolving a scalar/derived output can reach an inner aggregate before its occurrence
         // is analyzed. Recover that location only on failure, as with bound aggregate inputs.
-        validateSelectionSource(selected, structure, distinct, runtimeScope);
+        validateSelectionSource(selected, structure, distinct, runtimeScope, resolvedSource);
       }
       throw failure;
     }
@@ -516,7 +549,9 @@ final class QueryPlanCompiler {
       QueryPagination pagination,
       List<HiddenSelection> hidden,
       QueryArguments statementArguments,
-      @Nullable CompilationObservation observation) {
+      @Nullable CompilationObservation observation,
+      @Nullable ResolvedStatement keyContext,
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     List<OrderByItem> orderAst = orderItems(structure, orderBy);
     InputsBuilder inputs;
     try {
@@ -525,24 +560,11 @@ final class QueryPlanCompiler {
       if (failure.code() == SkisErrorCode.QUERY_TYPE_MISMATCH) {
         // A bound aggregate can fail before the final statement is analyzed. Only on failure,
         // validate its complete original occurrence so the error retains its clause/block.
-        validateSelectionSource(selected, structure, distinct, runtimeScope);
+        validateSelectionSource(selected, structure, distinct, runtimeScope, resolvedSource);
       }
       throw failure;
     }
     SelectPagination paginationAst = inputs.pagination(orderBy, orderAst, pagination);
-    SelectStatement statement =
-        constructedStatement(
-            () ->
-                new SelectStatement(
-                    distinct,
-                    selection.expressions(),
-                    hidden,
-                    structure.fromClause(),
-                    structure.where(),
-                    structure.groupBy(),
-                    structure.having(),
-                    orderAst,
-                    paginationAst));
     List<LogicalParameter> parameters = inputs.logicalParameters();
     validateLogicalParameters(parameters);
     validateStatementArguments(
@@ -550,13 +572,38 @@ final class QueryPlanCompiler {
         structure.parameterSlots().size(),
         parameters.size(),
         variant.pagination());
-    ResolvedStatement compilationContext = prepareContext(statement);
+    ResolvedStatement compilationContext;
+    if (resolvedSource != null
+        && structure.validationSource() == null
+        && paginationAst == null
+        && hidden.isEmpty()) {
+      // An unchanged content statement is the original stage, including after count/pagination.
+      // Resolve lazily inside compilation observation; limited queries need no extra source pass.
+      compilationContext = resolvedSource.get();
+    } else {
+      SelectStatement statement =
+          constructedStatement(
+              () ->
+                  new SelectStatement(
+                      distinct,
+                      selection.expressions(),
+                      hidden,
+                      structure.fromClause(),
+                      structure.where(),
+                      structure.groupBy(),
+                      structure.having(),
+                      orderAst,
+                      paginationAst));
+      compilationContext = prepareContext(statement);
+    }
     if (compilationContext.hasAggregateStructure()
         && (structure.validationSource() == null || !hidden.isEmpty())) {
       QueryInputMappings.validate(compilationContext, runtimeRegistry);
     }
     return plans.resolve(
-        compilationContext,
+        // Pruning and selected-output reuse must not remove original Codec/entity dependencies.
+        // The final statement and layout still belong to compilationContext, never this key input.
+        keyContext == null ? compilationContext : keyContext,
         compilationContext.statement(),
         selected,
         variant,
@@ -580,36 +627,15 @@ final class QueryPlanCompiler {
       SelectedResult<?> selected,
       CompiledQueryStructure structure,
       boolean distinct,
-      TableRuntimeScope runtimeScope) {
-    return validateSelectionSource(selected, structure, distinct, runtimeScope, null);
-  }
-
-  private ResolvedStatement validateSelectionSource(
-      SelectedResult<?> selected,
-      CompiledQueryStructure structure,
-      boolean distinct,
       TableRuntimeScope runtimeScope,
-      @Nullable ResolvedStatement resolvedSource) {
+      @Nullable Supplier<ResolvedStatement> resolvedSource) {
     CompiledQueryStructure source = structure.validationStructure();
     TableRuntimeScope scope = runtimeScope.forFromClause(source.fromClause());
     List<SqlExpression<?>> expressions = selectionExpressions(source, selected);
-    ResolvedStatement resolved = resolvedSource;
-    if (resolved == null) {
-      SelectStatement statement =
-          constructedStatement(
-              () ->
-                  new SelectStatement(
-                      distinct,
-                      expressions,
-                      List.of(),
-                      source.fromClause(),
-                      source.where(),
-                      source.groupBy(),
-                      source.having(),
-                      source.orderBy(),
-                      null));
-      resolved = prepareContext(statement);
-    }
+    ResolvedStatement resolved =
+        resolvedSource == null
+            ? resolveSource(selected, structure, distinct)
+            : resolvedSource.get();
     if (resolved.hasAggregateStructure()) {
       QueryInputMappings.validate(resolved, runtimeRegistry);
     }

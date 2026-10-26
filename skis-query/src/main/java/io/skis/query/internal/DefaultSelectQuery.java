@@ -71,6 +71,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
   private final LocalPlanCache<R> plansByPagination = new LocalPlanCache<>();
   private final LocalPlanCache<OrderedRow<R>> orderedPlansByPagination = new LocalPlanCache<>();
   private final AtomicReference<@Nullable CachedPlan<Long>> countPlan = new AtomicReference<>();
+  // Pagination retains the same query-owned source stage after its additional checks complete.
+  private volatile @Nullable ResolvedStatement sourceContext;
   private volatile @Nullable ResolvedStatement paginationContext;
   private volatile boolean offsetOrderingValidated;
 
@@ -522,7 +524,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 statementArguments,
                 observation,
                 purpose,
-                paginationContext),
+                this::sourceContext),
         statementArguments.planArgument());
   }
 
@@ -548,7 +550,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
                 statementArguments,
                 observation,
                 StatementPurpose.PRIMARY,
-                paginationContext),
+                this::sourceContext),
         statementArguments.planArgument());
   }
 
@@ -616,7 +618,7 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
             countArguments,
             observation,
             StatementPurpose.PAGE_COUNT,
-            paginationContext);
+            this::sourceContext);
     CachedPlan<Long> cached = new CachedPlan<>(compiled.plan(), compiled.ast());
     CachedPlan<Long> published = countPlan.compareAndExchange(null, cached);
     if (published == null) {
@@ -804,6 +806,21 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
     }
   }
 
+  private ResolvedStatement sourceContext() {
+    ResolvedStatement existing = sourceContext;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = sourceContext;
+      if (existing == null) {
+        existing = compiler.resolveSource(state.selected(), analysis().structure(), state.distinct());
+        sourceContext = existing;
+      }
+      return existing;
+    }
+  }
+
   private ResolvedStatement paginationContext() {
     ResolvedStatement existing = paginationContext;
     if (existing != null) {
@@ -813,7 +830,8 @@ final class DefaultSelectQuery<R extends @Nullable Object> implements SelectQuer
       existing = paginationContext;
       if (existing == null) {
         existing =
-            compiler.resolvePagination(state.selected(), analysis().structure(), state.distinct());
+            compiler.resolvePagination(
+                state.selected(), analysis().structure(), state.distinct(), this::sourceContext);
         paginationContext = existing;
       }
       return existing;
