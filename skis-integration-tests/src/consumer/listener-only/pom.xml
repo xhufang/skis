@@ -9,7 +9,7 @@
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <skis.version>0.2.9-SNAPSHOT</skis.version>
+    <skis.version>0.2.10-SNAPSHOT</skis.version>
     <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
   <dependencies>
