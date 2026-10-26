@@ -2,12 +2,16 @@
 
 `.github/architecture/decisions.json` 是可提交的最小决策清单，首次登记 ADR-0001—0020。
 本地 `docs/adr` 正文和索引继续由 Git 忽略；公开清单只包含必要状态、版本、未完成范围、任务、实现锚点、合同归属及处置理由。
-当前验证提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
-[Compliance 作业](https://github.com/xhufang/skis/actions/runs/39957930562/job/120428327502)
-已通过 33 项失败夹具、可信历史比较和实现锚点检查，上传 CI JSON/夹具日志。
-ci.json 的 localAdrChecked=false、semanticContractsExecuted=false；功能/资源等语义证据另由
-[CI](https://github.com/xhufang/skis/actions/runs/39957930561) 提供，不能由锚点存在推断。
-本地 ADR 正文/索引/清单已另作逐字段静态核对，项目 local 检查器未执行，不冒充其 local.json。
+当前机器清单覆盖 ADR-0001—0022。PR #91 合入提交 980ad24 的
+[Compliance 作业](https://github.com/xhufang/skis/actions/runs/40284163852/job/121443826257)
+通过 33 项失败夹具、可信历史比较和实现锚点检查，原始 ci.json 为 passed。
+ci.json 的 localAdrChecked=false、semanticContractsExecuted=false；功能/资源语义证据由
+[CI](https://github.com/xhufang/skis/actions/runs/40284163961) 的 Java 21/25、PG/H2、独立消费者及资源合同提供。
+
+0.2.9 T10 根据这些实际证据将 ADR-0006/0021/0022 升级 Implemented；正文、索引和机器清单另作七字段静态核对。
+本地没有执行项目 local/ci 检查器或生成 local.json；基线 CI 检查的是当时的 Accepted 清单，
+本次状态更新仍由后续正常提交的 Compliance 检查，不能借旧结果宣称新清单已经执行。
+原锚点、合同和首次登记保持，状态变更理由及比较基线 980ad24 在 change 中记录。
 
 ## 两类检查的职责
 
@@ -119,8 +123,9 @@ JSON、XML、普通 YAML 配置和 Python `entry` 仍可作为实现锚点，不
 ```
 
 Superseded/Abandoned 保留原 ID 和处置记录；模块移动、删除或合并时更新相应实现锚点，并登记被移除的旧锚点。
-ADR-0006 保持 Accepted，聚合专用规则归 0.2.9；ADR-0018—0020 按当前 CI 的实际架构、消费者、日志/资源及模块/发布语义证据升级 Implemented，
-同时记录 Accepted 原状态、9dbb932 比较基线及理由，保留全部锚点/合同和首次登记；并非由本检查单独推断。
+ADR-0006/0021/0022 已按 0.2.9 合入后实际语义证据升级 Implemented，变更记录绑定 Accepted 原状态及 980ad24 比较基线。
+ADR-0018—0020 保留 0.2.8 架构、消费者、日志/资源及模块/发布验收历史，其比较基线仍为 9dbb932。
+两批均保留全部锚点/合同和首次登记；状态升级不是由锚点检查单独推断。
 
 ## CI 与结果
 

@@ -6,16 +6,17 @@ Java 21 and Maven 3.9+.
 
 ## Version and availability
 
-The latest public release is **0.2.0**. This working tree is **0.2.9-SNAPSHOT**. Aggregate semantics
-are the current development milestone; initialization does not mark these capabilities as implemented.
+The latest public release is **0.2.0**. This working tree is **0.2.9-SNAPSHOT**, which implements
+typed aggregates, GROUP BY/HAVING, generated aggregate projections and final-result offset pagination/count.
 Internal `0.2.x-SNAPSHOT`
 milestones accumulate toward the next public **0.3.0** release and do not create standalone
 releases or tags.
 
 The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
-and H2 contracts have passed CI with their real JDBC drivers. Aggregates and GROUP BY/HAVING,
-generated keys, batch writes, raw SQL and Spring Boot integration retain their later milestone
-assignments. See [CHANGELOG](CHANGELOG.md) for the published and unreleased boundaries.
+and H2 aggregate contracts have passed CI with their real JDBC drivers and independent consumers.
+Generated keys, batch writes, raw SQL and Spring Boot integration retain their later milestone
+assignments. Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
+for the published and unreleased boundaries.
 
 The reactor now declares 21 root modules after removing 23 future placeholders and the unready
 Boot example. Existing production modules, the H2 example and test facilities remain. The public
@@ -55,6 +56,7 @@ operations. Streams and cursors must be consumed sequentially and closed on thei
 | Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md) |
 | User records and classes | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md) |
 | SQL queries | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md) |
+| Aggregates and grouped results | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md) |
 | Resource ownership and observation | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md) |
 | SQL logging | [Opt-in SQL/slow logging and parameter redaction](docs/sql-logging.md) |
 | Extensions | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md) |
@@ -66,10 +68,13 @@ and infrastructure assembly classes are outside the application extension contra
 
 ## Development and release
 
-The engineering foundation passed [CI](https://github.com/xhufang/skis/actions/runs/39957930561)
-and [Compliance](https://github.com/xhufang/skis/actions/runs/39957930562) at commit `9dbb932`.
-Java 21/25 each executed 76 required ordinary suites (729 tests), with separate real PostgreSQL
-container/URL paths and independent consumers. See [CONTRIBUTING](CONTRIBUTING.md) for the
+The aggregate milestone passed
+[CI](https://github.com/xhufang/skis/actions/runs/40284163961) and
+[Compliance](https://github.com/xhufang/skis/actions/runs/40284163852) at PR #91 merge commit `980ad24`.
+Java 21/25 each executed 85 required ordinary suites (1020 tests),
+with separate real PostgreSQL container/URL paths and independent consumers. The push event skips
+dependency vulnerability review; that check passed in [PR #91 Compliance](https://github.com/xhufang/skis/actions/runs/40281380091).
+See [CONTRIBUTING](CONTRIBUTING.md) for the
 static-analysis, architecture, report-completeness and branch-coverage gates.
 
 See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md) and the

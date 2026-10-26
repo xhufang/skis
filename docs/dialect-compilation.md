@@ -16,7 +16,7 @@ internal query analysis, JDBC plans or runtime registries. Generated code and su
 extensions do not import `*.internal`. T03 moved QueryPlanCatalog and QueryRuntime into
 io.skis.query.internal and removed the root-package assembly exceptions. The public DSL keeps
 business interfaces and generated-table construction contracts. Architecture checks are wired
-but await current CI evidence; package naming alone is not a strict JPMS export boundary.
+and passed CI; package naming alone is not a strict JPMS export boundary.
 
 ## Stage order
 
@@ -50,8 +50,12 @@ the synchronous re-entry guard.
 
 NULL-order emulation, nullable DISTINCT-count compensation, selected-position ordering references
 and empty IN/NOT IN normalization occur before final layout. The renderer serializes their
-accepted structures. User aggregate DSL, aggregate type rules and GROUP BY/HAVING remain assigned
-to `0.2.9`; existing pagination count SQL does not expose those capabilities.
+accepted structures. In `0.2.9-SNAPSHOT`, aggregate type conversion, GROUP BY/HAVING, typed
+single-row parameter relations and wrapped final-row count use this same controlled pipeline.
+Lowering preserves each visible/hidden output's identity and effective result description;
+matching Java/SQL types alone cannot authorize replacing a column, parameter or aggregate.
+PostgreSQL/H2 select their lowering and renderer type formats explicitly, independently of dialect ID.
+See [aggregates and grouped results](aggregates-and-grouping.md) for supported types and limits.
 
 ## Identifiers, cache identity and values
 
@@ -80,6 +84,7 @@ compilation notifications. See [execution listeners](execution-listeners.md).
 
 The [independent consumers](../skis-integration-tests/src/consumer/README.md) exercise both a
 dialect-api-only implementation and support-module reuse without framework internal imports.
-The T09 merge passed [CI](https://github.com/xhufang/skis/actions/runs/39466901460), including
-Java 21/25, PostgreSQL 16, H2, controlled-stage tests and independent consumers. Later source
-changes require their own validation evidence.
+The current aggregate and external-dialect contracts passed
+[CI](https://github.com/xhufang/skis/actions/runs/40284163961) at PR #91 merge commit `980ad24`,
+including Java 21/25, PostgreSQL 16.15, H2, controlled-stage tests and independent consumers.
+Later source changes require their own validation evidence.

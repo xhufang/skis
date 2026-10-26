@@ -1,8 +1,11 @@
 # SQL expressions and semantic validation
 
-This document describes the expression contract implemented by the internal `0.2.2-SNAPSHOT`
-through the current `0.2.5-SNAPSHOT` milestone. It accumulates toward the public `0.3.0` SQL DSL and
+This document describes the expression contract implemented through the internal `0.2.9-SNAPSHOT`
+milestone. It accumulates toward the public `0.3.0` SQL DSL and
 is not part of the published `0.2.0` API.
+
+The current `Sql.value`, arithmetic, CASE, COALESCE, concat and CAST factories, aggregate result
+matrix and GROUP BY/HAVING rules are documented in [aggregates and grouped results](aggregates-and-grouping.md).
 
 ## Expression descriptors
 
@@ -128,7 +131,7 @@ Collection membership remains a different overload and AST node.
 `ScalarSubqueryExpression<V>` preserves the selected column's boxed Java type and SQL type, while
 its own nullability is always nullable because an empty child produces SQL NULL. Query compilation
 resolves the selected column's Codec without invoking an inner row decoder. The expression can be
-used in selection, comparison, NULL tests, the reserved HAVING structure, ordering, and nullable
+used in selection, comparison, NULL tests, HAVING, ordering, and nullable
 generated-projection positions. Derived relations reuse the same description state and publish an
 explicit ordered output shape instead of introducing a second query DSL.
 
@@ -201,24 +204,22 @@ INSERT values have no visible table-column scope. UPDATE expressions and predica
 only the target table expression. DELETE predicates may reference only the target. SELECT uses an
 ordered `FromClause`: the root and each completed Join occurrence form its visible scope.
 
-Subqueries, derived tables, joins, and CTEs were not represented by the `0.2.2` AST. Explicit joins
-were added by the `0.2.4` scope described below. The `0.2.5` AST now routes the FROM root, Join
-right-hand sides, and occurrences through sealed `RelationSource` nodes; the first slice provides
-the entity adapter and retains the original `TableExpression<?>` reference. The derived-table
-slice adds a SELECT-backed source with an explicit ordered output shape; CTEs remain deferred to
-0.2.6.
+The current AST routes the FROM root, Join right-hand sides and occurrences through sealed
+`RelationSource` nodes. Entity sources retain the original `TableExpression<?>` reference;
+derived sources contain a SELECT with an explicit ordered output shape. CTEs remain assigned to
+the `0.3.x` development line toward public `0.4.0`.
 
 SELECT validation has two boundaries. Construction enforces context-free local invariants,
 traverses every expression to validate its Java/SQL/nullability descriptor, rejects conflicting
 descriptors for a repeated parameter ordinal within the query block, and defensively freezes all
-lists, including the reserved ordered `groupBy` structure. Complete scope, effective-nullability,
+lists, including the ordered `groupBy` structure. Complete scope, effective-nullability,
 and statement-wide dense parameter-layout checks run through
 `SemanticValidator.validateComplete(...)` after the query block has its embedding context. Query
-plan compilation and every built-in Renderer invoke this complete boundary before SQL output, so a
-reusable fragment can defer parent-dependent checks without allowing a direct AST rendering path to
-bypass validation. The optional `having` and ordered `groupBy` containers are structural only in
-this first slice; renderers reject them until the aggregate/grouping capability slice enables SQL
-generation.
+plan compilation and `SqlCompiler` enter the controlled `ResolvedStatement` / target-bound
+`RenderInput` pipeline before SQL output. Renderers consume only prepared inputs. This lets reusable
+fragments defer parent-dependent checks while every execution/direct-compilation path retains
+semantic validation, dialect checks, lowering and post-validation. GROUP BY/HAVING and aggregate
+ownership are validated per query block; unsupported dialect capabilities fail before rendering.
 
 ## SELECT ordering, pagination and count
 
@@ -235,8 +236,9 @@ are legal when their Java type, SQL type and nullability descriptors agree; this
 keyset anchor to appear in multiple branches of a lexicographic seek predicate.
 
 `SemanticValidator` checks that order and hidden expressions belong to the completed Join scope,
-pagination slots use the required non-null integer/long descriptors, offset/keyset pagination has
-an order, and all parameter ordinals remain dense. Dialect rendering then requires explicit
+pagination slots use the required non-null integer/long descriptors, pagination has a stable
+order unless the final offset result is proven to have at most one row, and all parameter ordinals
+remain dense. Dialect preparation then requires explicit
 parameterized limit/offset capabilities and either uses native null ordering or a semantically
 equivalent `CASE` fallback.
 
@@ -282,7 +284,9 @@ and canonical property metadata. A resolved parameter is identified by block pat
 AST slot ordinal and type descriptor; final nested statement layout may later relocate that slot.
 Neither identity contains a JVM object address or ordinary parameter value.
 
-`SemanticValidator.analyzeComplete(statement)` returns an immutable `QueryBlockAnalysis` containing:
+The internal `SemanticValidator.analyzeComplete(statement)` computes immutable query-block facts
+for the controlled `ResolvedStatement.analyze(statement)` entry. Complete analysis remains internal;
+dialect extensions receive only the necessary occurrence information. These facts include:
 
 - final ordered source occurrences and their outer-Join null-extension state;
 - each clause expression's exact position, resolved column/parameter dependencies, effective
@@ -290,7 +294,7 @@ Neither identity contains a JVM object address or ordinary parameter value.
 - clause-specific scope snapshots used to analyze future nested SELECT nodes.
 
 Analysis is fail-closed for expression kinds. Although `SqlExpression` remains a low-level public
-interface for source compatibility, an implementation unknown to the framework is rejected rather
+interface, an implementation unknown to the framework is rejected rather
 than recorded as an opaque leaf. Each framework-owned node must explicitly expose its children to
 local semantic validation, effective-nullability resolution, scope/dependency analysis, and
 rendering before it can participate in a query.

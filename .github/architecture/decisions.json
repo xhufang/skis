@@ -183,12 +183,12 @@
     {
       "id": "ADR-0006",
       "title": "方言能力与 AST Lowering 边界",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.5-SNAPSHOT",
-      "targetVersion": "0.2.9-SNAPSHOT",
-      "implementedVersion": "0.2.7-SNAPSHOT",
-      "remaining": "能力身份、参数上限与通用管线已验证；聚合专用类型及 CAST/lowering 源码已实现/待 CI，输入/结果映射及数据库证据未齐",
-      "task": "0.2.9:聚合语义闭环",
+      "targetVersion": null,
+      "implementedVersion": "0.2.9-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -259,7 +259,14 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
           "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "980ad24003dc3e280336ec3a1be126841f148ab8",
+        "fromStatus": "Accepted",
+        "reason": "2026-10-26 T10 核实 PR #91 合入提交 980ad24 的 CI 40284163961 与 Compliance 40284163852；Java 21/25、PG 容器/URL、H2、独立聚合消费者、缓存/阶段/并发/资源及覆盖率历史/来源合同通过，完成 0.2.9 范围验收。本地正文、索引和清单另作静态核对，未运行项目检查器；仅升级状态和落地版本，保留全部实现锚点、合同及首次登记。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0007",
@@ -950,12 +957,12 @@
     {
       "id": "ADR-0021",
       "title": "聚合结果身份、分组证明与计数计划",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.9-SNAPSHOT",
-      "targetVersion": "0.2.9-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "T02—T08 聚合、映射、结果身份/count 及缓存结构键/依赖源码已实现/待 CI；当前运行证据与后续总验收未完成",
-      "task": "0.2.9:T02—T09",
+      "targetVersion": null,
+      "implementedVersion": "0.2.9-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1029,17 +1036,24 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
           "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "980ad24003dc3e280336ec3a1be126841f148ab8",
+        "fromStatus": "Accepted",
+        "reason": "2026-10-26 T10 核实 PR #91 合入提交 980ad24 的 CI 40284163961 与 Compliance 40284163852；Java 21/25、PG 容器/URL、H2、独立聚合消费者、缓存/阶段/并发/资源及覆盖率历史/来源合同通过，完成 0.2.9 范围验收。本地正文、索引和清单另作静态核对，未运行项目检查器；仅升级状态和落地版本，保留全部实现锚点、合同及首次登记。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0022",
       "title": "分组表达式、逻辑参数规范化与语义诊断",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.9-SNAPSHOT",
-      "targetVersion": "0.2.9-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "T03—T08 语义、映射、分页/count 及缓存合同源码已实现/待 CI；当前运行证据与后续总验收未完成",
-      "task": "0.2.9:T03—T09",
+      "targetVersion": null,
+      "implementedVersion": "0.2.9-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1128,7 +1142,14 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
           "type": "io.skis.integration.AbstractSkisAggregateContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "980ad24003dc3e280336ec3a1be126841f148ab8",
+        "fromStatus": "Accepted",
+        "reason": "2026-10-26 T10 核实 PR #91 合入提交 980ad24 的 CI 40284163961 与 Compliance 40284163852；Java 21/25、PG 容器/URL、H2、独立聚合消费者、缓存/阶段/并发/资源及覆盖率历史/来源合同通过，完成 0.2.9 范围验收。本地正文、索引和清单另作静态核对，未运行项目检查器；仅升级状态和落地版本，保留全部实现锚点、合同及首次登记。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     }
   ]
 }

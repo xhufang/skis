@@ -26,7 +26,10 @@ HAVING, automatic and explicit final-row counts, offset Page/Slice, out-of-range
 aggregates versus empty groups, and all-NULL aggregate inputs. The external H2 dialect uses its own
 ID and explicitly selects H2 lowering/type formats, including exact AVG of INTEGER inputs.
 These tests stay in the existing required consumer suites; CI's nonempty, zero-skip report guards
-continue to apply. Added source only becomes execution evidence after the changed commit passes CI.
+continue to apply. These additions passed
+[CI](https://github.com/xhufang/skis/actions/runs/40284163961) at PR #91 merge commit
+`980ad24`: six public-consumer suites/16 tests and each PostgreSQL consumer path's one suite/two
+tests had zero failures, errors or skips. See [aggregate usage](../../../docs/aggregates-and-grouping.md).
 
 `verify-current-contracts.ps1` checks source/POM boundaries and requires JDK 21. Its
 `VerifyQueryApiBudget.java` helper parses source declarations without building the reactor or
