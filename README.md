@@ -6,7 +6,7 @@ Java 21 and Maven 3.9+.
 
 ## Version and availability
 
-The latest public release is **0.2.0**. This working tree is **0.2.9-SNAPSHOT**, which implements
+The latest public release is **0.2.0**. This working tree is **0.2.10-SNAPSHOT** and retains the completed
 typed aggregates, GROUP BY/HAVING, generated aggregate projections and final-result offset pagination/count.
 Internal `0.2.x-SNAPSHOT`
 milestones accumulate toward the next public **0.3.0** release and do not create standalone
@@ -14,8 +14,9 @@ releases or tags.
 
 The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
 and H2 aggregate contracts have passed CI with their real JDBC drivers and independent consumers.
-Generated keys, batch writes, raw SQL and Spring Boot integration retain their later milestone
-assignments. Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
+Generated keys, RETURNING, UPSERT, batch writes, raw SQL and driver-level streaming validation are
+planned for the current 0.2.10 milestone; Spring Boot integration retains its later milestone assignment.
+Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
 for the published and unreleased boundaries.
 
 The reactor now declares 21 root modules after removing 23 future placeholders and the unready
@@ -50,17 +51,17 @@ operations. Streams and cursors must be consumed sequentially and closed on thei
 
 ## Documentation
 
-| Topic | Guide |
-| --- | --- |
-| Runtime assembly, entities and reads | [Executor and generated models](docs/0.0.6-read-slice.md) |
-| Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md) |
-| User records and classes | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md) |
-| SQL queries | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md) |
-| Aggregates and grouped results | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md) |
-| Resource ownership and observation | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md) |
-| SQL logging | [Opt-in SQL/slow logging and parameter redaction](docs/sql-logging.md) |
-| Extensions | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md) |
-| Diagnostics | [Runtime errors](docs/runtime-error-codes.md), [APT errors](docs/apt-error-codes.md), [execution options and Spring translation](docs/execution-options-and-exception-translation.md) |
+| Topic                                        | Guide                                                                                                                                                                                 |
+|----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Runtime assembly, entities and reads         | [Executor and generated models](docs/0.0.6-read-slice.md)                                                                                                                             |
+| Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md)                                                                               |
+| User records and classes                     | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md)                                                                |
+| SQL queries                                  | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md)                            |
+| Aggregates and grouped results               | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md)                                                                                                    |
+| Resource ownership and observation           | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md)                                                                                  |
+| SQL logging                                  | [Opt-in SQL/slow logging and parameter redaction](docs/sql-logging.md)                                                                                                                |
+| Extensions                                   | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md)                                                                               |
+| Diagnostics                                  | [Runtime errors](docs/runtime-error-codes.md), [APT errors](docs/apt-error-codes.md), [execution options and Spring translation](docs/execution-options-and-exception-translation.md) |
 
 The historical numeric filenames above remain stable links; their examples describe the current
 snapshot. Public application and extension contracts use API/SPI packages. `*.internal` packages
