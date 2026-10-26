@@ -1150,6 +1150,30 @@
         "removedAnchors": [],
         "removedContracts": []
       }
+    },
+    {
+      "id": "ADR-0023",
+      "title": "主键策略、生成式插入参数与结果回填",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "四类主键、生成式插入参数与结果回填、ABI及诊断实现和验证",
+      "task": "0.2.10:T02",
+      "anchors": [],
+      "contracts": []
+    },
+    {
+      "id": "ADR-0024",
+      "title": "写入能力、原生策略与真实流读取边界",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "RETURNING与UPSERT、批量失败、三层BYPASS及真实流读取实现和验证",
+      "task": "0.2.10:T03-T08",
+      "anchors": [],
+      "contracts": []
     }
   ]
 }

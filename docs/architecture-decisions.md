@@ -2,7 +2,11 @@
 
 `.github/architecture/decisions.json` 是可提交的最小决策清单，首次登记 ADR-0001—0020。
 本地 `docs/adr` 正文和索引继续由 Git 忽略；公开清单只包含必要状态、版本、未完成范围、任务、实现锚点、合同归属及处置理由。
-当前机器清单覆盖 ADR-0001—0022。PR #91 合入提交 980ad24 的
+当前机器清单覆盖 ADR-0001—0024；ADR-0023/0024 是 0.2.10 T01 新登记的 Accepted 设计，尚未实现。
+它们的 anchors/contracts 暂为空，T02—T08 随实际源码登记，不使用不存在的目标类冒充锚点。
+本次仅静态同步，新增清单仍需后续提交的 Compliance 验证。
+
+以下为 0.2.9 历史收口证据：PR #91 合入提交 980ad24 的
 [Compliance 作业](https://github.com/xhufang/skis/actions/runs/40284163852/job/121443826257)
 通过 33 项失败夹具、可信历史比较和实现锚点检查，原始 ci.json 为 passed。
 ci.json 的 localAdrChecked=false、semanticContractsExecuted=false；功能/资源语义证据由
