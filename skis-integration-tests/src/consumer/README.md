@@ -8,16 +8,25 @@ generator and runtime together and do not import framework internal packages or 
 | --- | --- |
 | `spi-only` | Only `skis-dialect-api`; implements an external dialect without the support module. |
 | `listener-only` | Only `skis-core`; implements and calls all five listener callbacks using public events. |
-| `minimal-h2` | BOM, APT, runtime, H2 and supported SPI artifacts; verifies generated CRUD/projections, external dialect/Codec/connections, listener registration, Session inheritance, Page/Slice, stream termination, safety and re-entry. |
-| `minimal-postgresql` | BOM, APT, runtime and PostgreSQL dialect with an explicit test driver; verifies generated CRUD/projections, Page/count, stream termination, rollback and duplicate-key diagnostics with listener snapshots. |
+| `minimal-h2` | BOM, APT, runtime, H2 and supported SPI artifacts; verifies generated CRUD/aggregate projections, parameterized GROUP BY/HAVING, Page/Slice/count, external dialect/Codec/connections and aggregate lowering, listener registration, Session inheritance, stream termination, safety and re-entry. |
+| `minimal-postgresql` | BOM, APT, runtime and PostgreSQL dialect with an explicit test driver; verifies generated CRUD/aggregate projections, parameterized GROUP BY/HAVING, Page/Slice/count, stream termination, rollback and duplicate-key diagnostics with listener snapshots. |
 
 The Gradle fixture in `gradle-incremental` separately verifies cross-entity incremental projection
 processing. It also remains outside the reactor.
 
-PostgreSQL runs in the `Independent PostgreSQL consumer` CI job's disposable service. The job supplies
+PostgreSQL runs through both Testcontainers and an explicit service URL in the
+`Independent PostgreSQL consumer` CI jobs. The launcher supplies
 `SKIS_POSTGRES_URL`, `SKIS_POSTGRES_USER` and `SKIS_POSTGRES_PASSWORD`; the PostgreSQL consumer fails
 if they are missing. It does not fall back to H2 or silently skip. No local PostgreSQL installation
 is required. Its rows are isolated in the `consumer` schema and cleaned up by ID.
+
+The aggregate consumers generate `PetAggregatePro` from a user-written reusable projection. They
+check BigInteger sums, parameter identity across SELECT/GROUP BY/ORDER BY, independent bindings,
+HAVING, automatic and explicit final-row counts, offset Page/Slice, out-of-range pages, empty global
+aggregates versus empty groups, and all-NULL aggregate inputs. The external H2 dialect uses its own
+ID and explicitly selects H2 lowering/type formats, including exact AVG of INTEGER inputs.
+These tests stay in the existing required consumer suites; CI's nonempty, zero-skip report guards
+continue to apply. Added source only becomes execution evidence after the changed commit passes CI.
 
 `verify-current-contracts.ps1` checks source/POM boundaries and requires JDK 21. Its
 `VerifyQueryApiBudget.java` helper parses source declarations without building the reactor or

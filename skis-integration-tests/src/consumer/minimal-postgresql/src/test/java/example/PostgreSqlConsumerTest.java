@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import example.skis.PetAggregatePro;
 import example.skis.PetSummaryPro;
 import example.skis.PetTable;
 import io.skis.core.spi.ExecutionListener;
@@ -19,12 +20,16 @@ import io.skis.jdbc.JdbcExecutionException;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.query.SelectQuery;
+import io.skis.query.SliceRequest;
+import io.skis.query.Sql;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
+import java.math.BigInteger;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -34,6 +39,88 @@ import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
 
 class PostgreSqlConsumerTest {
+
+  @Test
+  void groupsGeneratedAggregateProjectionsAndCountsFinalRowsOutsideTheReactor() throws Exception {
+    PGSimpleDataSource dataSource = dataSource();
+    prepareSchema(dataSource);
+    SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
+    PetTable pet = PetTable.petTable;
+    List<Long> ids =
+        Stream.generate(() -> UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE)
+            .distinct().limit(3).sorted().toList();
+    try {
+      executor.insert(pet, new Pet(ids.get(0), "aggregate-a", null));
+      executor.insert(pet, new Pet(ids.get(1), "aggregate-a", null));
+      executor.insert(pet, new Pet(ids.get(2), "aggregate-b", null));
+      var suffix = Sql.parameter(String.class, "suffix");
+      var key = Sql.concat(pet.name(), Sql.value(suffix));
+      var count = Sql.countAll();
+      var template =
+          executor
+              .select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
+              .from(pet)
+              .where(pet.id().in(ids))
+              .groupBy(key)
+              .having(count.ge(1L))
+              .orderBy(key.asc());
+      var query = template.bind(suffix, "-first");
+      List<PetAggregate> expected =
+          List.of(
+              new PetAggregate(
+                  "aggregate-a-first", 2L,
+                  BigInteger.valueOf(ids.get(0)).add(BigInteger.valueOf(ids.get(1)))),
+              new PetAggregate("aggregate-b-first", 1L, BigInteger.valueOf(ids.get(2))));
+      assertEquals(expected, query.fetchList());
+      Page<PetAggregate> page = query.fetchPage(PageRequest.page(0, 1));
+      assertEquals(2L, page.totalElements());
+      assertEquals(expected.subList(0, 1), page.items());
+      var second = query.fetchPage(PageRequest.page(1, 1), query.countQuery());
+      assertEquals(2L, second.totalElements());
+      assertEquals(expected.subList(1, 2), second.items());
+      var slice = query.fetchSlice(SliceRequest.offset(1L, 1));
+      assertEquals(expected.subList(1, 2), slice.items());
+      assertFalse(slice.hasNext());
+      var pastEnd = query.fetchPage(PageRequest.page(5, 1));
+      assertEquals(2L, pastEnd.totalElements());
+      assertTrue(pastEnd.items().isEmpty());
+      var filtered = query.andHaving(count.gt(1L)).fetchPage(PageRequest.page(0, 1));
+      assertEquals(1L, filtered.totalElements());
+      assertEquals(expected.subList(0, 1), filtered.items());
+      assertEquals(
+          List.of("aggregate-a-second", "aggregate-b-second"),
+          template.bind(suffix, "-second").fetchList().stream().map(PetAggregate::name).toList());
+
+      var emptyGlobal =
+          executor.select(count).from(pet).where(pet.id().in(List.of()))
+              .fetchPage(PageRequest.page(0, 1));
+      assertEquals(1L, emptyGlobal.totalElements());
+      assertEquals(List.of(0L), emptyGlobal.items());
+      var emptyGroups =
+          executor.select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
+              .from(pet).where(pet.id().in(List.of())).groupBy(key).having(count.ge(1L))
+              .orderBy(key.asc()).bind(suffix, "-empty").fetchPage(PageRequest.page(0, 1));
+      assertEquals(0L, emptyGroups.totalElements());
+      assertTrue(emptyGroups.items().isEmpty());
+      assertEquals(
+          Collections.singletonList(null),
+          executor.select(Sql.sumAsBigInteger(Sql.value(Long.class, null)))
+              .from(pet).where(pet.id().in(ids)).fetchList());
+      assertEquals(
+          List.of(0L),
+          executor.select(Sql.count(Sql.value(Long.class, null)))
+              .from(pet).where(pet.id().in(ids)).fetchList());
+    } finally {
+      try (Connection connection = dataSource.getConnection();
+          PreparedStatement delete =
+              connection.prepareStatement("DELETE FROM \"consumer\".\"pet\" WHERE \"id\" = ?")) {
+        for (long id : ids) {
+          delete.setLong(1, id);
+          delete.executeUpdate();
+        }
+      }
+    }
+  }
 
   @Test
   void resolvesBomGeneratesMappingsAndExecutesAgainstTheRealDriver() throws Exception {

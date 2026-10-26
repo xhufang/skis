@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import example.skis.PetMeta;
+import example.skis.PetSummaryPro;
+import example.skis.PetTable;
 import io.skis.core.SkisErrorCode;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.SqlRenderException;
@@ -25,11 +27,15 @@ import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.spi.JdbcReadContext;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
+import io.skis.query.PageRequest;
+import io.skis.query.Sql;
+import io.skis.runtime.Skis;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.TableExpression;
 import java.math.BigDecimal;
 import java.sql.Connection;
@@ -43,6 +49,41 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class SupportedSpiConsumerTest {
+
+  @Test
+  void externalDialectExecutesParameterizedGroupsAndItsOwnAggregateLowering() throws Exception {
+    JdbcDataSource source = new JdbcDataSource();
+    source.setURL("jdbc:h2:mem:external_aggregate_consumer");
+    try (Connection connection = source.getConnection();
+        var statement = connection.createStatement()) {
+      statement.execute(
+          "CREATE TABLE \"pet\" (\"id\" BIGINT PRIMARY KEY, "
+              + "\"pet_name\" VARCHAR(200) NOT NULL, \"version\" BIGINT NOT NULL)");
+      var executor = Skis.create(source, new ExternalDialect());
+      var pet = PetTable.petTable;
+      executor.insert(pet, new Pet(1L, "a", null));
+      executor.insert(pet, new Pet(2L, "a", null));
+      executor.insert(pet, new Pet(3L, "b", null));
+      var key = Sql.concat(pet.name(), Sql.value("-external"));
+      var count = Sql.countAll();
+      var grouped =
+          executor.select(PetSummaryPro.of(count, key)).from(pet)
+              .groupBy(key).having(count.ge(1L)).orderBy(key.asc());
+      assertEquals(
+          List.of(new PetSummary(2L, "a-external"), new PetSummary(1L, "b-external")),
+          grouped.fetchList());
+      var page = grouped.fetchPage(PageRequest.page(0, 1));
+      assertEquals(2L, page.totalElements());
+      assertEquals(List.of(new PetSummary(2L, "a-external")), page.items());
+
+      var averages =
+          executor.select(Sql.avgAsBigDecimal(Sql.cast(pet.id(), Integer.class, SqlType.INTEGER)))
+              .from(pet).groupBy(key).orderBy(key.asc()).fetchList();
+      assertEquals(2, averages.size());
+      assertEquals(0, new BigDecimal("1.5").compareTo(averages.get(0)));
+      assertEquals(0, new BigDecimal("3").compareTo(averages.get(1)));
+    }
+  }
 
   @Test
   void explicitH2FormatsPreserveDecimalValuesWithAnExternalDialectId() throws Exception {
@@ -122,6 +163,11 @@ class SupportedSpiConsumerTest {
         DialectCapabilities.of(
             DialectFeature.SCHEMA_QUALIFIED_TABLES,
             DialectFeature.COUNT_AGGREGATE,
+            DialectFeature.GROUP_BY,
+            DialectFeature.HAVING,
+            DialectFeature.AVG_AGGREGATE,
+            DialectFeature.DERIVED_TABLE,
+            DialectFeature.CROSS_JOIN,
             DialectFeature.PARAMETERIZED_LIMIT,
             DialectFeature.PARAMETERIZED_OFFSET);
     private static final DialectLowering LOWERING = StandardSqlLowering.h2(CAPABILITIES);
