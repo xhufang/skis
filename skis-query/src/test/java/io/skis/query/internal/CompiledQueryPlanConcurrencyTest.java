@@ -237,6 +237,36 @@ class CompiledQueryPlanConcurrencyTest {
         catalog.projectionPlanCacheStatistics());
   }
 
+  @Test
+  void freshGroupedProjectionsShareTheirPlanAndDecodeIndependentRowsConcurrently() throws Exception {
+    QueryPlanCatalog catalog =
+        new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
+    QueryCompilation<PetView> warmed = groupedProjectionQuery(catalog, 1L);
+    List<Observation<PetView>> observations = invokeConcurrently(
+        index -> new Invocation<>(groupedProjectionQuery(catalog, 20_000L + index)),
+        index -> Map.of(1, 30_000L + index, 2, "group-" + index));
+    IdentityHashMap<PetView, Boolean> instances = new IdentityHashMap<>();
+    for (int index = 0; index < observations.size(); index++) {
+      var observed = observations.get(index);
+      assertSame(warmed.plan(), observed.plan());
+      assertEquals(2, observed.nextParameterIndex());
+      assertEquals(20_000L + index, observed.boundValue());
+      assertEquals(new PetView(30_000L + index, "group-" + index), observed.decoded());
+      instances.put(observed.decoded(), Boolean.TRUE);
+    }
+    assertEquals(INVOCATIONS, instances.size());
+    assertEquals(new QueryPlanCacheStatistics(INVOCATIONS, 1, 0, 0, 1, 4),
+        catalog.projectionPlanCacheStatistics());
+  }
+
+  private static QueryCompilation<PetView> groupedProjectionQuery(QueryPlanCatalog catalog, long value) {
+    PetTable table = new PetTable();
+    var query = (DefaultSelectQuery<PetView>) QueryTestSupport.operations(catalog)
+        .select(projectionMapping().bind(Sql.countAll(), table.name())).from(table)
+        .where(table.id().ge(value)).groupBy(table.name());
+    return query.compilation(QueryPagination.None.INSTANCE);
+  }
+
   private static QueryCompilation<PetView> projectionQuery(QueryPlanCatalog catalog, long value) {
     PetTable table = new PetTable();
     DefaultSelectQuery<PetView> query =
@@ -452,7 +482,8 @@ class CompiledQueryPlanConcurrencyTest {
     INSTANCE;
 
     private final DialectCapabilities capabilities =
-        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES);
+        DialectCapabilities.of(DialectFeature.SCHEMA_QUALIFIED_TABLES,
+            DialectFeature.COUNT_AGGREGATE, DialectFeature.GROUP_BY);
     private final SqlRenderer renderer = new StandardSqlRenderer(this);
 
     @Override

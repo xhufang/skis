@@ -954,7 +954,7 @@
       "decisionVersion": "0.2.9-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T02—T07 聚合、映射、解析后结果身份与复杂 count 源码已实现/待 CI；T08 完整缓存结构键/依赖及后续验证未实现",
+      "remaining": "T02—T08 聚合、映射、结果身份/count 及缓存结构键/依赖源码已实现/待 CI；当前运行证据与后续总验收未完成",
       "task": "0.2.9:T02—T09",
       "anchors": [
         {
@@ -1001,6 +1001,21 @@
         },
         {
           "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/SharedQueryPlanRoutingTest.java",
+          "type": "io.skis.query.internal.SharedQueryPlanRoutingTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/CompiledQueryPlanConcurrencyTest.java",
+          "type": "io.skis.query.internal.CompiledQueryPlanConcurrencyTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/CachedQueryPlanRetentionTest.java",
+          "type": "io.skis.query.internal.CachedQueryPlanRetentionTest"
+        },
+        {
+          "kind": "java",
           "path": "skis-sql-ast/src/test/java/io/skis/sql/ast/ResultIdentityTest.java",
           "type": "io.skis.sql.ast.ResultIdentityTest"
         },
@@ -1023,7 +1038,7 @@
       "decisionVersion": "0.2.9-SNAPSHOT",
       "targetVersion": "0.2.9-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "T03—T07 语义、映射及分页/count 源码已实现/待 CI；缓存及后续合同验证未实现",
+      "remaining": "T03—T08 语义、映射、分页/count 及缓存合同源码已实现/待 CI；当前运行证据与后续总验收未完成",
       "task": "0.2.9:T03—T09",
       "anchors": [
         {

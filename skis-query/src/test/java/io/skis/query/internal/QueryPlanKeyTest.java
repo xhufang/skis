@@ -712,7 +712,7 @@ class QueryPlanKeyTest {
   }
 
   @Test
-  void codecIdentityFollowsDerivedAndScalarOutputsButRejectsUnknownSources() {
+  void codecIdentityFollowsDerivedScalarAndBuiltInExpressionOutputs() {
     PetTable inner = new PetTable().as("inner_pet");
     NonNullDerivedOutput<Long> output = Sql.output(inner.id(), "pet_id");
     DerivedRelation derived =
@@ -726,12 +726,15 @@ class QueryPlanKeyTest {
         parameter(0, derivedColumn, Nullability.NON_NULL));
     assertEquals(
         parameter(0, inner.id(), Nullability.NON_NULL), parameter(0, scalar, Nullability.NON_NULL));
-    assertTrue(
-        QueryPlanKey.ParameterShape.codec(
-                IDENTITIES,
-                new ParameterSlot<>(0, Long.class, SqlType.BIGINT, Nullability.NON_NULL),
-                literal)
-            .isEmpty());
+    assertEquals(
+        parameter(0, Sql.value(3L), Nullability.NON_NULL),
+        parameter(0, literal, Nullability.NON_NULL));
+    assertNotEquals(
+        parameter(0, inner.id(), Nullability.NON_NULL),
+        parameter(0, literal, Nullability.NON_NULL));
+    assertNotEquals(
+        result(SelectedResult.nullableScalar(Sql.sumAsBigInteger(inner.id()))),
+        result(SelectedResult.nullableScalar(Sql.avgAsBigDecimal(inner.id()))));
   }
 
   @Test

@@ -2,6 +2,7 @@ package io.skis.query.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -508,6 +509,46 @@ class AggregateInputMappingTest {
         assertThrows(QueryValidationException.class, operation).code());
   }
 
+  @Test
+  void replacementCatalogRechecksHavingOrderingAndPrunedAggregateInputsBeforeLookup() {
+    var original = new QueryPlanCatalog(registry(false), TestDialect.INSTANCE,
+        16, java.time.Duration.ofMinutes(1));
+    var replacement = new QueryPlanCatalog(registry(true), TestDialect.INSTANCE,
+        16, java.time.Duration.ofMinutes(1));
+    var builtin = QueryTestSupport.operations(original);
+    var custom = QueryTestSupport.operations(replacement);
+    var sum = Sql.sumAsLong(TABLE.number);
+    List<java.util.function.Function<QueryOperations, SelectQuery<?>>> queries = List.of(
+        operations -> operations.select(Sql.countAll()).from(TABLE).having(sum.gt(0L)),
+        operations -> operations.select(Sql.countAll()).from(TABLE).orderBy(sum.asc()),
+        operations -> operations.select(Sql.countAll()).from(TABLE).having(sum.in(List.of())));
+    List<DefaultSelectQuery<?>> existing = new java.util.ArrayList<>();
+    List<Object> plans = new java.util.ArrayList<>();
+    for (var factory : queries) {
+      var query = (DefaultSelectQuery<?>) factory.apply(builtin);
+      var first = query.compilation(QueryPagination.None.INSTANCE);
+      assertSame(first.plan(), compile(factory.apply(builtin)).plan());
+      assertTypeFailure(() -> compile(factory.apply(custom)));
+      assertTypeFailure(() -> compileCount(factory.apply(custom)));
+      existing.add(query);
+      plans.add(first.plan());
+    }
+    assertEquals(3, original.projectionPlanCacheStatistics().hitCount());
+    assertEquals(0, replacement.projectionPlanCacheStatistics().missCount());
+    assertEquals(3, original.invalidateProjectionPlans(ENTITY));
+    for (int index = 0; index < existing.size(); index++) {
+      assertSame(plans.get(index), existing.get(index).compilation(QueryPagination.None.INSTANCE).plan());
+      assertNotSame(plans.get(index), compile(queries.get(index).apply(builtin)).plan());
+    }
+    // A known SQL grouping type retains its equality contract with a custom property Codec.
+    var pureGroup = custom.select(Sql.countAll()).from(TABLE).groupBy(TABLE.number);
+    var grouped = compile(pureGroup);
+    assertSame(grouped.plan(), compile(custom.select(Sql.countAll()).from(TABLE)
+        .groupBy(TABLE.number)).plan());
+    assertEquals(1, replacement.invalidateProjectionPlans(ENTITY));
+    assertSame(grouped.plan(), compile(pureGroup).plan());
+  }
+
   private static <R extends @Nullable Object> QueryCompilation<R> compile(SelectQuery<R> query) {
     return ((DefaultSelectQuery<R>) query).compilation(QueryPagination.None.INSTANCE);
   }
@@ -600,6 +641,7 @@ class AggregateInputMappingTest {
     @Override public String id() { return "mapping-test"; }
     @Override public IdentifierRules identifierRules() { return StandardIdentifierRules.INSTANCE; }
     @Override public DialectCapabilities capabilities() { return DialectCapabilities.of(DialectFeature.values()); }
+    @Override public boolean hasStablePlanCacheIdentity() { return true; }
     @Override public SqlRenderer renderer() { return renderer; }
   }
 }

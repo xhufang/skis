@@ -27,9 +27,10 @@ import java.util.Optional;
  *
  * <p>A compiled decoder can legitimately retain its result type's class loader. Containers that
  * unload or replace application/plugin classes must first quiesce affected query executions and
- * then call {@link #clearProjectionPlans()} before dropping that loader; entity-scoped model
- * replacement may use {@link #invalidateProjectionPlans(EntityMeta)} when every affected entity is
- * known.
+ * then release affected query objects and call {@link #clearProjectionPlans()} before dropping that
+ * loader. Entity-scoped cleanup may use {@link #invalidateProjectionPlans(EntityMeta)} when every
+ * affected entity is known. Runtime registry or Codec configuration changes require a new catalog;
+ * shared invalidation does not replace mappings or revoke existing query-local plans.
  */
 public final class QueryPlanCatalog {
 

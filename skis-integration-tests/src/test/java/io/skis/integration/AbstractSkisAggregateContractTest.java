@@ -107,6 +107,77 @@ abstract class AbstractSkisAggregateContractTest {
   protected abstract Dialect dialect();
 
   @Test
+  void generatedAggregatePlansShareAcrossFreshValuesAndClearPreservesExistingQueries() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      var inner = table.as("cache_scalar");
+      var first = executor.select(AggregateSummaryPro.of(
+          Sql.concat(table.category(), Sql.value("!")), Sql.countAll(),
+          Sql.sumAsBigInteger(table.id()), Sql.avgAsBigDecimal(table.amount()),
+          Sql.scalar(Sql.select(Sql.countAll()).from(inner))))
+          .from(table).where(table.id().ge(1L)).groupBy(table.category())
+          .having(Sql.countAll().gt(0L)).orderBy(table.category().asc());
+      var initial = first.fetchList();
+      assertEquals(List.of("A!", "B!"), initial.stream().map(row -> row.category()).toList());
+      assertEquals(2, first.fetchPage(PageRequest.page(0, 1)).totalElements());
+      var warmed = executor.queryPlanCacheStatistics();
+      var second = executor.select(AggregateSummaryPro.of(
+          Sql.concat(table.category(), Sql.value("?")), Sql.countAll(),
+          Sql.sumAsBigInteger(table.id()), Sql.avgAsBigDecimal(table.amount()),
+          Sql.scalar(Sql.select(Sql.countAll()).from(inner))))
+          .from(table).where(table.id().ge(2L)).groupBy(table.category())
+          .having(Sql.countAll().gt(0L)).orderBy(table.category().asc());
+      var changed = second.fetchList();
+      assertEquals(List.of("A?", "B?"), changed.stream().map(row -> row.category()).toList());
+      assertEquals(1, changed.getFirst().count());
+      assertEquals(BigInteger.valueOf(2), changed.getFirst().idSum());
+      assertEquals(2, second.fetchPage(PageRequest.page(1, 1)).totalElements());
+      var reused = executor.queryPlanCacheStatistics();
+      assertEquals(warmed.missCount(), reused.missCount());
+      assertTrue(reused.hitCount() >= warmed.hitCount() + 3);
+      executor.clearQueryPlanCache();
+      assertEquals(0, executor.queryPlanCacheStatistics().size());
+      var beforeLocal = executor.queryPlanCacheStatistics();
+      // The most recent content shape and count remain query-local after shared L1 is cleared.
+      assertEquals(List.of("B?"), second.fetchPage(PageRequest.page(1, 1)).items().stream()
+          .map(row -> row.category()).toList());
+      assertEquals(beforeLocal, executor.queryPlanCacheStatistics());
+      var fresh = executor.select(Sql.countAll()).from(table).where(table.id().ge(2L));
+      assertEquals(List.of(2L), fresh.fetchList());
+      assertEquals(beforeLocal.missCount() + 1, executor.queryPlanCacheStatistics().missCount());
+    }
+  }
+
+  @Test
+  void normalizedGroupingCacheSeparatesCallValuesAndContentCountParameterLayouts() throws Exception {
+    DataSource source = createDataSource();
+    try (Connection connection = source.getConnection()) {
+      createRuntimeSamples(connection);
+      var executor = executor(source, connection);
+      var table = AggregateSampleTable.aggregateSampleTable;
+      for (int shift : List.of(10, 20)) {
+        var parameter = Sql.parameter(Integer.class, "shift");
+        var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(parameter));
+        var query = executor.select(key).from(table).groupBy(key).orderBy(key.asc())
+            .bind(parameter, shift);
+        var before = executor.queryPlanCacheStatistics();
+        assertEquals(List.of(shift, shift + 1, shift + 2), query.fetchList());
+        var page = query.fetchPage(PageRequest.page(1, 1));
+        assertEquals(List.of(shift + 1), page.items());
+        assertEquals(3, page.totalElements());
+        var after = executor.queryPlanCacheStatistics();
+        if (shift == 20) {
+          assertEquals(before.missCount(), after.missCount());
+          assertTrue(after.hitCount() >= before.hitCount() + 3);
+        }
+      }
+    }
+  }
+
+  @Test
   void distinctCorrelatedScalarPagesAndOffsetContinuationsKeepLogicalParameters() throws Exception {
     DataSource source = createDataSource();
     try (Connection connection = source.getConnection()) {
