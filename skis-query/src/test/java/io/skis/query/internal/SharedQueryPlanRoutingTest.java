@@ -1191,6 +1191,64 @@ class SharedQueryPlanRoutingTest {
   }
 
   @Test
+  void orderedAggregatePlansKeepHiddenColumnsAndPrunedDependenciesWithAReusedSource() throws Exception {
+    for (boolean prune : List.of(false, true)) {
+      Fixture fixture = fixture(16, true, true);
+      List<QueryCompilation<OrderedRow<@Nullable Long>>> compiled = new ArrayList<>();
+      for (long value : List.of(11L, 22L)) {
+        PetTable table = new PetTable();
+        OwnerTable owner = new OwnerTable().as("pruned_order_owner");
+        var count = Sql.scalar(Sql.select(Sql.countAll()).from(table.as("count_pet")));
+        SelectedResult<@Nullable Long> selected = SelectedResult.nullableScalar(count);
+        var condition = table.id.ge(value);
+        if (prune) {
+          var maximum = Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner));
+          condition = condition.and(maximum.in(List.of()));
+        }
+        var state = SelectQueryState.create(selected, table)
+            .where(condition).orderBy(List.of(table.id.asc()));
+        CompiledQueryStructure structure = state.structure();
+        QueryPlanCompiler compiler = fixture.catalog().compiler();
+        ResolvedStatement source = compiler.resolveSource(selected, structure, false);
+        var invocation = compiler.compileOrdered(
+            selected, structure, state.orderBy(), false, QueryPagination.None.INSTANCE,
+            QueryTestSupport.arguments(structure), null, StatementPurpose.PRIMARY, () -> source);
+        SelectStatement statement = (SelectStatement) invocation.ast();
+        assertNotSame(source.statement(), statement, "hidden columns require their own final stage");
+        assertEquals(1, statement.hiddenSelections().size());
+        assertEquals(SelectableSupport.expression(table.id),
+            statement.hiddenSelections().getFirst().expression());
+        assertEquals(List.of(value), bindings(invocation));
+        assertFalse(invocation.plan().sql().contains("pruned_order_owner"));
+        compiled.add(invocation);
+      }
+      assertSame(compiled.getFirst().plan(), compiled.getLast().plan());
+      assertNotSame(compiled.getFirst().ast(), compiled.getLast().ast());
+      assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
+      assertEquals(1, fixture.dialect().lowerings.get());
+      assertEquals(1, fixture.dialect().renders.get());
+      assertEquals(prune ? 1 : 0, fixture.catalog().invalidateProjectionPlans(OWNER));
+      assertEquals(prune ? 0 : 1, fixture.stats().size());
+    }
+  }
+
+  @Test
+  void orderedDistinctPlanRejectsAnUnselectedSortBeforeSharedLookup() {
+    Fixture fixture = fixture(16, true);
+    PetTable table = new PetTable();
+    SelectedResult<Long> selected = SelectedResult.requiredScalar(table.id);
+    CompiledQueryStructure structure = QueryTestSupport.compile(selected, table, List.of(), null);
+    QueryValidationException failure = assertThrows(QueryValidationException.class,
+        () -> fixture.catalog().compiler().compileOrdered(
+            selected, structure, List.of(table.name.asc()), true, QueryPagination.None.INSTANCE,
+            QueryTestSupport.arguments(structure), null, StatementPurpose.PRIMARY, null));
+    assertEquals(SkisErrorCode.QUERY_ORDER_BY_NOT_SELECTED, failure.code());
+    assertEquals(new QueryPlanCacheStatistics(0, 0, 0, 0, 0, 16), fixture.stats());
+    assertEquals(0, fixture.dialect().lowerings.get());
+    assertEquals(0, fixture.dialect().renders.get());
+  }
+
+  @Test
   void aggregateFailureBypassAndEvictionPreserveL0AndAllowFreshCompilation() throws Exception {
     for (int mode = 0; mode < 3; mode++) {
       Fixture fixture = fixture(mode == 1 ? 0 : 1, mode != 2, true);
