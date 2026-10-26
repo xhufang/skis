@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+- 0.2.9 T09 增加独立 H2/PostgreSQL 消费者的生成式聚合投影、参数化 GROUP BY/HAVING、Page/Slice、
+  最终行 count、空输入与 NULL 合同，以及自定义 ID 方言的 H2 分组/INTEGER AVG lowering 合同。
+  四工程保持最小依赖、独立 APT/装配和必需套件零跳过守卫，benchmark 保持冻结。
 
 0.2.8 工程地基收口文档于 2026-10-23 保存；2026-10-24 已核实 PR #82 合入提交 3afa2f0 的 CI/Compliance 通过，query 抬线/并发测试复验关闭。
 2026-10-23 按开发安排切换为 `0.2.9-SNAPSHOT`，开始聚合语义里程碑；版本初始化不代表聚合能力已实现，
