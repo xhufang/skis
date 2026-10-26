@@ -236,11 +236,10 @@ There is no child decoder, child query, connection, transaction, or resource own
 ## SQL semantics and dialects
 
 An empty child result makes EXISTS false. One row whose selected value is SQL `NULL` makes it true,
-as do duplicate rows. NOT EXISTS negates only row existence. Aggregate interoperability remains an
-explicit `0.2.9` acceptance item: a global aggregate without HAVING must produce one row even when
-its input is empty, and HAVING can remove that row. The current EXISTS implementation performs no
-transformation that could change either behavior; the `0.2.7` closure covers the implemented
-non-aggregate subquery contracts.
+as do duplicate rows. NOT EXISTS negates only row existence. In `0.2.9-SNAPSHOT`, a global
+aggregate without HAVING produces one row even when its input is empty, and HAVING can remove
+that row. EXISTS retains these behaviors, including when empty IN/NOT IN normalization removes
+an aggregate operand. Current PostgreSQL/H2 contracts cover this interoperability.
 
 PostgreSQL and H2 declare `EXISTS_SUBQUERY`, `IN_SUBQUERY`, `SCALAR_SUBQUERY`,
 `CORRELATED_SUBQUERY`, and `DERIVED_TABLE`. A dialect
@@ -248,4 +247,5 @@ missing one syntax capability rejects only that nested construct; a dialect miss
 support accepts an independent child but rejects a child that depends on an ancestor. Validation
 is recursive and reports the stable nested query-block path.
 
-Aggregate expressions, GROUP BY/HAVING and grouped count remain assigned to `0.2.9`.
+Aggregate expressions, GROUP BY/HAVING and grouped count are implemented in `0.2.9-SNAPSHOT`;
+see [aggregates and grouped results](aggregates-and-grouping.md) for types, scope and current limits.

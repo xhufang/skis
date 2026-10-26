@@ -4,8 +4,10 @@ The current `0.2.9-SNAPSHOT` query API exposes two immutable pagination results:
 `Slice<R>`. Offset and keyset are request/execution choices; they do not create additional public
 result types.
 
-The aggregate/grouped/derived offset and wrapped-count extensions described below are implemented
-in 0.2.9 T07 source and await current CI and PostgreSQL/H2 verification. No local build or test was run.
+The aggregate/grouped/derived offset and wrapped-count extensions passed Java 21/25,
+PostgreSQL/H2 and independent-consumer verification in
+[CI](https://github.com/xhufang/skis/actions/runs/40284163961) at PR #91 merge commit `980ad24`. See [aggregates and grouped results](aggregates-and-grouping.md) for types and examples.
+No local build or test was run.
 
 ## Stable ordering
 

@@ -1,5 +1,30 @@
 # 分支覆盖率与逐模块棘轮
 
+## 0.2.9 当前验收（2026-10-26）
+
+PR #91 合入提交 980ad24003dc3e280336ec3a1be126841f148ab8 的
+[Java 21 权威作业](https://github.com/xhufang/skis/actions/runs/40284163961/job/121443828050)通过。
+原始 measurement 的 7 个 producer blob 与当前分支一致，15 模块 JaCoCo XML SHA-256 和 branch 计数逐项匹配；
+当前 15 个门槛与同轮候选一致，无需再次登记同值来源，首次登记、统计口径和阈值均不改变。
+
+| 聚合相关模块 | 已登记且本轮实测门槛 |
+| --- | --- |
+| skis-sql-ast | 83.11% |
+| skis-dialect-api | 81.28% |
+| skis-dialect-support | 89.76% |
+| skis-query | 77.99% |
+| skis-mapping | 88.73% |
+
+工件 branch-coverage-java-21-40284163961-1，ID 12633795795，服务端声明 ZIP SHA-256 为
+44d527113fc6eb72f43e1ecda2f81154666e527fd4fe9687b5d2e3731ccead92。
+原始文件位于被忽略的 target/t10-evidence；本地只核对工件内部哈希/计数和元数据，不编译运行或执行项目检查器。
+两份必需回归登记的 85 个报告/1020 项及逐 XML SHA-256 均匹配，阻断验证债务清零。
+mutation 当前类数 10、历史登记 9，分支计数及门槛不变，不把历史登记类数当作当前类数。
+下文保留各历史失败与抬线时点，不把后续验证回填历史记录。
+
+## 0.2.8 工程基线历史
+
+
 0.2.8 T04 已接入构建配置、采集脚本、失败夹具和 CI。当前 `.github/quality/branch-baseline.json` 状态为 `active`。
 T10 已核实提交 `9dbb9324411ff2f5697aa85ed29d76b2bb75e692` 的
 [Java 21 权威作业](https://github.com/xhufang/skis/actions/runs/39957930561/job/120428327026)：
