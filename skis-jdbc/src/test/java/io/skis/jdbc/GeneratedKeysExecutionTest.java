@@ -40,6 +40,27 @@ class GeneratedKeysExecutionTest {
   }
 
   @Test
+  void acceptsEveryIntegralJdbcKeyTypeForBothSupportedJavaKeyTypes() {
+    for (int jdbcType : new int[] {Types.TINYINT, Types.SMALLINT, Types.INTEGER, Types.BIGINT}) {
+      for (var codec : List.of(JdbcCodecs.LONG, JdbcCodecs.INTEGER)) {
+        var scenario = new Scenario();
+        scenario.columnType = jdbcType;
+        Object key = new JdbcExecutor(scenario.provider()).executeGeneratedKey(PLAN, "input", "id",
+            codec, ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY);
+        if (codec == JdbcCodecs.LONG) {
+          assertEquals(41L, key);
+        } else {
+          assertEquals(41, key);
+        }
+        assertEquals(List.of("id"), scenario.requestedColumns);
+        assertEquals(List.of("acquire", "prepare", "configure", "execute", "keys", "metadata",
+            "next", "read", "wasNull", "next", "close-keys", "close-statement", "release"),
+            scenario.events);
+      }
+    }
+  }
+
+  @Test
   void rejectsMissingExtraNullOrWrongShapedKeysAndUnexpectedAffectedRows() {
     for (int variant = 0; variant < 7; variant++) {
       var scenario = new Scenario();

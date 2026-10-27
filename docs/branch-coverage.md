@@ -1,5 +1,44 @@
 # 分支覆盖率与逐模块棘轮
 
+## PR #95：主键生成覆盖率抬线与回退补证（待新 CI 验证）
+
+[CI 40459538780 的权威作业](https://github.com/xhufang/skis/actions/runs/40459538780/job/122040615814?pr=95)
+已通过 Java 21 完整构建、90 个必需回归套件、真实 PostgreSQL 合同、覆盖采集及证据上传，
+在 skis-core 覆盖率提升尚未登记时失败；Java 21 单元和集成检查转发这一失败。
+Java 25、PG 容器/外部 URL、独立消费者、Gradle 与同一 head 的 Compliance 均通过。
+完整候选还包含 mapping/JDBC 回退，不能仅登记首个抬线模块或直接采用全部候选。
+
+PR head 为 `9181a933a0552cc6d76fa3e3144670ebdbae1e9e`，实际测试合并提交为
+`ff152afa569ebf0c82b6546a54683be211469564`，比较 base 为 `9a2b337fbdf8bc5dca76100acd16723e36c88d15`。
+已核对 GitHub 运行/尝试、工作流、合并父提交、七项 producer blob、提交内 policy/baseline 原始摘要、
+可信 comparison 基线，以及 15 模块 XML SHA-256、逐类/汇总分支计数、类清单和 HTML 报告存在性。
+
+[工件 12713961993](https://github.com/xhufang/skis/actions/runs/40459538780/artifacts/12713961993)
+为 `branch-coverage-java-21-40459538780-1`，归档 SHA-256 为
+`d1718d762e26c8c63923d5fae9e02a11eac1848ad4b520d2f66050b9a3e1c868`，与 GitHub 元数据一致。
+原样登记以下七条提升行及来源：
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-core | 75.59% | 481/154 | 47 | 75.74% |
+| skis-metadata | 72.43% | 158/51 | 12 | 75.59% |
+| skis-processor | 72.44% | 934/305 | 50 | 75.38% |
+| skis-sql-ast | 83.11% | 1505/305 | 103 | 83.14% |
+| skis-dialect-api | 81.28% | 1119/256 | 39 | 81.38% |
+| skis-dialect-support | 89.76% | 265/30 | 8 | 89.83% |
+| skis-mutation | 73.40% | 181/34 | 13 | 84.18% |
+
+两项回退保留原门槛及历史来源，补充合同测试源码：
+
+| 模块 | 保留门槛 | 本轮实测 | 补充验证 |
+| --- | ---: | ---: | --- |
+| skis-mapping | 88.73% | 88.41%（145/19） | Long/Integer/String/UUID 生成主键接受匹配内置 Codec，拒绝自定义包装 Codec |
+| skis-jdbc | 78.62% | 78.34%（246/68） | 四种允许的整数 JDBC 类型分别精确解码为 Long/Integer，保持指定列与资源顺序 |
+
+新增测试尚未执行，不预测覆盖率；首次登记、统计口径和其余历史行继续保留。
+本地只下载并静态核对工件、登记提升行和补测试源码，未编译运行或执行项目检查器。
+取证保存在被忽略的 `target/ci-coverage-40459538780/`；来源认证、回退补证及完整门禁待新 CI，T02 尚未关闭。
+
 ## 0.2.9 当前验收（2026-10-26）
 
 PR #91 合入提交 980ad24003dc3e280336ec3a1be126841f148ab8 的
