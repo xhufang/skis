@@ -44,6 +44,20 @@ class SnowflakeIdGeneratorTest {
   }
 
   @Test
+  void staleInitialSnapshotRetriesWithoutReissuingAnId() throws ReflectiveOperationException {
+    var generator = SnowflakeIdGenerator.ofNode(37);
+    long first = generator.nextId();
+    var allocate = SnowflakeIdGenerator.class.getDeclaredMethod("allocate", long.class);
+    allocate.setAccessible(true);
+    // The initial -1 snapshot is stale after the first allocation, forcing a failed CAS.
+    long retried = (long) allocate.invoke(generator, -1L);
+    long next = generator.nextId();
+    assertTrue(retried > first);
+    assertTrue(next > retried);
+    assertEquals(37, (retried >>> 12) & 1023);
+  }
+
+  @Test
   void oneSharedGeneratorAllocatesUniqueIdsAcrossConcurrentCallers() throws Exception {
     var generator = SnowflakeIdGenerator.ofNode(37);
     // Fewer than 4096 total allocations: this checks contention without depending on clock waits.

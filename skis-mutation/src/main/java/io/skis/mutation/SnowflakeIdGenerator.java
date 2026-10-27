@@ -33,12 +33,16 @@ public final class SnowflakeIdGenerator {
 
   /** Atomically allocates one positive ID without waiting for the wall clock. */
   public long nextId() {
+    return allocate(state.get());
+  }
+
+  private long allocate(long previous) {
     for (; ; ) {
-      long previous = state.get();
       long next = nextState(previous, System.currentTimeMillis() - EPOCH_MILLIS, nodeId);
       if (state.compareAndSet(previous, next)) {
         return ((next >>> 12) << 22) | ((long) nodeId << 12) | (next & 4095L);
       }
+      previous = state.get();
     }
   }
 
