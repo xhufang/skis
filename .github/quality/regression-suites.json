@@ -18,6 +18,7 @@
       "io.skis.metadata.VersionStrategyTest"
     ],
     "skis-mapping": [
+      "io.skis.mapping.GeneratedIdModelTest",
       "io.skis.mapping.EntityRuntimeModelTest",
       "io.skis.mapping.JdbcCodecsTest",
       "io.skis.mapping.RowLayoutTest"
@@ -38,6 +39,7 @@
       "io.skis.dialect.spi.DialectValueTypesTest"
     ],
     "skis-jdbc": [
+      "io.skis.jdbc.GeneratedKeysExecutionTest",
       "io.skis.jdbc.DataSourceConnectionProviderTest",
       "io.skis.jdbc.JdbcExecutorTest",
       "io.skis.jdbc.JdbcFailureContractTest",
@@ -74,6 +76,8 @@
       "io.skis.query.internal.SharedQueryPlanRoutingTest"
     ],
     "skis-mutation": [
+      "io.skis.mutation.IdGenerationContractTest",
+      "io.skis.mutation.SnowflakeIdGeneratorTest",
       "io.skis.mutation.MutationExecutionDiagnosticsTest",
       "io.skis.mutation.MutationPlanCompilerTest",
       "io.skis.mutation.MutationTypeSafetyCompilationTest",
@@ -110,6 +114,7 @@
       "io.skis.testsupport.PostgresSettingsTest"
     ],
     "skis-integration-tests": [
+      "io.skis.integration.SkisGeneratedIdH2ContractTest",
       "io.skis.architecture.ArchitectureContractTest",
       "io.skis.integration.SkisAggregateH2ContractTest",
       "io.skis.integration.SkisEmployeeDepartmentScalarH2ContractTest",

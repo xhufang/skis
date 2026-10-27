@@ -84,7 +84,14 @@ class MutationParameterBindingTest {
     EntityMutationBinders<Pet> binders = new EntityMutationBinders<>(
         (statement, firstIndex, value, context) -> firstIndex + 2,
         (statement, firstIndex, value, context) -> firstIndex + 2,
-        (statement, firstIndex, value, context) -> firstIndex + 2, null);
+        (statement, firstIndex, value, context) -> firstIndex + 2, null,
+            (statement, firstIndex, arguments, context) -> firstIndex + 2,
+            new io.skis.mapping.spi.EntityIdAccess<Pet>() {
+              @Override public Object read(Pet entity) { return entity.id(); }
+              @Override public Pet apply(Pet entity, Object id) {
+                return new Pet((Long) id, entity.name());
+              }
+            });
     return new EntityRuntimeModel<>(entity,
         layout -> (resultSet, context) -> new Pet(1L, "Mimi"),
         List.of(new PropertyRuntime<>(id, JdbcCodecs.LONG),

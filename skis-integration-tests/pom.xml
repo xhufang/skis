@@ -16,6 +16,11 @@
   <dependencies>
     <dependency>
       <groupId>io.github.xhufang</groupId>
+      <artifactId>skis-processor</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.github.xhufang</groupId>
       <artifactId>skis-test-support</artifactId>
       <scope>test</scope>
     </dependency>
@@ -66,6 +71,33 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <proc>full</proc>
+              <annotationProcessorPaths combine.children="append">
+                <path>
+                  <groupId>io.github.xhufang</groupId>
+                  <artifactId>skis-processor</artifactId>
+                  <version>${project.version}</version>
+                </path>
+              </annotationProcessorPaths>
+              <!-- Isolated fixtures use explicit runtimeModels, without a global entity index. -->
+              <annotationProcessors>
+                <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
+              </annotationProcessors>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
   <profiles>
     <profile>
       <id>architecture</id>

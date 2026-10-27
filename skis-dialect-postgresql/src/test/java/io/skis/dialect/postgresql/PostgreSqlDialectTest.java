@@ -86,6 +86,8 @@ class PostgreSqlDialectTest {
     assertTrue(dialect.capabilities().supports(DialectFeature.IN_SUBQUERY));
     assertTrue(dialect.capabilities().supports(DialectFeature.SCALAR_SUBQUERY));
     assertTrue(dialect.capabilities().supports(DialectFeature.CORRELATED_SUBQUERY));
+    assertTrue(dialect.capabilities().supports(DialectFeature.JDBC_GENERATED_KEYS));
+    assertTrue(dialect.capabilities().supports(DialectFeature.INSERT_DEFAULT_VALUES));
     assertFalse(dialect.capabilities().supports(DialectFeature.CATALOG_QUALIFIED_TABLES));
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
   }

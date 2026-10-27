@@ -14,8 +14,10 @@ releases or tags.
 
 The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
 and H2 aggregate contracts have passed CI with their real JDBC drivers and independent consumers.
-Generated keys, RETURNING, UPSERT, batch writes, raw SQL and driver-level streaming validation are
-planned for the current 0.2.10 milestone; Spring Boot integration retains its later milestone assignment.
+The four ID strategies, typed insert results and JDBC generated-key paths are implemented in this
+working tree, with current CI and real-driver verification pending. RETURNING, UPSERT, batch writes,
+raw SQL and driver-level streaming validation remain planned for this milestone; Spring Boot
+integration retains its later milestone assignment.
 Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
 for the published and unreleased boundaries.
 
@@ -55,6 +57,7 @@ operations. Streams and cursors must be consumed sequentially and closed on thei
 |----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Runtime assembly, entities and reads         | [Executor and generated models](docs/0.0.6-read-slice.md)                                                                                                                             |
 | Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md)                                                                               |
+| Primary keys and typed insert results        | [ID strategies, generated keys and Snowflake deployment](docs/id-generation.md) |
 | User records and classes                     | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md)                                                                |
 | SQL queries                                  | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md)                            |
 | Aggregates and grouped results               | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md)                                                                                                    |

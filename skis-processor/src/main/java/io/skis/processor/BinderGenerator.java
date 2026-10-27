@@ -1,5 +1,6 @@
 package io.skis.processor;
 
+import io.skis.annotations.IdStrategy;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,29 +36,27 @@ final class BinderGenerator implements EntitySourceGenerator {
       return source.toString();
     }
     appendBinder(source, entityType, "INSERT", "bindInsert");
-    source
-        .append("  public static final ParameterBinder<")
-        .append(entityType)
-        .append("> UPSERT = INSERT;\n");
+    appendBinder(
+        source,
+        "io.skis.mapping.spi.InsertArguments<" + entityType + ">",
+        "GENERATED_INSERT",
+        "bindGeneratedInsert");
     appendBinder(source, entityType, "UPDATE_BY_ID", "bindUpdateById");
     appendBinder(source, entityType, "UPDATE_BY_ID_UNCHECKED", "bindUpdateByIdUnchecked");
+    appendIdAccess(source, model);
     source
         .append("  public static final EntityMutationBinders<")
         .append(entityType)
         .append("> MUTATIONS = new EntityMutationBinders<>(\n")
         .append("      INSERT, UPDATE_BY_ID, UPDATE_BY_ID_UNCHECKED, ");
     if (model.version() == null) {
-      source.append("null);\n\n");
+      source.append("null, GENERATED_INSERT, ID_ACCESS);\n\n");
     } else {
-      source.append(className).append("::readVersion);\n\n");
+      source.append(className).append("::readVersion, GENERATED_INSERT, ID_ACCESS);\n\n");
     }
 
-    appendMethod(
-        source,
-        "bindInsert",
-        entityType,
-        model.properties().stream().filter(property -> property.column().insertable()).toList(),
-        true);
+    appendMethod(source, "bindInsert", entityType, insertProperties(model), true);
+    appendMethod(source, "bindGeneratedInsert", entityType, insertProperties(model), true);
     List<PropertyModel> updateProperties = new ArrayList<>();
     model.properties().stream()
         .filter(property -> property.column().updatable())
@@ -100,16 +99,25 @@ final class BinderGenerator implements EntitySourceGenerator {
 
   private static void appendBinder(
       StringBuilder source, String entityType, String field, String method) {
-    source.append("\n  public static final ParameterBinder<").append(entityType)
-        .append("> ").append(field).append(" = new ParameterBinder<>() {\n")
-        .append("    @Override\n    public int bind(PreparedStatement statement, int firstIndex, ")
-        .append(entityType).append(" entity, JdbcWriteContext context) throws SQLException {\n")
-        .append("      return ").append(method)
-        .append("(statement, firstIndex, entity, context);\n    }\n")
-        .append("    @Override\n    public int bindObserved(PreparedStatement statement, int firstIndex, ")
+    source
+        .append("\n  public static final ParameterBinder<")
         .append(entityType)
-        .append(" entity, JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {\n")
-        .append("      return ").append(method)
+        .append("> ")
+        .append(field)
+        .append(" = new ParameterBinder<>() {\n")
+        .append("    @Override\n    public int bind(PreparedStatement statement, int firstIndex, ")
+        .append(entityType)
+        .append(" entity, JdbcWriteContext context) throws SQLException {\n")
+        .append("      return ")
+        .append(method)
+        .append("(statement, firstIndex, entity, context);\n    }\n")
+        .append(
+            "    @Override\n    public int bindObserved(PreparedStatement statement, int firstIndex, ")
+        .append(entityType)
+        .append(
+            " entity, JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {\n")
+        .append("      return ")
+        .append(method)
         .append("Observed(statement, firstIndex, entity, context, observer);\n    }\n  };\n");
   }
 
@@ -120,6 +128,7 @@ final class BinderGenerator implements EntitySourceGenerator {
       List<PropertyModel> properties,
       boolean initializeVersion,
       boolean observed) {
+    boolean generated = methodName.startsWith("bindGeneratedInsert");
     source
         .append("  private static int ")
         .append(methodName)
@@ -127,18 +136,26 @@ final class BinderGenerator implements EntitySourceGenerator {
         .append("      PreparedStatement statement,\n")
         .append("      int firstIndex,\n")
         .append("      ")
-        .append(entityType)
-        .append(" entity,\n")
+        .append(generated ? "io.skis.mapping.spi.InsertArguments<" + entityType + ">" : entityType)
+        .append(generated ? " arguments,\n" : " entity,\n")
         .append("      JdbcWriteContext context")
         .append(observed ? ", ParameterBindingObserver observer)\n" : ")\n")
         .append("      throws SQLException {\n")
         .append("    int index = firstIndex;\n");
+    if (generated && properties.stream().anyMatch(property -> !property.id())) {
+      source.append("    ").append(entityType).append(" entity = arguments.entity();\n");
+    }
     if (observed && !properties.isEmpty()) {
       source.append("    boolean observing = observer.needsMore();\n");
     }
     for (PropertyModel property : properties) {
       String valueExpression = property.access().readEntityExpression();
-      if (initializeVersion && property.version()) {
+      if (generated && property.id()) {
+        valueExpression =
+            "("
+                + property.typeName()
+                + ") JdbcCodecs.requireBindValue(arguments.effectiveId(), index)";
+      } else if (initializeVersion && property.version()) {
         valueExpression =
             "VersionStrategy.NUMERIC_INCREMENT.initialize("
                 + property.classLiteral()
@@ -149,8 +166,12 @@ final class BinderGenerator implements EntitySourceGenerator {
         valueExpression = "JdbcCodecs.requireBindValue(" + valueExpression + ", index)";
       }
       if (observed) {
-        source.append("    var value").append(property.ordinal()).append(" = ")
-            .append(valueExpression).append(";\n");
+        source
+            .append("    var value")
+            .append(property.ordinal())
+            .append(" = ")
+            .append(valueExpression)
+            .append(";\n");
         valueExpression = "value" + property.ordinal();
       }
       source
@@ -160,9 +181,13 @@ final class BinderGenerator implements EntitySourceGenerator {
           .append(valueExpression)
           .append(", context);\n");
       if (observed) {
-        source.append("    if (observing) {\n")
-            .append("      observer.bound(index, ").append(property.classLiteral()).append(", ")
-            .append(valueExpression).append(");\n")
+        source
+            .append("    if (observing) {\n")
+            .append("      observer.bound(index, ")
+            .append(property.classLiteral())
+            .append(", ")
+            .append(valueExpression)
+            .append(");\n")
             .append("      observing = observer.needsMore();\n")
             .append("    }\n");
       }
@@ -173,5 +198,55 @@ final class BinderGenerator implements EntitySourceGenerator {
 
   private static String bindMethod(PropertyModel property) {
     return property.valueKind().bindMethod(property.primitive());
+  }
+
+  private static List<PropertyModel> insertProperties(EntityModel model) {
+    return model.properties().stream()
+        .filter(property -> property.column().insertable())
+        .filter(property -> !property.id() || property.idStrategy() != IdStrategy.IDENTITY)
+        .toList();
+  }
+
+  private static void appendIdAccess(StringBuilder source, EntityModel model) {
+    PropertyModel id = model.primaryKey().getFirst();
+    String entityType = model.entityTypeName();
+    source
+        .append("  public static final io.skis.mapping.spi.EntityIdAccess<")
+        .append(entityType)
+        .append("> ID_ACCESS = new io.skis.mapping.spi.EntityIdAccess<>() {\n")
+        .append("    @Override public @org.jspecify.annotations.Nullable Object read(")
+        .append(entityType)
+        .append(" entity) throws SQLException {\n      return ")
+        .append(id.access().readEntityExpression())
+        .append(";\n    }\n")
+        .append("    @Override public ")
+        .append(entityType)
+        .append(" apply(")
+        .append(entityType)
+        .append(" entity, Object id) throws SQLException {\n")
+        .append("      if (!(id instanceof ")
+        .append(id.typeName())
+        .append(" idValue)) {\n")
+        .append("        throw io.skis.core.MutationException.of(")
+        .append("io.skis.core.SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH, ")
+        .append("\"generated primary-key value has the wrong Java type\");\n      }\n");
+    if (model.instantiation().kind() == EntityInstantiationModel.Kind.RECORD_CONSTRUCTOR) {
+      source.append("      return new ").append(entityType).append('(');
+      var arguments = model.instantiation().constructorArguments();
+      for (int index = 0; index < arguments.size(); index++) {
+        if (index > 0) {
+          source.append(", ");
+        }
+        var argument = arguments.get(index);
+        source.append(argument.property() == id ? "idValue" : argument.copyExpression());
+      }
+      source.append(");\n");
+    } else {
+      source
+          .append("      ")
+          .append(id.access().writeEntityStatement("idValue"))
+          .append("\n      return entity;\n");
+    }
+    source.append("    }\n  };\n");
   }
 }

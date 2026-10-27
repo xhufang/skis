@@ -39,6 +39,7 @@ import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.JoinClause;
+import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
@@ -290,6 +291,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderInsert(InsertStatement statement, RenderContext context) {
     context.sql.append("INSERT INTO ");
     renderTable(statement.target(), context.sql);
+    if (statement.columns().isEmpty()) {
+      context.sql.append(" DEFAULT VALUES");
+      return;
+    }
     context.sql.append(" (");
     for (int index = 0; index < statement.columns().size(); index++) {
       if (index > 0) {
@@ -634,7 +639,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     };
   }
 
-  private String renderJoinKeyword(io.skis.sql.ast.JoinType type) {
+  private String renderJoinKeyword(JoinType type) {
     return switch (type) {
       case INNER -> "INNER JOIN";
       case LEFT -> "LEFT JOIN";

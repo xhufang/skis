@@ -8,7 +8,7 @@ import io.skis.mapping.spi.PropertyRuntime;
 import java.util.List;
 
 @org.jspecify.annotations.NullMarked
-@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 8")
+@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 9")
 public final class PetRuntimeModel implements EntityRuntimeModelProvider {
 
   public static final EntityRuntimeModel<samples.Pet> MODEL = new EntityRuntimeModel<>(

@@ -11,7 +11,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 
 @org.jspecify.annotations.NullMarked
-@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 8")
+@javax.annotation.processing.Generated(value = "io.skis.processor.SkisEntityProcessor", comments = "ABI 9")
 public final class PetBinder {
 
   private PetBinder() {}
@@ -26,7 +26,17 @@ public final class PetBinder {
       return bindInsertObserved(statement, firstIndex, entity, context, observer);
     }
   };
-  public static final ParameterBinder<samples.Pet> UPSERT = INSERT;
+
+  public static final ParameterBinder<io.skis.mapping.spi.InsertArguments<samples.Pet>> GENERATED_INSERT = new ParameterBinder<>() {
+    @Override
+    public int bind(PreparedStatement statement, int firstIndex, io.skis.mapping.spi.InsertArguments<samples.Pet> entity, JdbcWriteContext context) throws SQLException {
+      return bindGeneratedInsert(statement, firstIndex, entity, context);
+    }
+    @Override
+    public int bindObserved(PreparedStatement statement, int firstIndex, io.skis.mapping.spi.InsertArguments<samples.Pet> entity, JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {
+      return bindGeneratedInsertObserved(statement, firstIndex, entity, context, observer);
+    }
+  };
 
   public static final ParameterBinder<samples.Pet> UPDATE_BY_ID = new ParameterBinder<>() {
     @Override
@@ -49,8 +59,19 @@ public final class PetBinder {
       return bindUpdateByIdUncheckedObserved(statement, firstIndex, entity, context, observer);
     }
   };
+  public static final io.skis.mapping.spi.EntityIdAccess<samples.Pet> ID_ACCESS = new io.skis.mapping.spi.EntityIdAccess<>() {
+    @Override public @org.jspecify.annotations.Nullable Object read(samples.Pet entity) throws SQLException {
+      return entity.id();
+    }
+    @Override public samples.Pet apply(samples.Pet entity, Object id) throws SQLException {
+      if (!(id instanceof java.lang.Long idValue)) {
+        throw io.skis.core.MutationException.of(io.skis.core.SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH, "generated primary-key value has the wrong Java type");
+      }
+      return new samples.Pet(idValue, entity.name(), entity.version());
+    }
+  };
   public static final EntityMutationBinders<samples.Pet> MUTATIONS = new EntityMutationBinders<>(
-      INSERT, UPDATE_BY_ID, UPDATE_BY_ID_UNCHECKED, PetBinder::readVersion);
+      INSERT, UPDATE_BY_ID, UPDATE_BY_ID_UNCHECKED, PetBinder::readVersion, GENERATED_INSERT, ID_ACCESS);
 
   private static int bindInsert(
       PreparedStatement statement,
@@ -77,6 +98,56 @@ public final class PetBinder {
     int index = firstIndex;
     boolean observing = observer.needsMore();
     var value0 = JdbcCodecs.requireBindValue(entity.id(), index);
+    JdbcCodecs.bindNullableLong(statement, index, value0, context);
+    if (observing) {
+      observer.bound(index, java.lang.Long.class, value0);
+      observing = observer.needsMore();
+    }
+    index++;
+    var value1 = entity.name();
+    JdbcCodecs.bindString(statement, index, value1, context);
+    if (observing) {
+      observer.bound(index, java.lang.String.class, value1);
+      observing = observer.needsMore();
+    }
+    index++;
+    var value2 = VersionStrategy.NUMERIC_INCREMENT.initialize(java.lang.Long.class, entity.version());
+    JdbcCodecs.bindNullableLong(statement, index, value2, context);
+    if (observing) {
+      observer.bound(index, java.lang.Long.class, value2);
+      observing = observer.needsMore();
+    }
+    index++;
+    return index;
+  }
+
+  private static int bindGeneratedInsert(
+      PreparedStatement statement,
+      int firstIndex,
+      io.skis.mapping.spi.InsertArguments<samples.Pet> arguments,
+      JdbcWriteContext context)
+      throws SQLException {
+    int index = firstIndex;
+    samples.Pet entity = arguments.entity();
+    JdbcCodecs.bindNullableLong(statement, index, (java.lang.Long) JdbcCodecs.requireBindValue(arguments.effectiveId(), index), context);
+    index++;
+    JdbcCodecs.bindString(statement, index, entity.name(), context);
+    index++;
+    JdbcCodecs.bindNullableLong(statement, index, VersionStrategy.NUMERIC_INCREMENT.initialize(java.lang.Long.class, entity.version()), context);
+    index++;
+    return index;
+  }
+
+  private static int bindGeneratedInsertObserved(
+      PreparedStatement statement,
+      int firstIndex,
+      io.skis.mapping.spi.InsertArguments<samples.Pet> arguments,
+      JdbcWriteContext context, ParameterBindingObserver observer)
+      throws SQLException {
+    int index = firstIndex;
+    samples.Pet entity = arguments.entity();
+    boolean observing = observer.needsMore();
+    var value0 = (java.lang.Long) JdbcCodecs.requireBindValue(arguments.effectiveId(), index);
     JdbcCodecs.bindNullableLong(statement, index, value0, context);
     if (observing) {
       observer.bound(index, java.lang.Long.class, value0);

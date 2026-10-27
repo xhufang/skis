@@ -34,6 +34,151 @@ class SkisEntityProcessorTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  @SuppressWarnings("unchecked")
+  void generatesFourExplicitIdStrategiesAndPreservesRecordCopyComponents() throws Exception {
+    int index = 0;
+    for (var entry : Map.of("ASSIGNED", "Long", "IDENTITY", "Long",
+        "UUID", "UUID", "SNOWFLAKE", "Long").entrySet()) {
+      String entity = """
+          package samples;
+          import io.skis.annotations.*;
+          import java.util.UUID;
+          import org.jspecify.annotations.*;
+          @NullMarked @SkisEntity public record GeneratedId(
+              @Id(strategy = IdStrategy.%s) @Nullable %s id,
+              @Column(nullable = false) String name, @Transient @Nullable String note) {}
+          """.formatted(entry.getKey(), entry.getValue());
+      var sources = Map.of("samples.GeneratedId", entity);
+      var result = process(sources, SkisEntityProcessor.class.getName(),
+          temporaryDirectory.resolve("ids-" + index++));
+      assertTrue(result.success(), result.diagnosticsText());
+      String binder = generatedSource(result, "GeneratedIdBinder.java");
+      assertTrue(binder.contains("ID_ACCESS"), binder);
+      assertTrue(binder.contains("GENERATED_INSERT"), binder);
+      assertTrue(binder.contains("new samples.GeneratedId(idValue, entity.name(), entity.note())"), binder);
+      assertFalse(binder.contains("UPSERT"), binder);
+      assertTrue(generatedSource(result, "GeneratedIdMeta.java")
+          .contains("io.skis.metadata.IdGeneration." + entry.getKey()));
+      var compiled = compileGenerated(sources, result);
+      assertTrue(compiled.success(), compiled.diagnosticsText());
+      try (var loader = new java.net.URLClassLoader(
+          new java.net.URL[] {compiled.classes().toUri().toURL()}, getClass().getClassLoader())) {
+        var entityType = loader.loadClass("samples.GeneratedId");
+        Class<?> keyType = entry.getKey().equals("UUID") ? java.util.UUID.class : Long.class;
+        Object input = entityType.getConstructor(keyType, String.class, String.class)
+            .newInstance(null, "name", "preserved note");
+        var runtime = (io.skis.mapping.spi.EntityRuntimeModel<Object>) loader
+            .loadClass("samples.skis.GeneratedIdRuntimeModel").getField("MODEL").get(null);
+        var bindings = runtime.mutationBinders().orElseThrow();
+        Object key = entry.getKey().equals("UUID") ? java.util.UUID.randomUUID() : 7L;
+        var arguments = new io.skis.mapping.spi.InsertArguments<>(input, key);
+        var actual = new ArrayList<List<Object>>();
+        var observed = new ArrayList<List<Object>>();
+        var statement = (java.sql.PreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
+            getClass().getClassLoader(), new Class<?>[] {java.sql.PreparedStatement.class},
+            (ignored, method, values) -> {
+              assertTrue(method.getName().startsWith("set"), method.getName());
+              actual.add(List.of(values[0], values[1]));
+              return null;
+            });
+        var observer = new io.skis.mapping.spi.ParameterBindingObserver() {
+          @Override public boolean needsMore() { return true; }
+          @Override public void bound(int slot, Class<?> type,
+              @org.jspecify.annotations.Nullable Object value) {
+            observed.add(List.of(slot, value));
+          }
+          @Override public void unavailable() { throw new AssertionError("generated binder unavailable"); }
+        };
+        int next = bindings.generatedInsert().bindObserved(statement, 9, arguments,
+            io.skis.mapping.spi.JdbcWriteContext.EMPTY, observer);
+        assertEquals(entry.getKey().equals("IDENTITY") ? 10 : 11, next);
+        assertEquals(actual, observed);
+        var expected = new ArrayList<>(actual);
+        actual.clear();
+        assertEquals(next, bindings.generatedInsert().bind(statement, 9, arguments,
+            io.skis.mapping.spi.JdbcWriteContext.EMPTY));
+        assertEquals(expected, actual);
+        Object copied = bindings.idAccess().apply(input, key);
+        assertEquals(key, bindings.idAccess().read(copied));
+        assertEquals("preserved note", entityType.getMethod("note").invoke(copied));
+      }
+      if (Boolean.getBoolean("skis.staticAnalysis")) {
+        List<Path> paths;
+        try (var stream = Files.walk(result.generatedSources())) {
+          paths = stream.filter(path -> path.toString().endsWith(".java")).toList();
+        }
+        NullnessCompiler.compile("generated-id-" + entry.getKey(), sources, paths, List.of(),
+            temporaryDirectory.resolve("checked-id-" + index)).assertPass();
+      }
+    }
+  }
+
+  @Test
+  void rejectsInvalidIdTypesAndDeclarationsWithDedicatedDiagnostics() throws Exception {
+    String template = """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity%s public record InvalidId(@Id(strategy = IdStrategy.%s) %s %s id) {}
+        """;
+    var invalid = List.of(
+        List.of("", "IDENTITY", "", "long", "SKIS042"),
+        List.of("", "IDENTITY", "", "int", "SKIS042"),
+        List.of("", "SNOWFLAKE", "", "long", "SKIS042"),
+        List.of("", "SNOWFLAKE", "", "Integer", "SKIS042"),
+        List.of("", "UUID", "", "byte[]", "SKIS042"),
+        List.of("(readOnly = true)", "UUID", "", "String", "SKIS044"),
+        List.of("", "UUID", "@Column(length = 35)", "String", "SKIS044"),
+        List.of("", "SNOWFLAKE", "@Column(insertable = false)", "Long", "SKIS044"),
+        List.of("", "ASSIGNED", "@Column(insertable = false)", "Long", "SKIS044"),
+        List.of("", "IDENTITY", "@Column(nullable = true)", "Long", "SKIS008"));
+    for (int index = 0; index < invalid.size(); index++) {
+      var example = invalid.get(index);
+      var result = process(Map.of("samples.InvalidId", template.formatted(
+          example.get(0), example.get(1), example.get(2), example.get(3))),
+          SkisEntityProcessor.class.getName(), temporaryDirectory.resolve("invalid-id-" + index));
+      assertFalse(result.success());
+      assertTrue(result.diagnosticsText().contains(example.get(4)), result.diagnosticsText());
+    }
+    var valid = List.of(
+        List.of("(readOnly = true)", "ASSIGNED", "", "Long"),
+        List.of("", "UUID", "@Column(length = 36)", "String"),
+        List.of("", "UUID", "@Column(length = 0)", "String"),
+        List.of("", "SNOWFLAKE", "@Column(insertable = true)", "Long"),
+        List.of("", "IDENTITY", "@Column(insertable = false)", "Integer"));
+    for (int index = 0; index < valid.size(); index++) {
+      var example = valid.get(index);
+      var sources = Map.of("samples.InvalidId", template.formatted(
+          example.get(0), example.get(1), example.get(2), example.get(3)));
+      var result = process(sources, SkisEntityProcessor.class.getName(),
+          temporaryDirectory.resolve("valid-id-" + index));
+      assertTrue(result.success(), result.diagnosticsText());
+      var compiled = compileGenerated(sources, result);
+      assertTrue(compiled.success(), compiled.diagnosticsText());
+    }
+  }
+
+  @Test
+  void rejectsConflictingFieldAndGetterIdStrategiesButAcceptsEquivalentDefaults() throws Exception {
+    String entity = """
+        package samples;
+        import io.skis.annotations.*;
+        @SkisEntity public class IdBean {
+          @Id private Long id;
+          public IdBean() {}
+          @Id(strategy = IdStrategy.IDENTITY) public Long getId() { return id; }
+          public void setId(Long value) { id = value; }
+        }
+        """;
+    var rejected = process(Map.of("samples.IdBean", entity), SkisEntityProcessor.class.getName(),
+        temporaryDirectory.resolve("conflicting-id"));
+    assertFalse(rejected.success());
+    assertTrue(rejected.diagnosticsText().contains("SKIS043"), rejected.diagnosticsText());
+    var accepted = process(Map.of("samples.IdBean", entity.replace("IdStrategy.IDENTITY", "IdStrategy.ASSIGNED")),
+        SkisEntityProcessor.class.getName(), temporaryDirectory.resolve("same-id"));
+    assertTrue(accepted.success(), accepted.diagnosticsText());
+  }
+
+  @Test
   void generatedProjectionAcceptsFixedAggregateDomainsAndRejectsNullableCountArguments() throws Exception {
     Map<String, String> models = Map.of("samples.AggregateView", """
         package samples;
@@ -663,7 +808,7 @@ class SkisEntityProcessorTest {
     assertTrue(generated.contains("Selectable<java.lang.String> name)"), generated);
     assertTrue(
         generated.contains(
-            "skis-projection:8:samples.NullableSummary:(JLjava/lang/String;)V:"
+            "skis-projection:9:samples.NullableSummary:(JLjava/lang/String;)V:"
                 + "id=java.lang.Long!:name=java.lang.String?"),
         generated);
     assertGeneratedEquals(result, "NullableSummaryPro.java");
@@ -2104,7 +2249,7 @@ class SkisEntityProcessorTest {
 
     assertTrue(result.success(), result.diagnosticsText());
     assertArrayEquals(
-        ("# skis-generated-abi=8\n"
+        ("# skis-generated-abi=9\n"
                 + "samples.skis.AlphaRuntimeModel\n"
                 + "samples.skis.ZuluRuntimeModel\n")
             .getBytes(StandardCharsets.UTF_8),
@@ -2200,7 +2345,7 @@ class SkisEntityProcessorTest {
     assertEquals(outputSnapshot(normal), outputSnapshot(reversed));
     assertTrue(
         generatedSource(normal, "AlphaSummaryPro.java")
-            .contains("comments = \"Projection ABI 8\""));
+            .contains("comments = \"Projection ABI 9\""));
   }
 
   @Test

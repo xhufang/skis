@@ -1,5 +1,6 @@
 package io.skis.processor;
 
+import io.skis.annotations.IdStrategy;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -80,6 +81,9 @@ final class EntityModelValidator {
                 "a version property must not be part of the primary key",
                 property.element()));
       }
+      if (property.id()) {
+        validateIdStrategy(model, property, problems);
+      }
       if (property.version()) {
         versionCount++;
         if (column.explicitlyNullable()) {
@@ -144,6 +148,38 @@ final class EntityModelValidator {
               "SKIS015", "a read-only entity must not declare a @Version property", model.type()));
     }
     return List.copyOf(problems);
+  }
+
+  private static void validateIdStrategy(
+      EntityModel model, PropertyModel property, List<ProcessingProblem> problems) {
+    var strategy = property.idStrategy();
+    boolean valid =
+        switch (strategy) {
+          case ASSIGNED -> true;
+          case IDENTITY ->
+              !property.primitive()
+                  && (property.typeName().equals("java.lang.Long")
+                      || property.typeName().equals("java.lang.Integer"));
+          case UUID ->
+              property.typeName().equals("java.util.UUID")
+                  || property.typeName().equals("java.lang.String");
+          case SNOWFLAKE -> !property.primitive() && property.typeName().equals("java.lang.Long");
+        };
+    if (!valid) {
+      problems.add(
+          problem(
+              "SKIS042",
+              "@Id strategy does not support the declared Java type",
+              property.element()));
+    }
+    if ((model.readOnly() && strategy != IdStrategy.ASSIGNED)
+        || (strategy != IdStrategy.IDENTITY && !property.column().insertable())
+        || (strategy == IdStrategy.UUID
+            && property.typeName().equals("java.lang.String")
+            && property.column().length() > 0
+            && property.column().length() < 36)) {
+      problems.add(problem("SKIS044", "invalid @Id generation declaration", property.element()));
+    }
   }
 
   private static void validateColumnShape(

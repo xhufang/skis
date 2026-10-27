@@ -1158,10 +1158,62 @@
       "decisionVersion": "0.2.10-SNAPSHOT",
       "targetVersion": "0.2.10-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "四类主键、生成式插入参数与结果回填、ABI及诊断实现和验证",
+      "remaining": "源码与测试已实现；待当前提交 CI、PG/H2、消费者和工程合同验证",
       "task": "0.2.10:T02",
-      "anchors": [],
-      "contracts": []
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-annotations/src/main/java/io/skis/annotations/IdStrategy.java",
+          "type": "io.skis.annotations.IdStrategy"
+        },
+        {
+          "kind": "java",
+          "path": "skis-metadata/src/main/java/io/skis/metadata/IdGeneration.java",
+          "type": "io.skis.metadata.IdGeneration"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mapping/src/main/java/io/skis/mapping/spi/EntityIdAccess.java",
+          "type": "io.skis.mapping.spi.EntityIdAccess"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mapping/src/main/java/io/skis/mapping/spi/InsertArguments.java",
+          "type": "io.skis.mapping.spi.InsertArguments"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/InsertResult.java",
+          "type": "io.skis.mutation.InsertResult"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/SnowflakeIdGenerator.java",
+          "type": "io.skis.mutation.SnowflakeIdGenerator"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/IdGenerationContractTest.java",
+          "type": "io.skis.mutation.IdGenerationContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/SnowflakeIdGeneratorTest.java",
+          "type": "io.skis.mutation.SnowflakeIdGeneratorTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/GeneratedKeysExecutionTest.java",
+          "type": "io.skis.jdbc.GeneratedKeysExecutionTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisGeneratedIdContractTest.java",
+          "type": "io.skis.integration.AbstractSkisGeneratedIdContractTest"
+        }
+      ]
     },
     {
       "id": "ADR-0024",

@@ -23,6 +23,12 @@ import org.junit.jupiter.api.Test;
 class ListenerSpiOnlyConsumerTest {
 
   @Test
+  void insertLifecycleRemainsAvailableWithOnlyCoreOnTheClasspath() {
+    var event = new OperationStartedEvent(7L, ExecutionOperationKind.INSERT, "external");
+    assertEquals(ExecutionOperationKind.INSERT, event.operationKind());
+  }
+
+  @Test
   void configuresTheCoreRedactionContractWithoutRuntimeOrALoggingProvider() {
     ParameterRedactor policy = (index, type, value) -> "approved";
     SqlLoggingOptions options = SqlLoggingOptions.builder().parameterRedactor(policy).build();

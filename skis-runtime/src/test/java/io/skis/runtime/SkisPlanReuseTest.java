@@ -436,7 +436,14 @@ class SkisPlanReuseTest {
             (statement, firstIndex, value, context) -> firstIndex + 2,
             (statement, firstIndex, value, context) -> firstIndex + 2,
             (statement, firstIndex, value, context) -> firstIndex + 2,
-            null);
+            null,
+            (statement, firstIndex, arguments, context) -> firstIndex + 2,
+            new io.skis.mapping.spi.EntityIdAccess<Pet>() {
+              @Override public Object read(Pet entity) { return entity.id(); }
+              @Override public Pet apply(Pet entity, Object id) {
+                return new Pet((Long) id, entity.name());
+              }
+            });
     return new EntityRuntimeModel<>(
         PET,
         layout -> (resultSet, context) -> new Pet(1L, "Mimi"),

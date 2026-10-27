@@ -5,6 +5,7 @@ import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcTransaction;
+import io.skis.mutation.InsertResult;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.internal.MutationPlanCatalog;
 import io.skis.query.NonNullSelectable;
@@ -109,6 +110,17 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
     return mutations.insert(table, value, executionOptions);
+  }
+
+  @Override
+  public <E> InsertResult<E> insertResult(QueryTable<E> table, E value) {
+    return mutations.insertResult(table, value);
+  }
+
+  @Override
+  public <E> InsertResult<E> insertResult(
+      QueryTable<E> table, E value, ExecutionOptions executionOptions) {
+    return mutations.insertResult(table, value, executionOptions);
   }
 
   @Override

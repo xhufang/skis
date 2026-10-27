@@ -5,6 +5,7 @@ import io.skis.core.SkisErrorCode;
 import io.skis.core.TransactionException;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.jdbc.internal.JdbcTransaction;
+import io.skis.mutation.InsertResult;
 import io.skis.mutation.MutationOperations;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
@@ -113,6 +114,19 @@ final class DefaultSkisSession implements SkisSession {
   public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
     requireActive();
     return mutations.insert(table, value, executionOptions);
+  }
+
+  @Override
+  public <E> InsertResult<E> insertResult(QueryTable<E> table, E value) {
+    requireActive();
+    return mutations.insertResult(table, value);
+  }
+
+  @Override
+  public <E> InsertResult<E> insertResult(
+      QueryTable<E> table, E value, ExecutionOptions executionOptions) {
+    requireActive();
+    return mutations.insertResult(table, value, executionOptions);
   }
 
   @Override

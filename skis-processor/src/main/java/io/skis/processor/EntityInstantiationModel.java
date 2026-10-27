@@ -24,7 +24,8 @@ record EntityInstantiationModel(Kind kind, List<ConstructorArgument> constructor
     return new EntityInstantiationModel(Kind.BEAN, List.of());
   }
 
-  record ConstructorArgument(@Nullable PropertyModel property, @Nullable String defaultExpression) {
+  record ConstructorArgument(
+      @Nullable PropertyModel property, @Nullable String defaultExpression, String copyExpression) {
 
     ConstructorArgument {
       if ((property == null) == (defaultExpression == null || defaultExpression.isBlank())) {
@@ -34,11 +35,14 @@ record EntityInstantiationModel(Kind kind, List<ConstructorArgument> constructor
     }
 
     static ConstructorArgument property(PropertyModel property) {
-      return new ConstructorArgument(Objects.requireNonNull(property, "property"), null);
+      return new ConstructorArgument(
+          Objects.requireNonNull(property, "property"),
+          null,
+          property.access().readEntityExpression());
     }
 
-    static ConstructorArgument defaultValue(String expression) {
-      return new ConstructorArgument(null, expression);
+    static ConstructorArgument defaultValue(String expression, String copyExpression) {
+      return new ConstructorArgument(null, expression, copyExpression);
     }
   }
 

@@ -1,8 +1,10 @@
 package io.skis.mapping.spi;
 
 import io.skis.core.QueryValidationException;
+import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
 import java.util.List;
@@ -69,6 +71,25 @@ public final class EntityRuntimeModel<E> {
     if (entity.readOnly() && mutationBinders != null) {
       throw new IllegalArgumentException(
           "read-only entity '" + entity.entityName() + "' must not expose mutation binders");
+    }
+    if (entity.primaryKey().isPresent()
+        && entity.primaryKey().orElseThrow().generation() != IdGeneration.ASSIGNED) {
+      if (mutationBinders == null) {
+        throw SkisConfigurationException.of(
+            SkisErrorCode.METADATA_INVALID,
+            "generated primary keys require generated mutation bindings and access");
+      }
+      var key = entity.primaryKey().orElseThrow().properties().getFirst();
+      var codec = this.properties.get(key.ordinal()).codec();
+      Class<?> type = key.javaType();
+      if (!((type == Long.class && codec == JdbcCodecs.LONG)
+          || (type == Integer.class && codec == JdbcCodecs.INTEGER)
+          || (type == String.class && codec == JdbcCodecs.STRING)
+          || (type == java.util.UUID.class && codec == JdbcCodecs.UUID))) {
+        throw SkisConfigurationException.of(
+            SkisErrorCode.METADATA_INVALID,
+            "generated primary keys require the matching built-in codec");
+      }
     }
   }
 

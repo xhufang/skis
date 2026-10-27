@@ -4,7 +4,8 @@
 
 ## [Unreleased]
 
-当前仓库已切换为 `0.2.10-SNAPSHOT`，开始写入与 SQL 逃生通道里程碑；本次仅完成版本与任务初始化。
+当前仓库为 `0.2.10-SNAPSHOT`；T02 主键生成、类型安全插入结果与 JDBC 生成键的源码、测试和文档已实现，
+当前提交待 CI、PG/H2 真实驱动及独立消费者验证。本地未编译运行；T02 尚未取得关闭证据。
 前一版 `0.2.9` 聚合语义内部里程碑于 2026-10-26 完成，以下 CI 证据属于该里程碑。
 当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或 Release。
 PR #91 合入提交 `980ad24003dc3e280336ec3a1be126841f148ab8` 的
@@ -16,6 +17,14 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 
 ### Added
 
+- `@Id(strategy = ...)` 支持 ASSIGNED、IDENTITY、UUID v4 与显式节点雪花；生成式主键读写和插入参数接入 ABI 9，
+  APT/手工元数据/装配执行同一策略与类型约束，拒绝 ABI 8。
+- 增加 `insertResult(...)` 与 `InsertResult<E>`；Bean 成功后回填，record 复制保留全部 component，
+  ASSIGNED 的 int insert 保持轻量路径。生成值不提前写实体，资源或回填失败不自动重试。
+- PG/H2 声明 JDBC_GENERATED_KEYS、INSERT_DEFAULT_VALUES；指定物理主键列读取单行单列非空键，
+  DEFAULT VALUES 使用统一 AST；保留 JDBC 分类与清理异常，不额外查询主键。
+- 增加主键生成、资源、事务与消费者合同测试源码及必需套件清单，新增 SKIS042—044、SKISM014—018，
+  使用边界见[主键生成与插入结果](docs/id-generation.md)。上述 T02 新增项均待当前 CI 验证。
 - 在现有 `Sql` 门面开放 COUNT、单表达式 COUNT DISTINCT、SUM/AVG/MIN/MAX 及标准表达式工厂，
   固定跨方言结果类型、内置输入白名单与有效可空性；不新增普通查询顶层类型，查询预算保持 30/30。
 - 在执行查询、纯描述和单列描述上提供不可变 GROUP BY/HAVING、andHaving/orHaving；

@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jspecify.annotations.Nullable;
 
-/** Test-only entity whose accessor counters verify generated binding does not read twice. */
+/** Test entity distinguishing the facade's key validation from one read per generated binder slot. */
 @SkisEntity
 @Table(name = "logging_pet")
 public record LoggingPet(

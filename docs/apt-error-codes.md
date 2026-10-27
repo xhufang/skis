@@ -331,6 +331,41 @@ meanings stable; those milestones are not separately published versions.
 - Fix: rename the entity or conflicting property; SKIS does not silently add a suffix.
 - Implementation milestone: `0.2.7-SNAPSHOT`; first planned public release: `0.3.0`.
 
+### SKIS042
+
+- Cause: the explicit Id strategy does not support the Java property type, including primitive generated keys.
+- Invalid: `@Id(strategy = IdStrategy.IDENTITY) long id` or
+  `@Id(strategy = IdStrategy.SNOWFLAKE) Integer id`.
+- Valid: `@Id(strategy = IdStrategy.IDENTITY) @Nullable Long id` or
+  `@Id(strategy = IdStrategy.SNOWFLAKE) @Nullable Long id`; import JSpecify `Nullable` for the pre-insert state.
+- Fix: use Long/Integer wrappers for IDENTITY, UUID/String for UUID, or Long for SNOWFLAKE.
+- Implementation milestone: `0.2.10-SNAPSHOT`; current CI verification pending; first planned public release: `0.3.0`.
+
+### SKIS043
+
+- Cause: field and getter declare different Id strategies.
+- Invalid: `@Id private Long id` together with
+  `@Id(strategy = IdStrategy.IDENTITY) public Long getId() { return id; }` on the same Bean property.
+- Valid: keep `@Id private Long id` and use
+  `@Id(strategy = IdStrategy.ASSIGNED) public Long getId() { return id; }`, or annotate only the field.
+- Fix: use the same strategy on both declarations; omitted strategy and explicit ASSIGNED are equivalent.
+- Implementation milestone: `0.2.10-SNAPSHOT`; current CI verification pending; first planned public release: `0.3.0`.
+
+### SKIS044
+
+- Cause: a read-only entity uses a generated strategy, an application-assigned/generated key is not insertable,
+  or a UUID String column declares a positive length below 36.
+- Invalid: `@SkisEntity(readOnly = true) public record Ticket(@Id(strategy = IdStrategy.UUID) String id) {}`.
+- Valid: `@SkisEntity(readOnly = true) public record Ticket(@Id String id) {}`.
+- Invalid: `@Id(strategy = IdStrategy.SNOWFLAKE) @Column(insertable = false) Long id`;
+  `@Id @Column(insertable = false) Long id` is also rejected.
+- Valid: `@Id(strategy = IdStrategy.SNOWFLAKE) @Column(insertable = true) Long id`, or `@Id Long id` for ASSIGNED.
+- Invalid: `@Id(strategy = IdStrategy.UUID) @Column(length = 35) String id`.
+- Valid: `@Id(strategy = IdStrategy.UUID) @Column(length = 36) String id`; `length = 0` is also accepted.
+- Fix: use ASSIGNED for read-only entities, preserve application-key insertability, and declare sufficient UUID length.
+- Java JSpecify Nullable permits the pre-insert generated state; SKIS008 still rejects Column(nullable=true).
+- Implementation milestone: `0.2.10-SNAPSHOT`; current CI verification pending; first planned public release: `0.3.0`.
+
 ## Entity rounds and generated output
 
 ### SKIS097

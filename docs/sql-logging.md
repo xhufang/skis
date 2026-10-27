@@ -70,6 +70,10 @@ initialized insert versions. They do not repeat entity getters, copy parameters 
 SQL or inspect result rows. Repeated/reordered slots and pagination use the final SQL layout;
 Page content/count have independent summaries. The fingerprint identifies the SQL template.
 
+ASSIGNED inserts validate the key once before acquiring a connection; their binder still reads each
+bound entity slot once. Generated-key inserts read the key once into invocation-local InsertArguments,
+and both normal and observed binding use that same effective value.
+
 | Limit | Budget |
 | --- | --- |
 | One value | 128 Unicode code points after control-character escaping |
@@ -86,7 +90,8 @@ truncated rather than becoming unavailable. A policy exception or null result be
 `ParameterBinder` uses `[unavailable]`; it runs once and is
 never replayed, reflected over or intercepted with a JDBC proxy. Custom binders may implement the
 supported `bindObserved(..., ParameterBindingObserver)` contract to expose existing locals
-synchronously. This generated binding contract requires ABI 8 and matching processor/runtime.
+synchronously. The current generated binding contract requires ABI 9 and matching processor/runtime;
+the ID-generation additions in this snapshot still await current CI verification.
 
 Incomplete/failed binding produces no summary. Raw values live only on the synchronous binding
 stack; the per-SQL accumulator holds escaped strings and is not attached to a plan, event,

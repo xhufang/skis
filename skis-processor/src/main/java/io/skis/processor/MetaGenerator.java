@@ -99,7 +99,13 @@ final class MetaGenerator implements EntitySourceGenerator {
     } else {
       source.append("      new PrimaryKeyMeta<>(List.of(");
       appendFields(source, model.primaryKey());
-      source.append(")),\n");
+      source.append("), io.skis.metadata.IdGeneration.")
+          .append(switch (model.primaryKey().getFirst().idStrategy()) {
+            case ASSIGNED -> "ASSIGNED";
+            case IDENTITY -> "IDENTITY";
+            case UUID -> "UUID";
+            case SNOWFLAKE -> "SNOWFLAKE";
+          }).append("),\n");
     }
     if (model.version() != null) {
       source.append("      VERSION,\n");

@@ -7,7 +7,9 @@ import io.skis.core.SkisStatementKind;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.spi.ExecutionOperationKind;
 import io.skis.core.spi.StatementPurpose;
+import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.support.SqlCompiler;
 import io.skis.dialect.support.SqlTemplate;
@@ -21,6 +23,7 @@ import io.skis.mapping.spi.ParameterBindingObserver;
 import io.skis.mapping.spi.PropertyRuntime;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.GeneratedModelAbi;
+import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PropertyMeta;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
@@ -31,6 +34,7 @@ import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
+import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import java.sql.PreparedStatement;
@@ -71,6 +75,14 @@ final class MutationPlanCompiler {
                             + "' has no generated mutation binders; regenerate it with ABI "
                             + GeneratedModelAbi.CURRENT));
     PropertyMeta<E, ?> id = requireSinglePrimaryKey(entity);
+    boolean identity = entity.primaryKey().orElseThrow().generation() == IdGeneration.IDENTITY;
+    if (identity && !dialect.capabilities().supports(DialectFeature.JDBC_GENERATED_KEYS)) {
+      throw SqlRenderException.of(
+          SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+          dialect.id(),
+          "JDBC_GENERATED_KEYS",
+          "IDENTITY requires JDBC generated-key support");
+    }
     RuntimeMutationTable<E> table = new RuntimeMutationTable<>(entity);
     CompiledMutationPlan<E> insert = compileInsert(entity, table, binders);
     CompiledMutationPlan<E> uncheckedUpdate =
@@ -86,8 +98,15 @@ final class MutationPlanCompiler {
   private <E> @Nullable CompiledMutationPlan<E> compileInsert(
       EntityMeta<E> entity, RuntimeMutationTable<E> table, EntityMutationBinders<E> binders) {
     List<PropertyMeta<E, ?>> properties =
-        entity.properties().stream().filter(property -> property.column().insertable()).toList();
-    if (properties.isEmpty()) {
+        entity.properties().stream()
+            .filter(property -> property.column().insertable())
+            .filter(
+                property ->
+                    entity.primaryKey().orElseThrow().generation() != IdGeneration.IDENTITY
+                        || property != entity.primaryKey().orElseThrow().properties().getFirst())
+            .toList();
+    if (properties.isEmpty()
+        && entity.primaryKey().orElseThrow().generation() != IdGeneration.IDENTITY) {
       return null;
     }
     long startedNanos = listenerDispatcher.enabled() ? System.nanoTime() : 0L;
@@ -116,7 +135,7 @@ final class MutationPlanCompiler {
       EntityMeta<E> entity,
       RuntimeMutationTable<E> table,
       PropertyMeta<E, ?> id,
-      io.skis.mapping.spi.ParameterBinder<E> binder,
+      ParameterBinder<E> binder,
       boolean versionChecked) {
     List<PropertyMeta<E, ?>> updateProperties =
         entity.properties().stream()
@@ -201,15 +220,21 @@ final class MutationPlanCompiler {
   private record DeleteParameterBinder<E>(PropertyRuntime<E, ?> runtime, Class<?> javaType)
       implements ParameterBinder<Object> {
     @Override
-    public int bind(PreparedStatement statement, int firstIndex, Object value,
-        JdbcWriteContext context) throws SQLException {
+    public int bind(
+        PreparedStatement statement, int firstIndex, Object value, JdbcWriteContext context)
+        throws SQLException {
       runtime.bind(statement, firstIndex, value, context);
       return firstIndex + 1;
     }
 
     @Override
-    public int bindObserved(PreparedStatement statement, int firstIndex, Object value,
-        JdbcWriteContext context, ParameterBindingObserver observer) throws SQLException {
+    public int bindObserved(
+        PreparedStatement statement,
+        int firstIndex,
+        Object value,
+        JdbcWriteContext context,
+        ParameterBindingObserver observer)
+        throws SQLException {
       runtime.bind(statement, firstIndex, value, context);
       if (observer.needsMore()) {
         observer.bound(firstIndex, javaType, value);
@@ -281,7 +306,7 @@ final class MutationPlanCompiler {
     return table.expression(property).eq(parameter);
   }
 
-  private RenderedSql render(io.skis.sql.ast.StatementAst statement) {
+  private RenderedSql render(StatementAst statement) {
     SqlTemplate template = SqlCompiler.compile(statement, dialect);
     return new RenderedSql(template.sql(), template.parameterLayout().slots());
   }
