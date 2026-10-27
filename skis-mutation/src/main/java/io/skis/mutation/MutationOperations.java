@@ -12,6 +12,12 @@ public interface MutationOperations {
   /** Inserts one entity with immutable statement overrides. */
   <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions);
 
+  /** Inserts one entity and returns its confirmed primary key through the typed entity. */
+  <E> InsertResult<E> insertResult(QueryTable<E> table, E value);
+
+  /** Inserts and returns the key-bearing entity with immutable statement overrides. */
+  <E> InsertResult<E> insertResult(QueryTable<E> table, E value, ExecutionOptions executionOptions);
+
   /** Updates one entity by its generated primary-key and optimistic-version metadata. */
   <E> int updateById(QueryTable<E> table, E value);
 

@@ -3,7 +3,7 @@ package io.skis.sql.ast;
 import java.util.List;
 import java.util.Objects;
 
-/** Immutable single-row INSERT statement. */
+/** Immutable single-row INSERT; empty columns and values explicitly mean DEFAULT VALUES. */
 public record InsertStatement(
     TableExpression<?> target, List<ColumnExpression<?, ?>> columns, List<SqlExpression<?>> values)
     implements StatementAst {
@@ -15,9 +15,6 @@ public record InsertStatement(
     Objects.requireNonNull(values, "values");
     columns = List.copyOf(columns);
     values = List.copyOf(values);
-    if (columns.isEmpty()) {
-      throw new IllegalArgumentException("INSERT requires at least one column");
-    }
     if (columns.size() != values.size()) {
       throw new IllegalArgumentException("INSERT columns and values must have the same size");
     }

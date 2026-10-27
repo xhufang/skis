@@ -72,5 +72,11 @@ public enum DialectFeature {
   MIN_AGGREGATE,
 
   /** MAX(expression) is supported for orderable inputs under the aggregate type rules. */
-  MAX_AGGREGATE
+  MAX_AGGREGATE,
+
+  /** The driver can return an explicitly requested primary-key column for a single INSERT. */
+  JDBC_GENERATED_KEYS,
+
+  /** INSERT supports the explicit DEFAULT VALUES form with no bound columns. */
+  INSERT_DEFAULT_VALUES
 }

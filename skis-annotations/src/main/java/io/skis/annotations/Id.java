@@ -11,9 +11,14 @@ import java.lang.annotation.Target;
  *
  * <p>An identifier property is implicitly mapped to a non-null column. Multiple {@code Id}
  * properties are reserved for an explicitly supported composite primary key. The annotation
- * processor is responsible for rejecting ambiguous declarations.
+ * processor is responsible for rejecting ambiguous declarations. Generation is explicit through
+ * {@link #strategy()}; Java null may represent a not-yet-generated key without making its SQL
+ * column nullable.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.FIELD, ElementType.METHOD, ElementType.RECORD_COMPONENT})
-public @interface Id {}
+public @interface Id {
+  /** Selects the explicit primary-key assignment strategy. */
+  IdStrategy strategy() default IdStrategy.ASSIGNED;
+}

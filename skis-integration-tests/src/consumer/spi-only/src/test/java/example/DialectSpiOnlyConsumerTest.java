@@ -22,6 +22,8 @@ class DialectSpiOnlyConsumerTest {
     assertEquals("external-spi-only", dialect.id());
     assertEquals("\"select\"", dialect.identifierRules().quote("select"));
     assertFalse(dialect.hasStablePlanCacheIdentity());
+    assertFalse(dialect.capabilities().supports(DialectFeature.JDBC_GENERATED_KEYS));
+    assertFalse(dialect.capabilities().supports(DialectFeature.INSERT_DEFAULT_VALUES));
     assertNotNull(dialect.lowering());
     SqlRenderer renderer = dialect.renderer();
     assertSame(renderer, dialect.renderer());

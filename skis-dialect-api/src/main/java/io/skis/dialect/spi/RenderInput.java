@@ -45,6 +45,7 @@ import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import java.util.HashMap;
@@ -377,6 +378,14 @@ public final class RenderInput {
         case CountAst count -> validateCount(count, capabilities, dialectId);
         case InsertStatement insert -> {
           validateTable(insert.target(), capabilities, dialectId);
+          if (insert.columns().isEmpty()
+              && !capabilities.supports(DialectFeature.INSERT_DEFAULT_VALUES)) {
+            throw SqlRenderException.of(
+                SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+                dialectId,
+                DialectFeature.INSERT_DEFAULT_VALUES.name(),
+                "lowered INSERT requires DEFAULT VALUES support");
+          }
           insert.values().forEach(value -> validateExpression(value, capabilities, dialectId));
         }
         case UpdateStatement update -> {
@@ -563,9 +572,7 @@ public final class RenderInput {
     }
 
     private static void validateTable(
-        io.skis.sql.ast.TableExpression<?> table,
-        DialectCapabilities capabilities,
-        String dialectId) {
+        TableExpression<?> table, DialectCapabilities capabilities, String dialectId) {
       var metadata = table.entity().table();
       if (metadata.hasCatalog()
           && !capabilities.supports(DialectFeature.CATALOG_QUALIFIED_TABLES)) {

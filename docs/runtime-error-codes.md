@@ -137,6 +137,13 @@ APT 的 `SKISnnn` 编码独立，见 [`apt-error-codes.md`](apt-error-codes.md)�
 | `SKISM011` | `MUTATION_VERSION_TYPE_MISMATCH`       | MUTATION  | SEMANTIC_VALIDATION | optimistic version value does not match the declared version type            | detail、expectedType/actualType                                             | 写入语义、保护规则或乐观锁               |
 | `SKISM012` | `MUTATION_PARAMETER_SHAPE`             | MUTATION  | COMPILATION         | dialect rendered an unexpected mutation parameter shape                      | detail、语句类型                                                                | 写入语义、保护规则或乐观锁               |
 | `SKISM013` | `MUTATION_REQUIRED_VALUE_NULL`         | MUTATION  | INPUT_CONSTRUCTION  | required mutation property value is null                                     | detail、属性名/索引；不记录值                                                         | 写入语义、保护规则或乐观锁               |
+| `SKISM014` | `MUTATION_ID_VALUE_INVALID` | MUTATION | INPUT_CONSTRUCTION | 主键输入与生成策略不符，或生成策略 record 使用 int insert | detail；实体、属性、策略；不记录值 | 主键输入 |
+| `SKISM015` | `MUTATION_ID_GENERATION_FAILED` | MUTATION | EXECUTION | 主键生成失败，包括雪花回拨、耗尽或纪元范围错误 | detail；固定原因；不记录值 | 主键生成 |
+| `SKISM016` | `MUTATION_GENERATED_KEY_INVALID` | MUTATION | EXECUTION | 生成键不是单行单列非空结果 | detail；固定形状原因；不记录值 | 生成键读取 |
+| `SKISM017` | `MUTATION_ID_ACCESS_FAILED` | MUTATION | INPUT_CONSTRUCTION | 插入前生成式主键读取失败 | detail；实体、属性、策略；保留 cause | 主键读取 |
+| `SKISM018` | `MUTATION_ID_APPLY_FAILED` | MUTATION | EXECUTION | SQL 与资源处理完成后主键回填或 record 复制失败 | detail；实体、属性、策略；保留 cause | 主键回填 |
+
+SKISM014—018 已接入 `0.2.10-SNAPSHOT` 源码，当前提交待 CI 验证；用法和事务边界见[主键生成](id-generation.md)。
 
 ## 4. JDBC 分类与 Spring 映射
 

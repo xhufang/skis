@@ -27,6 +27,7 @@ class AnnotationContractTest {
     RecordComponent version = Pet.class.getRecordComponents()[2];
 
     assertTrue(id.isAnnotationPresent(Id.class));
+    assertEquals(IdStrategy.ASSIGNED, id.getAnnotation(Id.class).strategy());
     assertEquals("pet_id", id.getAnnotation(Column.class).name());
     assertTrue(displayName.isAnnotationPresent(Transient.class));
     assertTrue(version.isAnnotationPresent(Version.class));

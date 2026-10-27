@@ -1,13 +1,17 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.MutationException;
 import io.skis.core.SkisConfigurationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.CompiledMutationPlan;
+import io.skis.mapping.spi.EntityIdAccess;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.InsertArguments;
+import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PropertyMeta;
-import io.skis.core.MutationException;
 import java.sql.SQLException;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -21,6 +25,11 @@ final class EntityMutationPlanSet<E> {
   private final @Nullable CompiledMutationPlan<E> checkedUpdate;
   private final @Nullable CompiledMutationPlan<E> uncheckedUpdate;
   private final CompiledMutationPlan<Object> delete;
+  private final @Nullable CompiledMutationPlan<InsertArguments<E>> generatedInsert;
+  private final boolean recordEntity;
+  private final PropertyMeta<E, ?> idProperty;
+  private final IdGeneration generation;
+  private final JdbcTypeCodec<?> idCodec;
 
   EntityMutationPlanSet(
       EntityRuntimeModel<E> model,
@@ -43,6 +52,19 @@ final class EntityMutationPlanSet<E> {
     this.checkedUpdate = checkedUpdate;
     this.uncheckedUpdate = uncheckedUpdate;
     this.delete = Objects.requireNonNull(delete, "delete");
+    this.recordEntity = model.entity().javaType().isRecord();
+    var primaryKey = model.entity().primaryKey().orElseThrow();
+    this.idProperty = primaryKey.properties().getFirst();
+    this.generation = primaryKey.generation();
+    this.idCodec = model.property(idProperty).codec();
+    this.generatedInsert =
+        insert == null || generation == IdGeneration.ASSIGNED
+            ? null
+            : new CompiledMutationPlan<>(
+                insert.operation(),
+                insert.dialectId(),
+                insert.renderedSql(),
+                binders.generatedInsert());
     boolean versioned = model.entity().version().isPresent();
     if (versioned == (binders.versionReader() == null)) {
       throw SkisConfigurationException.of(
@@ -68,6 +90,31 @@ final class EntityMutationPlanSet<E> {
 
   CompiledMutationPlan<Object> delete() {
     return delete;
+  }
+
+  CompiledMutationPlan<InsertArguments<E>> generatedInsert() {
+    insert(); // Preserve the existing no-insertable-properties failure.
+    return Objects.requireNonNull(generatedInsert);
+  }
+
+  EntityIdAccess<E> idAccess() {
+    return binders.idAccess();
+  }
+
+  PropertyMeta<E, ?> idProperty() {
+    return idProperty;
+  }
+
+  IdGeneration generation() {
+    return generation;
+  }
+
+  boolean recordEntity() {
+    return recordEntity;
+  }
+
+  JdbcTypeCodec<?> idCodec() {
+    return idCodec;
   }
 
   UpdateExecution<E> update(E value) {

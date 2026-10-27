@@ -2,6 +2,7 @@ package io.skis.processor;
 
 import io.skis.annotations.Column;
 import io.skis.annotations.Id;
+import io.skis.annotations.IdStrategy;
 import io.skis.annotations.SkisEntity;
 import io.skis.annotations.Table;
 import io.skis.annotations.Transient;
@@ -44,8 +45,7 @@ final class EntityModelScanner {
   EntityModelScanner(Elements elements, Types types) {
     this.elements = elements;
     this.types = types;
-    this.runtimeExceptionType =
-        elements.getTypeElement(RuntimeException.class.getName()).asType();
+    this.runtimeExceptionType = elements.getTypeElement(RuntimeException.class.getName()).asType();
     this.errorType = elements.getTypeElement(Error.class.getName()).asType();
     this.sqlExceptionType = elements.getTypeElement("java.sql.SQLException").asType();
   }
@@ -95,12 +95,13 @@ final class EntityModelScanner {
     Set<String> usedFieldNames = new HashSet<>();
     for (RecordComponentElement component : type.getRecordComponents()) {
       requireResolvedType(component.asType(), component.getSimpleName().toString());
-      PropertyAnnotations annotations = annotations(component, null);
+      PropertyAnnotations annotations = annotations(component, component.getAccessor());
       validateAnnotationCombination(annotations, component);
       if (annotations.transientProperty()) {
         arguments.add(
             EntityInstantiationModel.ConstructorArgument.defaultValue(
-                defaultExpression(component.asType())));
+                defaultExpression(component.asType()),
+                "entity." + component.getAccessor().getSimpleName() + "()"));
         continue;
       }
       if (!component.getAccessor().getModifiers().contains(Modifier.PUBLIC)) {
@@ -222,6 +223,7 @@ final class EntityModelScanner {
         descriptor.primitive(),
         column,
         annotations.id(),
+        annotations.idStrategy(),
         annotations.version(),
         access,
         source);
@@ -508,9 +510,16 @@ final class EntityModelScanner {
           getter);
     }
     Element source = hasSkisPropertyAnnotation(getter) ? getter : field;
+    Id fieldId = field == null ? null : field.getAnnotation(Id.class);
+    Id getterId = getter == null ? null : getter.getAnnotation(Id.class);
+    if (fieldId != null && getterId != null && fieldId.strategy() != getterId.strategy()) {
+      throw failure("SKIS043", "field and getter declare conflicting @Id strategies", getter);
+    }
+    Id declaredId = getterId == null ? fieldId : getterId;
     return new PropertyAnnotations(
         getterColumn == null ? fieldColumn : getterColumn,
         hasAnnotation(field, Id.class) || hasAnnotation(getter, Id.class),
+        declaredId == null ? IdStrategy.ASSIGNED : declaredId.strategy(),
         hasAnnotation(field, Version.class) || hasAnnotation(getter, Version.class),
         hasAnnotation(field, Transient.class) || hasAnnotation(getter, Transient.class),
         isExplicitlyNullable(field) || isExplicitlyNullable(getter),
@@ -771,6 +780,7 @@ final class EntityModelScanner {
   private record PropertyAnnotations(
       @Nullable Column column,
       boolean id,
+      IdStrategy idStrategy,
       boolean version,
       boolean transientProperty,
       boolean explicitlyNullable,

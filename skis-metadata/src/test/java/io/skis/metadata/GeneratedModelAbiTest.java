@@ -15,6 +15,7 @@ class GeneratedModelAbiTest {
 
   @Test
   void rejectsGeneratedCodeForAnotherAbi() {
+    assertThrows(IncompatibleClassChangeError.class, () -> GeneratedModelAbi.requireCompatible(8));
     IncompatibleClassChangeError failure =
         assertThrows(
             IncompatibleClassChangeError.class,

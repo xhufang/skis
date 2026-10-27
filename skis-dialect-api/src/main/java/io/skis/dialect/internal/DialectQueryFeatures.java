@@ -5,6 +5,7 @@ import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.ResolvedStructureKey;
@@ -29,6 +30,17 @@ public final class DialectQueryFeatures {
           validateBlock(dialectId, capabilities, select, SemanticValidator.analyzeComplete(select));
       case CountAst count ->
           validateCount(dialectId, capabilities, count, SemanticValidator.analyzeComplete(count));
+      case InsertStatement insert -> {
+        DialectJoinFeatures.validate(dialectId, capabilities, insert);
+        if (insert.columns().isEmpty()) {
+          require(
+              dialectId,
+              capabilities,
+              DialectFeature.INSERT_DEFAULT_VALUES,
+              "INSERT DEFAULT VALUES",
+              "root");
+        }
+      }
       default -> DialectJoinFeatures.validate(dialectId, capabilities, statement);
     }
   }

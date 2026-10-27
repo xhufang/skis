@@ -371,7 +371,7 @@ jobs:
             -RequiredSuites example.ListenerSpiOnlyConsumerTest
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory "$env:RUNNER_TEMP/skis-minimal-h2-consumer/target/surefire-reports" `
-            -RequiredSuites @('example.MinimalConsumerTest', 'example.SupportedSpiConsumerTest', 'example.ExecutionListenerConsumerTest', 'example.SqlLoggingConsumerTest')
+            -RequiredSuites @('example.MinimalConsumerTest', 'example.SupportedSpiConsumerTest', 'example.ExecutionListenerConsumerTest', 'example.SqlLoggingConsumerTest', 'example.GeneratedIdConsumerTest')
 
       - name: Upload independent consumer reports
         if: always()
@@ -471,7 +471,7 @@ jobs:
           }
           ./.github/scripts/verify-test-reports.ps1 `
             -ReportDirectory "$env:RUNNER_TEMP/skis-minimal-postgresql-consumer/target/surefire-reports" `
-            -RequiredSuites example.PostgreSqlConsumerTest
+            -RequiredSuites @('example.PostgreSqlConsumerTest', 'example.GeneratedIdConsumerTest')
 
       - name: Upload PostgreSQL consumer reports
         if: always()

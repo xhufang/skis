@@ -474,7 +474,22 @@ public enum SkisErrorCode {
       "SKISM013",
       SkisErrorFamily.MUTATION,
       SkisDiagnosticStage.INPUT_CONSTRUCTION,
-      "required mutation property value is null");
+      "required mutation property value is null"),
+  MUTATION_ID_VALUE_INVALID(
+      "SKISM014", SkisErrorFamily.MUTATION, SkisDiagnosticStage.INPUT_CONSTRUCTION,
+      "primary-key input is invalid for its generation strategy"),
+  MUTATION_ID_GENERATION_FAILED(
+      "SKISM015", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "primary-key generation failed"),
+  MUTATION_GENERATED_KEY_INVALID(
+      "SKISM016", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "JDBC generated keys violated the single non-null key contract"),
+  MUTATION_ID_ACCESS_FAILED(
+      "SKISM017", SkisErrorFamily.MUTATION, SkisDiagnosticStage.INPUT_CONSTRUCTION,
+      "generated primary-key reader failed"),
+  MUTATION_ID_APPLY_FAILED(
+      "SKISM018", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "successful insert primary key could not be applied to the entity");
 
   private final String code;
   private final SkisErrorFamily family;

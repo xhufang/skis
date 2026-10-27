@@ -15,6 +15,7 @@ import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.RowReadContext;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.SnowflakeIdGenerator;
 import io.skis.mutation.internal.MutationPlanCatalog;
 import io.skis.mutation.internal.MutationRuntime;
 import io.skis.query.QueryOperations;
@@ -56,6 +57,7 @@ public final class Skis {
     private ExecutionOptions executionOptions = ExecutionOptions.NONE;
     private SqlLoggingOptions sqlLogging = SqlLoggingOptions.NONE;
     private @Nullable List<ExecutionListener> listeners;
+    private @Nullable SnowflakeIdGenerator snowflakeIds;
 
     private Builder(ConnectionProvider connectionProvider) {
       this.connectionProvider = Objects.requireNonNull(connectionProvider, "connectionProvider");
@@ -70,6 +72,12 @@ public final class Skis {
     /** Selects the required dialect used to compile and render all plans in this executor. */
     public Builder dialect(Dialect dialect) {
       this.dialect = Objects.requireNonNull(dialect, "dialect");
+      return this;
+    }
+
+    /** Uses one explicitly allocated node generator, also shared by every Session. */
+    public Builder snowflakeIdGenerator(SnowflakeIdGenerator generator) {
+      this.snowflakeIds = Objects.requireNonNull(generator, "generator");
       return this;
     }
 
@@ -176,7 +184,7 @@ public final class Skis {
               planCacheExpireAfterAccess,
               listenerDispatcher);
       MutationPlanCatalog mutationPlans =
-          MutationRuntime.compile(selectedRegistry, selectedDialect, listenerDispatcher);
+          MutationRuntime.compile(selectedRegistry, selectedDialect, listenerDispatcher, snowflakeIds);
       QueryOperations queries = queryPlans.bind(jdbcExecutor);
       MutationOperations mutations = mutationPlans.bind(jdbcExecutor);
       return new DefaultSkisExecutor(queries, mutations, jdbcExecutor, queryPlans, mutationPlans);

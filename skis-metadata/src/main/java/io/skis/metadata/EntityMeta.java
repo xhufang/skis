@@ -226,6 +226,9 @@ public final class EntityMeta<E> {
     if (candidatePrimaryKey == null) {
       return;
     }
+    if (readOnly && candidatePrimaryKey.generation() != IdGeneration.ASSIGNED) {
+      throw metadataInvalid("read-only entities cannot declare generated primary keys");
+    }
     for (PropertyMeta<E, ?> property : candidatePrimaryKey.properties()) {
       PropertyMeta<E, ?> entityProperty = propertiesByName.get(property.name());
       if (entityProperty != property) {

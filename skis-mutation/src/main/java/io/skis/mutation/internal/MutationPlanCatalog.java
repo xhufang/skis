@@ -9,11 +9,14 @@ import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
+import io.skis.metadata.IdGeneration;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.SnowflakeIdGenerator;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /** Thread-safe catalog of entity mutation Fast Paths compiled once per registry and dialect. */
 public final class MutationPlanCatalog {
@@ -21,21 +24,30 @@ public final class MutationPlanCatalog {
   private final Map<EntityMeta<?>, EntityMutationPlanSet<?>> planSets;
   private final ExecutionListenerDispatcher listenerDispatcher;
   private final String dialectId;
+  private final @Nullable SnowflakeIdGenerator snowflakeIds;
 
   MutationPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
       Dialect dialect,
-      ExecutionListenerDispatcher listenerDispatcher) {
+      ExecutionListenerDispatcher listenerDispatcher,
+      @Nullable SnowflakeIdGenerator snowflakeIds) {
     Objects.requireNonNull(runtimeRegistry, "runtimeRegistry");
     Dialect requiredDialect = Objects.requireNonNull(dialect, "dialect");
     this.listenerDispatcher = Objects.requireNonNull(listenerDispatcher, "listenerDispatcher");
     this.dialectId = requiredDialect.id();
+    this.snowflakeIds = snowflakeIds;
     MutationPlanCompiler compiler =
         new MutationPlanCompiler(requiredDialect, this.listenerDispatcher);
     Map<EntityMeta<?>, EntityMutationPlanSet<?>> indexed = new IdentityHashMap<>();
     for (EntityRuntimeModel<?> model : runtimeRegistry.models()) {
       if (model.entity().readOnly()) {
         continue;
+      }
+      if (model.entity().primaryKey().orElseThrow().generation() == IdGeneration.SNOWFLAKE
+          && snowflakeIds == null) {
+        throw SkisConfigurationException.of(
+            SkisErrorCode.ASSEMBLY_CONFIGURATION_INVALID,
+            "writable SNOWFLAKE model requires a shared snowflakeIdGenerator");
       }
       EntityMutationPlanSet<?> previous = indexed.put(model.entity(), compile(model, compiler));
       if (previous != null) {
@@ -53,6 +65,10 @@ public final class MutationPlanCatalog {
 
   String dialectId() {
     return dialectId;
+  }
+
+  SnowflakeIdGenerator snowflakeIds() {
+    return Objects.requireNonNull(snowflakeIds, "assembled snowflake generator");
   }
 
   /** Binds the shared plans to a JDBC executor without recompiling SQL. */

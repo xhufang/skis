@@ -50,6 +50,10 @@ final class DiagnosticGuidance {
       case "SKIS039" -> "remove unsupported checked exceptions from the no-args constructor";
       case "SKIS040" -> "remove unsupported checked exceptions from Bean accessors";
       case "SKIS041" -> "rename the entity or conflicting property used by generated table members";
+      case "SKIS042" -> "use the wrapper Java type supported by the explicit @Id strategy";
+      case "SKIS043" -> "make field and getter @Id strategies identical";
+      case "SKIS044" ->
+          "use ASSIGNED for read-only entities and valid insertable/key-length mappings";
       case "SKIS097" -> "generate referenced entity property types before processing ends";
       case "SKIS098" -> "remove entity-index output conflicts and check the class output path";
       case "SKIS099" -> "remove generated entity source conflicts and check the source output path";

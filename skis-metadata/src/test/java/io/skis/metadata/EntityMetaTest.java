@@ -39,6 +39,25 @@ class EntityMetaTest {
   }
 
   @Test
+  void normalizesPrimitivePropertyTypesForCanonicalMetadataAndBoxedValues() {
+    List<Class<?>> primitiveTypes =
+        List.of(boolean.class, byte.class, short.class, int.class, long.class, float.class,
+            double.class, char.class);
+    List<Object> values = List.of(true, (byte) 1, (short) 2, 3, 4L, 5.0F, 6.0D, 'a');
+    for (int index = 0; index < primitiveTypes.size(); index++) {
+      PropertyMeta<Pet, ?> id = property(0, "id", primitiveTypes.get(index), "id", false);
+      Object value = values.get(index);
+      assertSame(value.getClass(), id.javaType());
+      assertTrue(id.javaType().isInstance(value));
+      assertEquals(property(0, "id", value.getClass(), "id", false), id);
+      EntityMeta<Pet> metadata = EntityMeta.simple(
+          Pet.class, TableMeta.of("pet"), List.of(id), new PrimaryKeyMeta<>(List.of(id)), false);
+      assertSame(id, metadata.property("id"));
+      assertSame(id, metadata.primaryKey().orElseThrow().properties().getFirst());
+    }
+  }
+
+  @Test
   void defensivelyCopiesPropertiesAndPrimaryKeyParts() {
     PropertyMeta<Pet, Long> id = property(0, "id", Long.class, "id", false);
     List<PropertyMeta<Pet, ?>> properties = new ArrayList<>();

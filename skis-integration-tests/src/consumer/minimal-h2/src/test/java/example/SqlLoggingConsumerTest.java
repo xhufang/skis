@@ -37,7 +37,8 @@ class SqlLoggingConsumerTest {
         .build(), new ArrayList<>());
     var table = LoggingPetTable.loggingPetTable;
     executor.insert(table, new LoggingPet(1L, "secret-parameter", null));
-    assertEquals(List.of(1, 1, 1), LoggingPet.reads());
+    // ASSIGNED validates its key once before acquisition; the generated binder reads each slot once.
+    assertEquals(List.of(2, 1, 1), LoggingPet.reads());
     assertEquals(List.of("1:Long", "2:String", "3:Long"), slots);
     assertTrue(parameterMessages().getFirst().contains("1=approved, 2=approved, 3=approved"));
     slots.clear();

@@ -1,6 +1,7 @@
 package io.skis.jdbc.internal;
 
 import io.skis.core.ExecutionOptions;
+import io.skis.core.MutationException;
 import io.skis.core.NonUniqueResultException;
 import io.skis.core.QueryTag;
 import io.skis.core.QueryValidationException;
@@ -23,6 +24,7 @@ import io.skis.jdbc.JdbcExecutionException;
 import io.skis.jdbc.JdbcPhase;
 import io.skis.jdbc.QueryExecutionException;
 import io.skis.jdbc.spi.ConnectionProvider;
+import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.ParameterBinder;
 import io.skis.mapping.spi.RowReadContext;
@@ -88,8 +90,13 @@ public final class JdbcExecutor {
       RowReadContext rowReadContext,
       ExecutionOptions defaultExecutionOptions,
       ExceptionClassifier exceptionClassifier) {
-    this(connectionProvider, writeContext, rowReadContext, defaultExecutionOptions,
-        exceptionClassifier, SqlLoggingOptions.NONE);
+    this(
+        connectionProvider,
+        writeContext,
+        rowReadContext,
+        defaultExecutionOptions,
+        exceptionClassifier,
+        SqlLoggingOptions.NONE);
   }
 
   /** Creates an executor with immutable opt-in logging and synchronous redaction configuration. */
@@ -122,7 +129,8 @@ public final class JdbcExecutor {
         writeContext,
         rowReadContext,
         defaultExecutionOptions,
-        exceptionClassifier, loggingOptions);
+        exceptionClassifier,
+        loggingOptions);
   }
 
   /** Returns an executor whose session defaults overlay this executor's immutable defaults. */
@@ -134,7 +142,11 @@ public final class JdbcExecutor {
       return this;
     }
     return new JdbcExecutor(
-        connectionProvider, writeContext, rowReadContext, effectiveDefaults, exceptionClassifier,
+        connectionProvider,
+        writeContext,
+        rowReadContext,
+        effectiveDefaults,
+        exceptionClassifier,
         loggingOptions);
   }
 
@@ -355,8 +367,14 @@ public final class JdbcExecutor {
     StatementObservation statementObservation = null;
     try {
       statementObservation = startStatement(observation, purpose, plan);
-      statement = prepare(
-          connection, plan, parameters, executionContext, NO_MINIMUM_MAX_ROWS, statementObservation);
+      statement =
+          prepare(
+              connection,
+              plan,
+              parameters,
+              executionContext,
+              NO_MINIMUM_MAX_ROWS,
+              statementObservation);
       ResultSet resultSet = executeQuery(statement, statementObservation);
       return new DefaultJdbcCursor<>(
           plan,
@@ -444,7 +462,12 @@ public final class JdbcExecutor {
     try {
       List<R> results;
       try (PreparedStatement statement =
-              prepare(connection, plan, parameters, executionContext, minimumMaxRows,
+              prepare(
+                  connection,
+                  plan,
+                  parameters,
+                  executionContext,
+                  minimumMaxRows,
                   statementObservation);
           ResultSet resultSet = executeQuery(statement, statementObservation)) {
         results = new ArrayList<>();
@@ -485,7 +508,12 @@ public final class JdbcExecutor {
     try {
       JdbcRow<R> row;
       try (PreparedStatement statement =
-              prepare(connection, plan, parameters, executionContext, minimumMaxRows,
+              prepare(
+                  connection,
+                  plan,
+                  parameters,
+                  executionContext,
+                  minimumMaxRows,
                   statementObservation);
           ResultSet resultSet = executeQuery(statement, statementObservation)) {
         if (!resultSet.next()) {
@@ -603,6 +631,144 @@ public final class JdbcExecutor {
         });
   }
 
+  /** Executes one INSERT and reads its explicitly requested, single non-null generated key. */
+  public <P> Object executeGeneratedKey(
+      CompiledMutationPlan<P> plan,
+      P parameters,
+      String physicalIdColumn,
+      JdbcTypeCodec<?> keyCodec,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    Objects.requireNonNull(plan, "plan");
+    Objects.requireNonNull(physicalIdColumn, "physicalIdColumn");
+    Objects.requireNonNull(keyCodec, "keyCodec");
+    Objects.requireNonNull(executionContext, "executionContext");
+    return withConnection(
+        executionContext,
+        (phase, failure) -> translate(plan, phase, failure),
+        connection -> {
+          StatementObservation statementObservation = startStatement(observation, purpose, plan);
+          long affected = unknownRowCount();
+          long read = 0L;
+          try {
+            Object key;
+            PreparedStatement statement =
+                prepare(
+                    connection,
+                    plan.sql(),
+                    plan.parameterCount(),
+                    plan.parameterBinder(),
+                    parameters,
+                    executionContext,
+                    NO_MINIMUM_MAX_ROWS,
+                    statementObservation,
+                    physicalIdColumn);
+            Throwable statementFailure = null;
+            try {
+              affected = executeUpdate(statement, statementObservation);
+              if (affected != 1) {
+                throw MutationException.of(
+                    SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
+                    "generated-key INSERT must affect exactly one row");
+              }
+              ResultSet keys = statement.getGeneratedKeys();
+              if (keys == null) {
+                throw invalidGeneratedKey();
+              }
+              Throwable keyFailure = null;
+              try {
+                var keyMetadata = keys.getMetaData();
+                if (keyMetadata == null
+                    || keyMetadata.getColumnCount() != 1
+                    || !integralGeneratedKeyType(keyMetadata.getColumnType(1))
+                    || !keys.next()) {
+                  throw invalidGeneratedKey();
+                }
+                read = 1L;
+                try {
+                  key = keyCodec.read(keys, 1, rowReadContext);
+                } catch (QueryValidationException failure) {
+                  // Integer codecs classify query mapping overflow; writes retain the JDBC cause.
+                  if (failure.getCause() instanceof SQLException driverFailure) {
+                    throw driverFailure;
+                  }
+                  throw invalidGeneratedKey();
+                }
+                if (key == null) {
+                  throw invalidGeneratedKey();
+                }
+                if (keys.next()) {
+                  read = 2L;
+                  throw invalidGeneratedKey();
+                }
+              } catch (SQLException | RuntimeException | Error failure) {
+                keyFailure = failure;
+                throw failure;
+              } finally {
+                try {
+                  keys.close();
+                } catch (SQLException | RuntimeException | Error failure) {
+                  generatedCloseFailure(JdbcPhase.RESULT_SET_CLOSE, failure, keyFailure);
+                }
+              }
+            } catch (SQLException | RuntimeException | Error failure) {
+              statementFailure = failure;
+              throw failure;
+            } finally {
+              try {
+                statement.close();
+              } catch (SQLException | RuntimeException | Error failure) {
+                generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, statementFailure);
+              }
+            }
+            completeStatementSucceeded(statementObservation, read, affected);
+            return key;
+          } catch (PhasedSqlFailure failure) {
+            RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+            completeStatementFailed(statementObservation, translated, read, affected);
+            throw translated;
+          } catch (SQLException failure) {
+            RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+            completeStatementFailed(statementObservation, translated, read, affected);
+            throw translated;
+          } catch (RuntimeException | Error failure) {
+            completeStatementFailed(statementObservation, failure, read, affected);
+            throw failure;
+          }
+        });
+  }
+
+  private static MutationException invalidGeneratedKey() {
+    return MutationException.of(
+        SkisErrorCode.MUTATION_GENERATED_KEY_INVALID,
+        "generated keys must contain one integral column and one non-null key");
+  }
+
+  private static boolean integralGeneratedKeyType(int jdbcType) {
+    return jdbcType == java.sql.Types.TINYINT
+        || jdbcType == java.sql.Types.SMALLINT
+        || jdbcType == java.sql.Types.INTEGER
+        || jdbcType == java.sql.Types.BIGINT;
+  }
+
+  private static void generatedCloseFailure(
+      JdbcPhase phase, Throwable failure, @Nullable Throwable primary) {
+    if (primary != null) {
+      Throwable cause =
+          primary instanceof PhasedSqlFailure phased ? phased.sqlException() : primary;
+      if (cause != failure) {
+        cause.addSuppressed(failure);
+      }
+    } else if (failure instanceof SQLException sqlFailure) {
+      throw new PhasedSqlFailure(phase, sqlFailure);
+    } else if (failure instanceof RuntimeException runtimeFailure) {
+      throw runtimeFailure;
+    } else {
+      throw (Error) failure;
+    }
+  }
+
   private static <R extends @Nullable Object> @Nullable StatementObservation startStatement(
       @Nullable OperationObservation observation,
       StatementPurpose purpose,
@@ -716,6 +882,29 @@ public final class JdbcExecutor {
       int minimumMaxRows,
       @Nullable StatementObservation observation)
       throws SQLException {
+    return prepare(
+        connection,
+        sql,
+        parameterCount,
+        parameterBinder,
+        parameters,
+        executionContext,
+        minimumMaxRows,
+        observation,
+        null);
+  }
+
+  private <P> PreparedStatement prepare(
+      Connection connection,
+      String sql,
+      int parameterCount,
+      ParameterBinder<P> parameterBinder,
+      P parameters,
+      ExecutionContext executionContext,
+      int minimumMaxRows,
+      @Nullable StatementObservation observation,
+      @Nullable String physicalIdColumn)
+      throws SQLException {
     ExecutionOptions statementOptions =
         executionContext == ExecutionContext.EMPTY
             ? ExecutionOptions.NONE
@@ -724,18 +913,23 @@ public final class JdbcExecutor {
     boolean optionsConfigured =
         defaultExecutionOptionsConfigured
             || (statementOptions != ExecutionOptions.NONE && !statementOptions.isEmpty());
+    String actualSql = optionsConfigured ? taggedSql(sql, statementOptions) : sql;
     PreparedStatement statement =
-        connection.prepareStatement(optionsConfigured ? taggedSql(sql, statementOptions) : sql);
+        physicalIdColumn == null
+            ? connection.prepareStatement(actualSql)
+            : connection.prepareStatement(actualSql, new String[] {physicalIdColumn});
     try {
       int expectedNextIndex = parameterCount + 1;
       int nextIndex;
       if (loggingOptions.parameters() && SafeLog.debugEnabled(PARAMETERS)) {
-        ParameterSummary summary = new ParameterSummary(
-            loggingOptions.parameterRedactor(), parameterCount, observation != null);
+        ParameterSummary summary =
+            new ParameterSummary(
+                loggingOptions.parameterRedactor(), parameterCount, observation != null);
         try {
           nextIndex = parameterBinder.bindObserved(statement, 1, parameters, writeContext, summary);
           if (nextIndex == expectedNextIndex) {
-            summary.publish(PARAMETERS,
+            summary.publish(
+                PARAMETERS,
                 observation == null ? JdbcFingerprint.of(sql) : observation.sqlFingerprint(),
                 observation == null ? 0L : observation.operationId(),
                 observation == null ? 0L : observation.statementId());
@@ -1126,12 +1320,13 @@ public final class JdbcExecutor {
       }
       if (SafeLog.warnEnabled(LOGGER)) {
         String fingerprint = JdbcFingerprint.of(plan.sql());
-        SafeLog.warn(LOGGER,
-          "JDBC cursor was abandoned without close [dialect="
-              + SafeLog.text(plan.dialectId(), 128)
-              + ", sqlFingerprint="
-              + fingerprint
-              + "]");
+        SafeLog.warn(
+            LOGGER,
+            "JDBC cursor was abandoned without close [dialect="
+                + SafeLog.text(plan.dialectId(), 128)
+                + ", sqlFingerprint="
+                + fingerprint
+                + "]");
       }
       // JDBC cleanup is intentionally not attempted from the Cleaner thread. Providers backed by
       // external transaction managers may require release on the acquiring thread.
