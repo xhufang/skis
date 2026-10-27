@@ -179,31 +179,31 @@
       }
     },
     "skis-mapping": {
-      "covered": 126,
+      "covered": 148,
       "missed": 16,
-      "classes": 22,
-      "threshold": 8873,
-      "reportSha256": "129c304014e3fea53e489ed5a9e2865eb11d15be0509b47786f3b19f1fcaf70f",
+      "classes": 24,
+      "threshold": 9024,
+      "reportSha256": "67821b5d9bc866db209887d40a50c4491abd2f317c0e813edea1226d7cda1b7d",
       "evidence": {
-        "commit": "1e0d5583008b41f1e8bd1715b0488a4c2ce6f218",
-        "runId": "40167945334",
+        "commit": "e48299e75840be8e7203af29e2577f0c63035411",
+        "runId": "40462908139",
         "attempt": "1",
         "repository": "xhufang/skis",
-        "artifact": "branch-coverage-java-21-40167945334-1"
+        "artifact": "branch-coverage-java-21-40462908139-1"
       }
     },
     "skis-jdbc": {
-      "covered": 217,
-      "missed": 59,
+      "covered": 248,
+      "missed": 66,
       "classes": 25,
-      "threshold": 7862,
-      "reportSha256": "0b1db2d40e884e0bd7af4ac27231ee332f180928a448305e09a0b5e3433904eb",
+      "threshold": 7898,
+      "reportSha256": "8730ea670a7ba676b1c3019dda4ee3a40ccb899c9855090c88f591a1112bfdff",
       "evidence": {
-        "commit": "7659b45476031bc6926711f9f04284f60c8d77c6",
-        "runId": "39887845595",
+        "commit": "e48299e75840be8e7203af29e2577f0c63035411",
+        "runId": "40462908139",
         "attempt": "1",
         "repository": "xhufang/skis",
-        "artifact": "branch-coverage-java-21-39887845595-1"
+        "artifact": "branch-coverage-java-21-40462908139-1"
       }
     },
     "skis-query": {
