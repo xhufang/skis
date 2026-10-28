@@ -111,7 +111,7 @@ class MutationExecutionDiagnosticsTest {
     JdbcExecutionException thrown =
         assertThrows(
             JdbcExecutionException.class,
-            () -> operations.insert(PET_TABLE, new Pet(1L, SENSITIVE_NAME)));
+            () -> operations.insertInto(PET_TABLE).value(new Pet(1L, SENSITIVE_NAME)).write());
 
     assertEquals(SkisErrorCode.DB_UNCATEGORIZED, thrown.code());
     assertEquals(JdbcPhase.EXECUTE, thrown.phase());
@@ -156,7 +156,7 @@ class MutationExecutionDiagnosticsTest {
 
     assertThrows(
         JdbcExecutionException.class,
-        () -> operations.insert(PET_TABLE, new Pet(1L, SENSITIVE_NAME), options));
+        () -> operations.insertInto(PET_TABLE).value(new Pet(1L, SENSITIVE_NAME)).write(options));
 
     assertSame(options, observed.get());
   }
@@ -221,7 +221,7 @@ class MutationExecutionDiagnosticsTest {
 
     MutationException failure =
         assertThrows(
-            MutationException.class, () -> operations.insert(PET_TABLE, new Pet(1L, null)));
+            MutationException.class, () -> operations.insertInto(PET_TABLE).value(new Pet(1L, null)).write());
 
     assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL, failure.code());
     assertNull(failure.getCause());

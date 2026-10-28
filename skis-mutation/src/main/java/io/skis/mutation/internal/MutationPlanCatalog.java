@@ -11,11 +11,13 @@ import io.skis.mapping.spi.EntityRuntimeModel;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.IdGeneration;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.MutationPlanCacheStatistics;
 import io.skis.mutation.SnowflakeIdGenerator;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 import org.jspecify.annotations.Nullable;
 
 /** Thread-safe catalog of entity mutation Fast Paths compiled once per registry and dialect. */
@@ -25,6 +27,7 @@ public final class MutationPlanCatalog {
   private final ExecutionListenerDispatcher listenerDispatcher;
   private final String dialectId;
   private final @Nullable SnowflakeIdGenerator snowflakeIds;
+  private final DynamicMutationPlans dynamicPlans;
 
   MutationPlanCatalog(
       EntityRuntimeRegistry runtimeRegistry,
@@ -36,6 +39,7 @@ public final class MutationPlanCatalog {
     this.listenerDispatcher = Objects.requireNonNull(listenerDispatcher, "listenerDispatcher");
     this.dialectId = requiredDialect.id();
     this.snowflakeIds = snowflakeIds;
+    this.dynamicPlans = new DynamicMutationPlans(runtimeRegistry, requiredDialect);
     MutationPlanCompiler compiler =
         new MutationPlanCompiler(requiredDialect, this.listenerDispatcher);
     Map<EntityMeta<?>, EntityMutationPlanSet<?>> indexed = new IdentityHashMap<>();
@@ -67,6 +71,18 @@ public final class MutationPlanCatalog {
     return dialectId;
   }
 
+  DynamicMutationPlans dynamicPlans() {
+    return dynamicPlans;
+  }
+
+  public MutationPlanCacheStatistics planCacheStatistics() {
+    return dynamicPlans.statistics();
+  }
+
+  public void clearDynamicPlans() {
+    dynamicPlans.clear();
+  }
+
   SnowflakeIdGenerator snowflakeIds() {
     return Objects.requireNonNull(snowflakeIds, "assembled snowflake generator");
   }
@@ -75,6 +91,14 @@ public final class MutationPlanCatalog {
   public MutationOperations bind(JdbcExecutor jdbcExecutor) {
     return new DefaultMutationOperations(
         this, Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"));
+  }
+
+  /** Binds session liveness to every terminal write, including JDBC-free empty inputs. */
+  public MutationOperations bind(JdbcExecutor jdbcExecutor, BooleanSupplier activeSession) {
+    return new DefaultMutationOperations(
+        this,
+        Objects.requireNonNull(jdbcExecutor, "jdbcExecutor"),
+        Objects.requireNonNull(activeSession, "activeSession"));
   }
 
   @SuppressWarnings("unchecked")

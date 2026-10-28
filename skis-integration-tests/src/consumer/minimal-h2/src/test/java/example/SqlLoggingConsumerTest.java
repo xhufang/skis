@@ -36,7 +36,7 @@ class SqlLoggingConsumerTest {
         .parameterRedactor((index, type, value) -> { slots.add(index + ":" + type.getSimpleName()); return "approved"; })
         .build(), new ArrayList<>());
     var table = LoggingPetTable.loggingPetTable;
-    executor.insert(table, new LoggingPet(1L, "secret-parameter", null));
+    executor.insertInto(table).value(new LoggingPet(1L, "secret-parameter", null)).write();
     // ASSIGNED validates its key once before acquisition; the generated binder reads each slot once.
     assertEquals(List.of(2, 1, 1), LoggingPet.reads());
     assertEquals(List.of("1:Long", "2:String", "3:Long"), slots);
@@ -63,7 +63,7 @@ class SqlLoggingConsumerTest {
     List<StatementCompletedEvent> events = new ArrayList<>();
     SkisExecutor executor = executor(SqlLoggingOptions.builder().parameters(true).build(), events);
     var table = LoggingPetTable.loggingPetTable;
-    for (long id = 1; id <= 3; id++) executor.insert(table, new LoggingPet(id, "secret-result", null));
+    for (long id = 1; id <= 3; id++) executor.insertInto(table).value(new LoggingPet(id, "secret-result", null)).write();
     TestLoggerProvider.EVENTS.clear();
     events.clear();
     var page = executor.selectFrom(table).where(table.id().ge(1L)).orderBy(table.id().asc())
@@ -93,9 +93,9 @@ class SqlLoggingConsumerTest {
     SkisExecutor executor = executor(SqlLoggingOptions.builder().sql(true).parameters(true)
         .slowQueryThreshold(Duration.ofNanos(1)).build(), new ArrayList<>());
     var table = LoggingPetTable.loggingPetTable;
-    executor.insert(table, new LoggingPet(1L, "secret-driver-row", null));
+    executor.insertInto(table).value(new LoggingPet(1L, "secret-driver-row", null)).write();
     RuntimeException failure = assertThrows(RuntimeException.class,
-        () -> executor.insert(table, new LoggingPet(1L, "secret-driver-value", null)));
+        () -> executor.insertInto(table).value(new LoggingPet(1L, "secret-driver-value", null)).write());
     assertNotNull(failure.getCause());
     assertTrue(failure.getCause() instanceof java.sql.SQLException);
     assertFalse(TestLoggerProvider.EVENTS.toString().contains("secret-driver"));
@@ -130,7 +130,7 @@ class SqlLoggingConsumerTest {
         };
         if (probe) TestLoggerProvider.onProbe = (logger, level) -> callback.run();
         else TestLoggerProvider.onLog = callback;
-        assertEquals(1, outer.insert(table, new LoggingPet(1L, "secret-outer", null)));
+        assertEquals(1, outer.insertInto(table).value(new LoggingPet(1L, "secret-outer", null)).write());
         assertTrue(rejected.get() > 0);
         assertEquals(0, acquisitions.get());
         TestLoggerProvider.onProbe = null;
@@ -145,7 +145,7 @@ class SqlLoggingConsumerTest {
     var options = SqlLoggingOptions.builder().sql(true).slowQueryThreshold(Duration.ofHours(1)).build();
     SkisExecutor executor = Skis.builder(dataSource()).dialect(H2Dialect.INSTANCE).sqlLogging(options).build();
     var table = LoggingPetTable.loggingPetTable;
-    executor.insert(table, new LoggingPet(1L, "secret-warmup", null));
+    executor.insertInto(table).value(new LoggingPet(1L, "secret-warmup", null)).write();
     assertTrue(executor.findById(table, 1L).isPresent());
     AtomicInteger sqlProbes = new AtomicInteger();
     AtomicInteger slowProbes = new AtomicInteger();
@@ -155,7 +155,7 @@ class SqlLoggingConsumerTest {
       else fail("unexpected logger probe: " + logger);
     };
     assertTrue(executor.findById(table, 1L).isPresent());
-    assertEquals(1, executor.insert(table, new LoggingPet(2L, "secret-second", null)));
+    assertEquals(1, executor.insertInto(table).value(new LoggingPet(2L, "secret-second", null)).write());
     // The backend keeps its string-only output checks separate from framework demand probes.
     assertEquals(2, sqlProbes.get());
     assertEquals(2, slowProbes.get());

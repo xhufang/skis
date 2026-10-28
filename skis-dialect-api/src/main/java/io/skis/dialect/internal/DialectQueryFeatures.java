@@ -9,6 +9,7 @@ import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.ResolvedStructureKey;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlType;
@@ -26,6 +27,10 @@ public final class DialectQueryFeatures {
     Objects.requireNonNull(capabilities, "capabilities");
     Objects.requireNonNull(statement, "statement");
     switch (statement) {
+      case ReturningStatement returning -> {
+        require(dialectId, capabilities, DialectFeature.MUTATION_RETURNING, "RETURNING", "root");
+        validate(dialectId, capabilities, returning.mutation());
+      }
       case SelectStatement select ->
           validateBlock(dialectId, capabilities, select, SemanticValidator.analyzeComplete(select));
       case CountAst count ->

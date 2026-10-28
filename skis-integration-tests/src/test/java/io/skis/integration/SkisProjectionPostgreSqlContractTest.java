@@ -52,8 +52,7 @@ class SkisProjectionPostgreSqlContractTest {
     SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
-      executor.insert(
-          PetTable.petTable, new Pet(id, name, new BigDecimal("12.50"), false, null, "ignored"));
+      executor.insertInto(PetTable.petTable).value(new Pet(id, name, new BigDecimal("12.50"), false, null, "ignored")).write();
       PetTable pet = PetTable.petTable;
       List<String> names =
           executor.select(pet.name()).from(pet).where(pet.name().eq(name)).fetchList();
@@ -82,8 +81,7 @@ class SkisProjectionPostgreSqlContractTest {
     SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
-      executor.insert(
-          PetTable.petTable, new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
+      executor.insertInto(PetTable.petTable).value(new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored")).write();
       Pet stored = executor.findById(PetTable.petTable, id).orElseThrow();
       assertEquals(Long.valueOf(0L), stored.version());
 
@@ -101,15 +99,13 @@ class SkisProjectionPostgreSqlContractTest {
           () ->
               executor.inTransaction(
                   session -> {
-                    session.insert(
-                        PetTable.petTable,
-                        new Pet(
+                    session.insertInto(PetTable.petTable).value(new Pet(
                             rolledBackId,
                             "Rollback",
                             new BigDecimal("1.00"),
                             false,
                             null,
-                            "ignored"));
+                            "ignored")).write();
                     throw new IllegalStateException("force rollback");
                   }));
       assertFalse(executor.findById(PetTable.petTable, rolledBackId).isPresent());
@@ -142,9 +138,9 @@ class SkisProjectionPostgreSqlContractTest {
     Pet pet = new Pet(id, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
 
     try {
-      executor.insert(PetTable.petTable, pet);
+      executor.insertInto(PetTable.petTable).value(pet).write();
       JdbcExecutionException failure =
-          assertThrows(JdbcExecutionException.class, () -> executor.insert(PetTable.petTable, pet));
+          assertThrows(JdbcExecutionException.class, () -> executor.insertInto(PetTable.petTable).value(pet).write());
 
       SQLException sqlFailure = (SQLException) failure.getCause();
       assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());
@@ -171,10 +167,8 @@ class SkisProjectionPostgreSqlContractTest {
 
     try {
       for (int index = 0; index < ids.size(); index++) {
-        executor.insert(
-            PetTable.petTable,
-            new Pet(
-                ids.get(index), "page-" + index, new BigDecimal("10.00"), false, null, "ignored"));
+        executor.insertInto(PetTable.petTable).value(new Pet(
+                ids.get(index), "page-" + index, new BigDecimal("10.00"), false, null, "ignored")).write();
       }
       PetTable pet = PetTable.petTable;
       SelectQuery<Pet> query =

@@ -1,5 +1,68 @@
 # 分支覆盖率与逐模块棘轮
 
+## PR #96：T03 覆盖率抬线与 mutation 补证（待新 CI 验证）
+
+[CI 40667070929 的权威作业](https://github.com/xhufang/skis/actions/runs/40667070929/job/122744135913?pr=96)
+已通过 Java 21 完整构建、97 个必需回归套件、PG 合同、覆盖采集及证据上传。
+Java 25、PG 容器/外部 URL、独立消费者、Gradle 与发布边界作业均通过；
+Java 21 单元和集成名称转发权威门禁失败，不是额外的测试失败。
+首个原始阻断为 sql-ast 覆盖率应抬未抬，完整候选还显示 mutation 回退，不能整体覆盖现有基线。
+
+PR head 为 `59711348fde79a51b6249678e211cc0f0e968cbf`，实际测试合并提交为
+`596a4493f51918b86d176aebca3b548c7bf50d3c`，比较 base 为 `1899270ba880601d276ed324bcbab40cb9e359fd`。
+[工件 12806064079](https://github.com/xhufang/skis/actions/runs/40667070929/artifacts/12806064079)
+为 `branch-coverage-java-21-40667070929-1`，ZIP SHA-256 为
+`aa24360445985ce30db13497fde4ec94a5b75aa98498d725787457a9a08fbdfc`，与 GitHub 元数据一致。
+已静态核对运行/尝试、工作流、合并父提交、七项 producer blob、提交内 policy/baseline 原始摘要、可信 comparison 基线，
+以及全部 15 模块 XML SHA-256、逐类/汇总分支计数、类清单和 HTML 报告。
+
+仅原样登记以下五项提升行及来源，其余十行、首次登记、统计口径与历史保持不变：
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-sql-ast | 83.14% | 1538/291 | 105 | 84.08% |
+| skis-dialect-api | 81.38% | 1178/258 | 39 | 82.03% |
+| skis-dialect-support | 89.83% | 285/30 | 8 | 90.47% |
+| skis-jdbc | 78.98% | 277/67 | 25 | 80.52% |
+| skis-query | 77.99% | 1922/540 | 191 | 78.06% |
+
+mutation 本轮为 393/75、46 类、83.97%，保留原有 84.65% 门槛及历史来源，不采用降线候选。
+对应 XML 显示动态条件写入的 `ValuesBinder.bindObserved` 尚未执行。
+DynamicMutationPlansTest 新增实际编译计划的观察绑定合同：非默认 JDBC 起始下标、有序值与类型、先绑定后观察，
+以及首项耗尽观察预算和初始即无观察需求时仍绑定全部后续槽位、不再探测或发送观察回调。
+不修改生产实现、不增加测试专用生产入口，不预测新覆盖率。
+
+本次仅静态核对工件、登记提升行和补充测试源码，未编译运行、执行项目检查器或 benchmark。
+取证保存在被忽略的 `target/ci-coverage-40667070929/`；新增测试、mutation 回退补证及完整来源认证待新 CI，T03 尚未关闭。
+
+后续 [CI 40673100500 的权威作业](https://github.com/xhufang/skis/actions/runs/40673100500/job/122764589333?pr=96)
+已通过构建和全部必需回归套件，新增观察绑定合同也通过；唯一原始阻断仍为 mutation 低于历史门槛。
+head 为 `6e0146b4e25ca55336e7b2de1f4ca7f69aae0db8`，测试合并提交为
+`3aa127dbfd1ad4858327306eff58eb11d2fd0b3a`。
+[工件 12809945079](https://github.com/xhufang/skis/actions/runs/40673100500/artifacts/12809945079)
+为 `branch-coverage-java-21-40673100500-1`，ZIP SHA-256 为
+`5ed3c7ae553c7775b96d0ff6234f8376f388db2a28abc65983d808d08e7a94c2`，已与 GitHub 元数据核对。
+mutation 实测 396/72、46 类、84.61%；逐类 XML 对比确认 `ValuesBinder.bindObserved` 新覆盖全部 4 个分支，
+但 `DynamicMutationPlans.cached` 的锁内已发布计划复用路径本轮未触发，较上轮少覆盖 1 个分支。
+本次将原有 32 请求并发测试改为：先阻塞首个编译，确认至少一个请求进入编译锁等待队列后才允许发布，
+再断言全部请求复用同一计划、仅创建一次解码器，保留后续命中跳过编译和 clear 后重新编译的断言。
+同步与锁队列检查均位于测试源码，生产实现和基线保持；本地未编译运行，修复仍待新 CI。
+
+[CI 40677618088 的权威作业](https://github.com/xhufang/skis/actions/runs/40677618088/job/122779930933?pr=96)
+已通过 Java 21 完整构建、97 个必需回归套件、PG 合同、覆盖采集及证据上传；
+Java 25、PG 双路径、独立消费者、Gradle 和发布边界作业均通过，唯一原始阻断为 mutation 应抬未抬。
+PR head 为 `4065acabebc938042fb337c703e5e75f24ff6209`，测试合并提交为
+`ac3452c66806c9467c5519e4126634667aec74f7`，比较 base 仍为 `1899270ba880601d276ed324bcbab40cb9e359fd`。
+[工件 12810834280](https://github.com/xhufang/skis/actions/runs/40677618088/artifacts/12810834280)
+为 `branch-coverage-java-21-40677618088-1`，ZIP SHA-256 为
+`085104e3d2bf6ee4dc5d779e4d7e682f1672f9e310293563858ba53c4bffdd6c`，与 GitHub 元数据一致。
+已静态核对运行/尝试、工作流、合并父提交、七项 producer blob、提交内 policy/baseline 原始摘要、可信 comparison 基线，
+以及全部 15 模块 XML SHA-256、逐类/汇总分支计数、类清单和 HTML 报告。
+15 模块均无回退；mutation 实测 397/71、46 类、84.82%，锁内已发布计划复用路径和观察绑定的全部 4 个分支均已覆盖。
+仅原样登记 mutation 候选行及来源，将门槛从 84.65% 提升为 84.82%；其余 14 行、首次登记、统计口径和历史保持。
+本次只修改基线和现有验证记录，未编译运行或执行项目检查器。取证位于被忽略的 `target/ci-coverage-40677618088/`；
+登记后的来源认证与完整门禁仍待新 CI，T03 尚未关闭。
+
 ## PR #95：主键生成覆盖率抬线与回退补证（待新 CI 验证）
 
 ### CI 40465466642：登记 mutation 提升并固定 CAS 重试覆盖

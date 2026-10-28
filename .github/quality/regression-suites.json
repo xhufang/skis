@@ -44,7 +44,8 @@
       "io.skis.jdbc.JdbcExecutorTest",
       "io.skis.jdbc.JdbcFailureContractTest",
       "io.skis.jdbc.JdbcTransactionTest",
-      "io.skis.jdbc.internal.ParameterLoggingTest"
+      "io.skis.jdbc.internal.ParameterLoggingTest",
+      "io.skis.jdbc.ReturningExecutionTest"
     ],
     "skis-dialect-support": [
       "io.skis.dialect.support.AggregateDialectTest",
@@ -52,7 +53,8 @@
       "io.skis.dialect.support.DerivedTableSqlRendererTest",
       "io.skis.dialect.support.JoinSqlRendererTest",
       "io.skis.dialect.support.StandardIdentifierRulesTest",
-      "io.skis.dialect.support.StandardSqlRendererTest"
+      "io.skis.dialect.support.StandardSqlRendererTest",
+      "io.skis.dialect.support.ReturningPipelineTest"
     ],
     "skis-query": [
       "io.skis.query.internal.AggregateInputMappingTest",
@@ -81,7 +83,9 @@
       "io.skis.mutation.MutationExecutionDiagnosticsTest",
       "io.skis.mutation.MutationPlanCompilerTest",
       "io.skis.mutation.MutationTypeSafetyCompilationTest",
-      "io.skis.mutation.internal.MutationParameterBindingTest"
+      "io.skis.mutation.internal.MutationParameterBindingTest",
+      "io.skis.mutation.internal.WrittenTest",
+      "io.skis.mutation.internal.DynamicMutationPlansTest"
     ],
     "skis-runtime": [
       "io.skis.runtime.DefaultSkisSessionTest",
@@ -99,12 +103,14 @@
       "io.skis.dialect.postgresql.PostgreSqlCodecsTest",
       "io.skis.dialect.postgresql.PostgreSqlDerivedTableDialectTest",
       "io.skis.dialect.postgresql.PostgreSqlDialectTest",
-      "io.skis.dialect.postgresql.PostgreSqlJoinDialectTest"
+      "io.skis.dialect.postgresql.PostgreSqlJoinDialectTest",
+      "io.skis.dialect.postgresql.PostgreSqlReturningDialectTest"
     ],
     "skis-dialect-h2": [
       "io.skis.dialect.h2.H2DerivedTableDialectTest",
       "io.skis.dialect.h2.H2DialectTest",
-      "io.skis.dialect.h2.H2JoinDialectTest"
+      "io.skis.dialect.h2.H2JoinDialectTest",
+      "io.skis.dialect.h2.H2ReturningDialectTest"
     ],
     "skis-spring": [
       "io.skis.spring.SkisExceptionTranslatorTest",
@@ -123,7 +129,8 @@
       "io.skis.integration.SkisJoinH2ContractTest",
       "io.skis.integration.SkisMutationTransactionTest",
       "io.skis.integration.SkisProjectionIntegrationTest",
-      "io.skis.integration.SkisSpecialProjectionH2ContractTest"
+      "io.skis.integration.SkisSpecialProjectionH2ContractTest",
+      "io.skis.integration.SkisReturningH2ContractTest"
     ]
   }
 }

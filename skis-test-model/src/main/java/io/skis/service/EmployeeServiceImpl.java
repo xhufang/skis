@@ -42,7 +42,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   @Override
   public Employee createEmployee(Employee employee) {
     prepareForInsert(employee);
-    skisExecutor.insert(EMPLOYEE, employee);
+    skisExecutor.insertInto(EMPLOYEE).value(employee).write();
     return employee;
   }
 
@@ -54,10 +54,11 @@ public class EmployeeServiceImpl implements EmployeeService {
 
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(EMPLOYEE, employee);
+          session.insertInto(EMPLOYEE).value(employee).write();
           for (Long projectId : distinctProjectIds) {
-            session.insert(
-                LINK, newLink(Objects.requireNonNull(employee.getId(), "employee id"), projectId));
+            session.insertInto(LINK)
+                .value(newLink(Objects.requireNonNull(employee.getId(), "employee id"), projectId))
+                .write();
           }
           return employee;
         });

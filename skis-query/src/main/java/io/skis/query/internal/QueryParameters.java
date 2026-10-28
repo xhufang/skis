@@ -179,6 +179,11 @@ final class QueryParameters {
 
   /** Projects captured values directly into the logical slots retained by one final statement. */
   QueryArguments valuesFor(List<QueryParameter<?>> parameters) {
+    return QueryArguments.fromProjectedValues(projectValues(parameters));
+  }
+
+  /** Projects captured bindings into a fresh array owned by the consuming statement. */
+  @Nullable Object[] projectValues(List<QueryParameter<?>> parameters) {
     Objects.requireNonNull(parameters, "parameters");
     @Nullable Object[] values = new @Nullable Object[parameters.size()];
     for (int index = 0; index < parameters.size(); index++) {
@@ -191,7 +196,7 @@ final class QueryParameters {
       }
       values[index] = binding.value();
     }
-    return QueryArguments.fromProjectedValues(values);
+    return values;
   }
 
   private static <V> Binding capture(QueryParameter<V> parameter, @Nullable V value) {

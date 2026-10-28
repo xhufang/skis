@@ -76,4 +76,24 @@ foreach ($source in Get-ChildItem -LiteralPath $supportRoot -Recurse -File -Filt
     }
 }
 
-Write-Host "Current contracts verified: query API budget; four independent consumers; no old compatibility gate."
+$mutationRoot = Join-Path $RepositoryRoot 'skis-mutation/src/main/java/io/skis/mutation'
+if (Test-Path -LiteralPath (Join-Path $mutationRoot 'InsertResult.java')) {
+    throw 'Removed InsertResult must not return as a compatibility shell'
+}
+foreach ($relative in @('skis-mutation/src/main/java/io/skis/mutation/MutationOperations.java',
+    'skis-runtime/src/main/java/io/skis/runtime/DefaultSkisExecutor.java',
+    'skis-runtime/src/main/java/io/skis/runtime/DefaultSkisSession.java')) {
+    $source = [System.IO.File]::ReadAllText((Join-Path $RepositoryRoot $relative))
+    if ($source -match '\b(insert|insertResult|insertReturning|batchInsert)\s*\(') {
+        throw "Obsolete entity insertion entrypoint: $relative"
+    }
+    if ($source -notmatch '\binsertInto\s*\(') { throw "Missing insertInto: $relative" }
+}
+foreach ($stage in @('InsertInto', 'InsertWrite', 'BatchInsertWrite', 'ReturningWrite', 'Written',
+    'UpdateSet', 'UpdateWrite', 'DeleteWrite')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $mutationRoot "$stage.java"))) {
+        throw "Missing staged mutation contract: $stage"
+    }
+}
+
+Write-Host "Current contracts verified: query API budget; staged mutations; four independent consumers; no old compatibility gate."

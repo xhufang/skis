@@ -12,7 +12,13 @@ import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PropertyMeta;
+import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SqlExpression;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -30,6 +36,8 @@ final class EntityMutationPlanSet<E> {
   private final PropertyMeta<E, ?> idProperty;
   private final IdGeneration generation;
   private final JdbcTypeCodec<?> idCodec;
+  private final RuntimeMutationTable<E> insertTable;
+  private final InsertStatement insertStatement;
 
   EntityMutationPlanSet(
       EntityRuntimeModel<E> model,
@@ -57,6 +65,17 @@ final class EntityMutationPlanSet<E> {
     this.idProperty = primaryKey.properties().getFirst();
     this.generation = primaryKey.generation();
     this.idCodec = model.property(idProperty).codec();
+    this.insertTable = new RuntimeMutationTable<>(model.entity());
+    List<ColumnExpression<?, ?>> columns = new ArrayList<>();
+    List<SqlExpression<?>> values = new ArrayList<>();
+    for (var property : model.entity().properties()) {
+      if (property.column().insertable()
+          && !(generation == IdGeneration.IDENTITY && property == idProperty)) {
+        columns.add(insertTable.expression(property));
+        values.add(new ParameterSlot<>(values.size(), property.javaType(), property.column().nullable()));
+      }
+    }
+    this.insertStatement = new InsertStatement(insertTable, columns, values);
     this.generatedInsert =
         insert == null || generation == IdGeneration.ASSIGNED
             ? null
@@ -77,6 +96,15 @@ final class EntityMutationPlanSet<E> {
 
   EntityMeta<E> entity() {
     return model.entity();
+  }
+
+  InsertStatement insertStatement() {
+    return insertStatement;
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  ColumnExpression<?, ?> returningColumn(PropertyMeta<?, ?> property) {
+    return insertTable.expression((PropertyMeta) property);
   }
 
   CompiledMutationPlan<E> insert() {

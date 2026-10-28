@@ -1,5 +1,6 @@
 package io.skis.query;
 
+import io.skis.query.internal.QueryDsl;
 import io.skis.query.spi.ProjectionMapping;
 import java.util.List;
 
@@ -9,7 +10,7 @@ public interface ProjectionSelection<R> {
   /** Infrastructure factory used by the generated projection SPI contract. */
   static <R> ProjectionSelection<R> generated(
       ProjectionMapping<R> mapping, List<? extends Selectable<?>> selections) {
-    return io.skis.query.internal.QueryDsl.projection(mapping, selections);
+    return QueryDsl.projection(mapping, selections);
   }
 
   /** Returns the user result type produced by this selection. */

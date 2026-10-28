@@ -50,9 +50,9 @@ class PostgreSqlConsumerTest {
         Stream.generate(() -> UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE)
             .distinct().limit(3).sorted().toList();
     try {
-      executor.insert(pet, new Pet(ids.get(0), "aggregate-a", null));
-      executor.insert(pet, new Pet(ids.get(1), "aggregate-a", null));
-      executor.insert(pet, new Pet(ids.get(2), "aggregate-b", null));
+      executor.insertInto(pet).value(new Pet(ids.get(0), "aggregate-a", null)).write();
+      executor.insertInto(pet).value(new Pet(ids.get(1), "aggregate-a", null)).write();
+      executor.insertInto(pet).value(new Pet(ids.get(2), "aggregate-b", null)).write();
       var suffix = Sql.parameter(String.class, "suffix");
       var key = Sql.concat(pet.name(), Sql.value(suffix));
       var count = Sql.countAll();
@@ -153,7 +153,7 @@ class PostgreSqlConsumerTest {
             .toList();
     try {
       for (int index = 0; index < 3; index++) {
-        executor.insert(pet, new Pet(ids.get(index), "sensitive-consumer-" + index, null));
+        executor.insertInto(pet).value(new Pet(ids.get(index), "sensitive-consumer-" + index, null)).write();
       }
       assertEquals(
           "sensitive-consumer-0", executor.findById(pet, ids.getFirst()).orElseThrow().name());
@@ -210,7 +210,7 @@ class PostgreSqlConsumerTest {
           IllegalStateException.class,
           () -> executor.inTransaction(
               session -> {
-                session.insert(pet, new Pet(ids.getLast(), "rolled-back-consumer", null));
+                session.insertInto(pet).value(new Pet(ids.getLast(), "rolled-back-consumer", null)).write();
                 assertTrue(session.findById(pet, ids.getLast()).isPresent());
                 throw new IllegalStateException("force rollback");
               }));
@@ -221,7 +221,7 @@ class PostgreSqlConsumerTest {
       JdbcExecutionException failure =
           assertThrows(
               JdbcExecutionException.class,
-              () -> executor.insert(pet, new Pet(ids.getFirst(), "sensitive-duplicate", null)));
+              () -> executor.insertInto(pet).value(new Pet(ids.getFirst(), "sensitive-duplicate", null)).write());
       assertEquals("23505", failure.sqlState());
       SQLException sqlFailure = assertInstanceOf(SQLException.class, failure.getCause());
       assertEquals("23505", sqlFailure.getSQLState());

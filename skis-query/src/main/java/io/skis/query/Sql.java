@@ -1,5 +1,6 @@
 package io.skis.query;
 
+import io.skis.query.internal.QueryDsl;
 import io.skis.query.internal.StandardExpressions;
 import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticOperator;
@@ -56,14 +57,12 @@ public final class Sql {
   }
 
   /** Creates a nullable aggregate with a fixed BigInteger result and an exact input whitelist. */
-  public static Selectable<BigInteger> sumAsBigInteger(
-      Selectable<? extends Number> expression) {
+  public static Selectable<BigInteger> sumAsBigInteger(Selectable<? extends Number> expression) {
     return StandardExpressions.numericAggregate(expression, AggregateExpression::sumAsBigInteger);
   }
 
   /** Creates a nullable aggregate with a fixed BigDecimal result and an exact input whitelist. */
-  public static Selectable<BigDecimal> sumAsBigDecimal(
-      Selectable<? extends Number> expression) {
+  public static Selectable<BigDecimal> sumAsBigDecimal(Selectable<? extends Number> expression) {
     return StandardExpressions.numericAggregate(expression, AggregateExpression::sumAsBigDecimal);
   }
 
@@ -73,8 +72,7 @@ public final class Sql {
   }
 
   /** Creates a nullable aggregate with a fixed BigDecimal result and an exact input whitelist. */
-  public static Selectable<BigDecimal> avgAsBigDecimal(
-      Selectable<? extends Number> expression) {
+  public static Selectable<BigDecimal> avgAsBigDecimal(Selectable<? extends Number> expression) {
     return StandardExpressions.numericAggregate(expression, AggregateExpression::avgAsBigDecimal);
   }
 
@@ -202,76 +200,76 @@ public final class Sql {
 
   /** Selects a complete entity before an independent of root is chosen. */
   public static <E> SelectFromStep<SelectDescription<E>> select(QueryTable<E> table) {
-    return io.skis.query.internal.QueryDsl.select(table);
+    return QueryDsl.select(table);
   }
 
   /** Selects one declared non-null SQL value and preserves the one-column result shape. */
   public static <V> SelectFromStep<SingleColumnSelect<V>> select(NonNullSelectable<V> selectable) {
-    return io.skis.query.internal.QueryDsl.select(selectable);
+    return QueryDsl.select(selectable);
   }
 
   /** Selects one conservatively nullable SQL value and preserves the one-column result shape. */
   public static <V> SelectFromStep<SingleColumnSelect<@Nullable V>> select(
       Selectable<V> selectable) {
-    return io.skis.query.internal.QueryDsl.select(selectable);
+    return QueryDsl.select(selectable);
   }
 
   /** Selects one generated, fixed-arity result-row shape. */
   public static <R> SelectFromStep<SelectDescription<R>> select(ProjectionSelection<R> projection) {
-    return io.skis.query.internal.QueryDsl.select(projection);
+    return QueryDsl.select(projection);
   }
 
   /** Explicitly permits a complete entity selection to become nullable after outer joins. */
   public static <E> SelectFromStep<SelectDescription<@Nullable E>> selectNullable(
       QueryTable<E> table) {
-    return io.skis.query.internal.QueryDsl.selectNullable(table);
+    return QueryDsl.selectNullable(table);
   }
 
   /** Explicitly permits a declared non-null value to become nullable in query context. */
   public static <V> SelectFromStep<SingleColumnSelect<@Nullable V>> selectNullable(
       NonNullSelectable<V> selectable) {
-    return io.skis.query.internal.QueryDsl.selectNullable(selectable);
+    return QueryDsl.selectNullable(selectable);
   }
 
   /** Creates the complete-entity SELECT/FROM convenience description. */
   public static <E> SelectDescription<E> selectFrom(QueryTable<E> table) {
-    return io.skis.query.internal.QueryDsl.selectFrom(table);
+    return QueryDsl.selectFrom(table);
   }
 
   public static <V> NonNullDerivedOutput<V> output(NonNullSelectable<V> selectable, String alias) {
-    return io.skis.query.internal.QueryDsl.output(selectable, alias);
+    return QueryDsl.output(selectable, alias);
   }
 
   public static <V> DerivedOutput<V> output(Selectable<V> selectable, String alias) {
-    return io.skis.query.internal.QueryDsl.output(selectable, alias);
+    return QueryDsl.output(selectable, alias);
   }
 
   public static <V> DerivedOutput<V> outputNullable(NonNullSelectable<V> selectable, String alias) {
-    return io.skis.query.internal.QueryDsl.outputNullable(selectable, alias);
+    return QueryDsl.outputNullable(selectable, alias);
   }
 
   public static DerivedRelation derived(
       SelectDescription<?> description, String alias, DerivedOutput<?>... outputs) {
-    return io.skis.query.internal.QueryDsl.derived(description, alias, outputs);
+    return QueryDsl.derived(description, alias, outputs);
   }
 
   public static QueryCondition exists(SelectDescription<?> description) {
-    return io.skis.query.internal.QueryDsl.exists(description);
+    return QueryDsl.exists(description);
   }
 
   public static QueryCondition notExists(SelectDescription<?> description) {
-    return io.skis.query.internal.QueryDsl.notExists(description);
+    return QueryDsl.notExists(description);
   }
 
   public static <V> Selectable<V> scalar(SingleColumnSelect<V> subquery) {
-    return io.skis.query.internal.QueryDsl.scalar(subquery);
+    return QueryDsl.scalar(subquery);
   }
 
   public static <V> QueryParameter<V> parameter(Class<V> javaType) {
-    return io.skis.query.internal.QueryDsl.parameter(javaType);
+    return QueryDsl.parameter(javaType);
   }
 
   public static <V> QueryParameter<V> parameter(Class<V> javaType, String diagnosticName) {
-    return io.skis.query.internal.QueryDsl.parameter(javaType, diagnosticName);
+    return QueryDsl.parameter(javaType, diagnosticName);
   }
 }

@@ -38,6 +38,7 @@ import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectPagination;
 import io.skis.sql.ast.SelectStatement;
@@ -183,6 +184,10 @@ public final class RenderInput {
             ResolvedStatement.adopt(select, SemanticValidator.analyzeComplete(select));
         case CountAst count ->
             ResolvedStatement.adopt(count, SemanticValidator.analyzeComplete(count));
+        case ReturningStatement returning -> {
+          SemanticValidator.validateComplete(returning);
+          yield ResolvedStatement.adopt(returning, null);
+        }
         case InsertStatement insert -> {
           SemanticValidator.validateComplete(insert);
           yield ResolvedStatement.adopt(insert, null);
@@ -374,6 +379,16 @@ public final class RenderInput {
     private static void validate(
         StatementAst statement, DialectCapabilities capabilities, String dialectId) {
       switch (statement) {
+        case ReturningStatement returning -> {
+          boolean resultTable = returning.form() != ReturningStatement.Form.NATIVE;
+          if (resultTable != capabilities.supports(DialectFeature.MUTATION_RESULT_TABLE)) {
+            throw new IllegalArgumentException("RETURNING form does not match target capabilities");
+          }
+          validate(returning.mutation(), capabilities, dialectId);
+          returning
+              .selections()
+              .forEach(value -> validateExpression(value, capabilities, dialectId));
+        }
         case SelectStatement select -> validateSelect(select, capabilities, dialectId);
         case CountAst count -> validateCount(count, capabilities, dialectId);
         case InsertStatement insert -> {

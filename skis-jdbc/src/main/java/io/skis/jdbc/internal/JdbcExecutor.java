@@ -27,6 +27,7 @@ import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.ParameterBinder;
+import io.skis.mapping.spi.RowDecoder;
 import io.skis.mapping.spi.RowReadContext;
 import java.lang.ref.Cleaner;
 import java.sql.Connection;
@@ -629,6 +630,168 @@ public final class JdbcExecutor {
             throw failure;
           }
         });
+  }
+
+  /** Executes a mutation and returns its detached, immutable rows with an exact row count. */
+  @SuppressWarnings("unchecked")
+  public <R, P> List<R> executeReturning(
+      CompiledMutationPlan<P> plan,
+      RowDecoder<R> decoder,
+      int columnCount,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return (List<R>)
+        executeReturningResult(
+            plan, decoder, columnCount, false, parameters, executionContext, observation, purpose);
+  }
+
+  /** Executes an INSERT and returns exactly one detached row without a collection buffer. */
+  @SuppressWarnings("unchecked")
+  public <R, P> R executeReturningOne(
+      CompiledMutationPlan<P> plan,
+      RowDecoder<R> decoder,
+      int columnCount,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return (R)
+        executeReturningResult(
+            plan, decoder, columnCount, true, parameters, executionContext, observation, purpose);
+  }
+
+  // The typed entrypoints fix the result shape; both share resource and observation ownership.
+  private <R, P> Object executeReturningResult(
+      CompiledMutationPlan<P> plan,
+      RowDecoder<R> decoder,
+      int columnCount,
+      boolean requireSingleRow,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    Objects.requireNonNull(plan, "plan");
+    Objects.requireNonNull(decoder, "decoder");
+    Objects.requireNonNull(executionContext, "executionContext");
+    ExecutionOptions overrides = executionContext.executionOptions();
+    int maxRows =
+        overrides.hasMaxRows()
+            ? overrides.maxRows()
+            : defaultExecutionOptions.hasMaxRows() ? defaultExecutionOptions.maxRows() : 0;
+    if (maxRows > 0) {
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_UNSUPPORTED,
+          "mutation RETURNING requires unlimited maxRows for exact affected-row counts");
+    }
+    return withConnection(
+        executionContext,
+        (phase, failure) -> translate(plan, phase, failure),
+        connection -> {
+          StatementObservation statementObservation = startStatement(observation, purpose, plan);
+          long read = 0L;
+          try {
+            R singleResult = null;
+            List<R> results = requireSingleRow ? null : new ArrayList<>();
+            PreparedStatement statement =
+                prepare(
+                    connection,
+                    plan.sql(),
+                    plan.parameterCount(),
+                    plan.parameterBinder(),
+                    parameters,
+                    executionContext,
+                    NO_MINIMUM_MAX_ROWS,
+                    statementObservation);
+            Throwable statementFailure = null;
+            try {
+              ResultSet resultSet = executeReturningQuery(statement, statementObservation);
+              Throwable resultFailure = null;
+              try {
+                var metadata = resultSet.getMetaData();
+                if (metadata == null || metadata.getColumnCount() != columnCount) {
+                  throw MutationException.of(
+                      SkisErrorCode.MUTATION_RETURNING_SHAPE,
+                      "RETURNING column count differs from its compiled layout");
+                }
+                while (resultSet.next()) {
+                  read++;
+                  if (requireSingleRow && read > 1) {
+                    throw MutationException.of(
+                        SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
+                        "single-row INSERT RETURNING returned multiple rows");
+                  }
+                  R value = decoder.decode(resultSet, rowReadContext);
+                  if (value == null) {
+                    throw MutationException.of(
+                        SkisErrorCode.MUTATION_RETURNING_SHAPE,
+                        "mutation RETURNING decoder returned null");
+                  }
+                  if (results == null) {
+                    singleResult = value;
+                  } else {
+                    results.add(value);
+                  }
+                }
+                if (requireSingleRow && read != 1) {
+                  throw MutationException.of(
+                      SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
+                      "single-row INSERT RETURNING must return exactly one row");
+                }
+              } catch (SQLException | RuntimeException | Error failure) {
+                resultFailure = failure;
+                throw failure;
+              } finally {
+                try {
+                  resultSet.close();
+                } catch (SQLException | RuntimeException | Error failure) {
+                  generatedCloseFailure(JdbcPhase.RESULT_SET_CLOSE, failure, resultFailure);
+                }
+              }
+            } catch (SQLException | RuntimeException | Error failure) {
+              statementFailure = failure;
+              throw failure;
+            } finally {
+              try {
+                statement.close();
+              } catch (SQLException | RuntimeException | Error failure) {
+                generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, statementFailure);
+              }
+            }
+            Object completed =
+                requireSingleRow
+                    ? Objects.requireNonNull(singleResult)
+                    : List.copyOf(Objects.requireNonNull(results));
+            completeStatementSucceeded(statementObservation, read, read);
+            return completed;
+          } catch (PhasedSqlFailure failure) {
+            RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+            completeStatementFailed(statementObservation, translated, read, unknownRowCount());
+            throw translated;
+          } catch (SQLException failure) {
+            RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+            completeStatementFailed(statementObservation, translated, read, unknownRowCount());
+            throw translated;
+          } catch (RuntimeException | Error failure) {
+            completeStatementFailed(statementObservation, failure, read, unknownRowCount());
+            throw failure;
+          }
+        });
+  }
+
+  private static ResultSet executeReturningQuery(
+      PreparedStatement statement, @Nullable StatementObservation observation) throws SQLException {
+    try {
+      if (statement.getMaxRows() > 0) {
+        throw MutationException.of(
+            SkisErrorCode.MUTATION_UNSUPPORTED,
+            "configured statement truncates mutation RETURNING rows");
+      }
+    } catch (SQLException failure) {
+      throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
+    }
+    return executeQuery(statement, observation);
   }
 
   /** Executes one INSERT and reads its explicitly requested, single non-null generated key. */

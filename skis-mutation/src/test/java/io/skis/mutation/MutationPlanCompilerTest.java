@@ -2,6 +2,7 @@ package io.skis.mutation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.MutationException;
 import io.skis.dialect.spi.Dialect;
@@ -52,7 +53,8 @@ class MutationPlanCompilerTest {
                 MutationRuntime.compile(
                     EntityRuntimeRegistry.of(List.of(runtimeModel())), ReorderingDialect.INSTANCE));
 
-    assertEquals(io.skis.core.SkisErrorCode.DIALECT_PARAMETER_SHAPE, failure.code());
+    assertEquals(io.skis.core.SkisErrorCode.DIALECT_INVALID_STRUCTURE, failure.code());
+    assertTrue(failure.getMessage().contains("output leaf or logical parameter changed"));
   }
 
   private static EntityRuntimeModel<Pet> runtimeModel() {

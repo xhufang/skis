@@ -1,7 +1,7 @@
 # 主键生成与插入结果
 
-> 适用版本：`0.2.10-SNAPSHOT`，生成模型 ABI 9。T02 源码与测试已实现，当前提交待 CI、H2/PostgreSQL 真实驱动及消费者验证。
-> 本地未编译运行；此前里程碑的成功记录不证明本次新增能力通过。
+> 适用版本：`0.2.10-SNAPSHOT`，生成模型 ABI 9。T02 基线 1899270 已通过 CI/PG/H2/消费者验收；T03 唯一插入入口和 RETURNING 已实现，当前变更待验证。
+> 本地未编译运行；历史基线不证明新入口通过。完整用法见[写入阶段与 RETURNING](mutation-returning.md)。
 
 ## 1. 显式选择策略
 
@@ -45,25 +45,28 @@ public record Ticket(@Id(strategy = IdStrategy.UUID) @Nullable UUID id, String t
 
 ```java
 var executor = Skis.builder(dataSource).dialect(dialect).build();
-InsertResult<Ticket> inserted = executor.insertResult(TicketTable.ticketTable, new Ticket(null, "new"));
-java.util.UUID id = inserted.entity().id();
+Written<Ticket> inserted = executor.insertInto(TicketTable.ticketTable)
+    .value(new Ticket(null, "new")).returning().write();
+java.util.UUID id = inserted.get().id();
 ```
 
-`InsertResult<E>` 包含 `affectedRows()` 和 `entity()`，要求恰好影响一行。通过实体 getter/accessor 取得真实主键类型。
-插入前声明为 `@Nullable` 的 accessor 在 Java 类型系统中仍可空；运行成功不会改变其签名。
+`Written<E>` 提供 affectedRows 和 Optional 风格结果访问；访问始终只读内存。单条 INSERT 要求恰好一行。
+生成 accessor 原有 JSpecify 可空性保持，运行成功不会改变其 Java 签名。
 
-Bean 在成功后原地回填并返回同一对象；record 通过生成的 canonical constructor 仅替换主键，
-其余 component（包括 transient）保持输入值。已有 UUID/雪花主键不再写 setter，也不复制 record。
+完整 returning 读取数据库实际持久化列，包括 default/trigger/初始化版本；record 的非持久 component 使用 Decoder 缺省值。
+返回 Bean 不承诺同一实例；输入 Bean 只在成功后回填需要变更的主键，不自动回写其他返回字段。
+已有 UUID/雪花键与返回键相同时不调用 setter，不同时成功后回填数据库实际键，最多一次。
+ASSIGNED 输入键不执行生成键回填；请求的返回实体/投影仍反映数据库返回值。
 
-`insert(...)` 继续返回 int。ASSIGNED 的计数路径不创建 InsertArguments、InsertResult 或 record 副本。
-Bean 的四策略均支持计数入口；使用生成策略的 record 一律要求 `insertResult(...)`，即使调用方已经提供 UUID/雪花值。
-两个入口及 executor/Session 都支持 `ExecutionOptions` 重载。
-
-结果只确认本次主键，不刷新数据库 default、trigger 或初始化版本字段。任意列返回属于后续 RETURNING 任务。
+不配置 returning 的 write 返回 int。ASSIGNED 计数不创建 InsertArguments、Written 或完整实体 Decoder；
+Bean 支持四策略计数，generated record 计数在 JDBC 前拒绝，即使已经提供 UUID/雪花值。
+显式返回 record 投影时不创建实体副本；需要键时应在投影选择中包含键。Bean 投影未选键时追加内部隐藏键，不改变 Pro 字段顺序。
+write(options) 保持 executor/Session 默认值、单次覆盖和事务时限；insertInto/value/values/returning 本身不执行。
 
 ## 3. 生成键与资源时序
 
-IDENTITY 依赖方言声明 `JDBC_GENERATED_KEYS`；PG/H2 已声明，第三方缺少能力时在装配失败。
+IDENTITY 要求方言至少支持 JDBC_GENERATED_KEYS 或 MUTATION_RETURNING；两者都没有时装配失败。
+计数路径独立要求 JDBC_GENERATED_KEYS；显式 returning 独立要求返回能力。PG/H2 均已有接线，T03 返回路径待当前变更验证。
 框架使用 `prepareStatement(sql, new String[]{physicalIdColumn})` 请求受校验的物理主键列；
 驱动得到独立数组，列名不是带 SQL 引号的片段。
 
@@ -71,10 +74,10 @@ IDENTITY 依赖方言声明 `JDBC_GENERATED_KEYS`；PG/H2 已声明，第三方�
 不把字符、浮点或 decimal 转成整数主键。使用声明 Java 类型的内置 Codec 按下标 1 解码；整数越界不截断。
 驱动异常返回 null 的键元数据时，以 SKISM016 拒绝结果并按原有顺序关闭资源。
 没有可插入列的自增实体使用统一 AST 的 `INSERT INTO ... DEFAULT VALUES`，需要 `INSERT_DEFAULT_VALUES` 能力。
-框架不执行额外 SELECT、不拼接 RETURNING 获取主键，也不自动重试写入。
+计数模式不执行额外 SELECT 或自动重试。显式 RETURNING 通过统一 AST/受控方言管线生成，单条语句不再请求 getGeneratedKeys。
 
 UUID/雪花值先保存在本次参数载体中，原实体保持未生成状态。只有执行、键映射、ResultSet/Statement 关闭
-和本次拥有的连接释放都成功，才调用 setter 或复制 record。Session 保留所属事务的连接所有权。
+和本次拥有的连接释放都成功，才按需调用输入 Bean 的 setter。record 从显式返回 Decoder 取得数据库结果。Session 保留所属事务的连接所有权。
 
 | 情况 | 内存与结果语义 |
 | --- | --- |
@@ -115,7 +118,7 @@ APT 生成 `EntityIdAccess` 和 `ParameterBinder<InsertArguments<E>>`，直接�
 参数载体、实体和生成器状态不进入 AST 或共享计划；Session 复用预编译计划。
 
 ABI 9 要求实体、投影、生成索引和 runtime 使用一致处理器重新生成；ABI 8 被明确拒绝。
-`InsertResult`、`InsertArguments` 的默认文本固定脱敏；框架诊断不输出原始主键或实体内容。
+`Written`、`InsertArguments` 的默认文本固定脱敏；框架诊断不输出原始主键或实体内容。
 
 APT 的 SKIS042—044 和运行时 SKISM014—018 分别见 [APT 码表](apt-error-codes.md)与[运行时码表](runtime-error-codes.md)。
 雪花回拨、序列耗尽和纪元越界的固定原因保留在插入异常及操作完成事件的顶层诊断中，同时附带实体、属性和策略上下文；原始异常仍保留为 cause。

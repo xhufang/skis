@@ -1,6 +1,8 @@
 package io.skis.query;
 
 import io.skis.query.internal.SelectableSupport;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.SqlType;
 import java.util.Collection;
@@ -26,119 +28,119 @@ public interface Selectable<V> {
 
   /** Compares this expression with one captured non-null value. */
   default QueryCondition eq(@Nullable V value) {
-    return SelectableSupport.valueComparison(this, io.skis.sql.ast.ComparisonOperator.EQUAL, value);
+    return SelectableSupport.valueComparison(this, ComparisonOperator.EQUAL, value);
   }
 
   /** Compares this expression with a separately bound reusable query parameter. */
   default QueryCondition eq(QueryParameter<V> parameter) {
     return SelectableSupport.parameterComparison(
-        this, io.skis.sql.ast.ComparisonOperator.EQUAL, parameter);
+        this, ComparisonOperator.EQUAL, parameter);
   }
 
   /** Compares two expressions with the same Java value type. */
   default QueryCondition eq(Selectable<V> other) {
     return SelectableSupport.expressionComparison(
-        this, io.skis.sql.ast.ComparisonOperator.EQUAL, other);
+        this, ComparisonOperator.EQUAL, other);
   }
 
   /** Compares this expression with one captured non-null value. */
   default QueryCondition ne(@Nullable V value) {
     return SelectableSupport.valueComparison(
-        this, io.skis.sql.ast.ComparisonOperator.NOT_EQUAL, value);
+        this, ComparisonOperator.NOT_EQUAL, value);
   }
 
   /** Compares this expression with a separately bound reusable query parameter. */
   default QueryCondition ne(QueryParameter<V> parameter) {
     return SelectableSupport.parameterComparison(
-        this, io.skis.sql.ast.ComparisonOperator.NOT_EQUAL, parameter);
+        this, ComparisonOperator.NOT_EQUAL, parameter);
   }
 
   /** Compares two expressions with the same Java value type. */
   default QueryCondition ne(Selectable<V> other) {
     return SelectableSupport.expressionComparison(
-        this, io.skis.sql.ast.ComparisonOperator.NOT_EQUAL, other);
+        this, ComparisonOperator.NOT_EQUAL, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition gt(@Nullable V value) {
     return SelectableSupport.valueComparison(
-        this, io.skis.sql.ast.ComparisonOperator.GREATER_THAN, value);
+        this, ComparisonOperator.GREATER_THAN, value);
   }
 
   /** Applies an ordered comparison to a separately bound reusable query parameter. */
   default QueryCondition gt(QueryParameter<V> parameter) {
     return SelectableSupport.parameterComparison(
-        this, io.skis.sql.ast.ComparisonOperator.GREATER_THAN, parameter);
+        this, ComparisonOperator.GREATER_THAN, parameter);
   }
 
   /** Applies a portable ordered comparison to another expression. */
   default QueryCondition gt(Selectable<V> other) {
     return SelectableSupport.expressionComparison(
-        this, io.skis.sql.ast.ComparisonOperator.GREATER_THAN, other);
+        this, ComparisonOperator.GREATER_THAN, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition ge(@Nullable V value) {
     return SelectableSupport.valueComparison(
-        this, io.skis.sql.ast.ComparisonOperator.GREATER_THAN_OR_EQUAL, value);
+        this, ComparisonOperator.GREATER_THAN_OR_EQUAL, value);
   }
 
   /** Applies an ordered comparison to a separately bound reusable query parameter. */
   default QueryCondition ge(QueryParameter<V> parameter) {
     return SelectableSupport.parameterComparison(
-        this, io.skis.sql.ast.ComparisonOperator.GREATER_THAN_OR_EQUAL, parameter);
+        this, ComparisonOperator.GREATER_THAN_OR_EQUAL, parameter);
   }
 
   /** Applies a portable ordered comparison to another expression. */
   default QueryCondition ge(Selectable<V> other) {
     return SelectableSupport.expressionComparison(
-        this, io.skis.sql.ast.ComparisonOperator.GREATER_THAN_OR_EQUAL, other);
+        this, ComparisonOperator.GREATER_THAN_OR_EQUAL, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition lt(@Nullable V value) {
     return SelectableSupport.valueComparison(
-        this, io.skis.sql.ast.ComparisonOperator.LESS_THAN, value);
+        this, ComparisonOperator.LESS_THAN, value);
   }
 
   /** Applies an ordered comparison to a separately bound reusable query parameter. */
   default QueryCondition lt(QueryParameter<V> parameter) {
     return SelectableSupport.parameterComparison(
-        this, io.skis.sql.ast.ComparisonOperator.LESS_THAN, parameter);
+        this, ComparisonOperator.LESS_THAN, parameter);
   }
 
   /** Applies a portable ordered comparison to another expression. */
   default QueryCondition lt(Selectable<V> other) {
     return SelectableSupport.expressionComparison(
-        this, io.skis.sql.ast.ComparisonOperator.LESS_THAN, other);
+        this, ComparisonOperator.LESS_THAN, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition le(@Nullable V value) {
     return SelectableSupport.valueComparison(
-        this, io.skis.sql.ast.ComparisonOperator.LESS_THAN_OR_EQUAL, value);
+        this, ComparisonOperator.LESS_THAN_OR_EQUAL, value);
   }
 
   /** Applies an ordered comparison to a separately bound reusable query parameter. */
   default QueryCondition le(QueryParameter<V> parameter) {
     return SelectableSupport.parameterComparison(
-        this, io.skis.sql.ast.ComparisonOperator.LESS_THAN_OR_EQUAL, parameter);
+        this, ComparisonOperator.LESS_THAN_OR_EQUAL, parameter);
   }
 
   /** Applies a portable ordered comparison to another expression. */
   default QueryCondition le(Selectable<V> other) {
     return SelectableSupport.expressionComparison(
-        this, io.skis.sql.ast.ComparisonOperator.LESS_THAN_OR_EQUAL, other);
+        this, ComparisonOperator.LESS_THAN_OR_EQUAL, other);
   }
 
   /** Tests whether this expression evaluates to SQL {@code NULL}. */
   default QueryCondition isNull() {
-    return SelectableSupport.nullCheck(this, io.skis.sql.ast.NullOperator.IS_NULL);
+    return SelectableSupport.nullCheck(this, NullOperator.IS_NULL);
   }
 
   /** Tests whether this expression evaluates to a non-null SQL value. */
   default QueryCondition isNotNull() {
-    return SelectableSupport.nullCheck(this, io.skis.sql.ast.NullOperator.IS_NOT_NULL);
+    return SelectableSupport.nullCheck(this, NullOperator.IS_NOT_NULL);
   }
 
   /** Applies a portable inclusive range comparison. */

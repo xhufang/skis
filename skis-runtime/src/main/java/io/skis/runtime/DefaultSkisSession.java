@@ -5,8 +5,10 @@ import io.skis.core.SkisErrorCode;
 import io.skis.core.TransactionException;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.jdbc.internal.JdbcTransaction;
-import io.skis.mutation.InsertResult;
+import io.skis.mutation.DeleteWrite;
+import io.skis.mutation.InsertInto;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.UpdateSet;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;
@@ -105,28 +107,21 @@ final class DefaultSkisSession implements SkisSession {
   }
 
   @Override
-  public <E> int insert(QueryTable<E> table, E value) {
+  public <E> InsertInto<E> insertInto(QueryTable<E> table) {
     requireActive();
-    return mutations.insert(table, value);
+    return mutations.insertInto(table);
   }
 
   @Override
-  public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
+  public <E> UpdateSet<E> update(QueryTable<E> table) {
     requireActive();
-    return mutations.insert(table, value, executionOptions);
+    return mutations.update(table);
   }
 
   @Override
-  public <E> InsertResult<E> insertResult(QueryTable<E> table, E value) {
+  public <E> DeleteWrite<E> deleteFrom(QueryTable<E> table) {
     requireActive();
-    return mutations.insertResult(table, value);
-  }
-
-  @Override
-  public <E> InsertResult<E> insertResult(
-      QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    requireActive();
-    return mutations.insertResult(table, value, executionOptions);
+    return mutations.deleteFrom(table);
   }
 
   @Override

@@ -29,6 +29,7 @@ public final class SemanticValidator {
   public static void validateComplete(StatementAst statement) {
     Objects.requireNonNull(statement, "statement");
     switch (statement) {
+      case ReturningStatement returning -> validateComplete(returning.mutation());
       case SelectStatement select -> validateComplete(select);
       case CountAst count -> validate(count);
       case InsertStatement insert ->

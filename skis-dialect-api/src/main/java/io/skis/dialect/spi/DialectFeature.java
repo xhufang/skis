@@ -78,5 +78,11 @@ public enum DialectFeature {
   JDBC_GENERATED_KEYS,
 
   /** INSERT supports the explicit DEFAULT VALUES form with no bound columns. */
-  INSERT_DEFAULT_VALUES
+  INSERT_DEFAULT_VALUES,
+
+  /** INSERT, UPDATE and DELETE can return explicitly selected target columns. */
+  MUTATION_RETURNING,
+
+  /** Mutation results use FINAL TABLE / OLD TABLE instead of native RETURNING. */
+  MUTATION_RESULT_TABLE
 }

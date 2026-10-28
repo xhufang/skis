@@ -15,6 +15,7 @@ import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ResolvedExpression;
 import io.skis.sql.ast.ResolvedSourceIdentity;
 import io.skis.sql.ast.ResolvedStructureKey;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlExpression;
@@ -70,6 +71,10 @@ public final class ResolvedStatement {
       case SelectStatement select ->
           new ResolvedStatement(select, SemanticValidator.analyzeComplete(select));
       case CountAst count -> new ResolvedStatement(count, SemanticValidator.analyzeComplete(count));
+      case ReturningStatement returning -> {
+        SemanticValidator.validateComplete(returning);
+        yield new ResolvedStatement(returning, null);
+      }
       case InsertStatement insert -> {
         SemanticValidator.validateComplete(insert);
         yield new ResolvedStatement(insert, null);

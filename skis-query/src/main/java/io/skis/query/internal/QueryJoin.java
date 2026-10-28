@@ -11,6 +11,7 @@ import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
@@ -176,9 +177,9 @@ final class QueryStructureCompiler {
     Objects.requireNonNull(groupBy, "groupBy");
     List<JoinClause> joinAst = new ArrayList<>(joins.size());
     try {
-      io.skis.sql.ast.RelationSource rootAst = QueryRelations.compile(root, compiler);
+      RelationSource rootAst = QueryRelations.compile(root, compiler);
       for (QueryJoin join : joins) {
-        io.skis.sql.ast.RelationSource rightAst = QueryRelations.compile(join.right(), compiler);
+        RelationSource rightAst = QueryRelations.compile(join.right(), compiler);
         SqlPredicate on = join.on() == null ? null : QueryConditions.compile(join.on(), compiler);
         joinAst.add(new JoinClause(join.type(), rightAst, on));
       }

@@ -40,7 +40,7 @@ public class ProjectServiceImpl implements ProjectService {
     project.setCreateStamp(now);
     project.setModifyStamp(now);
     project.setVersion(0L);
-    skisExecutor.insert(PROJECT, project);
+    skisExecutor.insertInto(PROJECT).value(project).write();
     return project;
   }
 

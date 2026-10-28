@@ -14,9 +14,10 @@ releases or tags.
 
 The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
 and H2 aggregate contracts have passed CI with their real JDBC drivers and independent consumers.
-The four ID strategies, typed insert results and JDBC generated-key paths are implemented in this
-working tree, with current CI and real-driver verification pending. RETURNING, UPSERT, batch writes,
-raw SQL and driver-level streaming validation remain planned for this milestone; Spring Boot
+The four ID strategies and JDBC generated-key baseline passed CI at `1899270`. The staged
+`insertInto` API, conditional UPDATE/DELETE and typed RETURNING are implemented in this working tree,
+with verification of these changes pending. Nonempty batch execution, UPSERT, raw SQL and
+driver-level streaming validation remain planned for this milestone; Spring Boot
 integration retains its later milestone assignment.
 Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
 for the published and unreleased boundaries.
@@ -35,7 +36,7 @@ Create one thread-safe executor with an explicit dialect:
 SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 PetTable pet = PetTable.petTable;
 
-executor.insert(pet, new Pet(7L, "Mimi", null));
+executor.insertInto(pet).value(new Pet(7L, "Mimi", null)).write();
 Optional<Pet> byId = executor.findById(pet, 7L);
 SingleRow<Pet> selected = executor.selectFrom(pet).where(pet.id().eq(7L)).fetchOne();
 List<Pet> pets = executor.selectFrom(pet).orderBy(pet.id().asc()).fetchList();
@@ -57,7 +58,8 @@ operations. Streams and cursors must be consumed sequentially and closed on thei
 |----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Runtime assembly, entities and reads         | [Executor and generated models](docs/0.0.6-read-slice.md)                                                                                                                             |
 | Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md)                                                                               |
-| Primary keys and typed insert results        | [ID strategies, generated keys and Snowflake deployment](docs/id-generation.md) |
+| Primary keys and typed write results        | [ID strategies, generated keys and Snowflake deployment](docs/id-generation.md) |
+| Staged writes and RETURNING                    | [Conditional writes, results and limits](docs/mutation-returning.md) |
 | User records and classes                     | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md)                                                                |
 | SQL queries                                  | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md)                            |
 | Aggregates and grouped results               | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md)                                                                                                    |

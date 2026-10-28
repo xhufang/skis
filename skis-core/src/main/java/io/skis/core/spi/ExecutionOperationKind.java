@@ -13,6 +13,8 @@ public enum ExecutionOperationKind {
   CURSOR("cursor", SkisOperation.QUERY),
   STREAM("stream", SkisOperation.QUERY),
   INSERT("insert", SkisOperation.MUTATION),
+  UPDATE("update", SkisOperation.MUTATION),
+  DELETE("delete", SkisOperation.MUTATION),
   UPDATE_BY_ID("update-by-id", SkisOperation.MUTATION),
   DELETE_BY_ID("delete-by-id", SkisOperation.MUTATION);
 

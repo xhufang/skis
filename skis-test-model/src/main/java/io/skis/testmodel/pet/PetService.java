@@ -93,7 +93,7 @@ public final class PetService {
 
   /** Insert one complete entity through its generated Binder. */
   public int insert(Pet pet) {
-    return skisExecutor.insert(PET, pet);
+    return skisExecutor.insertInto(PET).value(pet).write();
   }
 
   /**
@@ -115,7 +115,7 @@ public final class PetService {
   public Pet insertAndReload(Pet pet) {
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(PET, pet);
+          session.insertInto(PET).value(pet).write();
           return session.findById(PET, pet.id()).orElseThrow();
         });
   }
@@ -124,7 +124,7 @@ public final class PetService {
   public PetSummary insertAndLoadSummary(Pet pet) {
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(PET, pet);
+          session.insertInto(PET).value(pet).write();
           return session
               .select(PetSummaryPro.of(PET.id(), PET.name(), PET.weight()))
               .from(PET)
@@ -140,7 +140,7 @@ public final class PetService {
    */
   public Pet insertWithExplicitTransaction(Pet pet) {
     try (SkisSession session = skisExecutor.beginTransaction()) {
-      session.insert(PET, pet);
+      session.insertInto(PET).value(pet).write();
       Pet stored = session.findById(PET, pet.id()).orElseThrow();
       session.commit();
       return stored;
@@ -169,7 +169,7 @@ public final class PetService {
     return skisExecutor.inTransaction(
         session -> {
           for (Pet pet : values) {
-            session.insert(PET, pet);
+            session.insertInto(PET).value(pet).write();
           }
           List<Pet> stored =
               values.stream().map(pet -> session.findById(PET, pet.id()).orElseThrow()).toList();
@@ -185,7 +185,7 @@ public final class PetService {
   public List<Pet> insertAndUpdateAtomically(Pet newPet, Pet changedPet, Runnable afterCommit) {
     return skisExecutor.inTransaction(
         session -> {
-          session.insert(PET, newPet);
+          session.insertInto(PET).value(newPet).write();
           session.updateById(PET, changedPet);
           Pet inserted = session.findById(PET, newPet.id()).orElseThrow();
           Pet updated = session.findById(PET, changedPet.id()).orElseThrow();

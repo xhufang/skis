@@ -4,6 +4,7 @@ import io.skis.core.ExecutionOptions;
 import io.skis.core.MutationException;
 import io.skis.core.SkisDiagnosticStage;
 import io.skis.core.SkisErrorCode;
+import io.skis.core.TransactionException;
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.internal.OperationObservation;
 import io.skis.core.spi.ExecutionContext;
@@ -15,13 +16,19 @@ import io.skis.mapping.spi.InsertArguments;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PropertyMeta;
-import io.skis.mutation.InsertResult;
+import io.skis.mutation.DeleteWrite;
+import io.skis.mutation.InsertInto;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.OptimisticLockException;
+import io.skis.mutation.UpdateSet;
+import io.skis.mutation.Written;
 import io.skis.query.QueryTable;
+import io.skis.query.internal.MutationQuerySupport;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import org.jspecify.annotations.Nullable;
 
 /** Default immutable entity mutation facade. */
@@ -31,67 +38,82 @@ final class DefaultMutationOperations implements MutationOperations {
   private final MutationPlanCatalog planCatalog;
   private final ExecutionListenerDispatcher listenerDispatcher;
   private final String dialectId;
+  private final @Nullable BooleanSupplier activeSession;
 
   DefaultMutationOperations(MutationPlanCatalog planCatalog, JdbcExecutor jdbcExecutor) {
+    this(planCatalog, jdbcExecutor, null);
+  }
+
+  DefaultMutationOperations(
+      MutationPlanCatalog planCatalog,
+      JdbcExecutor jdbcExecutor,
+      @Nullable BooleanSupplier activeSession) {
     this.planCatalog = Objects.requireNonNull(planCatalog, "planCatalog");
     this.jdbcExecutor = Objects.requireNonNull(jdbcExecutor, "jdbcExecutor");
     this.listenerDispatcher = planCatalog.listenerDispatcher();
     this.dialectId = planCatalog.dialectId();
+    this.activeSession = activeSession;
   }
 
   @Override
-  public <E> int insert(QueryTable<E> table, E value) {
-    return insert(table, value, ExecutionContext.EMPTY);
+  public <E> InsertInto<E> insertInto(QueryTable<E> table) {
+    return MutationRequests.insert(this, table);
   }
 
   @Override
-  public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    return insert(
-        table,
-        value,
-        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
+  public <E> UpdateSet<E> update(QueryTable<E> table) {
+    return MutationRequests.update(this, table);
   }
 
-  private <E> int insert(QueryTable<E> table, E value, ExecutionContext context) {
-    performInsert(table, value, context, false);
+  @Override
+  public <E> DeleteWrite<E> deleteFrom(QueryTable<E> table) {
+    return MutationRequests.delete(this, table);
+  }
+
+  DynamicMutationPlans dynamicPlans() {
+    return planCatalog.dynamicPlans();
+  }
+
+  void requireWritable(QueryTable<?> table) {
+    requirePlanSet(requireEntity(table));
+  }
+
+  private void beforeWrite() {
+    ExecutionListenerDispatcher.rejectReentrantCall();
+    BooleanSupplier active = activeSession;
+    if (active != null && !active.getAsBoolean()) {
+      throw TransactionException.of(
+          SkisErrorCode.SESSION_INACTIVE, "SKIS session is no longer active");
+    }
+  }
+
+  <E> int writeInsert(QueryTable<E> table, E value, ExecutionOptions options) {
+    performInsert(table, value, ExecutionContext.of(options));
     return 1;
   }
 
-  @Override
-  public <E> InsertResult<E> insertResult(QueryTable<E> table, E value) {
-    return new InsertResult<>(1, performInsert(table, value, ExecutionContext.EMPTY, true));
-  }
-
-  @Override
-  public <E> InsertResult<E> insertResult(
-      QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    return new InsertResult<>(
-        1,
-        performInsert(
-            table,
-            value,
-            ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")),
-            true));
-  }
-
-  private <E> E performInsert(
-      QueryTable<E> table, E value, ExecutionContext context, boolean resultRequested) {
+  private <E> void performInsert(QueryTable<E> table, E value, ExecutionContext context) {
+    beforeWrite();
     OperationObservation observation = startObservation(ExecutionOperationKind.INSERT);
     try {
       EntityMeta<E> entity = requireEntity(table);
       EntityMutationPlanSet<E> plans = requirePlanSet(entity);
       requireEntityValue(entity, value);
       IdGeneration generation = plans.generation();
-      if (generation != IdGeneration.ASSIGNED && plans.recordEntity() && !resultRequested) {
+      if (generation != IdGeneration.ASSIGNED && plans.recordEntity()) {
         throw idFailure(
             plans,
             SkisErrorCode.MUTATION_ID_VALUE_INVALID,
-            "generated record primary keys require insertResult",
+            "generated record primary keys require explicit returning() or returning(projection)",
             null);
+      }
+      if (generation == IdGeneration.IDENTITY && !dynamicPlans().supportsGeneratedKeys()) {
+        throw MutationException.of(
+            SkisErrorCode.MUTATION_UNSUPPORTED,
+            "count-only IDENTITY requires JDBC generated-key support; use explicit RETURNING");
       }
       Object originalId = readId(plans, value);
       validateId(plans, originalId);
-      E result = value;
       if (generation == IdGeneration.ASSIGNED) {
         int affected =
             jdbcExecutor.executeUpdate(
@@ -129,7 +151,7 @@ final class DefaultMutationOperations implements MutationOperations {
         }
         if (originalId == null) {
           try {
-            result = plans.idAccess().apply(value, Objects.requireNonNull(effectiveId));
+            E result = plans.idAccess().apply(value, Objects.requireNonNull(effectiveId));
             requireEntityValue(entity, result);
           } catch (SQLException | RuntimeException failure) {
             throw idFailure(
@@ -141,7 +163,186 @@ final class DefaultMutationOperations implements MutationOperations {
         }
       }
       completeSucceeded(observation);
-      return result;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  <E, R> Written<R> writeInsertReturning(
+      QueryTable<E> table,
+      E value,
+      ExecutionOptions options,
+      MutationQuerySupport.Result<R> result,
+      DynamicMutationPlans.InsertRequest<E, R> request) {
+    beforeWrite();
+    OperationObservation observation = startObservation(ExecutionOperationKind.INSERT);
+    try {
+      EntityMutationPlanSet<E> plans = requirePlanSet(requireEntity(table));
+      requireEntityValue(plans.entity(), value);
+      Object originalId = readId(plans, value);
+      validateId(plans, originalId);
+      IdGeneration generation = plans.generation();
+      ExecutionContext context = ExecutionContext.of(options);
+      DynamicMutationPlans.Returned<R> returned;
+      if (generation == IdGeneration.ASSIGNED) {
+        DynamicMutationPlans.Plan<R, E> plan =
+            dynamicPlans()
+                .insert(
+                    request.assigned,
+                    plans.insertStatement(),
+                    plans,
+                    plans.insert(),
+                    result,
+                    false,
+                    observation);
+        returned = executeInsertReturning(plan, value, context, observation);
+      } else {
+        boolean readKey = !plans.recordEntity();
+        DynamicMutationPlans.Plan<R, InsertArguments<E>> plan =
+            dynamicPlans()
+                .insert(
+                    request.generated,
+                    plans.insertStatement(),
+                    plans,
+                    plans.generatedInsert(),
+                    result,
+                    readKey,
+                    observation);
+        Object effectiveId = originalId;
+        if (effectiveId == null && generation != IdGeneration.IDENTITY) {
+          effectiveId = generateId(plans);
+        }
+        returned =
+            executeInsertReturning(
+                plan, new InsertArguments<>(value, effectiveId), context, observation);
+      }
+      if (generation != IdGeneration.ASSIGNED
+          && !plans.recordEntity()
+          && !Objects.equals(originalId, returned.key())) {
+        try {
+          E applied = plans.idAccess().apply(value, Objects.requireNonNull(returned.key()));
+          requireEntityValue(plans.entity(), applied);
+        } catch (SQLException | RuntimeException failure) {
+          throw idFailure(
+              plans,
+              SkisErrorCode.MUTATION_ID_APPLY_FAILED,
+              "primary-key application failed after SQL and resource completion",
+              failure);
+        }
+      }
+      Written<R> completed = new DefaultWritten<>(1, returned.value());
+      completeSucceeded(observation);
+      return completed;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  private <R, P> DynamicMutationPlans.Returned<R> executeInsertReturning(
+      DynamicMutationPlans.Plan<R, P> plan,
+      P parameters,
+      ExecutionContext context,
+      @Nullable OperationObservation observation) {
+    return jdbcExecutor.executeReturningOne(
+        plan.statement(),
+        plan.decoder(),
+        plan.columnCount(),
+        parameters,
+        context,
+        observation,
+        StatementPurpose.PRIMARY);
+  }
+
+  <E> int writeEmptyBatch(QueryTable<E> table, List<E> entities, ExecutionOptions options) {
+    Objects.requireNonNull(options, "options");
+    beforeWrite();
+    OperationObservation observation = startObservation(ExecutionOperationKind.INSERT);
+    try {
+      requireWritable(table);
+      if (!entities.isEmpty()) {
+        throw MutationException.of(
+            SkisErrorCode.MUTATION_UNSUPPORTED,
+            "nonempty collection insertion requires the batch execution capability");
+      }
+      completeSucceeded(observation);
+      return 0;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  int writeConditional(MutationRequests.Conditional<?> request, ExecutionOptions options) {
+    beforeWrite();
+    OperationObservation observation =
+        startObservation(
+            request.update ? ExecutionOperationKind.UPDATE : ExecutionOperationKind.DELETE);
+    try {
+      MutationRequests.Prepared prepared = request.prepare();
+      var plan =
+          dynamicPlans()
+              .count(
+                  request.countPlan,
+                  request.update ? "update" : "delete",
+                  prepared.statement(),
+                  prepared.inputs(),
+                  observation);
+      int rows =
+          jdbcExecutor.executeUpdate(
+              plan,
+              prepared.inputs().values(),
+              ExecutionContext.of(options),
+              observation,
+              StatementPurpose.PRIMARY);
+      if (rows < 0) {
+        throw MutationException.of(
+            SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
+            "conditional write did not report an exact affected-row count");
+      }
+      completeSucceeded(observation);
+      return rows;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  @SuppressWarnings("Convert2Diamond")
+  <R> Written<List<R>> writeConditionalReturning(
+      MutationRequests.Conditional<?> request,
+      ExecutionOptions options,
+      MutationQuerySupport.Result<R> result,
+      DynamicMutationPlans.Request<DynamicMutationPlans.ConditionalPlan<R>> requestPlan) {
+    beforeWrite();
+    OperationObservation observation =
+        startObservation(
+            request.update ? ExecutionOperationKind.UPDATE : ExecutionOperationKind.DELETE);
+    try {
+      MutationRequests.Prepared prepared = request.prepare();
+      var plan =
+          dynamicPlans()
+              .conditional(
+                  requestPlan,
+                  request.update ? "update" : "delete",
+                  prepared.statement(),
+                  prepared.inputs(),
+                  result,
+                  observation);
+      List<R> rows =
+          jdbcExecutor.executeReturning(
+              plan.statement(),
+              plan.decoder(),
+              plan.columnCount(),
+              prepared.inputs().values(),
+              ExecutionContext.of(options),
+              observation,
+              StatementPurpose.PRIMARY);
+      Written<List<R>> completed =
+          new DefaultWritten<List<R>>(rows.size(), rows.isEmpty() ? null : rows);
+      completeSucceeded(observation);
+      return completed;
     } catch (RuntimeException | Error failure) {
       completeFailed(observation, failure);
       throw failure;
@@ -252,8 +453,7 @@ final class DefaultMutationOperations implements MutationOperations {
             ? failure.diagnostics()
             : null;
     if (originalDiagnostics != null) {
-      reason =
-          Objects.requireNonNull(Objects.requireNonNull(originalDiagnostics.facts()).detail());
+      reason = Objects.requireNonNull(Objects.requireNonNull(originalDiagnostics.facts()).detail());
     }
     String detail =
         "entity="
@@ -283,6 +483,7 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   private <E> int updateById(QueryTable<E> table, E value, ExecutionContext context) {
+    beforeWrite();
     OperationObservation observation = startObservation(ExecutionOperationKind.UPDATE_BY_ID);
     try {
       EntityMeta<E> entity = requireEntity(table);
@@ -321,6 +522,7 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   private <E> int deleteById(QueryTable<E> table, Object id, ExecutionContext context) {
+    beforeWrite();
     OperationObservation observation = startObservation(ExecutionOperationKind.DELETE_BY_ID);
     try {
       EntityMeta<E> entity = requireEntity(table);
