@@ -48,6 +48,21 @@ mutation 实测 396/72、46 类、84.61%；逐类 XML 对比确认 `ValuesBinder
 再断言全部请求复用同一计划、仅创建一次解码器，保留后续命中跳过编译和 clear 后重新编译的断言。
 同步与锁队列检查均位于测试源码，生产实现和基线保持；本地未编译运行，修复仍待新 CI。
 
+[CI 40677618088 的权威作业](https://github.com/xhufang/skis/actions/runs/40677618088/job/122779930933?pr=96)
+已通过 Java 21 完整构建、97 个必需回归套件、PG 合同、覆盖采集及证据上传；
+Java 25、PG 双路径、独立消费者、Gradle 和发布边界作业均通过，唯一原始阻断为 mutation 应抬未抬。
+PR head 为 `4065acabebc938042fb337c703e5e75f24ff6209`，测试合并提交为
+`ac3452c66806c9467c5519e4126634667aec74f7`，比较 base 仍为 `1899270ba880601d276ed324bcbab40cb9e359fd`。
+[工件 12810834280](https://github.com/xhufang/skis/actions/runs/40677618088/artifacts/12810834280)
+为 `branch-coverage-java-21-40677618088-1`，ZIP SHA-256 为
+`085104e3d2bf6ee4dc5d779e4d7e682f1672f9e310293563858ba53c4bffdd6c`，与 GitHub 元数据一致。
+已静态核对运行/尝试、工作流、合并父提交、七项 producer blob、提交内 policy/baseline 原始摘要、可信 comparison 基线，
+以及全部 15 模块 XML SHA-256、逐类/汇总分支计数、类清单和 HTML 报告。
+15 模块均无回退；mutation 实测 397/71、46 类、84.82%，锁内已发布计划复用路径和观察绑定的全部 4 个分支均已覆盖。
+仅原样登记 mutation 候选行及来源，将门槛从 84.65% 提升为 84.82%；其余 14 行、首次登记、统计口径和历史保持。
+本次只修改基线和现有验证记录，未编译运行或执行项目检查器。取证位于被忽略的 `target/ci-coverage-40677618088/`；
+登记后的来源认证与完整门禁仍待新 CI，T03 尚未关闭。
+
 ## PR #95：主键生成覆盖率抬线与回退补证（待新 CI 验证）
 
 ### CI 40465466642：登记 mutation 提升并固定 CAS 重试覆盖
