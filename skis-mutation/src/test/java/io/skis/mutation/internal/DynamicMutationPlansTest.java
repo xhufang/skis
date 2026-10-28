@@ -253,11 +253,42 @@ class DynamicMutationPlansTest {
     var request = new DynamicMutationPlans.Request<DynamicMutationPlans.ConditionalPlan<String>>();
     var tasks = new ArrayList<Callable<Object>>();
     for (int index = 0; index < 32; index++) { tasks.add(() -> plan(plans, table, mapping, request)); }
+    var entered = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    dialect.beforeValidation = () -> {
+      entered.countDown();
+      try { assertTrue(release.await(10, TimeUnit.SECONDS)); }
+      catch (InterruptedException failure) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError(failure);
+      }
+    };
+    var locksField = DynamicMutationPlans.class.getDeclaredField("compilationLocks");
+    locksField.setAccessible(true);
+    var locks = (ReentrantLock[]) locksField.get(plans);
     Object first;
     try (var executor = Executors.newFixedThreadPool(8)) {
-      var futures = executor.invokeAll(tasks);
-      first = futures.getFirst().get();
-      for (var future : futures) { assertSame(first, future.get()); }
+      try {
+        var futures = new ArrayList<Future<Object>>();
+        futures.add(executor.submit(tasks.getFirst()));
+        assertTrue(entered.await(10, TimeUnit.SECONDS));
+        for (var task : tasks.subList(1, tasks.size())) { futures.add(executor.submit(task)); }
+        // Keep the first compilation blocked until another miss is waiting on its compilation lock.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (Arrays.stream(locks).noneMatch(ReentrantLock::hasQueuedThreads)
+            && System.nanoTime() < deadline) {
+          LockSupport.parkNanos(1_000_000L);
+        }
+        assertTrue(Arrays.stream(locks).anyMatch(ReentrantLock::hasQueuedThreads),
+            "a concurrent miss must wait for the first compilation before publication");
+        release.countDown();
+        first = futures.getFirst().get(10, TimeUnit.SECONDS);
+        for (var future : futures) { assertSame(first, future.get(10, TimeUnit.SECONDS)); }
+        assertTrue(plans.statistics().missCount() >= 2);
+      } finally {
+        release.countDown();
+        dialect.beforeValidation = null;
+      }
     }
     int validated = dialect.validations.get();
     assertTrue(validated > 0);

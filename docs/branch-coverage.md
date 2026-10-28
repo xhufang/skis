@@ -35,6 +35,19 @@ DynamicMutationPlansTest 新增实际编译计划的观察绑定合同：非默�
 本次仅静态核对工件、登记提升行和补充测试源码，未编译运行、执行项目检查器或 benchmark。
 取证保存在被忽略的 `target/ci-coverage-40667070929/`；新增测试、mutation 回退补证及完整来源认证待新 CI，T03 尚未关闭。
 
+后续 [CI 40673100500 的权威作业](https://github.com/xhufang/skis/actions/runs/40673100500/job/122764589333?pr=96)
+已通过构建和全部必需回归套件，新增观察绑定合同也通过；唯一原始阻断仍为 mutation 低于历史门槛。
+head 为 `6e0146b4e25ca55336e7b2de1f4ca7f69aae0db8`，测试合并提交为
+`3aa127dbfd1ad4858327306eff58eb11d2fd0b3a`。
+[工件 12809945079](https://github.com/xhufang/skis/actions/runs/40673100500/artifacts/12809945079)
+为 `branch-coverage-java-21-40673100500-1`，ZIP SHA-256 为
+`5ed3c7ae553c7775b96d0ff6234f8376f388db2a28abc65983d808d08e7a94c2`，已与 GitHub 元数据核对。
+mutation 实测 396/72、46 类、84.61%；逐类 XML 对比确认 `ValuesBinder.bindObserved` 新覆盖全部 4 个分支，
+但 `DynamicMutationPlans.cached` 的锁内已发布计划复用路径本轮未触发，较上轮少覆盖 1 个分支。
+本次将原有 32 请求并发测试改为：先阻塞首个编译，确认至少一个请求进入编译锁等待队列后才允许发布，
+再断言全部请求复用同一计划、仅创建一次解码器，保留后续命中跳过编译和 clear 后重新编译的断言。
+同步与锁队列检查均位于测试源码，生产实现和基线保持；本地未编译运行，修复仍待新 CI。
+
 ## PR #95：主键生成覆盖率抬线与回退补证（待新 CI 验证）
 
 ### CI 40465466642：登记 mutation 提升并固定 CAS 重试覆盖
