@@ -79,7 +79,7 @@ class DynamicMutationPlansTest {
     assertEquals(2, fixture.plans().statistics().size());
     assertCollected(fixture.references());
 
-    var table = new Table(fixture.entity(), "temporary");
+    var table = new Table(fixture.entity());
     var inputs = MutationQuerySupport.inputs(
         fixture.plans().registry(), table, List.of(), table.id().eq(29L), false);
     var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
@@ -331,9 +331,12 @@ class DynamicMutationPlansTest {
       assertNotNull(future.get(10, TimeUnit.SECONDS));
       assertEquals(0, plans.statistics().size());
     } finally { resume.countDown(); }
+    var creations = new AtomicInteger();
     for (int index = 0; index < 520; index++) {
-      plan(plans, table.as("alias" + index), mapping, new DynamicMutationPlans.Request<>());
+      plan(plans, table, mapping(creations, "return-name-" + index),
+          new DynamicMutationPlans.Request<>());
     }
+    assertEquals(520, creations.get());
     assertEquals(512, plans.statistics().size());
     assertEquals(8, plans.statistics().evictionCount());
     plans.clear();
@@ -344,7 +347,7 @@ class DynamicMutationPlansTest {
     var model = model(LoaderValue.class, "value");
     var plans = new DynamicMutationPlans(EntityRuntimeRegistry.of(List.of(model)), new TestDialect());
     var mapping = mapping(new AtomicInteger());
-    var table = new Table(model.entity(), "temporary");
+    var table = new Table(model.entity());
     var condition = table.id().eq(17L);
     var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), condition, false);
     var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
@@ -409,7 +412,11 @@ class DynamicMutationPlansTest {
   }
 
   private static ProjectionMapping<String> mapping(AtomicInteger creations) {
-    return ProjectionMapping.generated(GeneratedModelAbi.CURRENT, String.class, "return-name",
+    return mapping(creations, "return-name");
+  }
+
+  private static ProjectionMapping<String> mapping(AtomicInteger creations, String mappingId) {
+    return ProjectionMapping.generated(GeneratedModelAbi.CURRENT, String.class, mappingId,
         List.of(new ProjectionMapping.Parameter(0, "name", String.class, Nullability.NON_NULL, 0)),
         readers -> {
           creations.incrementAndGet();
@@ -431,8 +438,6 @@ class DynamicMutationPlansTest {
     return new EntityRuntimeModel<>(metadata, layout -> (rs, context) -> new Object(),
         List.of(new PropertyRuntime<>(id, JdbcCodecs.LONG), new PropertyRuntime<>(name, codec)));
   }
-
-  public static final class LoaderValue {}
 
   private static Class<?> loaderType() throws Exception {
     String name = LoaderValue.class.getName();
