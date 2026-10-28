@@ -89,7 +89,7 @@ class DynamicMutationPlansTest {
         new DynamicMutationPlans.Request<>(), "delete", statement, inputs,
         MutationQuerySupport.result(table, fixture.mapping().bind(table.name())), null);
     assertSame(fixture.returning(), reused);
-    assertEquals("value", reused.decoder().decode(null, RowReadContext.EMPTY));
+    assertEquals("value", reused.decoder().decode(unusedResultSet(), RowReadContext.EMPTY));
     assertEquals(2, fixture.plans().statistics().size());
     assertEquals(2, fixture.plans().statistics().hitCount());
     Reference.reachabilityFence(fixture);
@@ -188,8 +188,8 @@ class DynamicMutationPlansTest {
     var a = plan(plans, firstTable, mapping, new DynamicMutationPlans.Request<>());
     var b = plan(plans, secondTable, mapping, new DynamicMutationPlans.Request<>());
     assertNotSame(a, b);
-    assertEquals("first", a.decoder().decode(null, RowReadContext.EMPTY));
-    assertEquals("second", b.decoder().decode(null, RowReadContext.EMPTY));
+    assertEquals("first", a.decoder().decode(unusedResultSet(), RowReadContext.EMPTY));
+    assertEquals("second", b.decoder().decode(unusedResultSet(), RowReadContext.EMPTY));
     assertSame(a, plan(plans, new Table(first.entity()), mapping, new DynamicMutationPlans.Request<>()));
     assertEquals(2, plans.statistics().size());
   }
@@ -425,6 +425,15 @@ class DynamicMutationPlansTest {
         });
   }
 
+  /** These fixture codecs supply their own values, so no JDBC method should be called. */
+  private static ResultSet unusedResultSet() {
+    return (ResultSet) java.lang.reflect.Proxy.newProxyInstance(
+        ResultSet.class.getClassLoader(), new Class<?>[] {ResultSet.class},
+        (proxy, method, args) -> {
+          throw new AssertionError("unexpected ResultSet access: " + method.getName());
+        });
+  }
+
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static EntityRuntimeModel<Object> model(Class<?> type, String decoded) {
     var id = new PropertyMeta<Object, Long>(0, "id", Long.class, ColumnMeta.of("id", false));
@@ -432,7 +441,11 @@ class DynamicMutationPlansTest {
     EntityMeta<Object> metadata = EntityMeta.simple((Class) type, TableMeta.of("same_table"),
         List.of(id, name), new PrimaryKeyMeta<>(List.of(id)), false);
     JdbcTypeCodec<String> codec = new JdbcTypeCodec<>() {
-      @Override public String read(ResultSet rs, int index, JdbcReadContext context) { return decoded; }
+      @Override public String read(ResultSet rs, int index, JdbcReadContext context) {
+        assertNotNull(rs);
+        assertEquals(1, index);
+        return decoded;
+      }
       @Override public void bind(PreparedStatement ps, int index, @Nullable String value, JdbcWriteContext context) {}
     };
     return new EntityRuntimeModel<>(metadata, layout -> (rs, context) -> new Object(),
