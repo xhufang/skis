@@ -55,6 +55,7 @@ import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
@@ -132,6 +133,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private RenderContext contextFor(StatementAst statement) {
     return switch (statement) {
+      case ReturningStatement returning -> new RenderContext(returning.target());
       case SelectStatement select -> new RenderContext(select.fromClause());
       case CountAst count -> new RenderContext(count.fromClause());
       case InsertStatement insert -> new RenderContext(insert.target());
@@ -143,12 +145,40 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private void renderStatement(StatementAst statement, RenderContext context) {
     switch (statement) {
+      case ReturningStatement returning -> renderReturning(returning, context);
       case SelectStatement select -> renderSelect(select, context);
       case CountAst count -> renderCount(count, context);
       case InsertStatement insert -> renderInsert(insert, context);
       case UpdateStatement update -> renderUpdate(update, context);
       case DeleteStatement delete -> renderDelete(delete, context);
       default -> throw unsupported("statement", statement);
+    }
+  }
+
+  private void renderReturning(ReturningStatement statement, RenderContext context) {
+    boolean resultTable = statement.form() != ReturningStatement.Form.NATIVE;
+    if (resultTable) {
+      context.sql.append("SELECT ");
+      renderReturningColumns(statement, context);
+      context.sql.append(
+          statement.form() == ReturningStatement.Form.OLD_TABLE
+              ? " FROM OLD TABLE ("
+              : " FROM FINAL TABLE (");
+      renderStatement(statement.mutation(), context);
+      context.sql.append(')');
+    } else {
+      renderStatement(statement.mutation(), context);
+      context.sql.append(" RETURNING ");
+      renderReturningColumns(statement, context);
+    }
+  }
+
+  private void renderReturningColumns(ReturningStatement statement, RenderContext context) {
+    for (int index = 0; index < statement.selections().size(); index++) {
+      if (index > 0) {
+        context.sql.append(", ");
+      }
+      renderColumnName(statement.selections().get(index), context);
     }
   }
 

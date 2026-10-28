@@ -39,9 +39,9 @@ class MinimalConsumerTest {
           """);
       SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
       PetTable pet = PetTable.petTable;
-      executor.insert(pet, new Pet(1L, "aggregate-a", null));
-      executor.insert(pet, new Pet(2L, "aggregate-a", null));
-      executor.insert(pet, new Pet(3L, "aggregate-b", null));
+      executor.insertInto(pet).value(new Pet(1L, "aggregate-a", null)).write();
+      executor.insertInto(pet).value(new Pet(2L, "aggregate-a", null)).write();
+      executor.insertInto(pet).value(new Pet(3L, "aggregate-b", null)).write();
 
       var suffix = Sql.parameter(String.class, "suffix");
       var key = Sql.concat(pet.name(), Sql.value(suffix));
@@ -115,7 +115,7 @@ class MinimalConsumerTest {
     }
 
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
-    executor.insert(PetTable.petTable, new Pet(1L, "Mimi", null));
+    executor.insertInto(PetTable.petTable).value(new Pet(1L, "Mimi", null)).write();
 
     Pet stored = executor.findById(PetTable.petTable, 1L).orElseThrow();
     assertEquals("Mimi", stored.name());

@@ -17,9 +17,11 @@ import io.skis.query.SingleColumnSelect;
 import io.skis.query.SingleRow;
 import io.skis.query.SliceContinuation;
 import io.skis.query.SliceRequest;
+import io.skis.query.spi.ProjectionMapping;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.Nullability;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
@@ -59,11 +61,11 @@ public final class QueryDsl {
 
   /** Direct construction used by the generated projection facade. */
   public static <R> ProjectionSelection<R> projection(
-      io.skis.query.spi.ProjectionMapping<R> mapping,
-      java.util.List<? extends Selectable<?>> selections) {
+      ProjectionMapping<R> mapping,
+      List<? extends Selectable<?>> selections) {
     return new DefaultProjectionSelection<>(
         Objects.requireNonNull(mapping, "mapping"),
-        java.util.List.copyOf(Objects.requireNonNull(selections, "selections")));
+        List.copyOf(Objects.requireNonNull(selections, "selections")));
   }
 
   /** Selects a complete entity before an independent of root is chosen. */

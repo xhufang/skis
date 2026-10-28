@@ -91,6 +91,7 @@
               <!-- Isolated fixtures use explicit runtimeModels, without a global entity index. -->
               <annotationProcessors>
                 <annotationProcessor>io.skis.processor.SkisEntityProcessor</annotationProcessor>
+                <annotationProcessor>io.skis.processor.SkisProjectionProcessor</annotationProcessor>
               </annotationProcessors>
             </configuration>
           </execution>

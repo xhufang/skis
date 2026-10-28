@@ -17,7 +17,7 @@ unchecked application or SKIS failure requests a rollback.
 Pet stored =
     executor.inTransaction(
         session -> {
-          session.insert(PetTable.petTable, pet);
+          session.insertInto(PetTable.petTable).value(pet).write();
           session.afterCommit(() -> publishPetCreated(pet.id()));
           return session.findById(PetTable.petTable, pet.id()).orElseThrow();
         });
@@ -34,7 +34,7 @@ Use an explicit session only when the application needs a visible completion bou
 
 ```java
 try (SkisSession session = executor.beginTransaction()) {
-  session.insert(PetTable.petTable, pet);
+  session.insertInto(PetTable.petTable).value(pet).write();
   session.commit();
 }
 ```

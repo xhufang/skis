@@ -34,7 +34,7 @@ class SkisMutationTransactionTest {
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     Pet inserted = new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
 
-    assertEquals(1, executor.insert(PetTable.petTable, inserted));
+    assertEquals(1, executor.insertInto(PetTable.petTable).value(inserted).write());
     Pet stored = executor.findById(PetTable.petTable, 7L).orElseThrow();
     assertEquals(Long.valueOf(0L), stored.version());
 
@@ -58,7 +58,7 @@ class SkisMutationTransactionTest {
     PetTable alias = PetTable.petTable.as("crud_pet");
     Pet inserted = new Pet(70L, "Alias", new BigDecimal("7.00"), false, null, "ignored");
 
-    assertEquals(1, executor.insert(alias, inserted));
+    assertEquals(1, executor.insertInto(alias).value(inserted).write());
     Pet stored = executor.findById(alias, inserted.id()).orElseThrow();
     Pet changed =
         new Pet(
@@ -84,7 +84,7 @@ class SkisMutationTransactionTest {
     Pet visibleInside =
         executor.inTransaction(
             session -> {
-              session.insert(PetTable.petTable, pet);
+              session.insertInto(PetTable.petTable).value(pet).write();
               session.afterCommit(callbacks::incrementAndGet);
               return session.findById(PetTable.petTable, 8L).orElseThrow();
             });
@@ -99,7 +99,7 @@ class SkisMutationTransactionTest {
     DataSource dataSource = database();
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     Pet inserted = new Pet(11L, "Lulu", new BigDecimal("4.00"), false, null, "ignored");
-    executor.insert(PetTable.petTable, inserted);
+    executor.insertInto(PetTable.petTable).value(inserted).write();
     Pet update = new Pet(11L, "Lulu", new BigDecimal("4.25"), true, null, "ignored");
 
     assertEquals(1, executor.updateById(PetTable.petTable, update));
@@ -121,7 +121,7 @@ class SkisMutationTransactionTest {
         () ->
             executor.inTransaction(
                 session -> {
-                  session.insert(PetTable.petTable, pet);
+                  session.insertInto(PetTable.petTable).value(pet).write();
                   session.afterCommit(callbacks::incrementAndGet);
                   throw new IllegalStateException("force rollback");
                 }));
@@ -143,7 +143,7 @@ class SkisMutationTransactionTest {
             () ->
                 executor.inTransaction(
                     session -> {
-                      session.insert(PetTable.petTable, pet);
+                      session.insertInto(PetTable.petTable).value(pet).write();
                       session.afterCommit(
                           () -> {
                             callbacks.incrementAndGet();
@@ -170,10 +170,8 @@ class SkisMutationTransactionTest {
             .build();
     SkisExecutor executor =
         Skis.builder(dataSource).dialect(H2Dialect.INSTANCE).executionOptions(defaults).build();
-    executor.insert(
-        PetTable.petTable, new Pet(21L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
-    executor.insert(
-        PetTable.petTable, new Pet(22L, "Fifi", new BigDecimal("8.00"), false, null, "ignored"));
+    executor.insertInto(PetTable.petTable).value(new Pet(21L, "Mimi", new BigDecimal("12.50"), false, null, "ignored")).write();
+    executor.insertInto(PetTable.petTable).value(new Pet(22L, "Fifi", new BigDecimal("8.00"), false, null, "ignored")).write();
     ExecutionOptions unlimited = ExecutionOptions.builder().maxRows(0).clearQueryTag().build();
 
     assertEquals(1, executor.selectFrom(PetTable.petTable).fetchList().size());
@@ -206,10 +204,10 @@ class SkisMutationTransactionTest {
     DataSource dataSource = database();
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
     Pet pet = new Pet(31L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
-    executor.insert(PetTable.petTable, pet);
+    executor.insertInto(PetTable.petTable).value(pet).write();
 
     JdbcExecutionException failure =
-        assertThrows(JdbcExecutionException.class, () -> executor.insert(PetTable.petTable, pet));
+        assertThrows(JdbcExecutionException.class, () -> executor.insertInto(PetTable.petTable).value(pet).write());
 
     SQLException sqlFailure = (SQLException) failure.getCause();
     assertEquals(SqlExceptionCategory.DUPLICATE_KEY, failure.category());

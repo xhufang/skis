@@ -44,9 +44,9 @@ class SkisJdbcTypePostgreSqlContractTest {
     SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 
     try {
-      assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, expected));
-      assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, nulls));
-      assertEquals(1, executor.insert(JdbcTypesTable.jdbcTypesTable, emptyBytes));
+      assertEquals(1, executor.insertInto(JdbcTypesTable.jdbcTypesTable).value(expected).write());
+      assertEquals(1, executor.insertInto(JdbcTypesTable.jdbcTypesTable).value(nulls).write());
+      assertEquals(1, executor.insertInto(JdbcTypesTable.jdbcTypesTable).value(emptyBytes).write());
 
       JdbcTypeContractSupport.assertNonNullValues(
           expected, executor.findById(JdbcTypesTable.jdbcTypesTable, id).orElseThrow());

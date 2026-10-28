@@ -33,6 +33,7 @@ import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
@@ -116,6 +117,7 @@ public final class ParameterLayout {
 
     private void statement(StatementAst statement) {
       switch (statement) {
+        case ReturningStatement returning -> statement(returning.mutation());
         case SelectStatement select -> select(select);
         case CountAst count -> count(count);
         case InsertStatement insert -> insert.values().forEach(this::expression);

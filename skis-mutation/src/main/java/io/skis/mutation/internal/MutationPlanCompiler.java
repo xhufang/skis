@@ -76,12 +76,14 @@ final class MutationPlanCompiler {
                             + GeneratedModelAbi.CURRENT));
     PropertyMeta<E, ?> id = requireSinglePrimaryKey(entity);
     boolean identity = entity.primaryKey().orElseThrow().generation() == IdGeneration.IDENTITY;
-    if (identity && !dialect.capabilities().supports(DialectFeature.JDBC_GENERATED_KEYS)) {
+    if (identity
+        && !dialect.capabilities().supports(DialectFeature.JDBC_GENERATED_KEYS)
+        && !dialect.capabilities().supports(DialectFeature.MUTATION_RETURNING)) {
       throw SqlRenderException.of(
           SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
           dialect.id(),
           "JDBC_GENERATED_KEYS",
-          "IDENTITY requires JDBC generated-key support");
+          "IDENTITY requires JDBC generated keys or mutation RETURNING support");
     }
     RuntimeMutationTable<E> table = new RuntimeMutationTable<>(entity);
     CompiledMutationPlan<E> insert = compileInsert(entity, table, binders);

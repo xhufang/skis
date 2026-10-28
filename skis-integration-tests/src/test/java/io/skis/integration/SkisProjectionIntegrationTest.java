@@ -39,9 +39,8 @@ class SkisProjectionIntegrationTest {
             .planCacheExpireAfterAccess(Duration.ofMinutes(5))
             .build();
     Pet pet = new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored");
-    executor.insert(PetTable.petTable, pet);
-    executor.insert(
-        PetTable.petTable, new Pet(8L, "Nina", new BigDecimal("10.25"), false, null, "ignored"));
+    executor.insertInto(PetTable.petTable).value(pet).write();
+    executor.insertInto(PetTable.petTable).value(new Pet(8L, "Nina", new BigDecimal("10.25"), false, null, "ignored")).write();
 
     List<String> names =
         executor
@@ -100,9 +99,7 @@ class SkisProjectionIntegrationTest {
   void freshTerminalOperationsSharePlansAndBindCurrentValues() throws Exception {
     SkisExecutor executor = Skis.create(database(), H2Dialect.INSTANCE);
     for (long id : List.of(7L, 8L, 9L)) {
-      executor.insert(
-          PetTable.petTable,
-          new Pet(id, "pet-" + id, new BigDecimal("1.00"), false, null, "ignored"));
+      executor.insertInto(PetTable.petTable).value(new Pet(id, "pet-" + id, new BigDecimal("1.00"), false, null, "ignored")).write();
     }
     for (long threshold : List.of(7L, 8L)) {
       boolean warmed = threshold == 8L;
@@ -247,10 +244,8 @@ class SkisProjectionIntegrationTest {
   void executesDistinctOrderingWithH2NativeNullPlacement() throws Exception {
     DataSource dataSource = database();
     SkisExecutor executor = Skis.builder(dataSource).dialect(H2Dialect.INSTANCE).build();
-    executor.insert(
-        PetTable.petTable, new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored"));
-    executor.insert(
-        PetTable.petTable, new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored"));
+    executor.insertInto(PetTable.petTable).value(new Pet(7L, "Mimi", new BigDecimal("12.50"), false, null, "ignored")).write();
+    executor.insertInto(PetTable.petTable).value(new Pet(8L, "Mimi", new BigDecimal("10.25"), true, null, "ignored")).write();
 
     List<String> names =
         executor

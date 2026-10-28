@@ -210,7 +210,7 @@ class ExecutionListenerConsumerTest {
 
   private static void seed(SkisExecutor executor) {
     for (long id = 1L; id <= 3L; id++) {
-      executor.insert(PetTable.petTable, new Pet(id, "sensitive-pet-" + id, null));
+      executor.insertInto(PetTable.petTable).value(new Pet(id, "sensitive-pet-" + id, null)).write();
     }
   }
 

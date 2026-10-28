@@ -8,6 +8,7 @@ import io.skis.sql.ast.CastExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DecimalPrecision;
+import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.DerivedRelationSource;
@@ -16,6 +17,7 @@ import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InSubqueryPredicate;
+import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
@@ -25,11 +27,13 @@ import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.UpdateStatement;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,16 +60,53 @@ final class LoweringCorrespondence {
     if (original == lowered) {
       return;
     }
+    require(original.getClass() == lowered.getClass(), "statement kind changed");
     LoweringCorrespondence check = new LoweringCorrespondence(capabilities);
-    if (original instanceof SelectStatement first && lowered instanceof SelectStatement second) {
-      check.select(first, second, aggregateStructure);
-    } else if (original instanceof CountAst first && lowered instanceof CountAst second) {
-      check.sources(first.fromClause(), second.fromClause(), aggregateStructure);
-      check.optionalExpression(first.predicate().orElse(null), second.predicate().orElse(null));
-      check.optionalExpression(
-          first.distinctExpression().orElse(null), second.distinctExpression().orElse(null));
-      require(
-          first.nullCompensated() == second.nullCompensated(), "count NULL compensation changed");
+    switch (original) {
+      case ReturningStatement first -> {
+        ReturningStatement second = (ReturningStatement) lowered;
+        require(first.target() == second.target(), "mutation target changed");
+        check.expressions(first.selections(), second.selections());
+        validate(first.mutation(), second.mutation(), false, capabilities);
+      }
+      case InsertStatement first -> {
+        InsertStatement second = (InsertStatement) lowered;
+        require(
+            first.target() == second.target() && first.columns().equals(second.columns()),
+            "INSERT target or columns changed");
+        check.expressions(first.values(), second.values());
+      }
+      case UpdateStatement first -> {
+        UpdateStatement second = (UpdateStatement) lowered;
+        require(
+            first.target() == second.target()
+                && first.assignments().size() == second.assignments().size(),
+            "UPDATE shape changed");
+        for (int index = 0; index < first.assignments().size(); index++) {
+          var before = first.assignments().get(index);
+          var after = second.assignments().get(index);
+          require(before.column().equals(after.column()), "UPDATE target column changed");
+          check.expression(before.value(), after.value());
+        }
+        check.expression(first.where(), second.where());
+      }
+      case DeleteStatement first -> {
+        DeleteStatement second = (DeleteStatement) lowered;
+        require(first.target() == second.target(), "DELETE target changed");
+        check.expression(first.where(), second.where());
+      }
+      case SelectStatement first ->
+          check.select(first, (SelectStatement) lowered, aggregateStructure);
+      case CountAst first -> {
+        CountAst second = (CountAst) lowered;
+        check.sources(first.fromClause(), second.fromClause(), aggregateStructure);
+        check.optionalExpression(first.predicate().orElse(null), second.predicate().orElse(null));
+        check.optionalExpression(
+            first.distinctExpression().orElse(null), second.distinctExpression().orElse(null));
+        require(
+            first.nullCompensated() == second.nullCompensated(), "count NULL compensation changed");
+      }
+      default -> {}
     }
   }
 
@@ -116,7 +157,7 @@ final class LoweringCorrespondence {
     }
     if (differentOrderingForms(firstItems, secondItems)) {
       // Share the exact portable rules, including NULL ranks and DISTINCT output references.
-      // Only order representations are canonicalized; nested SELECTs are not normalized again.
+      // Only order representations are canonicalized; nested SELECT are not normalized again.
       firstItems = PortableLowering.normalizeOrdering(original, capabilities);
       secondItems = PortableLowering.normalizeOrdering(lowered, capabilities);
     }

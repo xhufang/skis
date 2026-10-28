@@ -567,6 +567,181 @@
       "reason": "Synchronous bounded string-only logging; isolates ordinary backend failure without retaining parameter values.",
       "owner": "T06",
       "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DefaultMutationOperations",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Single",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Batch",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Update",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DefaultMutationOperations",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Carries an invocation-owned returning descriptor; shared plans retain only detached generated decoders.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Single",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Carries an invocation-owned returning descriptor; shared plans retain only detached generated decoders.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Carries an invocation-owned returning descriptor; shared plans retain only detached generated decoders.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Carries an invocation-owned returning descriptor; shared plans retain only detached generated decoders.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DefaultMutationOperations",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Separates invocation values from canonical parameter Codec identities and value-free compiled mutation plans.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Separates invocation values from canonical parameter Codec identities and value-free compiled mutation plans.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Prepared",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Separates invocation values from canonical parameter Codec identities and value-free compiled mutation plans.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Separates invocation values from canonical parameter Codec identities and value-free compiled mutation plans.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Update",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Builds typed immutable conditional SET assignments using the query capture boundary.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Retains immutable SET inputs until one request preparation; values do not enter shared caches.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Owns a request-local typed lookup for the shared count-only conditional plan.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Compiles value-free statement templates and reuses the existing JDBC mutation execution kernel.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans$Plan",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Compiles value-free statement templates and reuses the existing JDBC mutation execution kernel.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans$ConditionalPlan",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Compiles value-free statement templates and reuses the existing JDBC mutation execution kernel.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.jdbc.internal.JdbcFingerprint",
+      "reason": "Emits safe compilation fingerprints through the existing listener lifecycle.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Reports compilation only on actual misses without retaining an observation in cached plans.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Binds result and parameter identities to the executor-owned canonical mapping registry.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.MutationQuerySupport",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves canonical Codec provenance and loader-aware result identity for conditional writes and returning.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.MutationQuerySupport$Result",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Resolves canonical Codec provenance and loader-aware result identity for conditional writes and returning.",
+      "owner": "0.2.10:T03",
+      "exit": "Review with qualified JPMS exports before 1.0"
     }
   ]
 }

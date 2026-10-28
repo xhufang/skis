@@ -22,7 +22,7 @@ public final class SkisH2Example {
 
     PetTable pet = PetTable.petTable;
     SkisExecutor executor = Skis.create(dataSource, H2Dialect.INSTANCE);
-    executor.insert(pet, new Pet(1L, "Mimi", null));
+    executor.insertInto(pet).value(new Pet(1L, "Mimi", null)).write();
     List<Pet> selected = executor.selectFrom(pet).where(pet.name().eq("Mimi")).fetchList();
     Pet stored = selected.getFirst();
 

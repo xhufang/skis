@@ -469,7 +469,7 @@ public enum SkisErrorCode {
       "SKISM012",
       SkisErrorFamily.MUTATION,
       SkisDiagnosticStage.COMPILATION,
-      "dialect rendered an unexpected mutation parameter shape"),
+      "mutation assignments, predicate or parameter layout are invalid"),
   MUTATION_REQUIRED_VALUE_NULL(
       "SKISM013",
       SkisErrorFamily.MUTATION,
@@ -489,7 +489,16 @@ public enum SkisErrorCode {
       "generated primary-key reader failed"),
   MUTATION_ID_APPLY_FAILED(
       "SKISM018", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
-      "successful insert primary key could not be applied to the entity");
+      "successful insert primary key could not be applied to the entity"),
+  MUTATION_UNSAFE(
+      "SKISM019", SkisErrorFamily.MUTATION, SkisDiagnosticStage.SEMANTIC_VALIDATION,
+      "conditional mutation requires WHERE or explicit full-table permission"),
+  MUTATION_UNSUPPORTED(
+      "SKISM020", SkisErrorFamily.MUTATION, SkisDiagnosticStage.SEMANTIC_VALIDATION,
+      "requested mutation combination is not supported"),
+  MUTATION_RETURNING_SHAPE(
+      "SKISM021", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "mutation returned an invalid result shape");
 
   private final String code;
   private final SkisErrorFamily family;

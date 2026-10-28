@@ -6,17 +6,14 @@ import io.skis.query.QueryTable;
 /** Entity mutation facet shared by the injected executor and explicit sessions. */
 public interface MutationOperations {
 
-  /** Inserts one writable entity and requires exactly one affected row. */
-  <E> int insert(QueryTable<E> table, E value);
+  /** Builds an insertion; only its terminal write accesses JDBC or generates a key. */
+  <E> InsertInto<E> insertInto(QueryTable<E> table);
 
-  /** Inserts one entity with immutable statement overrides. */
-  <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions);
+  /** Starts a conditional update; at least one assignment is required. */
+  <E> UpdateSet<E> update(QueryTable<E> table);
 
-  /** Inserts one entity and returns its confirmed primary key through the typed entity. */
-  <E> InsertResult<E> insertResult(QueryTable<E> table, E value);
-
-  /** Inserts and returns the key-bearing entity with immutable statement overrides. */
-  <E> InsertResult<E> insertResult(QueryTable<E> table, E value, ExecutionOptions executionOptions);
+  /** Starts a conditional physical delete. */
+  <E> DeleteWrite<E> deleteFrom(QueryTable<E> table);
 
   /** Updates one entity by its generated primary-key and optimistic-version metadata. */
   <E> int updateById(QueryTable<E> table, E value);

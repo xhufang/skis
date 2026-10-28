@@ -4,8 +4,8 @@
 
 ## [Unreleased]
 
-当前仓库为 `0.2.10-SNAPSHOT`；T02 主键生成、类型安全插入结果与 JDBC 生成键的源码、测试和文档已实现，
-当前提交待 CI、PG/H2 真实驱动及独立消费者验证。本地未编译运行；T02 尚未取得关闭证据。
+当前仓库为 `0.2.10-SNAPSHOT`。T02 基线 `1899270` 的 CI 40468581570 / Compliance 40468581572 已通过，
+原始 Java 21/25、PG/H2 与消费者报告已核对。T03 源码、测试与文档已同步，待本次变更 CI 验证；本地未编译运行。
 前一版 `0.2.9` 聚合语义内部里程碑于 2026-10-26 完成，以下 CI 证据属于该里程碑。
 当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或 Release。
 PR #91 合入提交 `980ad24003dc3e280336ec3a1be126841f148ab8` 的
@@ -15,16 +15,25 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 本地仅静态核对文档和原始工件，未编译运行。合入后 push 按事件跳过依赖漏洞审查，
 该项已由 PR #91 的 [Compliance](https://github.com/xhufang/skis/actions/runs/40281380091) 验证。
 
+### T03 source implementation (verification pending)
+
+- 实体插入收敛到 insertInto/value/values/write；删除 insert、insertResult、InsertResult 及旧转发。无 returning 返回 int，显式返回使用纯内存 Written。
+- INSERT/UPDATE/DELETE 的完整实体和两种 Pro 返回接入统一方言/结果管线；PG 原生 RETURNING，H2 FINAL/OLD TABLE；条件 SET、表达式、WHERE 保护和版本推进已有源码。
+- 已有 UUID/雪花键不重复 setter，数据库返回不同键时在资源成功结束后应用实际值。动态计划复用固定 AST/请求查找，补齐 Codec 来源和 ClassLoader 身份，移除缓存命中全局锁。
+- 条件写入的纯参数表达式接入标准类型转换，AST 构造校验失败使用 SKISM012 并保留 cause；动态计划编译成功／失败均在缓存锁外通知监听器，新增回归源码待 CI 验证。
+- 修正 CASE 泛型模式的类型安全；单行 INSERT RETURNING 直接返回解码结果，省去行列表及复制，保留行数校验、资源和失败合同。
+- 迁移当前测试与独立消费者，新增阶段/nullness、结果、缓存、golden、资源及 PG/H2 合同和精确工程登记。非空集合执行留给 T05；本阶段不做 benchmark。
+
 ### Added
 
 - `@Id(strategy = ...)` 支持 ASSIGNED、IDENTITY、UUID v4 与显式节点雪花；生成式主键读写和插入参数接入 ABI 9，
   APT/手工元数据/装配执行同一策略与类型约束，拒绝 ABI 8。
-- 增加 `insertResult(...)` 与 `InsertResult<E>`；Bean 成功后回填，record 复制保留全部 component，
+- T02 历史上增加 `insertResult(...)` 与 `InsertResult<E>`；T03 已删除并由显式 returning 的 Written 替代。T02 当时 Bean 成功后回填、record 复制保留全部 component，
   ASSIGNED 的 int insert 保持轻量路径。生成值不提前写实体，资源或回填失败不自动重试。
 - PG/H2 声明 JDBC_GENERATED_KEYS、INSERT_DEFAULT_VALUES；指定物理主键列读取单行单列非空键，
   DEFAULT VALUES 使用统一 AST；保留 JDBC 分类与清理异常，不额外查询主键。
 - 增加主键生成、资源、事务与消费者合同测试源码及必需套件清单，新增 SKIS042—044、SKISM014—018，
-  使用边界见[主键生成与插入结果](docs/id-generation.md)。上述 T02 新增项均待当前 CI 验证。
+  使用边界见[主键生成与插入结果](docs/id-generation.md)。T02 基线已验证；T03 新入口与当前改动待 CI 验证。
 - 在现有 `Sql` 门面开放 COUNT、单表达式 COUNT DISTINCT、SUM/AVG/MIN/MAX 及标准表达式工厂，
   固定跨方言结果类型、内置输入白名单与有效可空性；不新增普通查询顶层类型，查询预算保持 30/30。
 - 在执行查询、纯描述和单列描述上提供不可变 GROUP BY/HAVING、andHaving/orHaving；

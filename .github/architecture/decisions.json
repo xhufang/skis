@@ -258,6 +258,11 @@
           "kind": "java",
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisAggregateContractTest.java",
           "type": "io.skis.integration.AbstractSkisAggregateContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/ReturningPipelineTest.java",
+          "type": "io.skis.dialect.support.ReturningPipelineTest"
         }
       ],
       "change": {
@@ -291,6 +296,11 @@
           "kind": "java",
           "path": "skis-query/src/main/java/io/skis/query/internal/QueryPlanKey.java",
           "type": "io.skis.query.internal.QueryPlanKey"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/DynamicMutationPlans.java",
+          "type": "io.skis.mutation.internal.DynamicMutationPlans"
         }
       ],
       "contracts": [
@@ -311,6 +321,11 @@
             "jobs",
             "engineering-gates"
           ]
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/internal/DynamicMutationPlansTest.java",
+          "type": "io.skis.mutation.internal.DynamicMutationPlansTest"
         }
       ]
     },
@@ -1154,12 +1169,12 @@
     {
       "id": "ADR-0023",
       "title": "主键策略、生成式插入参数与结果回填",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "源码与测试已实现；待当前提交 CI、PG/H2、消费者和工程合同验证",
-      "task": "0.2.10:T02",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1183,13 +1198,13 @@
         },
         {
           "kind": "java",
-          "path": "skis-mutation/src/main/java/io/skis/mutation/InsertResult.java",
-          "type": "io.skis.mutation.InsertResult"
+          "path": "skis-mutation/src/main/java/io/skis/mutation/SnowflakeIdGenerator.java",
+          "type": "io.skis.mutation.SnowflakeIdGenerator"
         },
         {
           "kind": "java",
-          "path": "skis-mutation/src/main/java/io/skis/mutation/SnowflakeIdGenerator.java",
-          "type": "io.skis.mutation.SnowflakeIdGenerator"
+          "path": "skis-mutation/src/main/java/io/skis/mutation/InsertInto.java",
+          "type": "io.skis.mutation.InsertInto"
         }
       ],
       "contracts": [
@@ -1213,7 +1228,20 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisGeneratedIdContractTest.java",
           "type": "io.skis.integration.AbstractSkisGeneratedIdContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "1899270ba880601d276ed324bcbab40cb9e359fd",
+        "fromStatus": "Accepted",
+        "reason": "2026-10-27 核对 T02 基线 1899270 的 CI 40468581570 / Compliance 40468581572；Java 21/25、PG 容器/URL、H2、独立消费者和工程门禁通过，下载原始 XML 无失败/跳过。T03 按 ADR-0025 删除 InsertResult，保留四策略、生成访问/绑定、计数与资源内核；新 returning 合同仍待当前变更 CI。",
+        "removedAnchors": [
+          {
+            "kind": "java",
+            "path": "skis-mutation/src/main/java/io/skis/mutation/InsertResult.java",
+            "type": "io.skis.mutation.InsertResult"
+          }
+        ],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0024",
@@ -1222,10 +1250,116 @@
       "decisionVersion": "0.2.10-SNAPSHOT",
       "targetVersion": "0.2.10-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "RETURNING与UPSERT、批量失败、三层BYPASS及真实流读取实现和验证",
+      "remaining": "条件写入与RETURNING源码已实现待验证；UPSERT、批量失败、三层BYPASS及真实流读取待实现和验证",
       "task": "0.2.10:T03-T08",
-      "anchors": [],
-      "contracts": []
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/DynamicMutationPlans.java",
+          "type": "io.skis.mutation.internal.DynamicMutationPlans"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/ReturningStatement.java",
+          "type": "io.skis.sql.ast.ReturningStatement"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/MutationQuerySupport.java",
+          "type": "io.skis.query.internal.MutationQuerySupport"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/internal/DynamicMutationPlansTest.java",
+          "type": "io.skis.mutation.internal.DynamicMutationPlansTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/ReturningPipelineTest.java",
+          "type": "io.skis.dialect.support.ReturningPipelineTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/ReturningExecutionTest.java",
+          "type": "io.skis.jdbc.ReturningExecutionTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0025",
+      "title": "唯一 insertInto 插入入口、write 执行与 Written 结果",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "源码、测试和调用方已同步；待当前变更 Java21/25、nullness、golden、PG/H2、消费者及工程门禁验证",
+      "task": "0.2.10:T03",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/InsertInto.java",
+          "type": "io.skis.mutation.InsertInto"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/InsertWrite.java",
+          "type": "io.skis.mutation.InsertWrite"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/BatchInsertWrite.java",
+          "type": "io.skis.mutation.BatchInsertWrite"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/ReturningWrite.java",
+          "type": "io.skis.mutation.ReturningWrite"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/Written.java",
+          "type": "io.skis.mutation.Written"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/UpdateSet.java",
+          "type": "io.skis.mutation.UpdateSet"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/UpdateWrite.java",
+          "type": "io.skis.mutation.UpdateWrite"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/DeleteWrite.java",
+          "type": "io.skis.mutation.DeleteWrite"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/DefaultWritten.java",
+          "type": "io.skis.mutation.internal.DefaultWritten"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/MutationTypeSafetyCompilationTest.java",
+          "type": "io.skis.mutation.MutationTypeSafetyCompilationTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/internal/WrittenTest.java",
+          "type": "io.skis.mutation.internal.WrittenTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
+          "type": "io.skis.integration.AbstractSkisReturningContractTest"
+        }
+      ]
     }
   ]
 }

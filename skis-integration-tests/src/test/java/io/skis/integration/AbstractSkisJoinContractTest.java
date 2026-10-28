@@ -75,14 +75,14 @@ abstract class AbstractSkisJoinContractTest {
     petOrphanId = base + 103;
     petOrphanTwoId = base + 104;
 
-    executor.insert(owner, new Owner(ownerAdaId, "Ada"));
-    executor.insert(owner, new Owner(ownerGraceId, "Grace"));
-    executor.insert(owner, new Owner(ownerWithoutPetId, "Lin"));
-    executor.insert(pet, new JoinPet(petAdaOneId, ownerAdaId, "Alpha"));
-    executor.insert(pet, new JoinPet(petAdaTwoId, ownerAdaId, "Beta"));
-    executor.insert(pet, new JoinPet(petGraceId, ownerGraceId, "Gamma"));
-    executor.insert(pet, new JoinPet(petOrphanId, null, "Orphan"));
-    executor.insert(pet, new JoinPet(petOrphanTwoId, null, "Orphan Two"));
+    executor.insertInto(owner).value(new Owner(ownerAdaId, "Ada")).write();
+    executor.insertInto(owner).value(new Owner(ownerGraceId, "Grace")).write();
+    executor.insertInto(owner).value(new Owner(ownerWithoutPetId, "Lin")).write();
+    executor.insertInto(pet).value(new JoinPet(petAdaOneId, ownerAdaId, "Alpha")).write();
+    executor.insertInto(pet).value(new JoinPet(petAdaTwoId, ownerAdaId, "Beta")).write();
+    executor.insertInto(pet).value(new JoinPet(petGraceId, ownerGraceId, "Gamma")).write();
+    executor.insertInto(pet).value(new JoinPet(petOrphanId, null, "Orphan")).write();
+    executor.insertInto(pet).value(new JoinPet(petOrphanTwoId, null, "Orphan Two")).write();
   }
 
   @AfterEach

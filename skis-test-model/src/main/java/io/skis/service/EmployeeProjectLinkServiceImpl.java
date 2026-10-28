@@ -23,7 +23,7 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
   @Override
   public EmployeeProjectLink createLink(EmployeeProjectLink link) {
     prepareForInsert(link);
-    skisExecutor.insert(LINK, link);
+    skisExecutor.insertInto(LINK).value(link).write();
     return link;
   }
 

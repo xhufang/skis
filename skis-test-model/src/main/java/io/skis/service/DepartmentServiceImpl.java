@@ -32,7 +32,7 @@ public class DepartmentServiceImpl implements DepartmentService {
     department.setCreateStamp(now);
     department.setModifyStamp(now);
     department.setVersion(0L);
-    skisExecutor.insert(DEPARTMENT, department);
+    skisExecutor.insertInto(DEPARTMENT).value(department).write();
     return department;
   }
 

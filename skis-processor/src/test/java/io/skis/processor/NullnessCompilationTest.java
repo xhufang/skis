@@ -201,7 +201,7 @@ class NullnessCompilationTest {
         static RowDecoder<@Nullable String> nullableDecoder() { return (rs, context) -> null; }
         static RowDecoder<String> requiredDecoder() { return (rs, context) -> "ok"; }
         static int write(MutationOperations operations, QueryTable<String> table, String entity) {
-          return operations.insert(table, entity);
+          return operations.insertInto(table).value(entity).write();
         }
         static io.skis.runtime.TransactionCallback<@Nullable String> nullableTransaction() {
           return session -> null;
@@ -226,7 +226,7 @@ class NullnessCompilationTest {
         """);
     reject("mutation-null-entity", """
         static int invalid(MutationOperations operations, QueryTable<String> table,
-            @Nullable String value) { return operations.insert(table, value); }
+            @Nullable String value) { return operations.insertInto(table).value(value).write(); }
         """);
     reject("mutation-null-id", """
         static int invalid(MutationOperations operations, QueryTable<String> table) {
@@ -347,6 +347,41 @@ class NullnessCompilationTest {
 
   private void reject(String id, String body) throws Exception {
     check(id, body).assertRejected("NullAway", "Contract.java");
+  }
+
+  @Test
+  void writtenAndStagedMutationNullnessRemainPrecise() throws Exception {
+    check("written-valid", """
+        static <R> R required(io.skis.mutation.Written<R> result) { return result.get(); }
+        static <R> @Nullable R fallback(io.skis.mutation.Written<R> result) {
+          return result.orElse(null);
+        }
+        static void stages(MutationOperations op, QueryTable<String> table, String value) {
+          io.skis.mutation.Written<String> result = op.insertInto(table).value(value).returning().write();
+          String required = result.orElseThrow();
+          Optional<Integer> length = result.map(String::length);
+        }
+        """).assertPass();
+    reject("written-nullable-default", """
+        static int invalid(io.skis.mutation.Written<String> result) {
+          return result.orElse(null).length();
+        }
+        """);
+    reject("written-nullable-supplier", """
+        static int invalid(io.skis.mutation.Written<String> result) {
+          return result.orElseGet(() -> null).length();
+        }
+        """);
+    reject("write-null-options", """
+        static void invalid(MutationOperations op, QueryTable<String> table) {
+          op.insertInto(table).value("value").write(null);
+        }
+        """);
+    reject("write-null-projection", """
+        static void invalid(MutationOperations op, QueryTable<String> table) {
+          op.insertInto(table).value("value").returning((ProjectionSelection<String>) null);
+        }
+        """);
   }
 
   private static Map<String, String> source(String body) {

@@ -24,6 +24,52 @@ final class MutationTypeSafetyCompilationTest {
   @TempDir Path temporaryDirectory;
 
   @Test
+  void stagedWritesHaveExactTypesAndRejectOldOrIllegalEntrypoints() throws Exception {
+    String prefix = """
+        package samples;
+        import io.skis.mutation.*;
+        import io.skis.query.*;
+        import java.util.*;
+        final class Contract {
+          static void calls(MutationOperations op, QueryTable<String> table, String entity,
+              ProjectionSelection<Integer> reusable, ProjectionType<Integer> special,
+              NonNullSelectable<String> column) {
+        """;
+    String valid = """
+        InsertInto<String> target = op.insertInto(table);
+        InsertWrite<String> single = target.value(entity);
+        int count = single.write();
+        Written<String> full = single.returning().write();
+        Written<Integer> one = single.returning(reusable).write();
+        Written<Integer> two = single.returning(special).write();
+        Written<List<String>> many = target.values(List.of(entity)).returning().write();
+        Written<List<Integer>> projected = target.values(List.of(entity)).returning(special).write();
+        UpdateWrite<String> update = op.update(table).set(column, entity);
+        Written<List<Integer>> changed = update.where(column.eq(entity)).returning(reusable).write();
+        Written<List<String>> deleted = op.deleteFrom(table).allowAllRows().returning().write();
+        """;
+    assertTrue(compile("samples.Contract", prefix + valid + "}}", temporaryDirectory.resolve("stages")));
+    int index = 0;
+    for (String illegal : List.of(
+        "op.insert(table, entity);", "op.insertResult(table, entity);",
+        "op.insertReturning(table, entity);", "op.batchInsert(table, List.of(entity));",
+        "InsertResult<String> old;", "op.insertInto(table).write();",
+        "op.insertInto(table).returning();", "op.insertInto(table).value(entity).values(List.of(entity));",
+        "op.insertInto(table).value(entity).value(entity);",
+        "op.insertInto(table).value(entity).returning().returning();",
+        "op.insertInto(table).value(entity).returning(column);",
+        "op.insertInto(table).value(entity).returning(String.class);",
+        "op.insertInto(table).value(entity).returning((io.skis.mapping.spi.RowDecoder<String>) null);",
+        "Written<String> bad = op.insertInto(table).value(entity).write();",
+        "int bad = op.insertInto(table).value(entity).returning().write();",
+        "Written<String> bad = op.insertInto(table).values(List.of(entity)).returning().write();",
+        "op.update(table).write();", "op.update(table).set(column, 1);")) {
+      assertFalse(compile("samples.Contract", prefix + illegal + "}}",
+          temporaryDirectory.resolve("illegal-" + index++)), illegal);
+    }
+  }
+
+  @Test
   void entityMutationsRequireQueryTables() throws Exception {
     String valid =
         """
@@ -36,7 +82,7 @@ final class MutationTypeSafetyCompilationTest {
           static final class Pet {}
 
           static int mutate(MutationOperations operations, QueryTable<Pet> pet, Pet value) {
-            int affected = operations.insert(pet, value);
+            int affected = operations.insertInto(pet).value(value).write();
             affected += operations.updateById(pet, value);
             affected += operations.deleteById(pet, 1L);
             return affected;
@@ -44,7 +90,7 @@ final class MutationTypeSafetyCompilationTest {
         }
         """;
     String invalidInsertTarget =
-        invalidDerivedTargetSource("InvalidDerivedInsert", "operations.insert(derived, value)");
+        invalidDerivedTargetSource("InvalidDerivedInsert", "operations.insertInto(derived).value(value).write()");
     String invalidUpdateTarget =
         invalidDerivedTargetSource("InvalidDerivedUpdate", "operations.updateById(derived, value)");
     String invalidDeleteTarget =

@@ -38,6 +38,7 @@ import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectPagination;
 import io.skis.sql.ast.SelectStatement;
@@ -112,6 +113,12 @@ public final class PortableLowering {
 
     private StatementAst statement(StatementAst statement) {
       return switch (statement) {
+        case ReturningStatement returning -> {
+          StatementAst mutation = statement(returning.mutation());
+          yield mutation == returning.mutation()
+              ? returning
+              : new ReturningStatement(mutation, returning.selections(), returning.form());
+        }
         case SelectStatement select -> select(select);
         case CountAst count -> count(count);
         case InsertStatement insert -> insert(insert);

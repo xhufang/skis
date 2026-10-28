@@ -38,17 +38,17 @@ class IdGenerationContractTest {
     var fixture = new Fixture<>(type, codec, IdGeneration.ASSIGNED);
     var operations = fixture.operations();
     var bean = new Bean(id);
-    assertEquals(1, operations.insert(fixture.table, bean));
-    assertSame(bean, operations.insertResult(fixture.table, bean).entity());
+    assertEquals(1, operations.insertInto(fixture.table).value(bean).write());
+    assertEquals(bean.id, operations.insertInto(fixture.table).value(bean).returning().write().get().id);
     assertEquals(1, operations.deleteById(fixture.table, id));
     assertEquals(List.of(id, id, id), fixture.bound);
     assertEquals(0, bean.writes);
     assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL,
         assertThrows(MutationException.class,
-            () -> operations.insert(fixture.table, new Bean(null))).code());
+            () -> operations.insertInto(fixture.table).value(new Bean(null)).write()).code());
     assertEquals(SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH,
         assertThrows(MutationException.class,
-            () -> operations.insert(fixture.table, new Bean("wrong Java type"))).code());
+            () -> operations.insertInto(fixture.table).value(new Bean("wrong Java type")).write()).code());
     assertEquals(SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH,
         assertThrows(MutationException.class,
             () -> operations.deleteById(fixture.table, "wrong Java type")).code());
@@ -60,14 +60,14 @@ class IdGenerationContractTest {
     for (IdGeneration generation : List.of(IdGeneration.ASSIGNED, IdGeneration.SNOWFLAKE)) {
       var fixture = new Fixture<>(Long.class, JdbcCodecs.LONG, generation);
       var bean = new Bean(generation == IdGeneration.ASSIGNED ? 0L : 7L);
-      assertSame(bean, fixture.operations().insertResult(fixture.table, bean).entity());
+      assertEquals(bean.id, fixture.operations().insertInto(fixture.table).value(bean).returning().write().get().id);
       assertEquals(bean.id, fixture.bound.getFirst());
       assertEquals(1, bean.reads);
       assertEquals(0, bean.writes);
     }
     var text = new Fixture<>(String.class, JdbcCodecs.STRING, IdGeneration.UUID);
     var existing = new Bean("00000000-0000-1000-8000-000000000007");
-    assertEquals(1, text.operations().insert(text.table, existing));
+    assertEquals(1, text.operations().insertInto(text.table).value(existing).write());
     assertEquals(0, existing.writes);
   }
 
@@ -75,7 +75,7 @@ class IdGenerationContractTest {
   void generatesOnceAndAppliesOnlyAfterRelease() {
     var fixture = new Fixture<>(UUID.class, JdbcCodecs.UUID, IdGeneration.UUID);
     var bean = new Bean(null);
-    fixture.operations().insert(fixture.table, bean);
+    fixture.operations().insertInto(fixture.table).value(bean).write();
     UUID key = assertInstanceOf(UUID.class, bean.id);
     assertEquals(4, key.version());
     assertEquals(2, key.variant());
@@ -84,7 +84,6 @@ class IdGenerationContractTest {
     assertEquals(1, bean.reads);
     assertEquals(1, bean.writes);
     assertFalse(new InsertArguments<>(bean, key).toString().contains(key.toString()));
-    assertFalse(new InsertResult<>(1, bean).toString().contains(key.toString()));
   }
 
   @Test
@@ -93,7 +92,7 @@ class IdGenerationContractTest {
       var fixture = new Fixture<>(UUID.class, JdbcCodecs.UUID, IdGeneration.UUID);
       fixture.failurePoint = phase;
       var bean = new Bean(null);
-      assertThrows(RuntimeException.class, () -> fixture.operations().insert(fixture.table, bean));
+      assertThrows(RuntimeException.class, () -> fixture.operations().insertInto(fixture.table).value(bean).write());
       assertNull(bean.id);
       assertEquals(0, bean.writes);
       assertFalse(fixture.events.contains("apply"));
@@ -106,19 +105,19 @@ class IdGenerationContractTest {
     var assigned = new Fixture<>(Long.class, JdbcCodecs.LONG, IdGeneration.ASSIGNED);
     assertEquals(SkisErrorCode.MUTATION_REQUIRED_VALUE_NULL,
         assertThrows(MutationException.class,
-            () -> assigned.operations().insert(assigned.table, new Bean(null))).code());
+            () -> assigned.operations().insertInto(assigned.table).value(new Bean(null)).write()).code());
     assertTrue(assigned.events.isEmpty());
     assertEquals(SkisErrorCode.MUTATION_VALUE_TYPE_MISMATCH,
         assertThrows(MutationException.class,
-            () -> assigned.operations().insert(assigned.table, new Bean("wrong Java type"))).code());
+            () -> assigned.operations().insertInto(assigned.table).value(new Bean("wrong Java type")).write()).code());
     var snow = new Fixture<>(Long.class, JdbcCodecs.LONG, IdGeneration.SNOWFLAKE);
     assertThrows(SkisConfigurationException.class, () -> MutationRuntime.compile(
         EntityRuntimeRegistry.of(List.of(snow.model)), TestDialect.INSTANCE));
-    assertThrows(MutationException.class, () -> snow.operations().insert(snow.table, new Bean(0L)));
-    assertThrows(MutationException.class, () -> snow.operations().insert(snow.table, new Bean(-1L)));
+    assertThrows(MutationException.class, () -> snow.operations().insertInto(snow.table).value(new Bean(0L)).write());
+    assertThrows(MutationException.class, () -> snow.operations().insertInto(snow.table).value(new Bean(-1L)).write());
     var uuid = new Fixture<>(String.class, JdbcCodecs.STRING, IdGeneration.UUID);
     for (String text : List.of("", " ", "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "1-1-1-1-1")) {
-      assertThrows(MutationException.class, () -> uuid.operations().insert(uuid.table, new Bean(text)));
+      assertThrows(MutationException.class, () -> uuid.operations().insertInto(uuid.table).value(new Bean(text)).write());
     }
     assertTrue(uuid.events.isEmpty());
   }
@@ -148,9 +147,9 @@ class IdGenerationContractTest {
       var bean = new Bean(null);
       var failure = assertThrows(MutationException.class, () -> {
         if (resultRequested) {
-          operations.insertResult(fixture.table, bean);
+          operations.insertInto(fixture.table).value(bean).returning().write();
         } else {
-          operations.insert(fixture.table, bean);
+          operations.insertInto(fixture.table).value(bean).write();
         }
       });
       assertEquals(SkisErrorCode.MUTATION_ID_GENERATION_FAILED, failure.code());
@@ -187,7 +186,7 @@ class IdGenerationContractTest {
     for (int index = 0; index < 128; index++) {
       tasks.add(() -> {
         var bean = new Bean(null);
-        operations.insert(fixture.table, bean);
+        operations.insertInto(fixture.table).value(bean).write();
         assertTrue(keys.add((UUID) bean.id));
         assertEquals(1, bean.reads);
         return null;
@@ -200,6 +199,59 @@ class IdGenerationContractTest {
     assertEquals(128, Collections.frequency(fixture.events, "acquire"));
     assertEquals(128, Collections.frequency(fixture.events, "execute"));
     assertEquals(128, fixture.bound.size());
+  }
+
+  @Test
+  void returningPreservesExistingKeysAndAppliesChangedDatabaseKeysExactlyOnce() {
+    for (IdGeneration generation : List.of(IdGeneration.UUID, IdGeneration.SNOWFLAKE)) {
+      var fixture = new Fixture<>(Long.class, JdbcCodecs.LONG, IdGeneration.SNOWFLAKE);
+      Fixture<?> selected = generation == IdGeneration.UUID
+          ? new Fixture<>(UUID.class, JdbcCodecs.UUID, generation) : fixture;
+      Object original = generation == IdGeneration.UUID ? UUID.randomUUID() : 7L;
+      var bean = new Bean(original);
+      var operations = selected.operations();
+      operations.insertInto(selected.table).value(bean).returning().write();
+      assertEquals(0, bean.writes);
+      selected.returnedKey = generation == IdGeneration.UUID ? UUID.randomUUID() : 8L;
+      var result = operations.insertInto(selected.table).value(bean).returning().write();
+      assertEquals(selected.returnedKey, bean.id);
+      assertEquals(bean.id, result.get().id);
+      assertEquals(1, bean.writes);
+      assertEquals("apply", selected.events.getLast());
+    }
+  }
+
+  @Test
+  void returningBuildsWithoutJdbcAndDoesNotApplyKeysOnAnyFailure() {
+    for (String point : List.of("acquire", "bind", "execute", "metadata", "next", "decode",
+        "read", "close-rows", "close", "release")) {
+      var fixture = new Fixture<>(UUID.class, JdbcCodecs.UUID, IdGeneration.UUID);
+      fixture.failurePoint = point;
+      var bean = new Bean(null);
+      var request = fixture.operations().insertInto(fixture.table).value(bean).returning();
+      assertTrue(fixture.events.isEmpty());
+      assertNull(bean.id);
+      assertEquals(0, bean.reads);
+      assertTrue(fixture.bound.isEmpty());
+      assertThrows(RuntimeException.class, request::write, point);
+      assertNull(bean.id, point);
+      assertEquals(0, bean.writes, point);
+    }
+  }
+
+  @Test
+  void missingExtraOrNullReturnedKeysNeverApplyTheCandidate() {
+    for (int variant = 0; variant < 3; variant++) {
+      var fixture = new Fixture<>(UUID.class, JdbcCodecs.UUID, IdGeneration.UUID);
+      fixture.returnedRows = variant == 0 ? 0 : variant == 1 ? 2 : 1;
+      fixture.nullKey = variant == 2;
+      var bean = new Bean(null);
+      assertThrows(MutationException.class,
+          () -> fixture.operations().insertInto(fixture.table).value(bean).returning().write());
+      assertNull(bean.id);
+      assertEquals(0, bean.writes);
+      assertEquals("release", fixture.events.getLast());
+    }
   }
 
   private static final class Bean {
@@ -215,6 +267,9 @@ class IdGenerationContractTest {
     final EntityRuntimeModel<Bean> model;
     final QueryTable<Bean> table;
     @Nullable String failurePoint;
+    @Nullable Object returnedKey;
+    int returnedRows = 1;
+    boolean nullKey;
 
     Fixture(Class<I> type, JdbcTypeCodec<I> codec, IdGeneration generation) {
       var id = new PropertyMeta<Bean, I>(0, "id", type, ColumnMeta.of("id", false));
@@ -232,7 +287,10 @@ class IdGenerationContractTest {
       ParameterBinder<InsertArguments<Bean>> generated = (statement, index, arguments, context) -> {
         step("bind"); bound.add(Objects.requireNonNull(arguments.effectiveId())); return index + 1;
       };
-      model = new EntityRuntimeModel<>(metadata, layout -> (results, context) -> new Bean(null),
+      model = new EntityRuntimeModel<>(metadata, layout -> (results, context) -> {
+        step("decode");
+        return new Bean(codec.read(results, layout.requireIndex(0), context));
+      },
           List.of(new PropertyRuntime<>(id, codec)),
           new EntityMutationBinders<>(assigned, assigned, assigned, null, generated, access));
       table = new QueryTable<Bean>(metadata) {
@@ -266,6 +324,29 @@ class IdGenerationContractTest {
                     yield null;
                   }
                   case "executeUpdate" -> { step("execute"); yield 1; }
+                  case "getMaxRows" -> 0;
+                  case "executeQuery" -> {
+                    step("execute");
+                    int[] position = {0};
+                    yield proxy(ResultSet.class, (row, read, indexes) -> switch (read.getName()) {
+                      case "getMetaData" -> {
+                        step("metadata");
+                        yield proxy(ResultSetMetaData.class, (meta, getter, unusedArgs) -> {
+                          if (getter.getName().equals("getColumnCount")) { return 1; }
+                          throw new AssertionError(getter.getName());
+                        });
+                      }
+                      case "next" -> { step("next"); yield position[0]++ < returnedRows; }
+                      case "getLong", "getInt", "getString", "getObject" -> {
+                        step("read");
+                        assertEquals(1, indexes[0]);
+                        yield nullKey ? null : returnedKey == null ? bound.getLast() : returnedKey;
+                      }
+                      case "wasNull" -> false;
+                      case "close" -> { step("close-rows"); yield null; }
+                      default -> throw new AssertionError(read.getName());
+                    });
+                  }
                   case "close" -> { step("close"); yield null; }
                   default -> throw new AssertionError(operation.getName());
                 });
@@ -288,7 +369,9 @@ class IdGenerationContractTest {
     private final SqlRenderer renderer = new StandardSqlRenderer(this);
     @Override public String id() { return "id-test"; }
     @Override public IdentifierRules identifierRules() { return StandardIdentifierRules.INSTANCE; }
-    @Override public DialectCapabilities capabilities() { return DialectCapabilities.of(); }
+    @Override public DialectCapabilities capabilities() {
+      return DialectCapabilities.of(DialectFeature.MUTATION_RETURNING);
+    }
     @Override public SqlRenderer renderer() { return renderer; }
   }
 }

@@ -61,9 +61,9 @@ class SupportedSpiConsumerTest {
               + "\"pet_name\" VARCHAR(200) NOT NULL, \"version\" BIGINT NOT NULL)");
       var executor = Skis.create(source, new ExternalDialect());
       var pet = PetTable.petTable;
-      executor.insert(pet, new Pet(1L, "a", null));
-      executor.insert(pet, new Pet(2L, "a", null));
-      executor.insert(pet, new Pet(3L, "b", null));
+      executor.insertInto(pet).value(new Pet(1L, "a", null)).write();
+      executor.insertInto(pet).value(new Pet(2L, "a", null)).write();
+      executor.insertInto(pet).value(new Pet(3L, "b", null)).write();
       var key = Sql.concat(pet.name(), Sql.value("-external"));
       var count = Sql.countAll();
       var grouped =

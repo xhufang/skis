@@ -3,6 +3,7 @@ package io.skis.runtime;
 import io.skis.core.ExecutionOptions;
 import io.skis.core.TransactionException;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.MutationPlanCacheStatistics;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
 import org.jspecify.annotations.Nullable;
@@ -52,4 +53,10 @@ public interface SkisExecutor extends QueryOperations, MutationOperations {
    * query executions and then call this method before dropping the loader.
    */
   void clearQueryPlanCache();
+
+  /** Returns actual activity and occupancy of the shared dynamic mutation-plan cache. */
+  MutationPlanCacheStatistics mutationPlanCacheStatistics();
+
+  /** Clears shared mutation plans after quiescing operations that use unloadable mappings. */
+  void clearMutationPlanCache();
 }

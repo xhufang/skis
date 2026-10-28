@@ -1,9 +1,12 @@
 package io.skis.dialect.support;
 
 import io.skis.dialect.spi.DialectCapabilities;
+import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.PortableLowering;
 import io.skis.dialect.spi.ResolvedStatement;
+import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.StatementAst;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -50,9 +53,22 @@ public final class StandardSqlLowering implements DialectLowering {
   @Override
   public StatementAst lower(ResolvedStatement input) {
     Objects.requireNonNull(input, "input");
-    return aggregateTarget == null
-        ? input.statement()
-        : PortableLowering.lowerAggregates(input, aggregateTarget);
+    StatementAst lowered =
+        aggregateTarget == null
+            ? input.statement()
+            : PortableLowering.lowerAggregates(input, aggregateTarget);
+    if (lowered instanceof ReturningStatement returning) {
+      ReturningStatement.Form form =
+          capabilities.supports(DialectFeature.MUTATION_RESULT_TABLE)
+              ? returning.mutation() instanceof DeleteStatement
+                  ? ReturningStatement.Form.OLD_TABLE
+                  : ReturningStatement.Form.FINAL_TABLE
+              : ReturningStatement.Form.NATIVE;
+      return returning.form() == form
+          ? returning
+          : new ReturningStatement(returning.mutation(), returning.selections(), form);
+    }
+    return lowered;
   }
 
   @Override

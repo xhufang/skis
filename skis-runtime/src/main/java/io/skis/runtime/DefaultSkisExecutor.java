@@ -5,8 +5,11 @@ import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcTransaction;
-import io.skis.mutation.InsertResult;
+import io.skis.mutation.DeleteWrite;
+import io.skis.mutation.InsertInto;
 import io.skis.mutation.MutationOperations;
+import io.skis.mutation.MutationPlanCacheStatistics;
+import io.skis.mutation.UpdateSet;
 import io.skis.mutation.internal.MutationPlanCatalog;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
@@ -103,24 +106,18 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E> int insert(QueryTable<E> table, E value) {
-    return mutations.insert(table, value);
+  public <E> InsertInto<E> insertInto(QueryTable<E> table) {
+    return mutations.insertInto(table);
   }
 
   @Override
-  public <E> int insert(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    return mutations.insert(table, value, executionOptions);
+  public <E> UpdateSet<E> update(QueryTable<E> table) {
+    return mutations.update(table);
   }
 
   @Override
-  public <E> InsertResult<E> insertResult(QueryTable<E> table, E value) {
-    return mutations.insertResult(table, value);
-  }
-
-  @Override
-  public <E> InsertResult<E> insertResult(
-      QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    return mutations.insertResult(table, value, executionOptions);
+  public <E> DeleteWrite<E> deleteFrom(QueryTable<E> table) {
+    return mutations.deleteFrom(table);
   }
 
   @Override
@@ -158,7 +155,8 @@ final class DefaultSkisExecutor implements SkisExecutor {
         JdbcTransaction.beginWithExecutor(sessionExecutor, ExecutionContext.EMPTY);
     try {
       QueryOperations sessionQueries = queryPlans.bind(transaction.jdbcExecutor());
-      MutationOperations sessionMutations = mutationPlans.bind(transaction.jdbcExecutor());
+      MutationOperations sessionMutations =
+          mutationPlans.bind(transaction.jdbcExecutor(), transaction::active);
       return new DefaultSkisSession(transaction, sessionQueries, sessionMutations);
     } catch (RuntimeException | Error failure) {
       try {
@@ -216,5 +214,15 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public void clearQueryPlanCache() {
     queryPlans.clearProjectionPlans();
+  }
+
+  @Override
+  public MutationPlanCacheStatistics mutationPlanCacheStatistics() {
+    return mutationPlans.planCacheStatistics();
+  }
+
+  @Override
+  public void clearMutationPlanCache() {
+    mutationPlans.clearDynamicPlans();
   }
 }

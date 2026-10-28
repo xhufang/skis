@@ -41,7 +41,9 @@ public final class H2Dialect implements Dialect {
           DialectFeature.MIN_AGGREGATE,
           DialectFeature.MAX_AGGREGATE,
           DialectFeature.JDBC_GENERATED_KEYS,
-          DialectFeature.INSERT_DEFAULT_VALUES);
+          DialectFeature.INSERT_DEFAULT_VALUES,
+          DialectFeature.MUTATION_RETURNING,
+          DialectFeature.MUTATION_RESULT_TABLE);
   // No stable dialect-level maximum has been accepted for the supported H2 contract.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =
       StatementParameterLimit.unknown();

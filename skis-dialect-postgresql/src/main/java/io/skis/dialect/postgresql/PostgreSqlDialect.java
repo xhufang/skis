@@ -42,7 +42,8 @@ public final class PostgreSqlDialect implements Dialect {
           DialectFeature.MIN_AGGREGATE,
           DialectFeature.MAX_AGGREGATE,
           DialectFeature.JDBC_GENERATED_KEYS,
-          DialectFeature.INSERT_DEFAULT_VALUES);
+          DialectFeature.INSERT_DEFAULT_VALUES,
+          DialectFeature.MUTATION_RETURNING);
   // PgJDBC 42.7.11 reports Integer.MAX_VALUE in simple mode and 65,535 otherwise.
   // Use the connection-independent value as the conservative framework cap.
   private static final StatementParameterLimit MAX_STATEMENT_PARAMETERS =

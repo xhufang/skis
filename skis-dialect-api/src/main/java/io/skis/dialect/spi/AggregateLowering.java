@@ -10,6 +10,7 @@ import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DecimalPrecision;
+import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedOutputColumn;
 import io.skis.sql.ast.DerivedRelationReference;
@@ -31,11 +32,14 @@ import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ResolvedExpression;
 import io.skis.sql.ast.ResolvedStructureKey;
+import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.UpdateAssignment;
+import io.skis.sql.ast.UpdateStatement;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -50,7 +54,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
-/** One compilation-owned traversal of resolved grouping keys and aggregate numeric conversions. */
+/** Compilation-owned typing of standard expressions, resolved grouping and numeric aggregates. */
 final class AggregateLowering {
 
   private final PortableLowering.AggregateTarget target;
@@ -72,7 +76,10 @@ final class AggregateLowering {
 
   static StatementAst lower(ResolvedStatement input, PortableLowering.AggregateTarget target) {
     QueryBlockAnalysis analysis = input.queryAnalysis();
-    if (analysis == null || requiresUnLowering(analysis, target)) {
+    if (analysis == null) {
+      return mutation(input.statement(), target);
+    }
+    if (requiresUnLowering(analysis, target)) {
       return input.statement();
     }
     AggregateLowering lowering = new AggregateLowering(input, target);
@@ -83,6 +90,78 @@ final class AggregateLowering {
       return lowering.count(count, analysis);
     }
     return input.statement();
+  }
+
+  private static StatementAst mutation(
+      StatementAst statement, PortableLowering.AggregateTarget target) {
+    return switch (statement) {
+      case ReturningStatement returning -> {
+        StatementAst lowered = mutation(returning.mutation(), target);
+        yield lowered == returning.mutation()
+            ? returning
+            : new ReturningStatement(lowered, returning.selections(), returning.form());
+      }
+      case UpdateStatement update -> {
+        List<UpdateAssignment<?>> assignments = null;
+        for (int index = 0; index < update.assignments().size(); index++) {
+          UpdateAssignment<?> original = update.assignments().get(index);
+          UpdateAssignment<?> lowered = assignment(original, target);
+          if (lowered != original && assignments == null) {
+            assignments = new ArrayList<>(update.assignments().size());
+            assignments.addAll(update.assignments().subList(0, index));
+          }
+          if (assignments != null) {
+            assignments.add(lowered);
+          }
+        }
+        SqlPredicate where = (SqlPredicate) mutationExpression(update.where(), target, false);
+        yield assignments == null && where == update.where()
+            ? update
+            : new UpdateStatement(
+                update.target(), assignments == null ? update.assignments() : assignments, where);
+      }
+      case DeleteStatement delete -> {
+        SqlPredicate where = (SqlPredicate) mutationExpression(delete.where(), target, false);
+        yield where == delete.where() ? delete : new DeleteStatement(delete.target(), where);
+      }
+      // INSERT slots already obtain their types from the target columns and generated binder.
+      default -> statement;
+    };
+  }
+
+  private static <T> UpdateAssignment<T> assignment(
+      UpdateAssignment<T> assignment, PortableLowering.AggregateTarget target) {
+    SqlExpression<?> value = mutationExpression(assignment.value(), target, false);
+    if (value == assignment.value()) {
+      return assignment;
+    }
+    @SuppressWarnings("unchecked")
+    SqlExpression<T> typed = (SqlExpression<T>) value;
+    return new UpdateAssignment<>(assignment.column(), typed);
+  }
+
+  private static SqlExpression<?> mutationExpression(
+      SqlExpression<?> original, PortableLowering.AggregateTarget target, boolean typeValue) {
+    List<? extends SqlExpression<?>> operands = AstExpressions.operands(original);
+    boolean typeOperands = requiresTypedOperands(original, operands);
+    List<SqlExpression<?>> rewritten = null;
+    for (int index = 0; index < operands.size(); index++) {
+      SqlExpression<?> operand = operands.get(index);
+      SqlExpression<?> lowered = mutationExpression(operand, target, typeOperands);
+      if (lowered != operand && rewritten == null) {
+        rewritten = new ArrayList<>(operands.size());
+        rewritten.addAll(operands.subList(0, index));
+      }
+      if (rewritten != null) {
+        rewritten.add(lowered);
+      }
+    }
+    SqlExpression<?> result =
+        rewritten == null
+            ? original
+            : AstExpressions.rebuild(
+                original, operands, rewritten, AstExpressions.subquery(original));
+    return typedValue(result, target, typeValue, false);
   }
 
   private static boolean requiresUnLowering(
@@ -348,22 +427,30 @@ final class AggregateLowering {
       if (result instanceof AggregateExpression<?> aggregate) {
         result = numeric(aggregate);
       }
-      boolean unboundedDecimal =
-          target == PortableLowering.AggregateTarget.H2
-              && result instanceof ParameterSlot<?> parameter
-              && (parameter.javaType() == BigDecimal.class
-                  || parameter.javaType() == BigInteger.class);
-      boolean nativeLiteral =
-          result instanceof LiteralExpression<?> literal
-              && literal.kind() != LiteralExpression.Kind.NULL
-              && (literal.sqlType() == SqlType.INTEGER || literal.sqlType() == SqlType.BOOLEAN);
-      if ((typeValue || unboundedDecimal)
-          && (result instanceof ParameterSlot<?> || result instanceof LiteralExpression<?>)
-          && (!nativeLiteral || matching)) {
-        result = new CastExpression<>(result, result.javaType(), result.sqlType());
-      }
-      return result;
+      return typedValue(result, target, typeValue, matching);
     }
+  }
+
+  private static SqlExpression<?> typedValue(
+      SqlExpression<?> expression,
+      PortableLowering.AggregateTarget target,
+      boolean typeValue,
+      boolean matching) {
+    boolean unboundedDecimal =
+        target == PortableLowering.AggregateTarget.H2
+            && expression instanceof ParameterSlot<?> parameter
+            && (parameter.javaType() == BigDecimal.class
+                || parameter.javaType() == BigInteger.class);
+    boolean nativeLiteral =
+        expression instanceof LiteralExpression<?> literal
+            && literal.kind() != LiteralExpression.Kind.NULL
+            && (literal.sqlType() == SqlType.INTEGER || literal.sqlType() == SqlType.BOOLEAN);
+    return (typeValue || unboundedDecimal)
+            && (expression instanceof ParameterSlot<?>
+                || expression instanceof LiteralExpression<?>)
+            && (!nativeLiteral || matching)
+        ? new CastExpression<>(expression, expression.javaType(), expression.sqlType())
+        : expression;
   }
 
   private static boolean requiresTypedOperands(
@@ -374,6 +461,7 @@ final class AggregateLowering {
     if (expression instanceof ConcatExpression) {
       return false;
     }
+    //noinspection DeconstructionCanBeUsed
     if (expression instanceof CaseExpression<?> conditional) {
       for (var branch : conditional.branches()) {
         if (inferableValue(branch.result())) {

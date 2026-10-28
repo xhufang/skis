@@ -161,7 +161,7 @@ class SkisPlanReuseTest {
     assertEquals(ExecutionTermination.COMPLETED, operationCompleted.termination());
 
     events.clear();
-    assertEquals(1, executor.insert(PET_TABLE, new Pet(2L, "Fifi")));
+    assertEquals(1, executor.insertInto(PET_TABLE).value(new Pet(2L, "Fifi")).write());
     OperationStartedEvent mutationStarted =
         assertInstanceOf(OperationStartedEvent.class, events.get(0));
     StatementCompletedEvent mutationStatement =
