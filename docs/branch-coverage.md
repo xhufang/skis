@@ -1,5 +1,40 @@
 # 分支覆盖率与逐模块棘轮
 
+## PR #96：T03 覆盖率抬线与 mutation 补证（待新 CI 验证）
+
+[CI 40667070929 的权威作业](https://github.com/xhufang/skis/actions/runs/40667070929/job/122744135913?pr=96)
+已通过 Java 21 完整构建、97 个必需回归套件、PG 合同、覆盖采集及证据上传。
+Java 25、PG 容器/外部 URL、独立消费者、Gradle 与发布边界作业均通过；
+Java 21 单元和集成名称转发权威门禁失败，不是额外的测试失败。
+首个原始阻断为 sql-ast 覆盖率应抬未抬，完整候选还显示 mutation 回退，不能整体覆盖现有基线。
+
+PR head 为 `59711348fde79a51b6249678e211cc0f0e968cbf`，实际测试合并提交为
+`596a4493f51918b86d176aebca3b548c7bf50d3c`，比较 base 为 `1899270ba880601d276ed324bcbab40cb9e359fd`。
+[工件 12806064079](https://github.com/xhufang/skis/actions/runs/40667070929/artifacts/12806064079)
+为 `branch-coverage-java-21-40667070929-1`，ZIP SHA-256 为
+`aa24360445985ce30db13497fde4ec94a5b75aa98498d725787457a9a08fbdfc`，与 GitHub 元数据一致。
+已静态核对运行/尝试、工作流、合并父提交、七项 producer blob、提交内 policy/baseline 原始摘要、可信 comparison 基线，
+以及全部 15 模块 XML SHA-256、逐类/汇总分支计数、类清单和 HTML 报告。
+
+仅原样登记以下五项提升行及来源，其余十行、首次登记、统计口径与历史保持不变：
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-sql-ast | 83.14% | 1538/291 | 105 | 84.08% |
+| skis-dialect-api | 81.38% | 1178/258 | 39 | 82.03% |
+| skis-dialect-support | 89.83% | 285/30 | 8 | 90.47% |
+| skis-jdbc | 78.98% | 277/67 | 25 | 80.52% |
+| skis-query | 77.99% | 1922/540 | 191 | 78.06% |
+
+mutation 本轮为 393/75、46 类、83.97%，保留原有 84.65% 门槛及历史来源，不采用降线候选。
+对应 XML 显示动态条件写入的 `ValuesBinder.bindObserved` 尚未执行。
+DynamicMutationPlansTest 新增实际编译计划的观察绑定合同：非默认 JDBC 起始下标、有序值与类型、先绑定后观察，
+以及首项耗尽观察预算和初始即无观察需求时仍绑定全部后续槽位、不再探测或发送观察回调。
+不修改生产实现、不增加测试专用生产入口，不预测新覆盖率。
+
+本次仅静态核对工件、登记提升行和补充测试源码，未编译运行、执行项目检查器或 benchmark。
+取证保存在被忽略的 `target/ci-coverage-40667070929/`；新增测试、mutation 回退补证及完整来源认证待新 CI，T03 尚未关闭。
+
 ## PR #95：主键生成覆盖率抬线与回退补证（待新 CI 验证）
 
 ### CI 40465466642：登记 mutation 提升并固定 CAS 重试覆盖

@@ -74,6 +74,54 @@ class DynamicMutationPlansTest {
   }
 
   @Test
+  void observedConditionalBindingStopsObservationWithoutSkippingJdbcSlots() throws Exception {
+    var model = model(LoaderValue.class, "value");
+    var plans = new DynamicMutationPlans(EntityRuntimeRegistry.of(List.of(model)), new TestDialect());
+    var table = new Table(model.entity());
+    var inputs = MutationQuerySupport.inputs(
+        plans.registry(), table, List.of(), table.id().in(List.of(11L, 13L)), false);
+    var plan = plans.count(new DynamicMutationPlans.Request<>(), "delete",
+        new DeleteStatement(MutationQuerySupport.table(table), inputs.where()), inputs, null);
+    for (boolean observe : List.of(true, false)) {
+      var indexes = new ArrayList<Integer>();
+      var bound = new ArrayList<Long>();
+      var observedIndexes = new ArrayList<Integer>();
+      var observedValues = new ArrayList<Long>();
+      var probes = new AtomicInteger();
+      var statement = (PreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
+          PreparedStatement.class.getClassLoader(), new Class<?>[] {PreparedStatement.class},
+          (proxy, method, args) -> {
+            assertEquals("setLong", method.getName());
+            indexes.add((Integer) args[0]);
+            bound.add((Long) args[1]);
+            return null;
+          });
+      var observer = new ParameterBindingObserver() {
+        @Override public boolean needsMore() {
+          probes.incrementAndGet();
+          return observe && observedIndexes.isEmpty();
+        }
+        @Override public void bound(int index, Class<?> type, @Nullable Object value) {
+          assertEquals(Long.class, type);
+          assertEquals(1, bound.size(), "JDBC binding must precede observation");
+          observedIndexes.add(index);
+          observedValues.add(assertInstanceOf(Long.class, value));
+        }
+        @Override public void unavailable() {
+          throw new AssertionError("conditional binder must expose its existing binding values");
+        }
+      };
+      assertEquals(5, plan.parameterBinder().bindObserved(
+          statement, 3, inputs.values(), JdbcWriteContext.EMPTY, observer));
+      assertEquals(List.of(3, 4), indexes);
+      assertEquals(List.of(11L, 13L), bound);
+      assertEquals(observe ? List.of(3) : List.of(), observedIndexes);
+      assertEquals(observe ? List.of(11L) : List.of(), observedValues);
+      assertEquals(observe ? 2 : 1, probes.get(), "stop probing once observation is exhausted");
+    }
+  }
+
+  @Test
   void liveSharedPlansDoNotRetainTemporaryTablesOrRequestGraphs() throws Exception {
     var fixture = cacheTemporaryRequests();
     assertEquals(2, fixture.plans().statistics().size());
