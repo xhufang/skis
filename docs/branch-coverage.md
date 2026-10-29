@@ -34,6 +34,12 @@ PR head 为 `467ef43ccb253844448fc5bd2f3c11d9ccee03f9`，实际测试合并提�
 本地仅核对工件数据、源码与 git diff --check，未编译、运行项目/测试/项目检查器。
 新增测试的实际覆盖率、基线来源认证及最终棘轮结果待下一轮 CI；不将本次源码补充记作覆盖缺口已恢复，也不关闭 T04。
 
+2026-10-29：64df4898 的 [CI 40819051616](https://github.com/xhufang/skis/actions/runs/40819051616/job/123266933707?pr=97)
+已通过 StructuredWritePipelineTest 的 9 项、MutationParameterBindingTest 的 2 项及 H2 UPSERT 的 17 项测试。
+PG UPSERT 的新增非法分支隔离用例缺少冲突行，首次执行实际插入 one，却断言了更新结果 valid；两条 PG 作业与权威作业均因此失败。
+本次在“不获取连接”的负例断言之后建立目标行，再执行原冲突更新断言，保持原语义验证。
+本轮在测试阶段中断，尚无覆盖率候选；基线不再调整，修复和覆盖率恢复继续待后续 CI。
+
 ## PR #96：T03 覆盖率抬线与 mutation 补证（待新 CI 验证）
 
 [CI 40667070929 的权威作业](https://github.com/xhufang/skis/actions/runs/40667070929/job/122744135913?pr=96)

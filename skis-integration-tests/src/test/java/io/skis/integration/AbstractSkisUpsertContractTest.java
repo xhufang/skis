@@ -547,6 +547,7 @@ abstract class AbstractSkisUpsertContractTest {
             .values(row -> row.value(PLAIN.id(), 1L).value(PLAIN.name(), "one"))
             .onConflict(PLAIN.id()).doUpdate().set(PLAIN.name(), "changed").expectedVersion(0L));
         assertEquals(0, f.acquisitions.get());
+        assertEquals(1, f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write());
         assertEquals("valid", update.returning().write().get().name(), "invalid forks cannot alter the valid request");
       } else {
         var id = Sql.output(ROW.id(), "id");
