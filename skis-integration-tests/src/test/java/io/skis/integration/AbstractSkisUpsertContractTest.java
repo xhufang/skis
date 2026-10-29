@@ -406,7 +406,7 @@ abstract class AbstractSkisUpsertContractTest {
         assertEquals(new WriteView("new", "new"), result.get());
         assertEquals(actual, updated.getId()); assertEquals(1, updated.writes);
       } else {
-        var id = Sql.output(ROW.id(), "id"); var expected = Sql.output(Sql.value(0L), "expected");
+        var id = Sql.output(ROW.id(), "id"); var expected = Sql.output(ROW.version(), "expected");
         var source = Sql.values(row -> row.value(id, 1L).value(expected, 0L)).as("incoming");
         f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
         var request = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))

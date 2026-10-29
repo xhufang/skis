@@ -26,6 +26,10 @@ class VerifyQueryApiBudget {
   private static final Set<String> GENERATED_CONTRACTS =
       Set.of("io.skis.query.spi.ProjectionMapping", "io.skis.query.spi.ProjectionSource");
 
+  // These two public contracts belong to MERGE input construction, not ordinary SELECT queries.
+  private static final Set<String> WRITE_SOURCE_CONTRACTS =
+      Set.of("io.skis.query.ValuesRow", "io.skis.query.ValuesSource");
+
   public static void main(String[] arguments) throws IOException {
     if (arguments.length != 1) {
       throw new IllegalArgumentException("Expected the repository root");
@@ -50,6 +54,7 @@ class VerifyQueryApiBudget {
             "Ordinary query API budget exceeded: " + count + " > 30; " + ordinaryTypes);
       }
       System.out.println("Current query API budget: " + count + "/30");
+      System.out.println("Separate write source contracts: " + WRITE_SOURCE_CONTRACTS);
     }
   }
 
@@ -81,6 +86,8 @@ class VerifyQueryApiBudget {
       throw new IllegalStateException(
           "Cannot parse query API sources: " + diagnostics.getDiagnostics());
     }
+    // Only the reviewed top-level contracts are separate; new public nested types still count.
+    types.removeAll(WRITE_SOURCE_CONTRACTS);
     return types;
   }
 
@@ -139,6 +146,14 @@ class VerifyQueryApiBudget {
                 source(
                     "spi/AdditionalSpi", "package io.skis.query.spi; public interface AdditionalSpi {}"),
                 source(
+                    "ValuesSource",
+                    """
+                    package io.skis.query;
+                    public interface ValuesSource { interface NewlyExposed {} }
+                    """),
+                source("ValuesRow", "package io.skis.query; public interface ValuesRow {}"),
+                source("ValuesSourceLike", "package io.skis.query; public interface ValuesSourceLike {}"),
+                source(
                     "QueryRuntime",
                     """
                     package io.skis.query;
@@ -155,6 +170,8 @@ class VerifyQueryApiBudget {
             "io.skis.query.fixture.Surface.Implicit.Row",
             "io.skis.query.fixture.Surface.Implicit.Value",
             "io.skis.query.spi.AdditionalSpi",
+            "io.skis.query.ValuesSource.NewlyExposed",
+            "io.skis.query.ValuesSourceLike",
             "io.skis.query.QueryRuntime",
             "io.skis.query.QueryRuntime.NewlyExposed");
     if (!actual.equals(expected)) {
