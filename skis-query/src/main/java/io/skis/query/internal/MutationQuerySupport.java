@@ -101,7 +101,7 @@ public final class MutationQuerySupport {
       List<UpdateAssignment<?>> assignments,
       SqlPredicate where,
       List<JdbcTypeCodec<?>> codecs,
-      Optional<List<?>> cacheIdentity,
+      Optional<List<Object>> cacheIdentity,
       @Nullable Object[] values) {
     @Override
     public String toString() {
