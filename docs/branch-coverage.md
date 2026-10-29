@@ -1,5 +1,39 @@
 # 分支覆盖率与逐模块棘轮
 
+## PR #97：T04 抬线登记与三个回退模块补测（待新 CI 验证）
+
+[CI 40813195305 的权威作业](https://github.com/xhufang/skis/actions/runs/40813195305/job/123248106334?pr=97)
+已通过 Java 21 构建、单测/APT/H2/真实 PG、架构/nullness/名义类型、必需回归套件、Enforcer 正负例，以及覆盖采集和两份证据上传。
+Java 25、PG 容器/外部 URL、独立消费者、Gradle 和发布边界作业均通过。
+原始阻断是 core 应抬未抬；完整候选还显示 sql-ast、dialect-api 和 mutation 回退，不能整体替换基线。
+
+PR head 为 `467ef43ccb253844448fc5bd2f3c11d9ccee03f9`，实际测试合并提交为
+`101b4216ecb6684a2c208cf1e86bc3dfded5cf18`，比较 base 为 `2878f975329e0ae82b68509c57dc78454b71b5b9`。
+已下载 [工件 12870814404](https://github.com/xhufang/skis/actions/runs/40813195305/artifacts/12870814404)，
+名称为 `branch-coverage-java-21-40813195305-1`；静态核对运行/尝试、工作流、合并父提交、七项 producer blob、
+15 模块 XML SHA-256、逐类/汇总分支计数、类数及 HTML 索引存在性。首次登记、统计口径及口径历史与当前基线一致。
+
+仅从真实候选原样登记以下四项提升及其报告来源，其余 11 行保持原登记：
+
+| 模块 | 原门槛 | 本轮 covered/missed | 类数 | 登记门槛 |
+| --- | ---: | ---: | ---: | ---: |
+| skis-core | 75.74% | 482/153 | 47 | 75.90% |
+| skis-dialect-support | 90.47% | 317/27 | 8 | 92.15% |
+| skis-jdbc | 80.52% | 281/67 | 25 | 80.74% |
+| skis-query | 78.06% | 1991/557 | 197 | 78.13% |
+
+三个回退模块保留原门槛和来源，补测后须重新测量：
+
+| 模块 | 保留门槛 | 本轮 covered/missed | 当前测量 | 本次补测源码 |
+| --- | ---: | ---: | ---: | --- |
+| skis-sql-ast | 84.08% | 1611/312 | 83.77% | StructuredWritePipelineTest：重复冲突/插入/KEY 列、受保护/重复赋值、KEY 谓词拒绝 |
+| skis-dialect-api | 82.03% | 1242/288 | 81.17% | StructuredWritePipelineTest：冲突/MERGE 参数类型 lowering、空集合条件规范化及 lowering 对应校验 |
+| skis-mutation | 84.82% | 743/168 | 81.55% | MutationParameterBindingTest、AbstractSkisUpsertContractTest：前缀/尾段观察绑定、版本/列保护、严格匹配依据、显式初始化及列顺序 |
+
+补测沿用既有必需套件，不增加测试专用生产方法、运行时开销或模块排除，也不降低阈值。
+本地仅核对工件数据、源码与 git diff --check，未编译、运行项目/测试/项目检查器。
+新增测试的实际覆盖率、基线来源认证及最终棘轮结果待下一轮 CI；不将本次源码补充记作覆盖缺口已恢复，也不关闭 T04。
+
 ## PR #96：T03 覆盖率抬线与 mutation 补证（待新 CI 验证）
 
 [CI 40667070929 的权威作业](https://github.com/xhufang/skis/actions/runs/40667070929/job/122744135913?pr=96)

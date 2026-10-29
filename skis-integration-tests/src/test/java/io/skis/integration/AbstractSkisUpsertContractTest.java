@@ -528,6 +528,145 @@ abstract class AbstractSkisUpsertContractTest {
     }
   }
 
+  @Test void rejectsProtectedAssignmentsAndInvalidVersionIntentBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      if (pg()) {
+        var set = f.executor.insertInto(ROW).values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
+            .onConflict(ROW.id()).doUpdate();
+        assertThrows(MutationException.class, () -> set.set(ROW.id(), 2L));
+        assertThrows(MutationException.class, () -> set.set(ROW.version(), 2L));
+        assertThrows(MutationException.class, () -> set.set(ROW.as("foreign").name(), "other"));
+        var update = set.set(ROW.name(), "valid");
+        assertThrows(MutationException.class, () -> update.set(ROW.name(), "duplicate"));
+        assertThrows(MutationException.class, () -> update.expectedVersion(1));
+        assertThrows(MutationException.class, () -> update.expectedVersionExpression(Sql.value(1)));
+        assertThrows(MutationException.class, () -> update.expectedVersion(0L).expectedVersion(1L));
+        assertThrows(MutationException.class,
+            () -> update.expectedVersionExpression(Sql.value(0L)).expectedVersion(1L));
+        assertThrows(MutationException.class, () -> f.executor.insertInto(PLAIN)
+            .values(row -> row.value(PLAIN.id(), 1L).value(PLAIN.name(), "one"))
+            .onConflict(PLAIN.id()).doUpdate().set(PLAIN.name(), "changed").expectedVersion(0L));
+        assertEquals(0, f.acquisitions.get());
+        assertEquals("valid", update.returning().write().get().name(), "invalid forks cannot alter the valid request");
+      } else {
+        var id = Sql.output(ROW.id(), "id");
+        var source = Sql.values(row -> row.value(id, 1L));
+        var set = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+            .whenMatched().thenUpdate();
+        assertThrows(MutationException.class, () -> set.set(ROW.id(), 2L));
+        assertThrows(MutationException.class, () -> set.set(ROW.version(), 2L));
+        assertThrows(MutationException.class, () -> set.set(ROW.as("foreign").name(), "other"));
+        var update = set.set(ROW.name(), "valid");
+        assertThrows(MutationException.class, () -> update.set(ROW.name(), "duplicate"));
+        assertThrows(MutationException.class, () -> update.expectedVersion(1));
+        assertThrows(MutationException.class, () -> update.expectedVersionExpression(Sql.value(1)));
+        assertThrows(MutationException.class, () -> update.expectedVersion(0L).expectedVersion(1L));
+        assertThrows(MutationException.class,
+            () -> update.expectedVersionExpression(Sql.value(0L)).expectedVersion(1L));
+        assertThrows(MutationException.class, update::whenMatched);
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(PLAIN).using(source)
+            .on(PLAIN.id().eq(source.column(id))).whenMatched().thenUpdate()
+            .set(PLAIN.name(), "changed").expectedVersion(0L));
+        assertEquals(0, f.acquisitions.get());
+        f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
+        assertEquals("valid", update.returning().write().get().getFirst().name());
+      }
+    }
+  }
+
+  @Test void strictVersionChecksRejectUnprovableConflictOrMergeShapesBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      if (pg()) {
+        for (var update : List.of(
+            f.executor.insertInto(ROW).values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
+                .onConflict(ROW.name()).doUpdate().set(ROW.name(), "changed"),
+            f.executor.insertInto(ROW).values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
+                .onConflict(ROW.id(), ROW.name()).doUpdate().set(ROW.name(), "changed"))) {
+          assertThrows(MutationException.class, () -> update.expectedVersion(0L).write());
+        }
+      } else {
+        var id = Sql.output(ROW.id(), "id");
+        var nullableId = Sql.outputNullable(ROW.id(), "nullable_id");
+        var source = Sql.values(row -> row.value(id, 1L).value(nullableId, 1L));
+        var update = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+            .whenMatched().thenUpdate().set(ROW.name(), "changed").expectedVersion(0L);
+        assertThrows(MutationException.class, update::write, "strict matching also requires an insertion branch");
+        assertThrows(MutationException.class, () -> update.whenNotMatched().thenInsert(row -> row
+            .value(ROW.id(), Sql.value(2L)).value(ROW.name(), Sql.value("insert"))).write());
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+            .on(ROW.id().ne(source.column(id))).whenMatched().thenUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+            .on(source.column(id).eq(ROW.id())).whenMatched().thenUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+            .on(ROW.version().eq(source.column(id))).whenMatched().thenUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+            .on(ROW.as("foreign").id().eq(source.column(id))).whenMatched().thenUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+            .on(ROW.id().eq(source.as("s").column(id))).whenMatched().thenUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
+        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+            .on(ROW.id().eq(source.column(nullableId))).whenMatched().thenUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
+      }
+      assertEquals(0, f.acquisitions.get());
+      assertEquals(0, f.executor.mutationPlanCacheStatistics().size());
+    }
+  }
+
+  @Test void rejectsIncompleteKeysAndNullableRequiredInsertExpressionsBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      assertThrows(MutationException.class, () -> f.executor.insertInto(PLAIN)
+          .values(row -> row.value(PLAIN.id(), 1L)).onConflict(PLAIN.id(), PLAIN.id()));
+      assertThrows(MutationException.class, () -> f.executor.mergeInto(PLAIN).key(PLAIN.id(), PLAIN.id()));
+      assertThrows(MutationException.class, () -> f.executor.mergeInto(PLAIN).key(PLAIN.id())
+          .values(row -> row.value(PLAIN.name(), "missing key")));
+      assertThrows(MutationException.class, () -> f.executor.insertInto(PLAIN)
+          .values(row -> row.value(PLAIN.name(), "missing application id")).write());
+      var id = Sql.output(ROW.id(), "id");
+      var source = Sql.values(row -> row.value(id, 1L));
+      assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
+          .on(ROW.id().eq(source.column(id))).whenNotMatched().thenInsert(row -> row
+              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value(String.class, null))));
+      assertEquals(0, f.acquisitions.get());
+    }
+  }
+
+  @Test void explicitInitialVersionAndColumnOrderRemainIndependentOfUpdateExpectation() throws Exception {
+    try (var f = new Fixture()) {
+      if (pg()) {
+        var update = f.executor.insertInto(ROW).values(row -> row
+            .value(ROW.name(), "initial").value(ROW.version(), 7L).value(ROW.id(), 1L))
+            .onConflict(ROW.id()).doUpdate().set(ROW.name(), "updated");
+        assertEquals(7L, update.expectedVersion(99L).returning().write().get().version());
+        assertEquals(8L, update.expectedVersion(7L).returning().write().get().version());
+      } else {
+        var id = Sql.output(ROW.id(), "id");
+        var source = Sql.values(row -> row.value(id, 1L));
+        var update = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+            .whenMatched().thenUpdate().set(ROW.name(), "updated");
+        var first = update.expectedVersion(99L).whenNotMatched().thenInsert(row -> row
+            .value(ROW.name(), Sql.value("initial")).value(ROW.version(), Sql.value(7L))
+            .value(ROW.id(), source.column(id))).returning().write();
+        assertEquals(7L, first.get().getFirst().version());
+        var second = update.expectedVersion(7L).whenNotMatched().thenInsert(row -> row
+            .value(ROW.name(), Sql.value("initial")).value(ROW.version(), Sql.value(7L))
+            .value(ROW.id(), source.column(id))).returning().write();
+        assertEquals(8L, second.get().getFirst().version());
+      }
+      assertEquals(new WriteRow(1L, "updated", null, 8L), f.executor.findById(ROW, 1L).orElseThrow());
+    }
+  }
+
   final class Fixture implements AutoCloseable {
     final Connection connection;
     final SkisExecutor executor;
