@@ -18,7 +18,10 @@ import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.*;
 import io.skis.metadata.*;
 import io.skis.mutation.internal.MutationRuntime;
+import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryTable;
+import io.skis.query.Sql;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.*;
 import java.util.*;
@@ -120,6 +123,68 @@ class IdGenerationContractTest {
       assertThrows(MutationException.class, () -> uuid.operations().insertInto(uuid.table).value(new Bean(text)).write());
     }
     assertTrue(uuid.events.isEmpty());
+  }
+
+  @Test
+  void explicitInputsPreserveUuidAndSnowflakeKeyValidationBeforeJdbc() {
+    var uuid = new Fixture<>(String.class, JdbcCodecs.STRING, IdGeneration.UUID);
+    for (String text : List.of("bad", "", "FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF", "1-1-1-1-1")) {
+      assertInvalidExplicitId(uuid, text);
+    }
+    var snow = new Fixture<>(Long.class, JdbcCodecs.LONG, IdGeneration.SNOWFLAKE);
+    assertInvalidExplicitId(snow, 0L);
+    assertInvalidExplicitId(snow, -1L);
+    assertTrue(uuid.events.isEmpty());
+    assertTrue(snow.events.isEmpty());
+
+    String canonical = "00000000-0000-0000-0000-000000000001";
+    assertEquals(1, uuid.operations().insertInto(uuid.table).values(row -> row.value(uuid.id, canonical)).write());
+    assertEquals(List.of(canonical), uuid.bound);
+    assertEquals(1, snow.operations().insertInto(snow.table).values(row -> row.value(snow.id, 1L)).write());
+    assertEquals(List.of(1L), snow.bound);
+    var assigned = new Fixture<>(Long.class, JdbcCodecs.LONG, IdGeneration.ASSIGNED);
+    assertEquals(1, assigned.operations().insertInto(assigned.table).values(row -> row
+        .value(assigned.id, 0L)).write());
+  }
+
+  private static <I> void assertInvalidExplicitId(Fixture<I> fixture, I value) {
+    var operations = fixture.operations();
+    assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+        assertThrows(MutationException.class,
+            () -> operations.insertInto(fixture.table).values(row -> row
+                .value(fixture.id, value)).write()).code());
+    assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+        assertThrows(MutationException.class, () -> operations.insertInto(fixture.table)
+            .values(row -> row
+                .value(fixture.id, value)).onConflict(fixture.id).doNothing().returning().write()).code());
+    assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+        assertThrows(MutationException.class, () -> operations.mergeInto(fixture.table)
+            .key(fixture.id).values(row -> row.value(fixture.id, value)).write()).code());
+
+    var output = Sql.output(fixture.id, "id");
+    var source = Sql.values(row -> row.value(output, value)).as("incoming");
+    assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+        assertThrows(MutationException.class, () -> operations.mergeInto(fixture.table)
+            .using(source).on(fixture.id.eq(source.column(output)))
+            .whenNotMatched().thenInsert(row -> row.value(fixture.id, source.column(output))).write()).code());
+    assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+        assertThrows(MutationException.class, () -> operations.mergeInto(fixture.table)
+            .using(source).on(fixture.id.eq(source.column(output)))
+            .whenNotMatched().thenInsert(row -> row
+                .value(fixture.id, Sql.value(value))).returning().write()).code());
+  }
+
+  @Test
+  void rejectsUnverifiableComputedGeneratedKeysBeforeJdbc() {
+    var fixture = new Fixture<>(String.class, JdbcCodecs.STRING, IdGeneration.UUID);
+    var output = Sql.output(fixture.id, "id");
+    var source = Sql.values(row -> row.value(output, "00000000-0000-0000-0000-000000000001"));
+    var failure = assertThrows(MutationException.class, () -> fixture.operations().mergeInto(fixture.table)
+        .using(source).on(fixture.id.eq(source.column(output)))
+        .whenNotMatched().thenInsert(row -> row
+            .value(fixture.id, Sql.concat(Sql.value("not-"), Sql.value("a-uuid")))).write());
+    assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE, failure.code());
+    assertTrue(fixture.events.isEmpty());
   }
 
   @Test
@@ -266,6 +331,7 @@ class IdGenerationContractTest {
     final List<Object> bound = Collections.synchronizedList(new ArrayList<>());
     final EntityRuntimeModel<Bean> model;
     final QueryTable<Bean> table;
+    final NonNullSelectable<I> id;
     @Nullable String failurePoint;
     @Nullable Object returnedKey;
     int returnedRows = 1;
@@ -296,6 +362,9 @@ class IdGenerationContractTest {
       table = new QueryTable<Bean>(metadata) {
         @Override public QueryTable<Bean> as(String alias) { throw new UnsupportedOperationException(); }
       };
+      @SuppressWarnings("unchecked")
+      var column = (NonNullSelectable<I>) table.columns().getFirst();
+      this.id = column;
     }
 
     void step(String phase) throws SQLException {
@@ -317,7 +386,7 @@ class IdGenerationContractTest {
               return proxy(Connection.class, (ignored, method, args) -> {
                 if (!method.getName().equals("prepareStatement")) { throw new AssertionError(method.getName()); }
                 return proxy(PreparedStatement.class, (unused, operation, values) -> switch (operation.getName()) {
-                  case "setLong", "setInt" -> {
+                  case "setLong", "setInt", "setString" -> {
                     assertEquals(1, values[0]);
                     step("bind");
                     bound.add(values[1]);
@@ -360,7 +429,7 @@ class IdGenerationContractTest {
   }
 
   @SuppressWarnings("unchecked")
-  private static <T> T proxy(Class<T> type, java.lang.reflect.InvocationHandler handler) {
+  private static <T> T proxy(Class<T> type, InvocationHandler handler) {
     return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, handler);
   }
 

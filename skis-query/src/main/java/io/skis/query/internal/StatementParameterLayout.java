@@ -34,6 +34,7 @@ final class StatementParameterLayout {
   private @Nullable List<Selectable<?>> builtinParameterSources;
   private @Nullable IdentityHashMap<Object, Boolean> builtinSourceIdentities;
   private final boolean retainOriginalExpressions;
+  private final int ordinalOffset;
   private boolean rewriteRequired;
 
   StatementParameterLayout() {
@@ -41,7 +42,12 @@ final class StatementParameterLayout {
   }
 
   StatementParameterLayout(boolean retainOriginalExpressions) {
+    this(retainOriginalExpressions, 0);
+  }
+
+  StatementParameterLayout(boolean retainOriginalExpressions, int ordinalOffset) {
     this.retainOriginalExpressions = retainOriginalExpressions;
+    this.ordinalOffset = ordinalOffset;
   }
 
   boolean retainOriginalExpressions() {
@@ -140,7 +146,7 @@ final class StatementParameterLayout {
             requireBuiltinSource(mappedSource);
             // Prefer the actual mapped source in either encounter order. Its built-in Codec
             // identity is checked before plan lookup, including sources later pruned from SQL.
-            parameterSources.set(existing.ordinal(), mappedSource);
+            parameterSources.set(existing.ordinal() - ordinalOffset, mappedSource);
             parameters.put(parameter, new RegisteredParameter(existing, mappedSource, true));
           }
         } else if (!registeredStandard
@@ -151,7 +157,7 @@ final class StatementParameterLayout {
         ParameterSlot<V> typed = (ParameterSlot<V>) existing;
         return typed;
       }
-      int ordinal = parameterReferences.size();
+      int ordinal = ordinalOffset + parameterReferences.size();
       ParameterSlot<V> slot =
           new ParameterSlot<>(
               ordinal, source.javaType(), source.sqlType(), parameter.nullability());

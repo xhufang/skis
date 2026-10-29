@@ -8,6 +8,7 @@ import io.skis.sql.ast.CastExpression;
 import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DecimalPrecision;
 import io.skis.sql.ast.DeleteStatement;
@@ -24,6 +25,7 @@ import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
@@ -101,6 +103,38 @@ final class AggregateLowering {
             ? returning
             : new ReturningStatement(lowered, returning.selections(), returning.form());
       }
+      case ConflictInsertStatement conflict -> {
+        var assignments = mutationAssignments(conflict.assignments(), target);
+        var where = (SqlPredicate) mutationExpression(conflict.updateWhere(), target, false);
+        yield assignments.equals(conflict.assignments()) && where == conflict.updateWhere()
+            ? conflict
+            : new ConflictInsertStatement(
+                conflict.insert(),
+                conflict.conflictColumns(),
+                assignments,
+                where,
+                conflict.doNothing());
+      }
+      case MergeStatement merge -> {
+        var assignments = mutationAssignments(merge.assignments(), target);
+        var on = (SqlPredicate) mutationExpression(merge.on(), target, false);
+        var where = (SqlPredicate) mutationExpression(merge.matchedWhere(), target, false);
+        var values = mutationValues(merge.insertValues(), target);
+        yield assignments == merge.assignments()
+                && on == merge.on()
+                && where == merge.matchedWhere()
+                && values == merge.insertValues()
+            ? merge
+            : new MergeStatement(
+                merge.target(),
+                merge.source(),
+                on,
+                where,
+                assignments,
+                merge.insertColumns(),
+                values,
+                merge.keys());
+      }
       case UpdateStatement update -> {
         List<UpdateAssignment<?>> assignments = null;
         for (int index = 0; index < update.assignments().size(); index++) {
@@ -127,6 +161,36 @@ final class AggregateLowering {
       // INSERT slots already obtain their types from the target columns and generated binder.
       default -> statement;
     };
+  }
+
+  private static List<UpdateAssignment<?>> mutationAssignments(
+      List<UpdateAssignment<?>> original, PortableLowering.AggregateTarget target) {
+    List<UpdateAssignment<?>> changed = null;
+    for (int i = 0; i < original.size(); i++) {
+      var before = original.get(i);
+      var after = assignment(before, target);
+      if (after != before && changed == null) {
+        changed = new ArrayList<>(original.size());
+        changed.addAll(original.subList(0, i));
+      }
+      if (changed != null) changed.add(after);
+    }
+    return changed == null ? original : List.copyOf(changed);
+  }
+
+  private static List<SqlExpression<?>> mutationValues(
+      List<SqlExpression<?>> original, PortableLowering.AggregateTarget target) {
+    List<SqlExpression<?>> changed = null;
+    for (int index = 0; index < original.size(); index++) {
+      SqlExpression<?> before = original.get(index);
+      SqlExpression<?> after = mutationExpression(before, target, false);
+      if (after != before && changed == null) {
+        changed = new ArrayList<>(original.size());
+        changed.addAll(original.subList(0, index));
+      }
+      if (changed != null) changed.add(after);
+    }
+    return changed == null ? original : List.copyOf(changed);
   }
 
   private static <T> UpdateAssignment<T> assignment(

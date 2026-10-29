@@ -19,6 +19,7 @@ public final class PostgreSqlDialect implements Dialect {
 
   private static final DialectCapabilities CAPABILITIES =
       DialectCapabilities.of(
+          DialectFeature.INSERT_ON_CONFLICT,
           DialectFeature.SCHEMA_QUALIFIED_TABLES,
           DialectFeature.PARAMETERIZED_LIMIT,
           DialectFeature.PARAMETERIZED_OFFSET,

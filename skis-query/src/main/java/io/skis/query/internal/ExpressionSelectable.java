@@ -23,17 +23,41 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
 
   private final SqlExpression<V> descriptor;
   private final @Nullable Recipe<V> recipe;
+  private final boolean forwardsMapping;
   private volatile @Nullable Preview<V> preview;
 
   ExpressionSelectable(SqlExpression<V> expression) {
     this.descriptor = Objects.requireNonNull(expression, "expression");
     this.recipe = null;
+    this.forwardsMapping = false;
     this.preview = new Preview<>(expression, List.of());
   }
 
   ExpressionSelectable(SqlExpression<V> descriptor, Recipe<V> recipe) {
     this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
     this.recipe = Objects.requireNonNull(recipe, "recipe");
+    this.forwardsMapping = false;
+  }
+
+  /** A scope leaf forwards Codec provenance, without compiling its shape template as SQL input. */
+  ExpressionSelectable(SqlExpression<V> descriptor, Selectable<V> source) {
+    this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
+    Objects.requireNonNull(source, "source");
+    if (!descriptor.javaType().equals(source.javaType())
+        || descriptor.sqlType() != source.sqlType())
+      throw new IllegalArgumentException("mapped scope leaf must preserve its Codec source type");
+    this.recipe =
+        new Recipe<>(
+            (compiler, operands, condition) -> descriptor,
+            List.of(Objects.requireNonNull(source, "source")),
+            null,
+            QueryParameters.empty());
+    this.forwardsMapping = true;
+    this.preview = new Preview<>(descriptor, List.of());
+  }
+
+  final boolean forwardsMapping() {
+    return forwardsMapping;
   }
 
   @Override
@@ -60,7 +84,7 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
   }
 
   final boolean capturesValues() {
-    return recipe != null && recipe.capturesValues();
+    return !forwardsMapping && recipe != null && recipe.capturesValues();
   }
 
   final boolean decomposed() {
@@ -84,6 +108,7 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
 
   /** Finds a grouping witness without compiling or binding an expression that will be discarded. */
   final @Nullable AggregateExpression<?> localAggregate(IdentityHashMap<Object, Boolean> visited) {
+    if (forwardsMapping) return null;
     if (visited.put(this, Boolean.TRUE) != null) {
       return null;
     }
@@ -119,6 +144,7 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
   }
 
   final boolean containsSubquery() {
+    if (forwardsMapping) return false;
     // Legacy raw wrappers are conservative except for known scalar leaves and COUNT(*).
     return recipe != null
         ? recipe.containsSubquery()
@@ -129,10 +155,11 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
   }
 
   final SqlExpression<V> compile(QueryConditionCompiler compiler) {
-    return recipe == null ? descriptor : recipe.compile(compiler);
+    return forwardsMapping || recipe == null ? descriptor : recipe.compile(compiler);
   }
 
   final ExpressionSelectable<V> capture(ExpressionCapture capture) {
+    if (forwardsMapping) return this;
     Recipe<V> current = recipe;
     if (current == null || !current.capturesValues()) {
       return this;
@@ -230,5 +257,11 @@ final class NonNullExpressionSelectable<V> extends ExpressionSelectable<V>
     if (descriptor.nullable()) {
       throw new IllegalArgumentException("non-null selectable uses a nullable SQL expression");
     }
+  }
+
+  NonNullExpressionSelectable(SqlExpression<V> descriptor, Selectable<V> source) {
+    super(descriptor, source);
+    if (descriptor.nullable())
+      throw new IllegalArgumentException("non-null selectable uses a nullable SQL expression");
   }
 }

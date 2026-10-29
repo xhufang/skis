@@ -22,6 +22,7 @@ import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DecimalPrecision;
 import io.skis.sql.ast.DeleteStatement;
@@ -30,6 +31,7 @@ import io.skis.sql.ast.DerivedOutputColumn;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.DerivedRelationSource;
 import io.skis.sql.ast.EntityRelationSource;
+import io.skis.sql.ast.ExcludedExpression;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
@@ -45,6 +47,7 @@ import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullOrder;
@@ -67,6 +70,7 @@ import io.skis.sql.ast.TableExpression;
 import io.skis.sql.ast.TableOccurrence;
 import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -133,7 +137,14 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private RenderContext contextFor(StatementAst statement) {
     return switch (statement) {
-      case ReturningStatement returning -> new RenderContext(returning.target());
+      case ReturningStatement returning ->
+          returning.mutation() instanceof MergeStatement merge
+              ? new RenderContext(merge.scope())
+              : returning.mutation() instanceof ConflictInsertStatement conflict
+                  ? new RenderContext(FromClause.of(conflict.target()))
+                  : new RenderContext(returning.target());
+      case ConflictInsertStatement conflict -> new RenderContext(FromClause.of(conflict.target()));
+      case MergeStatement merge -> new RenderContext(merge.scope());
       case SelectStatement select -> new RenderContext(select.fromClause());
       case CountAst count -> new RenderContext(count.fromClause());
       case InsertStatement insert -> new RenderContext(insert.target());
@@ -148,6 +159,8 @@ public final class StandardSqlRenderer implements SqlRenderer {
       case ReturningStatement returning -> renderReturning(returning, context);
       case SelectStatement select -> renderSelect(select, context);
       case CountAst count -> renderCount(count, context);
+      case ConflictInsertStatement conflict -> renderConflict(conflict, context);
+      case MergeStatement merge -> renderMerge(merge, context);
       case InsertStatement insert -> renderInsert(insert, context);
       case UpdateStatement update -> renderUpdate(update, context);
       case DeleteStatement delete -> renderDelete(delete, context);
@@ -342,6 +355,68 @@ public final class StandardSqlRenderer implements SqlRenderer {
     context.sql.append(')');
   }
 
+  private void renderConflict(ConflictInsertStatement statement, RenderContext context) {
+    renderInsert(statement.insert(), context);
+    context.sql.append(" ON CONFLICT (");
+    renderColumns(statement.conflictColumns(), context);
+    context.sql.append(") DO ");
+    if (statement.doNothing()) context.sql.append("NOTHING");
+    else {
+      context.sql.append("UPDATE SET ");
+      renderAssignments(statement.assignments(), context);
+      context.sql.append(" WHERE ");
+      renderPredicate(statement.updateWhere(), context);
+    }
+  }
+
+  private void renderColumns(List<ColumnExpression<?, ?>> columns, RenderContext context) {
+    for (int i = 0; i < columns.size(); i++) {
+      if (i > 0) context.sql.append(", ");
+      renderColumnName(columns.get(i), context);
+    }
+  }
+
+  private void renderAssignments(List<UpdateAssignment<?>> assignments, RenderContext context) {
+    for (int i = 0; i < assignments.size(); i++) {
+      if (i > 0) context.sql.append(", ");
+      renderColumnName(assignments.get(i).column(), context);
+      context.sql.append(" = ");
+      renderExpression(assignments.get(i).value(), context);
+    }
+  }
+
+  private void renderMerge(MergeStatement statement, RenderContext context) {
+    context.sql.append("MERGE INTO ");
+    renderTable(statement.target(), context.sql);
+    if (statement.keyForm()) {
+      context.sql.append(" (");
+      renderColumns(statement.insertColumns(), context);
+      context.sql.append(") KEY (");
+      renderColumns(statement.keys(), context);
+      context.sql.append(") VALUES (");
+    } else {
+      context.sql.append(" USING ");
+      renderRelation(Objects.requireNonNull(statement.source()), context);
+      context.sql.append(" ON ");
+      renderPredicate(statement.on(), context);
+      if (!statement.assignments().isEmpty()) {
+        context.sql.append(" WHEN MATCHED AND ");
+        renderPredicate(statement.matchedWhere(), context);
+        context.sql.append(" THEN UPDATE SET ");
+        renderAssignments(statement.assignments(), context);
+      }
+      if (statement.insertColumns().isEmpty()) return;
+      context.sql.append(" WHEN NOT MATCHED THEN INSERT (");
+      renderColumns(statement.insertColumns(), context);
+      context.sql.append(") VALUES (");
+    }
+    for (int i = 0; i < statement.insertValues().size(); i++) {
+      if (i > 0) context.sql.append(", ");
+      renderExpression(statement.insertValues().get(i), context);
+    }
+    context.sql.append(')');
+  }
+
   private void renderUpdate(UpdateStatement statement, RenderContext context) {
     context.sql.append("UPDATE ");
     renderTable(statement.target(), context.sql);
@@ -430,6 +505,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
           renderExpression(aggregate.operand().orElseThrow(), context);
         }
         context.sql.append(')');
+      }
+      case ExcludedExpression<?> excluded -> {
+        context.sql.append("EXCLUDED.");
+        context.sql.append(identifierRules.quote(excluded.column().property().column().name()));
       }
       case ColumnExpression<?, ?> column -> renderColumn(column, context);
       case DerivedColumnExpression<?> column -> renderDerivedColumn(column, context);
@@ -710,9 +789,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       // H2's unconstrained NUMERIC defaults to scale zero. DECFLOAT retains variable scale
       // within the engine's native precision instead of silently rounding arbitrary decimals.
       case DECIMAL ->
-          typeFormat == TypeFormat.H2 && javaType == java.math.BigDecimal.class
-              ? "DECFLOAT"
-              : "DECIMAL";
+          typeFormat == TypeFormat.H2 && javaType == BigDecimal.class ? "DECFLOAT" : "DECIMAL";
       case CHARACTER -> "CHAR";
       case VARCHAR -> "VARCHAR";
       case UUID -> "UUID";

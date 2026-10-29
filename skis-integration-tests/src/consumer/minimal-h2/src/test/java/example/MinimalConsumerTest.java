@@ -24,6 +24,28 @@ import org.junit.jupiter.api.Test;
 class MinimalConsumerTest {
 
   @Test
+  void usesTypedSingleRowMergeAndGeneratedProjectionOutsideTheReactor() throws Exception {
+    JdbcDataSource source = new JdbcDataSource();
+    source.setURL("jdbc:h2:mem:merge_consumer");
+    try (Connection connection = source.getConnection(); Statement statement = connection.createStatement()) {
+      statement.execute("CREATE TABLE \"pet\" (\"id\" BIGINT PRIMARY KEY, \"pet_name\" VARCHAR(200) NOT NULL, \"version\" BIGINT NOT NULL)");
+      var executor = Skis.create(source, H2Dialect.INSTANCE);
+      var pet = PetTable.petTable;
+      var id = Sql.output(pet.id(), "id"); var name = Sql.output(pet.name(), "name");
+      var incoming = Sql.values(row -> row.value(id, 1L).value(name, "merged")).as("incoming");
+      var request = executor.mergeInto(pet).using(incoming).on(pet.id().eq(incoming.column(id)))
+          .whenMatched().thenUpdate().setExpression(pet.name(), incoming.column(name))
+          .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
+              .value(pet.id(), incoming.column(id))
+              .value(pet.name(), incoming.column(name)))
+          .returning(PetSummaryPro.of(pet.id(), pet.name()));
+      assertEquals(List.of(new PetSummary(1L, "merged")), request.write().get());
+      assertEquals(1, request.write().affectedRows());
+      assertEquals(1L, executor.findById(pet, 1L).orElseThrow().version());
+    }
+  }
+
+  @Test
   void groupsGeneratedAggregateProjectionsAndCountsFinalRowsOutsideTheReactor() throws Exception {
     JdbcDataSource dataSource = new JdbcDataSource();
     dataSource.setURL("jdbc:h2:mem:aggregate_consumer");

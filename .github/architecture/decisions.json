@@ -1250,7 +1250,7 @@
       "decisionVersion": "0.2.10-SNAPSHOT",
       "targetVersion": "0.2.10-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "条件写入与RETURNING源码已实现待验证；UPSERT、批量失败、三层BYPASS及真实流读取待实现和验证",
+      "remaining": "条件写入、RETURNING及T04冲突/MERGE源码与测试已同步待验证；批量失败、三层BYPASS及真实流读取待实现和验证",
       "task": "0.2.10:T03-T08",
       "anchors": [
         {
@@ -1267,6 +1267,21 @@
           "kind": "java",
           "path": "skis-query/src/main/java/io/skis/query/internal/MutationQuerySupport.java",
           "type": "io.skis.query.internal.MutationQuerySupport"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/ConflictInsertStatement.java",
+          "type": "io.skis.sql.ast.ConflictInsertStatement"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/MergeStatement.java",
+          "type": "io.skis.sql.ast.MergeStatement"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/StructuredWrites.java",
+          "type": "io.skis.mutation.internal.StructuredWrites"
         }
       ],
       "contracts": [
@@ -1284,6 +1299,16 @@
           "kind": "java",
           "path": "skis-jdbc/src/test/java/io/skis/jdbc/ReturningExecutionTest.java",
           "type": "io.skis.jdbc.ReturningExecutionTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/StructuredWritePipelineTest.java",
+          "type": "io.skis.dialect.support.StructuredWritePipelineTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisUpsertContractTest.java",
+          "type": "io.skis.integration.AbstractSkisUpsertContractTest"
         }
       ]
     },

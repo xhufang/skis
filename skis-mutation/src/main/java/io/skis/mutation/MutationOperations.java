@@ -9,6 +9,9 @@ public interface MutationOperations {
   /** Builds an insertion; only its terminal write accesses JDBC or generates a key. */
   <E> InsertInto<E> insertInto(QueryTable<E> table);
 
+  /** Builds an independent SQL MERGE statement. */
+  <E> MergeInto<E> mergeInto(QueryTable<E> table);
+
   /** Starts a conditional update; at least one assignment is required. */
   <E> UpdateSet<E> update(QueryTable<E> table);
 

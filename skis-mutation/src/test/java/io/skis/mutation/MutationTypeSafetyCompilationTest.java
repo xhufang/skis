@@ -27,6 +27,7 @@ final class MutationTypeSafetyCompilationTest {
   void stagedWritesHaveExactTypesAndRejectOldOrIllegalEntrypoints() throws Exception {
     String prefix = """
         package samples;
+        import io.skis.mapping.spi.RowDecoder;
         import io.skis.mutation.*;
         import io.skis.query.*;
         import java.util.*;
@@ -59,7 +60,7 @@ final class MutationTypeSafetyCompilationTest {
         "op.insertInto(table).value(entity).returning().returning();",
         "op.insertInto(table).value(entity).returning(column);",
         "op.insertInto(table).value(entity).returning(String.class);",
-        "op.insertInto(table).value(entity).returning((io.skis.mapping.spi.RowDecoder<String>) null);",
+        "op.insertInto(table).value(entity).returning((RowDecoder<String>) null);",
         "Written<String> bad = op.insertInto(table).value(entity).write();",
         "int bad = op.insertInto(table).value(entity).returning().write();",
         "Written<String> bad = op.insertInto(table).values(List.of(entity)).returning().write();",
@@ -116,6 +117,49 @@ final class MutationTypeSafetyCompilationTest {
             "samples.InvalidDerivedDelete",
             invalidDeleteTarget,
             temporaryDirectory.resolve("invalid-derived-delete")));
+  }
+
+  @Test
+  void structuredStagesPreserveEveryPositionAndRequireCompleteActions() throws Exception {
+    String prefix = """
+        package samples;
+        import io.skis.mutation.*;
+        import io.skis.query.*;
+        import java.util.*;
+        final class Contract {
+          static void calls(MutationOperations op, QueryTable<String> table,
+              NonNullSelectable<Long> id, NonNullSelectable<String> name) {
+        """;
+    String valid = """
+        int count = op.insertInto(table).values(row -> row.value(id, 1L).value(name, "one"))
+            .onConflict(id).doUpdate().setExpression(name, Sql.excluded(name)).write();
+        var key = Sql.output(id, "id"); var text = Sql.output(name, "name");
+        var source = Sql.values(row -> row.value(key, 1L).value(text, "one")).as("incoming");
+        Written<List<String>> rows = op.mergeInto(table).using(source).on(id.eq(source.column(key)))
+            .whenMatched().thenUpdate().setExpression(name, source.column(text))
+            .whenNotMatched().thenInsert(row -> row.value(id, source.column(key)).value(name, source.column(text)))
+            .returning().write();
+        Written<String> single = op.mergeInto(table).key(id)
+            .values(row -> row.value(id, 1L).value(name, "one")).returning().write();
+        """;
+    assertTrue(compile("samples.Contract", prefix + valid + "}}", temporaryDirectory.resolve("structured-valid")));
+    int index = 0;
+    for (String invalid : List.of(
+        "op.insertInto(table).values(row -> row.value(id, \"wrong\"));",
+        "op.insertInto(table).values(row -> row.value(name, 1L));",
+        "op.insertInto(table).values(row -> row.value(id, 1L)).onConflict(id).write();",
+        "op.insertInto(table).values(row -> row.value(id, 1L)).onConflict(id).doUpdate().write();",
+        "op.insertInto(table).values(row -> row.value(id, 1L)).onConflict(id).doNothing().set(id, 2L);",
+        "op.insertInto(table).values(row -> row.value(id, 1L)).onConflict(id).doNothing().expectedVersion(1L);",
+        "op.mergeInto(table).write();",
+        "op.mergeInto(table).key(id).write();",
+        "op.mergeInto(table).key(id).values(row -> row.value(id, \"bad\"));",
+        "Sql.values(row -> row.value(Sql.output(id, \"id\"), \"bad\"));",
+        "op.insertInto(table).columns(id,name).values(1L, \"one\");",
+        "Sql.values(Sql.output(id, \"id\")).row(1L);")) {
+      assertFalse(compile("samples.Contract", prefix + invalid + "}}",
+          temporaryDirectory.resolve("structured-invalid-" + index++)), invalid);
+    }
   }
 
   private static String invalidDerivedTargetSource(String simpleName, String invocation) {

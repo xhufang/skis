@@ -4,8 +4,10 @@ import io.skis.core.SkisErrorCode;
 import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.ResolvedStructureKey;
@@ -14,6 +16,7 @@ import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
+import java.util.List;
 import java.util.Objects;
 
 /** Recursive dialect capability validation for complete query-block trees. */
@@ -35,6 +38,17 @@ public final class DialectQueryFeatures {
           validateBlock(dialectId, capabilities, select, SemanticValidator.analyzeComplete(select));
       case CountAst count ->
           validateCount(dialectId, capabilities, count, SemanticValidator.analyzeComplete(count));
+      case ConflictInsertStatement conflict -> {
+        require(dialectId, capabilities, DialectFeature.INSERT_ON_CONFLICT, "ON CONFLICT", "root");
+        validate(dialectId, capabilities, conflict.insert());
+      }
+      case MergeStatement merge ->
+          require(
+              dialectId,
+              capabilities,
+              merge.keyForm() ? DialectFeature.MERGE_KEY : DialectFeature.MERGE_USING,
+              "MERGE",
+              "root");
       case InsertStatement insert -> {
         DialectJoinFeatures.validate(dialectId, capabilities, insert);
         if (insert.columns().isEmpty()) {
@@ -147,8 +161,8 @@ public final class DialectQueryFeatures {
             instanceof
             ResolvedStructureKey.Node(
                 String kind1,
-                java.util.List<String> attributes,
-                java.util.List<ResolvedStructureKey> children))
+                List<String> attributes,
+                List<ResolvedStructureKey> children))
         || kind1.equals("SELECT_BLOCK")) {
       return;
     }

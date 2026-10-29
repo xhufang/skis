@@ -34,6 +34,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -643,8 +644,17 @@ public final class JdbcExecutor {
       @Nullable OperationObservation observation,
       StatementPurpose purpose) {
     return (List<R>)
-        executeReturningResult(
-            plan, decoder, columnCount, false, parameters, executionContext, observation, purpose);
+        Objects.requireNonNull(
+            executeReturningResult(
+                plan,
+                decoder,
+                columnCount,
+                false,
+                false,
+                parameters,
+                executionContext,
+                observation,
+                purpose));
   }
 
   /** Executes an INSERT and returns exactly one detached row without a collection buffer. */
@@ -658,16 +668,41 @@ public final class JdbcExecutor {
       @Nullable OperationObservation observation,
       StatementPurpose purpose) {
     return (R)
+        Objects.requireNonNull(
+            executeReturningResult(
+                plan,
+                decoder,
+                columnCount,
+                true,
+                false,
+                parameters,
+                executionContext,
+                observation,
+                purpose));
+  }
+
+  /** Executes a zero-or-one-row conflict/KEY result without allocating a list. */
+  @SuppressWarnings("unchecked")
+  public <R, P> @Nullable R executeReturningOptional(
+      CompiledMutationPlan<P> plan,
+      RowDecoder<R> decoder,
+      int columnCount,
+      P parameters,
+      ExecutionContext context,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose) {
+    return (R)
         executeReturningResult(
-            plan, decoder, columnCount, true, parameters, executionContext, observation, purpose);
+            plan, decoder, columnCount, true, true, parameters, context, observation, purpose);
   }
 
   // The typed entrypoints fix the result shape; both share resource and observation ownership.
-  private <R, P> Object executeReturningResult(
+  private <R, P> @Nullable Object executeReturningResult(
       CompiledMutationPlan<P> plan,
       RowDecoder<R> decoder,
       int columnCount,
       boolean requireSingleRow,
+      boolean allowEmpty,
       P parameters,
       ExecutionContext executionContext,
       @Nullable OperationObservation observation,
@@ -734,7 +769,7 @@ public final class JdbcExecutor {
                     results.add(value);
                   }
                 }
-                if (requireSingleRow && read != 1) {
+                if (requireSingleRow && !allowEmpty && read != 1) {
                   throw MutationException.of(
                       SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
                       "single-row INSERT RETURNING must return exactly one row");
@@ -761,7 +796,7 @@ public final class JdbcExecutor {
             }
             Object completed =
                 requireSingleRow
-                    ? Objects.requireNonNull(singleResult)
+                    ? allowEmpty ? singleResult : Objects.requireNonNull(singleResult)
                     : List.copyOf(Objects.requireNonNull(results));
             completeStatementSucceeded(statementObservation, read, read);
             return completed;
@@ -909,10 +944,10 @@ public final class JdbcExecutor {
   }
 
   private static boolean integralGeneratedKeyType(int jdbcType) {
-    return jdbcType == java.sql.Types.TINYINT
-        || jdbcType == java.sql.Types.SMALLINT
-        || jdbcType == java.sql.Types.INTEGER
-        || jdbcType == java.sql.Types.BIGINT;
+    return jdbcType == Types.TINYINT
+        || jdbcType == Types.SMALLINT
+        || jdbcType == Types.INTEGER
+        || jdbcType == Types.BIGINT;
   }
 
   private static void generatedCloseFailure(
@@ -1188,7 +1223,7 @@ public final class JdbcExecutor {
     }
   }
 
-  private <R, P> R withConnection(
+  private <R extends @Nullable Object, P> R withConnection(
       CompiledQueryPlan<?, P> plan, ExecutionContext executionContext, SqlWork<R> work) {
     return withConnection(
         executionContext,
@@ -1198,7 +1233,7 @@ public final class JdbcExecutor {
         work);
   }
 
-  private <R> R withConnection(
+  private <R extends @Nullable Object> R withConnection(
       ExecutionContext executionContext, SqlFailureTranslator failureTranslator, SqlWork<R> work) {
     Connection connection;
     try {
@@ -1591,7 +1626,7 @@ public final class JdbcExecutor {
   }
 
   @FunctionalInterface
-  private interface SqlWork<R> {
+  private interface SqlWork<R extends @Nullable Object> {
     R execute(Connection connection) throws SQLException;
   }
 

@@ -14,10 +14,12 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationSource;
+import io.skis.sql.ast.ExcludedExpression;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.InPredicate;
@@ -29,6 +31,7 @@ import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOrder;
 import io.skis.sql.ast.NullPredicate;
@@ -187,6 +190,14 @@ public final class RenderInput {
         case ReturningStatement returning -> {
           SemanticValidator.validateComplete(returning);
           yield ResolvedStatement.adopt(returning, null);
+        }
+        case ConflictInsertStatement conflict -> {
+          SemanticValidator.validateComplete(conflict);
+          yield ResolvedStatement.adopt(conflict, null);
+        }
+        case MergeStatement merge -> {
+          SemanticValidator.validateComplete(merge);
+          yield ResolvedStatement.adopt(merge, null);
         }
         case InsertStatement insert -> {
           SemanticValidator.validateComplete(insert);
@@ -391,6 +402,28 @@ public final class RenderInput {
         }
         case SelectStatement select -> validateSelect(select, capabilities, dialectId);
         case CountAst count -> validateCount(count, capabilities, dialectId);
+        case ConflictInsertStatement conflict -> {
+          if (!capabilities.supports(DialectFeature.INSERT_ON_CONFLICT))
+            throw new IllegalArgumentException("target does not support ON CONFLICT");
+          validate(conflict.insert(), capabilities, dialectId);
+          conflict
+              .assignments()
+              .forEach(value -> validateExpression(value.value(), capabilities, dialectId));
+          validateExpression(conflict.updateWhere(), capabilities, dialectId);
+        }
+        case MergeStatement merge -> {
+          DialectFeature feature =
+              merge.keyForm() ? DialectFeature.MERGE_KEY : DialectFeature.MERGE_USING;
+          if (!capabilities.supports(feature))
+            throw new IllegalArgumentException("target does not support MERGE form");
+          validateTable(merge.target(), capabilities, dialectId);
+          validateExpression(merge.on(), capabilities, dialectId);
+          validateExpression(merge.matchedWhere(), capabilities, dialectId);
+          merge
+              .assignments()
+              .forEach(value -> validateExpression(value.value(), capabilities, dialectId));
+          merge.insertValues().forEach(value -> validateExpression(value, capabilities, dialectId));
+        }
         case InsertStatement insert -> {
           validateTable(insert.target(), capabilities, dialectId);
           if (insert.columns().isEmpty()
@@ -629,6 +662,7 @@ public final class RenderInput {
                 new IllegalArgumentException(
                     "selected output references are only valid as direct DISTINCT ORDER BY items"),
                 "lowered statement failed post-validation");
+        case ExcludedExpression<?> ignored -> {}
         case ColumnExpression<?, ?> ignored -> {}
         case DerivedColumnExpression<?> ignored -> {}
         case LiteralExpression<?> ignored -> {}

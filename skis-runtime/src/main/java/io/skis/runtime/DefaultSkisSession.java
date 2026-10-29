@@ -7,6 +7,7 @@ import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.DeleteWrite;
 import io.skis.mutation.InsertInto;
+import io.skis.mutation.MergeInto;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.UpdateSet;
 import io.skis.query.NonNullSelectable;
@@ -110,6 +111,12 @@ final class DefaultSkisSession implements SkisSession {
   public <E> InsertInto<E> insertInto(QueryTable<E> table) {
     requireActive();
     return mutations.insertInto(table);
+  }
+
+  @Override
+  public <E> MergeInto<E> mergeInto(QueryTable<E> table) {
+    requireActive();
+    return mutations.mergeInto(table);
   }
 
   @Override

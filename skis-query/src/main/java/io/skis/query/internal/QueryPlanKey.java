@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.jspecify.annotations.Nullable;
 
 /**
  * Immutable, value-independent identity of one shareable compiled query plan.
@@ -76,7 +77,7 @@ final class QueryPlanKey {
   }
 
   @Override
-  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
+  public boolean equals(@Nullable Object other) {
     return this == other
         || other instanceof QueryPlanKey key
             && hashCode == key.hashCode
@@ -566,6 +567,9 @@ final class QueryPlanKey {
           codecBinding(identities, QueryModels.selectable(derived.output()));
       case ScalarSubquerySelectable<?> scalar -> codecBinding(identities, scalar.output());
       case ExpressionSelectable<?> expression -> {
+        if (expression.forwardsMapping()) {
+          yield codecBinding(identities, expression.valueSources().getFirst());
+        }
         // Mapping legality was checked against the current registry before plan lookup. Only the
         // descriptor is needed here: materializing expression() would compile a second preview.
         ResolvedValueMapping.requireBuiltinCodec(expression.javaType(), expression.sqlType());

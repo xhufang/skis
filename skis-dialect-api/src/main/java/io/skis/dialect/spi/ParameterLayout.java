@@ -11,10 +11,12 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationSource;
+import io.skis.sql.ast.ExcludedExpression;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.InPredicate;
@@ -26,6 +28,7 @@ import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.OffsetLimit;
@@ -120,6 +123,20 @@ public final class ParameterLayout {
         case ReturningStatement returning -> statement(returning.mutation());
         case SelectStatement select -> select(select);
         case CountAst count -> count(count);
+        case ConflictInsertStatement conflict -> {
+          statement(conflict.insert());
+          conflict.assignments().forEach(value -> expression(value.value()));
+          expression(conflict.updateWhere());
+        }
+        case MergeStatement merge -> {
+          if (merge.source() != null) merge.source().parameters().forEach(this::expression);
+          if (!merge.keyForm()) {
+            expression(merge.on());
+            expression(merge.matchedWhere());
+            merge.assignments().forEach(value -> expression(value.value()));
+          }
+          merge.insertValues().forEach(this::expression);
+        }
         case InsertStatement insert -> insert.values().forEach(this::expression);
         case UpdateStatement update -> {
           for (UpdateAssignment<?> assignment : update.assignments()) {
@@ -191,6 +208,7 @@ public final class ParameterLayout {
         case ParameterSlot<?> parameter -> add(parameter);
         case BooleanPredicate ignored -> {}
         case SelectedOutputReference<?> ignored -> {}
+        case ExcludedExpression<?> ignored -> {}
         case ColumnExpression<?, ?> ignored -> {}
         case DerivedColumnExpression<?> ignored -> {}
         case LiteralExpression<?> ignored -> {}
