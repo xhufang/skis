@@ -84,5 +84,14 @@ public enum DialectFeature {
   MUTATION_RETURNING,
 
   /** Mutation results use FINAL TABLE / OLD TABLE instead of native RETURNING. */
-  MUTATION_RESULT_TABLE
+  MUTATION_RESULT_TABLE,
+
+  /** Explicit-column PostgreSQL conflict actions. */
+  INSERT_ON_CONFLICT,
+
+  /** Single-row VALUES source with MERGE branches. */
+  MERGE_USING,
+
+  /** H2 KEY grammar, independently validated from USING. */
+  MERGE_KEY
 }

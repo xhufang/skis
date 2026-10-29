@@ -19,6 +19,8 @@ public final class H2Dialect implements Dialect {
 
   private static final DialectCapabilities CAPABILITIES =
       DialectCapabilities.of(
+          DialectFeature.MERGE_USING,
+          DialectFeature.MERGE_KEY,
           DialectFeature.SCHEMA_QUALIFIED_TABLES,
           DialectFeature.PARAMETERIZED_LIMIT,
           DialectFeature.PARAMETERIZED_OFFSET,

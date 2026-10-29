@@ -12,6 +12,7 @@ import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
 import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.ExcludedExpression;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InSubqueryPredicate;
@@ -29,6 +30,7 @@ import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
@@ -73,6 +75,7 @@ final class AstExpressions {
       case IncrementExpression<?> increment -> List.of(increment.operand());
       case ParameterSlot<?> ignored -> List.of();
       case BooleanPredicate ignored -> List.of();
+      case ExcludedExpression<?> ignored -> List.of();
       case ColumnExpression<?, ?> ignored -> List.of();
       case DerivedColumnExpression<?> ignored -> List.of();
       case LiteralExpression<?> ignored -> List.of();
@@ -152,6 +155,6 @@ final class AstExpressions {
   }
 
   private static SelectStatement requireSubquery(@Nullable SelectStatement subquery) {
-    return java.util.Objects.requireNonNull(subquery, "subquery");
+    return Objects.requireNonNull(subquery, "subquery");
   }
 }

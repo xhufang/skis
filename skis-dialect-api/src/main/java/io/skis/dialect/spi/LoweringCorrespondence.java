@@ -6,6 +6,7 @@ import io.skis.sql.ast.BooleanPredicate;
 import io.skis.sql.ast.CaseExpression;
 import io.skis.sql.ast.CastExpression;
 import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DecimalPrecision;
 import io.skis.sql.ast.DeleteStatement;
@@ -22,6 +23,7 @@ import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterRelationSource;
@@ -33,6 +35,7 @@ import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -47,6 +50,14 @@ final class LoweringCorrespondence {
 
   private final List<ParameterRelationSource> parameterScopes = new ArrayList<>();
   private final DialectCapabilities capabilities;
+
+  private void assignments(List<UpdateAssignment<?>> first, List<UpdateAssignment<?>> second) {
+    require(first.size() == second.size(), "assignment count changed");
+    for (int i = 0; i < first.size(); i++) {
+      require(first.get(i).column().equals(second.get(i).column()), "assignment target changed");
+      expression(first.get(i).value(), second.get(i).value());
+    }
+  }
 
   private LoweringCorrespondence(DialectCapabilities capabilities) {
     this.capabilities = capabilities;
@@ -68,6 +79,29 @@ final class LoweringCorrespondence {
         require(first.target() == second.target(), "mutation target changed");
         check.expressions(first.selections(), second.selections());
         validate(first.mutation(), second.mutation(), false, capabilities);
+      }
+      case ConflictInsertStatement first -> {
+        ConflictInsertStatement second = (ConflictInsertStatement) lowered;
+        require(
+            first.doNothing() == second.doNothing()
+                && first.conflictColumns().equals(second.conflictColumns()),
+            "conflict action or target changed");
+        validate(first.insert(), second.insert(), false, capabilities);
+        check.assignments(first.assignments(), second.assignments());
+        check.expression(first.updateWhere(), second.updateWhere());
+      }
+      case MergeStatement first -> {
+        MergeStatement second = (MergeStatement) lowered;
+        require(
+            first.target() == second.target()
+                && first.source() == second.source()
+                && first.keys().equals(second.keys())
+                && first.insertColumns().equals(second.insertColumns()),
+            "MERGE target, source or action columns changed");
+        check.expression(first.on(), second.on());
+        check.expression(first.matchedWhere(), second.matchedWhere());
+        check.assignments(first.assignments(), second.assignments());
+        check.expressions(first.insertValues(), second.insertValues());
       }
       case InsertStatement first -> {
         InsertStatement second = (InsertStatement) lowered;

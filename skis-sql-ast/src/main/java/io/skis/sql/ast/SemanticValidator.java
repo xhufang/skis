@@ -2,11 +2,14 @@ package io.skis.sql.ast;
 
 import java.math.BigInteger;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /** Central semantic validation for portable statement scope, types, nulls, and writability. */
 public final class SemanticValidator {
@@ -30,6 +33,8 @@ public final class SemanticValidator {
     Objects.requireNonNull(statement, "statement");
     switch (statement) {
       case ReturningStatement returning -> validateComplete(returning.mutation());
+      case ConflictInsertStatement conflict -> validateConflict(conflict);
+      case MergeStatement merge -> validateMerge(merge);
       case SelectStatement select -> validateComplete(select);
       case CountAst count -> validate(count);
       case InsertStatement insert ->
@@ -160,10 +165,13 @@ public final class SemanticValidator {
       List<SqlExpression<?>> values) {
     requireWritableTarget(target, "INSERT");
     ValidationContext context = new ValidationContext();
+    Set<Integer> seenColumns = new HashSet<>();
     for (int index = 0; index < columns.size(); index++) {
       ColumnExpression<?, ?> column = columns.get(index);
       SqlExpression<?> value = values.get(index);
       requireTargetColumn(column, target, "INSERT");
+      if (!seenColumns.add(column.property().ordinal()))
+        throw new IllegalArgumentException("duplicate INSERT column");
       if (!column.property().column().insertable()) {
         throw new IllegalArgumentException(
             "INSERT column '" + column.property().name() + "' is not insertable");
@@ -172,6 +180,97 @@ public final class SemanticValidator {
       context.validateExpression(value, "INSERT value");
     }
     context.requireDenseParameterOrdinals();
+  }
+
+  private static void validateConflict(ConflictInsertStatement statement) {
+    InsertStatement insert = statement.insert();
+    validateInsert(insert.target(), insert.columns(), insert.values());
+    ValidationContext context = new ValidationContext();
+    insert.values().forEach(value -> context.validateExpression(value, "INSERT"));
+    context.addVisible(insert.target());
+    context.excludedTarget = insert.target();
+    if (statement.doNothing()
+        && !(statement.updateWhere() instanceof BooleanPredicate(boolean value) && value))
+      throw new IllegalArgumentException("DO NOTHING cannot contain an update predicate");
+    Set<Integer> targets = new HashSet<>();
+    for (ColumnExpression<?, ?> column : statement.conflictColumns()) {
+      requireTargetColumn(column, insert.target(), "ON CONFLICT");
+      if (!targets.add(column.property().ordinal())) {
+        throw new IllegalArgumentException("duplicate conflict column");
+      }
+    }
+    validateAssignments(insert.target(), statement.assignments(), context);
+    context.validateExpression(statement.updateWhere(), "ON CONFLICT WHERE");
+    context.requireDenseParameterOrdinals();
+  }
+
+  private static void validateMerge(MergeStatement statement) {
+    requireWritableTarget(statement.target(), "MERGE");
+    ValidationContext context = new ValidationContext();
+    context.addVisible(statement.target());
+    ParameterRelationSource source = statement.source();
+    if (source == null
+        && (!statement.assignments().isEmpty()
+            || statement.target().entity().version().isPresent()
+            || !(statement.on() instanceof BooleanPredicate(boolean value) && value)
+            || !(statement.matchedWhere() instanceof BooleanPredicate(boolean boo) && boo)))
+      throw new IllegalArgumentException(
+          "KEY cannot contain branches, predicates or version metadata");
+    if (source != null) {
+      context.addVisible(source);
+      source.parameters().forEach(value -> context.validateExpression(value, "USING"));
+    }
+    context.validateExpression(statement.on(), "MERGE ON");
+    context.validateExpression(statement.matchedWhere(), "WHEN MATCHED");
+    validateAssignments(statement.target(), statement.assignments(), context);
+    Set<Integer> columns = new HashSet<>();
+    for (int index = 0; index < statement.insertColumns().size(); index++) {
+      ColumnExpression<?, ?> column = statement.insertColumns().get(index);
+      requireTargetColumn(column, statement.target(), "MERGE INSERT");
+      if (!column.property().column().insertable() || !columns.add(column.property().ordinal())) {
+        throw new IllegalArgumentException("invalid or duplicate MERGE insert column");
+      }
+      SqlExpression<?> value = statement.insertValues().get(index);
+      validateAssignment(column, value, "MERGE INSERT");
+      context.validateExpression(value, "MERGE INSERT");
+    }
+    Set<Integer> keys = new HashSet<>();
+    for (ColumnExpression<?, ?> key : statement.keys()) {
+      requireTargetColumn(key, statement.target(), "KEY");
+      if (!columns.contains(key.property().ordinal()) || !keys.add(key.property().ordinal())) {
+        throw new IllegalArgumentException("KEY requires distinct provided columns");
+      }
+    }
+    if (source == null) {
+      var primaryKey = statement.target().entity().primaryKey().orElseThrow().properties();
+      for (var column : statement.insertColumns()) {
+        boolean key = keys.contains(column.property().ordinal());
+        if (primaryKey.contains(column.property()) ? !key : !column.property().column().updatable())
+          throw new IllegalArgumentException("KEY cannot overwrite a protected column");
+      }
+    }
+    context.requireDenseParameterOrdinals();
+  }
+
+  private static void validateAssignments(
+      TableExpression<?> target, List<UpdateAssignment<?>> assignments, ValidationContext context) {
+    Set<Integer> seen = new HashSet<>();
+    for (UpdateAssignment<?> assignment : assignments) {
+      ColumnExpression<?, ?> column = assignment.column();
+      requireTargetColumn(column, target, "UPDATE");
+      if (!column.property().column().updatable()
+          || !seen.add(column.property().ordinal())
+          || target.entity().primaryKey().orElseThrow().properties().contains(column.property())) {
+        throw new IllegalArgumentException("invalid or duplicate conflict/MERGE assignment");
+      }
+      if (target.entity().version().map(v -> v.property() == column.property()).orElse(false)
+          && !(assignment.value() instanceof IncrementExpression<?>(SqlExpression<?> operand)
+              && operand.equals(column)))
+        throw new IllegalArgumentException(
+            "version assignment must increment the current database column");
+      validateAssignment(column, assignment.value(), "UPDATE");
+      context.validateExpression(assignment.value(), "UPDATE");
+    }
   }
 
   static void validateUpdate(
@@ -581,6 +680,7 @@ public final class SemanticValidator {
     private final Map<TableExpression<?>, Boolean> visibleTables;
     private final Map<DerivedRelationReference, Boolean> visibleDerivedRelations;
     private final Map<Integer, ParameterSlot<?>> parametersByOrdinal = new HashMap<>();
+    private @Nullable TableExpression<?> excludedTarget;
 
     private ValidationContext() {
       this(true);
@@ -657,6 +757,11 @@ public final class SemanticValidator {
       requireJavaSqlDescriptor(expression.javaType(), expression.sqlType(), "expression");
       Objects.requireNonNull(expression.nullability(), "expression nullability");
       switch (expression) {
+        case ExcludedExpression<?> excluded -> {
+          if (validatesQueryContext && excluded.column().table() != excludedTarget) {
+            throw new IllegalArgumentException("EXCLUDED is outside its conflict update scope");
+          }
+        }
         case ColumnExpression<?, ?> column -> validateColumn(column, clause);
         case DerivedColumnExpression<?> column -> validateDerivedColumn(column, clause);
         case ParameterSlot<?> parameter -> validateParameter(parameter);

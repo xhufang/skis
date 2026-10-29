@@ -47,6 +47,13 @@ public final class MutationQuerySupport {
     return expression;
   }
 
+  /** Captures one typed input, including mutable JDBC values, at its “row.value” call. */
+  public static <V> @Nullable Object captureValue(Selectable<V> column, @Nullable V value) {
+    if (value == null ? !column.nullability().isNullable() : !column.javaType().isInstance(value))
+      throw new IllegalArgumentException("VALUES input violates its declared type or nullability");
+    return value == null ? null : QueryValueSnapshots.capture(value);
+  }
+
   public static final class Assignment {
     private final Selectable<?> column;
     private final @Nullable Selectable<?> expression;
@@ -163,7 +170,7 @@ public final class MutationQuerySupport {
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
-  private static UpdateAssignment<?> assignment(
+  static UpdateAssignment<?> assignment(
       QueryTable<?> target, Assignment input, QueryConditionCompiler compiler) {
     ColumnExpression column = column(target, input.column());
     SqlExpression expression;

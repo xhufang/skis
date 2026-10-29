@@ -742,6 +742,125 @@
       "reason": "Resolves canonical Codec provenance and loader-aware result identity for conditional writes and returning.",
       "owner": "0.2.10:T03",
       "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.query.internal.WriteInputCompiler",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Spec",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$ValueCollector",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Captures each typed row value once before freezing the callback-owned collector.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Prepared",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Single",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Single",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Merge",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Merge",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.DynamicMutationPlans$StructuredPlan",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Spec",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Owns typed write clauses or prepared invocation inputs; no values enter shared plans.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Prepared",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Owns typed write clauses or prepared invocation inputs; no values enter shared plans.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
     }
   ]
 }

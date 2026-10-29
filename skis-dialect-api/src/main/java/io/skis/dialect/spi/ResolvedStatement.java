@@ -2,10 +2,13 @@ package io.skis.dialect.spi;
 
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.internal.DialectQueryFeatures;
+import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.KeysetSeek;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.OffsetLimit;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.QueryBlockAnalysis;
@@ -31,9 +34,9 @@ import org.jspecify.annotations.Nullable;
  * Immutable controlled stage object for a statement whose applicable semantic analysis and
  * provenance have completed.
  *
- * <p>Construction is only available through {@link #analyze(StatementAst)}. The complete analysis
- * tree stays internal; dialects read only the framework-issued {@link Occurrence} values exposed by
- * this type. Query blocks without a complete query analysis (single-table mutations) are still
+ * <p>Initial construction is only available through {@link #analyze(StatementAst)}. The complete
+ * analysis tree stays internal; dialects read only the framework-issued {@link Occurrence} values
+ * exposed by this type. Statements without a complete query analysis (mutations) are still
  * represented, but never receive a fabricated {@link QueryBlockAnalysis}.
  */
 public final class ResolvedStatement {
@@ -75,6 +78,14 @@ public final class ResolvedStatement {
         SemanticValidator.validateComplete(returning);
         yield new ResolvedStatement(returning, null);
       }
+      case ConflictInsertStatement conflict -> {
+        SemanticValidator.validateComplete(conflict);
+        yield new ResolvedStatement(conflict, null);
+      }
+      case MergeStatement merge -> {
+        SemanticValidator.validateComplete(merge);
+        yield new ResolvedStatement(merge, null);
+      }
       case InsertStatement insert -> {
         SemanticValidator.validateComplete(insert);
         yield new ResolvedStatement(insert, null);
@@ -102,6 +113,17 @@ public final class ResolvedStatement {
   /** The immutable statement that this stage resolved. */
   public StatementAst statement() {
     return statement;
+  }
+
+  /**
+   * Adds explicit target outputs to this exact, already validated mutation.
+   *
+   * <p>The new wrapper validates its output ownership without reanalyzing the unchanged mutation.
+   * Queries and mutations that already have a result wrapper are rejected by the RETURNING grammar.
+   */
+  public ResolvedStatement returning(List<ColumnExpression<?, ?>> selections) {
+    ExecutionListenerDispatcher.rejectReentrantCall();
+    return new ResolvedStatement(new ReturningStatement(statement, selections), null);
   }
 
   /** Whether this stage owns a complete query-block analysis. */

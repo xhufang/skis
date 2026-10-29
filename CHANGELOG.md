@@ -5,7 +5,7 @@
 ## [Unreleased]
 
 当前仓库为 `0.2.10-SNAPSHOT`。T02 基线 `1899270` 的 CI 40468581570 / Compliance 40468581572 已通过，
-原始 Java 21/25、PG/H2 与消费者报告已核对。T03 源码、测试与文档已同步，待本次变更 CI 验证；本地未编译运行。
+原始 Java 21/25、PG/H2 与消费者报告已核对。T03/T04 源码、测试与文档已同步，待本次变更 CI 验证；本地未编译运行。
 前一版 `0.2.9` 聚合语义内部里程碑于 2026-10-26 完成，以下 CI 证据属于该里程碑。
 当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或 Release。
 PR #91 合入提交 `980ad24003dc3e280336ec3a1be126841f148ab8` 的
@@ -14,6 +14,16 @@ PR #91 合入提交 `980ad24003dc3e280336ec3a1be126841f148ab8` 的
 Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来源及资源合同已验收；
 本地仅静态核对文档和原始工件，未编译运行。合入后 push 按事件跳过依赖漏洞审查，
 该项已由 PR #91 的 [Compliance](https://github.com/xhufang/skis/actions/runs/40281380091) 验证。
+
+### T04 source implementation (verification pending)
+
+- PG 冲突插入复用 insertInto，支持显式列/值、冲突目标、DO NOTHING/UPDATE、EXCLUDED、更新 WHERE 和适用版本检查。
+- H2 增加单行 VALUES 来源的 MERGE USING 分支和独立 KEY 简写；USING 返回列表，KEY 返回单行；按语句实际并发、主键及列保护约束执行。
+- 显式 INSERT、VALUES 来源和 MERGE 插入分支改用逐列 row.value 回调，保留类型/空性检查，删除组合重载和 8 列上限；KEY 使用 key(...).values(...)。
+- 支持 expectedVersion(Number) 和非空来源版本表达式；严格版本检查拒绝含糊业务过滤，schema 前提见[写入用法](docs/mutation-returning.md)。
+- 保留生成式实体 Binder 与有界共享缓存，中间阶段不预分配执行请求/查找对象；单行返回不创建列表，计数不创建 Written 或整行 Decoder，生成键只按实际结果回填。
+- MERGE 插入表达式补齐类型 lowering；显式 UUID/雪花主键复用策略值校验；H2 并发用例在测试侧同步插入分支并检查唯一冲突分类。
+- 补充 SQL/类型/nullness、PG/H2 并发/资源/回滚和缓存测试，已登记必需套件；本地未编译运行，待当前 CI 验证。
 
 ### T03 source implementation (verification pending)
 

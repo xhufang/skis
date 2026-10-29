@@ -1,19 +1,9 @@
 package io.skis.mutation;
 
-import io.skis.core.ExecutionOptions;
-import io.skis.query.ProjectionSelection;
-import io.skis.query.ProjectionType;
+import io.skis.query.Selectable;
 
-/** One entity insertion; each write performs an independent operation. */
-public interface InsertWrite<E> {
+/** Complete INSERT input, optionally followed by one explicit conflict action. */
+public interface InsertWrite<E> extends SingleWrite<E> {
 
-  int write();
-
-  int write(ExecutionOptions options);
-
-  ReturningWrite<E> returning();
-
-  <R> ReturningWrite<R> returning(ProjectionSelection<R> projection);
-
-  <R> ReturningWrite<R> returning(ProjectionType<R> projection);
+  ConflictAction<E> onConflict(Selectable<?> first, Selectable<?>... remaining);
 }

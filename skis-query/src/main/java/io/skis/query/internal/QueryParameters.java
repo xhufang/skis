@@ -34,6 +34,14 @@ final class QueryParameters {
     return new QueryParameters(bindings);
   }
 
+  /** Imports an already-owned write snapshot without copying a mutable JDBC value twice. */
+  static <V> QueryParameters ofOwnedSnapshot(QueryParameter<V> parameter, @Nullable V value) {
+    validateValue(parameter, value);
+    IdentityHashMap<QueryParameter<?>, Binding> bindings = new IdentityHashMap<>(1);
+    bindings.put(parameter, new Binding(value));
+    return new QueryParameters(bindings);
+  }
+
   static Builder builder() {
     return new Builder();
   }
@@ -200,6 +208,11 @@ final class QueryParameters {
   }
 
   private static <V> Binding capture(QueryParameter<V> parameter, @Nullable V value) {
+    validateValue(parameter, value);
+    return new Binding(value == null ? null : QueryValueSnapshots.capture(value));
+  }
+
+  private static <V> void validateValue(QueryParameter<V> parameter, @Nullable V value) {
     Objects.requireNonNull(parameter, "parameter");
     if (!(parameter instanceof DefaultQueryParameter<?>)) {
       throw QueryValidationException.of(
@@ -210,7 +223,7 @@ final class QueryParameters {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_PARAMETER_VALUE, "null is not allowed for " + describe(parameter));
       }
-      return new Binding(null);
+      return;
     }
     if (!parameter.javaType().isInstance(value)) {
       throw QueryValidationException.of(
@@ -220,7 +233,6 @@ final class QueryParameters {
               .detail(describe(parameter))
               .build());
     }
-    return new Binding(QueryValueSnapshots.capture(value));
   }
 
   private static QueryValidationException duplicate(QueryParameter<?> parameter) {

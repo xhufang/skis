@@ -203,7 +203,7 @@ class NullnessCompilationTest {
         static int write(MutationOperations operations, QueryTable<String> table, String entity) {
           return operations.insertInto(table).value(entity).write();
         }
-        static io.skis.runtime.TransactionCallback<@Nullable String> nullableTransaction() {
+        static TransactionCallback<@Nullable String> nullableTransaction() {
           return session -> null;
         }
         """).assertPass();
@@ -234,11 +234,11 @@ class NullnessCompilationTest {
         }
         """);
     reject("transaction-null-output", """
-        static io.skis.runtime.TransactionCallback<String> invalid() { return session -> null; }
+        static TransactionCallback<String> invalid() { return session -> null; }
         """);
     reject("transaction-nullable-result", """
-        static int invalid(io.skis.runtime.SkisExecutor executor,
-            io.skis.runtime.TransactionCallback<@Nullable String> callback) {
+        static int invalid(SkisExecutor executor,
+            TransactionCallback<@Nullable String> callback) {
           return executor.inTransaction(callback).length();
         }
         """);
@@ -289,11 +289,12 @@ class NullnessCompilationTest {
     Path api = directory.resolve("bytecode-api");
     NullnessCompiler.compile("bytecode-api", Map.of("separate.Api", """
         package separate;
+        import java.util.ArrayList;
         import java.util.List;
         import org.jspecify.annotations.*;
         @NullMarked public final class Api {
           public static List<@Nullable String> values() {
-            List<@Nullable String> values = new java.util.ArrayList<>();
+            List<@Nullable String> values = new ArrayList<>();
             values.add("ok");
             values.add(null);
             return values;
@@ -302,10 +303,10 @@ class NullnessCompilationTest {
         """), api).assertPass();
     for (boolean valid : List.of(true, false)) {
       String body = valid
-          ? "String value = separate.Api.values().getFirst(); return value == null ? 0 : value.length();"
-          : "return separate.Api.values().getFirst().length();";
+          ? "String value = Api.values().getFirst(); return value == null ? 0 : value.length();"
+          : "return Api.values().getFirst().length();";
       var result = NullnessCompiler.compile("bytecode-consumer-" + valid,
-          source("static int read() { " + body + " }"), List.of(), List.of(api),
+          source("static int read() { " + body + " }", "import separate.Api;"), List.of(), List.of(api),
           directory.resolve("bytecode-consumer-" + valid));
       if (valid) result.assertPass();
       else result.assertRejected("NullAway", "Contract.java");
@@ -314,6 +315,50 @@ class NullnessCompilationTest {
 
   private NullnessCompiler.Result check(String id, String body) throws Exception {
     return NullnessCompiler.compile(id, source(body), directory.resolve(id));
+  }
+
+  @Test
+  void structuredRowsPreserveNullnessForEachColumnAndSourcePosition() throws Exception {
+    check("structured-rows-valid", """
+        static void valid(MutationOperations op, QueryTable<String> table,
+            NonNullSelectable<Long> id, NonNullSelectable<String> name, Selectable<String> note) {
+          op.insertInto(table).values(row -> row.value(id, 1L).value(name, "one").value(note, null));
+          var key = Sql.output(id, "id"); var text = Sql.output(name, "name"); var optional = Sql.output(note, "note");
+          var source = Sql.values(row -> row
+              .value(key, 1L)
+              .value(text, "one")
+              .value(optional, null)).as("incoming");
+          op.mergeInto(table).using(source).on(id.eq(source.column(key))).whenNotMatched()
+              .thenInsert(row -> row
+                  .value(id, source.column(key))
+                  .value(name, source.column(text))
+                  .value(note, source.column(optional)));
+        }
+        """).assertPass();
+    reject("structured-null-required-position", """
+        static void invalid(MutationOperations op, QueryTable<String> table,
+            NonNullSelectable<Long> id, NonNullSelectable<String> name) {
+          op.insertInto(table).values(row -> row.value(id, 1L).value(name, null));
+        }
+        """);
+    reject("structured-null-source-position", """
+        static void invalid(NonNullSelectable<String> name) {
+          Sql.values(row -> row.value(Sql.output(name, "name"), null));
+        }
+        """);
+    reject("structured-null-key-value", """
+        static void invalid(MutationOperations op, QueryTable<String> table,
+            NonNullSelectable<Long> id) {
+          op.mergeInto(table).key(id).values(row -> row.value(id, null));
+        }
+        """);
+    reject("structured-null-expected-version", """
+        static void invalid(MutationOperations op, QueryTable<String> table,
+            NonNullSelectable<String> name) {
+          op.insertInto(table).value("one").onConflict(name).doUpdate().set(name, "two")
+              .expectedVersionExpression(null);
+        }
+        """);
   }
 
   @Test
@@ -327,7 +372,7 @@ class NullnessCompilationTest {
           NonNullSelectable<Integer> result = Sql.caseWhen(condition, sum, required);
           NonNullSelectable<Integer> fallback = Sql.coalesce(number, required);
           NonNullSelectable<String> concat = Sql.concat(Sql.value("a"), Sql.value("b"));
-          NonNullSelectable<Long> cast = Sql.cast(required, Long.class, io.skis.sql.ast.SqlType.BIGINT);
+          NonNullSelectable<Long> cast = Sql.cast(required, Long.class, SqlType.BIGINT);
           SelectQuery<@Nullable Long> aggregate = operations.select(Sql.sumAsLong(number)).from(table);
           SelectQuery<Long> count = operations.select(Sql.count(number)).from(table);
           List<@Nullable Long> rows = aggregate.groupBy(number).having(condition).fetchList();
@@ -352,23 +397,23 @@ class NullnessCompilationTest {
   @Test
   void writtenAndStagedMutationNullnessRemainPrecise() throws Exception {
     check("written-valid", """
-        static <R> R required(io.skis.mutation.Written<R> result) { return result.get(); }
-        static <R> @Nullable R fallback(io.skis.mutation.Written<R> result) {
+        static <R> R required(Written<R> result) { return result.get(); }
+        static <R> @Nullable R fallback(Written<R> result) {
           return result.orElse(null);
         }
         static void stages(MutationOperations op, QueryTable<String> table, String value) {
-          io.skis.mutation.Written<String> result = op.insertInto(table).value(value).returning().write();
+          Written<String> result = op.insertInto(table).value(value).returning().write();
           String required = result.orElseThrow();
           Optional<Integer> length = result.map(String::length);
         }
         """).assertPass();
     reject("written-nullable-default", """
-        static int invalid(io.skis.mutation.Written<String> result) {
+        static int invalid(Written<String> result) {
           return result.orElse(null).length();
         }
         """);
     reject("written-nullable-supplier", """
-        static int invalid(io.skis.mutation.Written<String> result) {
+        static int invalid(Written<String> result) {
           return result.orElseGet(() -> null).length();
         }
         """);
@@ -384,7 +429,7 @@ class NullnessCompilationTest {
         """);
   }
 
-  private static Map<String, String> source(String body) {
+  private static Map<String, String> source(String body, String... additionalImports) {
     return Map.of("contracts.Contract", """
         package contracts;
         import io.skis.core.spi.ExecutionContext;
@@ -397,13 +442,18 @@ class NullnessCompilationTest {
         import io.skis.query.spi.ProjectionMapping;
         import io.skis.mapping.spi.*;
         import io.skis.mutation.MutationOperations;
+        import io.skis.mutation.Written;
+        import io.skis.runtime.SkisExecutor;
+        import io.skis.runtime.TransactionCallback;
+        import io.skis.sql.ast.SqlType;
         import java.sql.*;
         import java.util.*;
         import java.util.stream.Stream;
         import org.jspecify.annotations.*;
+        %s
         @NullMarked final class Contract {
         %s
         }
-        """.formatted(body));
+        """.formatted(String.join("\n", additionalImports), body));
   }
 }

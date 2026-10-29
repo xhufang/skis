@@ -18,6 +18,29 @@ import org.junit.jupiter.api.Test;
 
 class ReturningExecutionTest {
   @Test
+  void optionalReturningKeepsZeroOrOneRowsAndAllFailureResourceBoundaries() {
+    for (var rows : List.of(List.<String>of(), List.of("one"))) {
+      var scenario = new Scenario(rows);
+      String result = new JdbcExecutor(scenario.provider()).executeReturningOptional(scenario.plan(),
+          (rs, context) -> { scenario.step("decode"); return rs.getString(1); },
+          1, "input", ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY);
+      assertEquals(rows.isEmpty() ? null : "one", result);
+      assertEquals("release", scenario.events.getLast());
+    }
+    var many = new Scenario(List.of("a", "b"));
+    assertThrows(MutationException.class, () -> new JdbcExecutor(many.provider()).executeReturningOptional(
+        many.plan(), (rs, context) -> rs.getString(1), 1, "input", ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY));
+    for (String phase : List.of("acquire", "prepare", "configure", "bind", "execute", "metadata", "next", "decode", "close-rows", "close-statement", "release")) {
+      var scenario = new Scenario(); scenario.failures.add(phase);
+      assertThrows(JdbcExecutionException.class, () -> new JdbcExecutor(scenario.provider()).executeReturningOptional(
+          scenario.plan(), (rs, context) -> { scenario.step("decode"); return rs.getString(1); },
+          1, "input", ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY));
+      if (!phase.equals("acquire")) assertEquals("release", scenario.events.getLast());
+      assertTrue(Collections.frequency(scenario.events, "execute") <= 1);
+    }
+  }
+
+  @Test
   void decodesByIndexAndClosesBeforeReturningDetachedUnmodifiableRows() {
     var s = new Scenario();
     var rows = execute(s, false);

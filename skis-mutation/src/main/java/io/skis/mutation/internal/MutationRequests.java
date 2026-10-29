@@ -5,6 +5,7 @@ import io.skis.core.MutationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.mutation.BatchInsertWrite;
+import io.skis.mutation.ConflictAction;
 import io.skis.mutation.DeleteWrite;
 import io.skis.mutation.InsertInto;
 import io.skis.mutation.InsertWrite;
@@ -36,6 +37,14 @@ final class MutationRequests {
 
   static <E> InsertInto<E> insert(DefaultMutationOperations operations, QueryTable<E> table) {
     return new Insert<>(operations, Objects.requireNonNull(table, "table"));
+  }
+
+  record InsertOwner<E>(DefaultMutationOperations operations, QueryTable<E> table) {}
+
+  static <E> InsertOwner<E> insertOwner(InsertInto<E> stage) {
+    if (!(stage instanceof Insert<E>(DefaultMutationOperations operations, QueryTable<E> table)))
+      throw StructuredWrites.invalid("INSERT stage was not created by SKIS");
+    return new InsertOwner<>(operations, table);
   }
 
   static <E> UpdateSet<E> update(DefaultMutationOperations operations, QueryTable<E> table) {
@@ -85,6 +94,11 @@ final class MutationRequests {
 
   private record Single<E>(DefaultMutationOperations operations, QueryTable<E> table, E entity)
       implements InsertWrite<E> {
+    @Override
+    public ConflictAction<E> onConflict(Selectable<?> first, Selectable<?>... remaining) {
+      return StructuredWrites.conflict(operations, table, entity, first, remaining);
+    }
+
     @Override
     public int write() {
       return write(ExecutionOptions.NONE);

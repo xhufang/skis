@@ -2,15 +2,30 @@ package io.skis.query;
 
 import io.skis.query.internal.QueryDsl;
 import io.skis.query.internal.StandardExpressions;
+import io.skis.query.internal.ValuesSources;
 import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticOperator;
 import io.skis.sql.ast.SqlType;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.function.Consumer;
 import org.jspecify.annotations.Nullable;
 
 /** Static factories for immutable, framework-owned SQL descriptions. */
 public final class Sql {
+
+  /** Captures a single non-empty VALUES row; the collector expires after this callback. */
+  public static ValuesSource values(Consumer<ValuesRow> values) {
+    return ValuesSources.create(values);
+  }
+
+  public static <V> NonNullSelectable<V> excluded(NonNullSelectable<V> column) {
+    return ValuesSources.excluded(column);
+  }
+
+  public static <V> Selectable<V> excluded(Selectable<V> column) {
+    return ValuesSources.excluded(column);
+  }
 
   private Sql() {}
 

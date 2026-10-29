@@ -26,6 +26,7 @@ import org.jspecify.annotations.Nullable;
 final class EntityMutationPlanSet<E> {
 
   private final EntityRuntimeModel<E> model;
+  private final Object structuredIdentity = new Object();
   private final EntityMutationBinders<E> binders;
   private final @Nullable CompiledMutationPlan<E> insert;
   private final @Nullable CompiledMutationPlan<E> checkedUpdate;
@@ -72,7 +73,8 @@ final class EntityMutationPlanSet<E> {
       if (property.column().insertable()
           && !(generation == IdGeneration.IDENTITY && property == idProperty)) {
         columns.add(insertTable.expression(property));
-        values.add(new ParameterSlot<>(values.size(), property.javaType(), property.column().nullable()));
+        values.add(
+            new ParameterSlot<>(values.size(), property.javaType(), property.column().nullable()));
       }
     }
     this.insertStatement = new InsertStatement(insertTable, columns, values);
@@ -92,6 +94,10 @@ final class EntityMutationPlanSet<E> {
               + model.entity().entityName()
               + "'");
     }
+  }
+
+  Object structuredIdentity() {
+    return structuredIdentity;
   }
 
   EntityMeta<E> entity() {
@@ -156,7 +162,7 @@ final class EntityMutationPlanSet<E> {
     return new UpdateExecution<>(selected, expectedVersion != null);
   }
 
-  private @Nullable Object readExpectedVersion(E value) {
+  @Nullable Object readExpectedVersion(E value) {
     if (binders.versionReader() == null) {
       return null;
     }

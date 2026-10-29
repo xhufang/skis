@@ -11,7 +11,11 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedOutputColumn;
+import io.skis.sql.ast.ExcludedExpression;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.IncrementExpression;
@@ -19,6 +23,7 @@ import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullPredicate;
 import io.skis.sql.ast.ParameterSlot;
@@ -46,6 +51,10 @@ final class MutationStructureKey {
   private enum Kind {
     RETURNING,
     INSERT,
+    CONFLICT,
+    MERGE,
+    EXCLUDED,
+    DERIVED,
     UPDATE,
     DELETE,
     COLUMN,
@@ -92,6 +101,38 @@ final class MutationStructureKey {
           statement(returning.mutation());
           expressions(returning.selections());
         }
+        case ConflictInsertStatement conflict -> {
+          parts.add(Kind.CONFLICT);
+          parts.add(conflict.doNothing());
+          statement(conflict.insert());
+          expressions(conflict.conflictColumns());
+          parts.add(conflict.assignments().size());
+          for (var assignment : conflict.assignments()) {
+            expression(assignment.column());
+            expression(assignment.value());
+          }
+          expression(conflict.updateWhere());
+        }
+        case MergeStatement merge -> {
+          parts.add(Kind.MERGE);
+          parts.add(merge.keyForm());
+          table(merge.target());
+          if (merge.source() != null) {
+            parts.add(merge.source().reference().alias());
+            outputs(merge.source().reference().outputs());
+            expressions(merge.source().parameters());
+          }
+          expression(merge.on());
+          expression(merge.matchedWhere());
+          parts.add(merge.assignments().size());
+          for (var assignment : merge.assignments()) {
+            expression(assignment.column());
+            expression(assignment.value());
+          }
+          expressions(merge.insertColumns());
+          expressions(merge.insertValues());
+          expressions(merge.keys());
+        }
         case InsertStatement insert -> {
           parts.add(Kind.INSERT);
           table(insert.target());
@@ -117,6 +158,16 @@ final class MutationStructureKey {
       }
     }
 
+    private void outputs(List<DerivedOutputColumn> outputs) {
+      parts.add(outputs.size());
+      for (var output : outputs) {
+        parts.add(output.name());
+        parts.add(output.javaType().getName());
+        parts.add(output.sqlType());
+        parts.add(output.nullability());
+      }
+    }
+
     private void expressions(List<? extends SqlExpression<?>> expressions) {
       parts.add(expressions.size());
       for (SqlExpression<?> expression : expressions) {
@@ -136,6 +187,16 @@ final class MutationStructureKey {
 
     private void expression(SqlExpression<?> expression) {
       switch (expression) {
+        case ExcludedExpression<?> excluded -> {
+          parts.add(Kind.EXCLUDED);
+          expression(excluded.column());
+        }
+        case DerivedColumnExpression<?> column -> {
+          parts.add(Kind.DERIVED);
+          parts.add(column.relation().alias());
+          outputs(column.relation().outputs());
+          parts.add(column.outputOrdinal());
+        }
         case ColumnExpression<?, ?> column -> {
           parts.add(Kind.COLUMN);
           var property = column.property();

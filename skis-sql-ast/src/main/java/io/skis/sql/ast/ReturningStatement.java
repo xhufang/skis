@@ -44,6 +44,8 @@ public record ReturningStatement(
   private static TableExpression<?> targetOf(StatementAst mutation) {
     return switch (mutation) {
       case InsertStatement insert -> insert.target();
+      case ConflictInsertStatement insert -> insert.target();
+      case MergeStatement merge -> merge.target();
       case UpdateStatement update -> update.target();
       case DeleteStatement delete -> delete.target();
       default -> throw new IllegalArgumentException("RETURNING requires INSERT, UPDATE or DELETE");

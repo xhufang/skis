@@ -41,6 +41,32 @@ import org.postgresql.ds.PGSimpleDataSource;
 class PostgreSqlConsumerTest {
 
   @Test
+  void usesConflictStagesExcludedAndTypedReturningOutsideTheReactor() throws Exception {
+    PGSimpleDataSource source = dataSource(); prepareSchema(source);
+    var executor = Skis.create(source, PostgreSqlDialect.INSTANCE);
+    var pet = PetTable.petTable;
+    long id = UUID.randomUUID().getMostSignificantBits() & Long.MAX_VALUE;
+    try {
+      assertEquals(1, executor.insertInto(pet).values(row -> row
+          .value(pet.id(), id)
+          .value(pet.name(), "first")).onConflict(pet.id()).doNothing().write());
+      var returned = executor.insertInto(pet).values(row -> row.value(pet.id(), id).value(pet.name(), "changed"))
+          .onConflict(pet.id()).doUpdate().setExpression(pet.name(), Sql.excluded(pet.name()))
+          .expectedVersion(0L).returning(PetSummaryPro.of(pet.id(), pet.name())).write();
+      assertEquals(new PetSummary(id, "changed"), returned.get());
+      assertEquals(1L, executor.findById(pet, id).orElseThrow().version());
+      assertEquals(0, executor.insertInto(pet).values(row -> row
+          .value(pet.id(), id)
+          .value(pet.name(), "ignored")).onConflict(pet.id()).doNothing().write());
+    } finally {
+      try (Connection connection = source.getConnection();
+          PreparedStatement delete = connection.prepareStatement("DELETE FROM \"consumer\".\"pet\" WHERE \"id\" = ?")) {
+        delete.setLong(1, id); delete.executeUpdate();
+      }
+    }
+  }
+
+  @Test
   void groupsGeneratedAggregateProjectionsAndCountsFinalRowsOutsideTheReactor() throws Exception {
     PGSimpleDataSource dataSource = dataSource();
     prepareSchema(dataSource);

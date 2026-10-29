@@ -225,6 +225,9 @@ record ResolvedValueMapping<V>(
         return outputCodec(scalar.output(), registry, resolved);
       }
       case ExpressionSelectable<?> expression -> {
+        if (expression.forwardsMapping()) {
+          return outputCodec(expression.valueSources().getFirst(), registry, resolved);
+        }
         for (Selectable<?> source : expression.valueSources()) {
           requireBuiltin(source, outputCodec(source, registry, resolved));
         }
@@ -282,7 +285,7 @@ record ResolvedValueMapping<V>(
 
   static void requireBuiltinParameterSource(Selectable<?> source, JdbcTypeCodec<?> actual) {
     JdbcTypeCodec<?> expected = builtinCodec(source.javaType());
-    if (expected == null || actual != expected) {
+    if (actual != expected) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_PARAMETER_LAYOUT,
           "a parameter shared with a standard expression requires the exact built-in Codec for '"

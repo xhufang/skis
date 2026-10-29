@@ -7,6 +7,7 @@ import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.DeleteWrite;
 import io.skis.mutation.InsertInto;
+import io.skis.mutation.MergeInto;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCacheStatistics;
 import io.skis.mutation.UpdateSet;
@@ -108,6 +109,11 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public <E> InsertInto<E> insertInto(QueryTable<E> table) {
     return mutations.insertInto(table);
+  }
+
+  @Override
+  public <E> MergeInto<E> mergeInto(QueryTable<E> table) {
+    return mutations.mergeInto(table);
   }
 
   @Override

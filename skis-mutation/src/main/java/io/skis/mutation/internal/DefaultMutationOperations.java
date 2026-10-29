@@ -18,6 +18,7 @@ import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PropertyMeta;
 import io.skis.mutation.DeleteWrite;
 import io.skis.mutation.InsertInto;
+import io.skis.mutation.MergeInto;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.OptimisticLockException;
 import io.skis.mutation.UpdateSet;
@@ -58,6 +59,15 @@ final class DefaultMutationOperations implements MutationOperations {
   @Override
   public <E> InsertInto<E> insertInto(QueryTable<E> table) {
     return MutationRequests.insert(this, table);
+  }
+
+  @Override
+  public <E> MergeInto<E> mergeInto(QueryTable<E> table) {
+    return StructuredWrites.merge(this, table);
+  }
+
+  <E> EntityMutationPlanSet<E> plans(QueryTable<E> table) {
+    return requirePlanSet(requireEntity(table));
   }
 
   @Override
@@ -361,7 +371,207 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  private static void validateId(EntityMutationPlanSet<?> plans, @Nullable Object id) {
+  <E> int writeStructuredCount(StructuredWrites.Request<E> request, ExecutionOptions options) {
+    beforeWrite();
+    OperationObservation observation =
+        startObservation(
+            request.spec.merge ? ExecutionOperationKind.MERGE : ExecutionOperationKind.INSERT);
+    try {
+      Object expected = request.expectedValue();
+      var prepared = request.prepare(expected != null);
+      boolean readKey = needsStructuredKey(prepared);
+      var plan =
+          dynamicPlans()
+              .structured(request.count(prepared.checked()), prepared, null, readKey, observation);
+      var arguments = structuredArguments(request, prepared, expected, false);
+      int rows;
+      if (readKey) {
+        var row =
+            jdbcExecutor.executeReturningOptional(
+                plan.statement(),
+                Objects.requireNonNull(plan.decoder()),
+                plan.columnCount(),
+                arguments,
+                ExecutionContext.of(options),
+                observation,
+                StatementPurpose.PRIMARY);
+        rows = row == null ? 0 : 1;
+        validateStructuredCount(request, prepared, rows);
+        if (row != null) applyStructuredKey(request, prepared, arguments, row.key());
+      } else {
+        rows =
+            jdbcExecutor.executeUpdate(
+                plan.statement(),
+                arguments,
+                ExecutionContext.of(options),
+                observation,
+                StatementPurpose.PRIMARY);
+        validateStructuredCount(request, prepared, rows);
+      }
+      completeSucceeded(observation);
+      return rows;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  @SuppressWarnings("Convert2Diamond")
+  <E, R> Written<R> writeStructuredOne(
+      StructuredWrites.Request<E> request,
+      MutationQuerySupport.Result<R> result,
+      StructuredWrites.Choices<R> choices,
+      ExecutionOptions options) {
+    beforeWrite();
+    OperationObservation observation =
+        startObservation(
+            request.spec.merge ? ExecutionOperationKind.MERGE : ExecutionOperationKind.INSERT);
+    try {
+      Object expected = request.expectedValue();
+      var prepared = request.prepare(expected != null);
+      boolean readKey = needsStructuredKey(prepared);
+      var plan =
+          dynamicPlans()
+              .structured(choices.one(prepared.checked()), prepared, result, readKey, observation);
+      var arguments = structuredArguments(request, prepared, expected, true);
+      var row =
+          jdbcExecutor.executeReturningOptional(
+              plan.statement(),
+              Objects.requireNonNull(plan.decoder()),
+              plan.columnCount(),
+              arguments,
+              ExecutionContext.of(options),
+              observation,
+              StatementPurpose.PRIMARY);
+      int count = row == null ? 0 : 1;
+      validateStructuredCount(request, prepared, count);
+      if (row != null && readKey) applyStructuredKey(request, prepared, arguments, row.key());
+      Written<R> completed = new DefaultWritten<R>(count, row == null ? null : row.value());
+      completeSucceeded(observation);
+      return completed;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  @SuppressWarnings("Convert2Diamond")
+  <E, R> Written<List<R>> writeStructuredMany(
+      StructuredWrites.Request<E> request,
+      MutationQuerySupport.Result<R> result,
+      StructuredWrites.Choices<R> choices,
+      ExecutionOptions options) {
+    beforeWrite();
+    OperationObservation observation = startObservation(ExecutionOperationKind.MERGE);
+    try {
+      Object expected = request.expectedValue();
+      var prepared = request.prepare(expected != null);
+      var arguments = structuredArguments(request, prepared, expected, true);
+      var plan =
+          dynamicPlans()
+              .conditional(
+                  choices.many(prepared.checked()),
+                  prepared.resolved(),
+                  prepared.inputs(),
+                  result,
+                  observation);
+      List<R> rows =
+          jdbcExecutor.executeReturning(
+              plan.statement(),
+              plan.decoder(),
+              plan.columnCount(),
+              arguments.values(),
+              ExecutionContext.of(options),
+              observation,
+              StatementPurpose.PRIMARY);
+      validateStructuredCount(request, prepared, rows.size());
+      Written<List<R>> completed =
+          new DefaultWritten<List<R>>(rows.size(), rows.isEmpty() ? null : rows);
+      completeSucceeded(observation);
+      return completed;
+    } catch (RuntimeException | Error failure) {
+      completeFailed(observation, failure);
+      throw failure;
+    }
+  }
+
+  private static boolean needsStructuredKey(StructuredWrites.Prepared prepared) {
+    var plans = prepared.entityPlans();
+    return plans != null && plans.generation() != IdGeneration.ASSIGNED && !plans.recordEntity();
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private <E> StructuredWrites.Arguments structuredArguments(
+      StructuredWrites.Request<E> request,
+      StructuredWrites.Prepared prepared,
+      @Nullable Object expected,
+      boolean returning) {
+    var spec = request.spec;
+    Object base = spec.entity;
+    Object originalId = null;
+    EntityMutationPlanSet plans = prepared.entityPlans();
+    boolean changed = false;
+    @Nullable Object[] values = prepared.inputs().values();
+    if (spec.entity != null && plans != null) {
+      requireEntityValue(plans.entity(), spec.entity);
+      Object original = readId(plans, spec.entity);
+      originalId = original;
+      validateId(plans, original);
+      if (!returning && plans.recordEntity() && plans.generation() != IdGeneration.ASSIGNED)
+        throw StructuredWrites.invalid("generated records require explicit RETURNING");
+      if (plans.generation() != IdGeneration.ASSIGNED) {
+        Object effective = original;
+        if (effective == null && plans.generation() != IdGeneration.IDENTITY)
+          effective = generateId(plans);
+        base = new InsertArguments<>(spec.entity, effective);
+        changed = true;
+      }
+    }
+    if (prepared.checked() && prepared.expectedIndex() >= 0 && spec.expected == null) {
+      values = values.clone();
+      values[prepared.expectedIndex()] = Objects.requireNonNull(expected);
+      changed = true;
+    }
+    return changed
+        ? new StructuredWrites.Arguments(base, values, originalId)
+        : prepared.fixedArguments();
+  }
+
+  private static void validateStructuredCount(
+      StructuredWrites.Request<?> request, StructuredWrites.Prepared prepared, int rows) {
+    if (rows < 0
+        || prepared.single() && rows > 1
+        || !request.spec.conflict && !request.spec.merge && rows != 1)
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
+          "structured write returned an invalid affected-row count");
+    if (prepared.checked() && rows == 0)
+      throw OptimisticLockException.of("optimistic structured write conflict");
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  private static void applyStructuredKey(
+      StructuredWrites.Request<?> request,
+      StructuredWrites.Prepared prepared,
+      StructuredWrites.Arguments arguments,
+      @Nullable Object key) {
+    EntityMutationPlanSet plans = Objects.requireNonNull(prepared.entityPlans());
+    Object entity = Objects.requireNonNull(request.spec.entity);
+    try {
+      if (!Objects.equals(arguments.originalId(), key)) {
+        Object applied = plans.idAccess().apply(entity, Objects.requireNonNull(key));
+        requireEntityValue(plans.entity(), applied);
+      }
+    } catch (SQLException | RuntimeException failure) {
+      throw idFailure(
+          plans,
+          SkisErrorCode.MUTATION_ID_APPLY_FAILED,
+          "actual primary-key application failed after SQL and resource completion",
+          failure);
+    }
+  }
+
+  static void validateId(EntityMutationPlanSet<?> plans, @Nullable Object id) {
     if (id != null && !plans.idProperty().javaType().isInstance(id)) {
       throw idFailure(
           plans,

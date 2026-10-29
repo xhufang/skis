@@ -34,6 +34,12 @@ necessary resolution information for an occurrence in that exact stage. A matchi
 does not authorize exchanging analysis between different statement instances or target contexts.
 Identity lowering still receives post-validation; a changed structure is analyzed again.
 
+Each structured write resolves its current occurrence before looking up a shared plan, and reuses
+that stage for later executions. `resolved.returning(targetColumns)` adds outputs to the exact
+validated mutation and checks their target ownership without reanalyzing the unchanged mutation.
+It rejects queries and mutations that already have a RETURNING wrapper. Compilation of the resulting
+stage still performs dialect validation, lowering, post-validation and final parameter layout.
+
 Renderers accept only `RenderInput` for their configured target. To generate SQL from raw AST,
 use the support facade:
 

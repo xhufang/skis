@@ -11,10 +11,12 @@ import io.skis.sql.ast.CoalesceExpression;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConcatExpression;
+import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedRelationSource;
+import io.skis.sql.ast.ExcludedExpression;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.HiddenSelection;
@@ -28,6 +30,7 @@ import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.Limit;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
 import io.skis.sql.ast.NullOrder;
@@ -121,6 +124,8 @@ public final class PortableLowering {
         }
         case SelectStatement select -> select(select);
         case CountAst count -> count(count);
+        case ConflictInsertStatement conflict -> conflict(conflict);
+        case MergeStatement merge -> merge(merge);
         case InsertStatement insert -> insert(insert);
         case UpdateStatement update -> update(update);
         case DeleteStatement delete -> delete(delete);
@@ -316,6 +321,38 @@ public final class PortableLowering {
       return new CountAst(fromClause, predicate, distinct, compensate);
     }
 
+    private ConflictInsertStatement conflict(ConflictInsertStatement original) {
+      InsertStatement insert = insert(original.insert());
+      var assignments = mapIfChanged(original.assignments(), this::updateAssignment);
+      SqlPredicate where = predicate(original.updateWhere());
+      return insert == original.insert()
+              && assignments == original.assignments()
+              && where == original.updateWhere()
+          ? original
+          : new ConflictInsertStatement(
+              insert, original.conflictColumns(), assignments, where, original.doNothing());
+    }
+
+    private MergeStatement merge(MergeStatement original) {
+      SqlPredicate on = predicate(original.on()), where = predicate(original.matchedWhere());
+      var assignments = mapIfChanged(original.assignments(), this::updateAssignment);
+      var values = mapIfChanged(original.insertValues(), this::expression);
+      return on == original.on()
+              && where == original.matchedWhere()
+              && assignments == original.assignments()
+              && values == original.insertValues()
+          ? original
+          : new MergeStatement(
+              original.target(),
+              original.source(),
+              on,
+              where,
+              assignments,
+              original.insertColumns(),
+              values,
+              original.keys());
+    }
+
     private InsertStatement insert(InsertStatement insert) {
       boolean changed = false;
       List<SqlExpression<?>> values = new ArrayList<>(insert.values().size());
@@ -414,6 +451,7 @@ public final class PortableLowering {
         case ParameterSlot<?> parameter -> parameter;
         case BooleanPredicate predicate -> predicate;
         case SelectedOutputReference<?> reference -> reference;
+        case ExcludedExpression<?> excluded -> excluded;
         case ColumnExpression<?, ?> column -> column;
         case DerivedColumnExpression<?> column -> column;
         case LiteralExpression<?> literal -> literal;
