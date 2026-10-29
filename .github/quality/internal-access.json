@@ -759,6 +759,13 @@
     },
     {
       "caller": "io.skis.mutation.internal.StructuredWrites",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the compiled entity INSERT binder prefix for structured conflict writes without rebuilding generated bindings.",
+      "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites",
       "target": "io.skis.query.internal.WriteInputCompiler",
       "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
       "owner": "0.2.10:T04",
