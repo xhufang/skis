@@ -42,6 +42,7 @@ import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectPagination;
 import io.skis.sql.ast.SelectStatement;
@@ -418,10 +419,17 @@ public final class RenderInput {
             throw new IllegalArgumentException("target does not support MERGE form");
           validateTable(merge.target(), capabilities, dialectId);
           validateExpression(merge.on(), capabilities, dialectId);
-          validateExpression(merge.matchedWhere(), capabilities, dialectId);
-          merge
-              .assignments()
-              .forEach(value -> validateExpression(value.value(), capabilities, dialectId));
+          if (merge.source() != null) validateRelation(merge.source(), capabilities, dialectId);
+          for (var action : merge.actions()) {
+            validateExpression(action.condition(), capabilities, dialectId);
+            for (var assignment : action.assignments()) {
+              if (assignment instanceof UpdateAssignment<?> scalar)
+                validateExpression(scalar.value(), capabilities, dialectId);
+              else if (assignment instanceof RowAssignment row)
+                validate(row.query(), capabilities, dialectId);
+            }
+            action.values().forEach(value -> validateExpression(value, capabilities, dialectId));
+          }
           merge.insertValues().forEach(value -> validateExpression(value, capabilities, dialectId));
         }
         case InsertStatement insert -> {
@@ -434,29 +442,27 @@ public final class RenderInput {
                 DialectFeature.INSERT_DEFAULT_VALUES.name(),
                 "lowered INSERT requires DEFAULT VALUES support");
           }
+          if (insert.query() != null) validateSelect(insert.query(), capabilities, dialectId);
           insert.values().forEach(value -> validateExpression(value, capabilities, dialectId));
+          for (var row : insert.additionalRows())
+            row.forEach(value -> validateExpression(value, capabilities, dialectId));
         }
         case UpdateStatement update -> {
           validateTable(update.target(), capabilities, dialectId);
-          if (update.target().alias().isPresent()) {
-            throw invalid(
-                dialectId,
-                new IllegalArgumentException("mutation target tables must not carry an alias"),
-                "lowered statement failed post-validation");
-          }
-          for (UpdateAssignment<?> assignment : update.assignments()) {
-            validateExpression(assignment.value(), capabilities, dialectId);
+          if (update.from() != null) validateFromClause(update.from(), capabilities, dialectId);
+
+          for (var item : update.assignments()) {
+            if (item instanceof UpdateAssignment<?> assignment)
+              validateExpression(assignment.value(), capabilities, dialectId);
+            else if (item instanceof RowAssignment row)
+              validateSelect(row.query(), capabilities, dialectId);
           }
           validateExpression(update.where(), capabilities, dialectId);
         }
         case DeleteStatement delete -> {
           validateTable(delete.target(), capabilities, dialectId);
-          if (delete.target().alias().isPresent()) {
-            throw invalid(
-                dialectId,
-                new IllegalArgumentException("mutation target tables must not carry an alias"),
-                "lowered statement failed post-validation");
-          }
+          if (delete.using() != null) validateFromClause(delete.using(), capabilities, dialectId);
+
           validateExpression(delete.where(), capabilities, dialectId);
         }
         default ->

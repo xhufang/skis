@@ -17,9 +17,9 @@ import io.skis.core.spi.StatementCompletedEvent;
 import io.skis.core.spi.StatementPurpose;
 import io.skis.dialect.postgresql.PostgreSqlDialect;
 import io.skis.jdbc.JdbcExecutionException;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
-import io.skis.query.SelectQuery;
 import io.skis.query.SliceRequest;
 import io.skis.query.Sql;
 import io.skis.runtime.Skis;
@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGSimpleDataSource;
@@ -51,9 +52,9 @@ class PostgreSqlConsumerTest {
           .value(pet.id(), id)
           .value(pet.name(), "first")).onConflict(pet.id()).doNothing().write());
       var returned = executor.insertInto(pet).values(row -> row.value(pet.id(), id).value(pet.name(), "changed"))
-          .onConflict(pet.id()).doUpdate().setExpression(pet.name(), Sql.excluded(pet.name()))
+          .onConflict(pet.id()).doUpdate().set(pet.name(), Sql.excluded(pet.name()))
           .expectedVersion(0L).returning(PetSummaryPro.of(pet.id(), pet.name())).write();
-      assertEquals(new PetSummary(id, "changed"), returned.get());
+      assertEquals(new PetSummary(id, "changed"), returned.one().get());
       assertEquals(1L, executor.findById(pet, id).orElseThrow().version());
       assertEquals(0, executor.insertInto(pet).values(row -> row
           .value(pet.id(), id)
@@ -79,18 +80,19 @@ class PostgreSqlConsumerTest {
       executor.insertInto(pet).value(new Pet(ids.get(0), "aggregate-a", null)).write();
       executor.insertInto(pet).value(new Pet(ids.get(1), "aggregate-a", null)).write();
       executor.insertInto(pet).value(new Pet(ids.get(2), "aggregate-b", null)).write();
-      var suffix = Sql.parameter(String.class, "suffix");
-      var key = Sql.concat(pet.name(), Sql.value(suffix));
       var count = Sql.countAll();
-      var template =
-          executor
-              .select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
-              .from(pet)
-              .where(pet.id().in(ids))
-              .groupBy(key)
-              .having(count.ge(1L))
-              .orderBy(key.asc());
-      var query = template.bind(suffix, "-first");
+      Function<String, ExecutableSelectQuery<PetAggregate>> queries =
+          suffix -> {
+            var key = Sql.concat(pet.name(), Sql.value(suffix));
+            return executor
+                .select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
+                .from(pet)
+                .where(pet.id().in(ids))
+                .groupBy(key)
+                .having(count.ge(1L))
+                .orderBy(key.asc());
+          };
+      var query = queries.apply("-first");
       List<PetAggregate> expected =
           List.of(
               new PetAggregate(
@@ -98,6 +100,9 @@ class PostgreSqlConsumerTest {
                   BigInteger.valueOf(ids.get(0)).add(BigInteger.valueOf(ids.get(1)))),
               new PetAggregate("aggregate-b-first", 1L, BigInteger.valueOf(ids.get(2))));
       assertEquals(expected, query.fetchList());
+      assertEquals(
+          List.of(3L),
+          executor.run(Sql.select(count).from(pet).where(pet.id().in(ids)).fetchList()));
       Page<PetAggregate> page = query.fetchPage(PageRequest.page(0, 1));
       assertEquals(2L, page.totalElements());
       assertEquals(expected.subList(0, 1), page.items());
@@ -115,7 +120,7 @@ class PostgreSqlConsumerTest {
       assertEquals(expected.subList(0, 1), filtered.items());
       assertEquals(
           List.of("aggregate-a-second", "aggregate-b-second"),
-          template.bind(suffix, "-second").fetchList().stream().map(PetAggregate::name).toList());
+          queries.apply("-second").fetchList().stream().map(PetAggregate::name).toList());
 
       var emptyGlobal =
           executor.select(count).from(pet).where(pet.id().in(List.of()))
@@ -123,9 +128,8 @@ class PostgreSqlConsumerTest {
       assertEquals(1L, emptyGlobal.totalElements());
       assertEquals(List.of(0L), emptyGlobal.items());
       var emptyGroups =
-          executor.select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
-              .from(pet).where(pet.id().in(List.of())).groupBy(key).having(count.ge(1L))
-              .orderBy(key.asc()).bind(suffix, "-empty").fetchPage(PageRequest.page(0, 1));
+          queries.apply("-empty").where(pet.id().in(List.of()))
+              .fetchPage(PageRequest.page(0, 1));
       assertEquals(0L, emptyGroups.totalElements());
       assertTrue(emptyGroups.items().isEmpty());
       assertEquals(
@@ -193,7 +197,7 @@ class PostgreSqlConsumerTest {
 
       statements.clear();
       operations.clear();
-      SelectQuery<Pet> query =
+      ExecutableSelectQuery<Pet> query =
           executor.selectFrom(pet).where(pet.id().in(ids)).orderBy(pet.id().asc());
       Page<Pet> page = query.fetchPage(PageRequest.page(0, 2));
       assertEquals(3L, page.totalElements());

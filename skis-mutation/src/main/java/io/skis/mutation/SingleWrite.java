@@ -5,7 +5,7 @@ import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;
 
 /** A completed single-row write shape; each write performs an independent operation. */
-public interface SingleWrite<E> {
+public interface SingleWrite<E> extends ReturningSelection<E> {
 
   int write();
 

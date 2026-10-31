@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.skis.core.*;
 import io.skis.core.spi.*;
 import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.DialectFeature;
 import io.skis.integration.ids.UuidStringIdBean;
 import io.skis.integration.ids.skis.UuidStringIdBeanRuntimeModel;
 import io.skis.integration.ids.skis.UuidStringIdBeanTable;
@@ -13,14 +14,22 @@ import io.skis.integration.write.skis.*;
 import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mutation.*;
 import io.skis.query.Sql;
+import io.skis.query.Row2;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import javax.sql.DataSource;
+import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 /** M17/M22-M29: identical generated mappings and assertions on both real drivers. */
@@ -33,41 +42,41 @@ abstract class AbstractSkisReturningContractTest {
   void insertUpdateDeleteReturnFullRowsAndBothProjectionKinds() throws Exception {
     try (var f = new Fixture()) {
       var full = f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).returning().write();
-      assertEquals(new WriteRow(1L, "one", null, 0L), full.get());
+      assertEquals(new WriteRow(1L, "one", null, 0L), full.one().get());
       assertEquals(1, full.affectedRows());
       var reusable = f.executor.insertInto(ROW).value(new WriteRow(2L, "two", "note", null))
           .returning(WriteViewPro.of(ROW.name(), ROW.note())).write();
-      assertEquals(new WriteView("two", "note"), reusable.get());
+      assertEquals(new WriteView("two", "note"), reusable.one().get());
       var special = f.executor.insertInto(ROW).value(new WriteRow(3L, "three", null, null))
           .returning(WriteReceiptPro.all()).write();
-      assertEquals(new WriteReceipt(3L, "three"), special.get());
+      assertEquals(new WriteReceipt(3L, "three"), special.one().get());
 
       var updated = f.executor.update(ROW).set(ROW.name(), "changed")
           .where(ROW.id().in(List.of(1L, 2L))).returning().write();
       assertEquals(2, updated.affectedRows());
-      assertEquals(List.of(1L, 2L), updated.get().stream().map(WriteRow::id).sorted().toList());
-      assertTrue(updated.get().stream().allMatch(row -> row.version() == 1L));
-      assertThrows(UnsupportedOperationException.class, () -> updated.get().clear());
-      assertEquals(new WriteView("changed", null), f.executor.update(ROW).set(ROW.note(), (String) null)
-          .where(ROW.id().eq(1L)).returning(WriteViewPro.of(ROW.name(), ROW.note())).write().get().getFirst());
+      assertEquals(List.of(1L, 2L), updated.rows().stream().map(WriteRow::id).sorted().toList());
+      assertTrue(updated.rows().stream().allMatch(row -> row.version() == 0L));
+      assertThrows(UnsupportedOperationException.class, () -> updated.rows().clear());
+      assertEquals(new WriteView("changed", null), f.executor.update(ROW).setNull(ROW.note())
+          .where(ROW.id().eq(1L)).returning(WriteViewPro.of(ROW.name(), ROW.note())).write().rows().getFirst());
       assertEquals(new WriteReceipt(3L, "three"), f.executor.update(ROW).set(ROW.note(), "new")
-          .where(ROW.id().eq(3L)).returning(WriteReceiptPro.all()).write().get().getFirst());
+          .where(ROW.id().eq(3L)).returning(WriteReceiptPro.all()).write().rows().getFirst());
 
       var deleted = f.executor.deleteFrom(ROW).where(ROW.id().eq(1L)).returning().write();
-      assertEquals(new WriteRow(1L, "changed", null, 2L), deleted.get().getFirst());
+      assertEquals(new WriteRow(1L, "changed", null, 0L), deleted.rows().getFirst());
       assertEquals(new WriteView("changed", "note"), f.executor.deleteFrom(ROW).where(ROW.id().eq(2L))
-          .returning(WriteViewPro.of(ROW.name(), ROW.note())).write().get().getFirst());
+          .returning(WriteViewPro.of(ROW.name(), ROW.note())).write().rows().getFirst());
       assertEquals(new WriteReceipt(3L, "three"), f.executor.deleteFrom(ROW).where(ROW.id().eq(3L))
-          .returning(WriteReceiptPro.all()).write().get().getFirst());
-      assertTrue(f.executor.deleteFrom(ROW).where(ROW.id().eq(1L)).returning().write().isEmpty());
+          .returning(WriteReceiptPro.all()).write().rows().getFirst());
+      assertTrue(f.executor.deleteFrom(ROW).where(ROW.id().eq(1L)).returning().write().rows().isEmpty());
       var empty = f.executor.update(ROW).set(ROW.name(), "absent").where(ROW.id().eq(99L)).returning().write();
       assertEquals(0, empty.affectedRows());
-      assertTrue(empty.isEmpty());
+      assertTrue(empty.one().isEmpty());
       int statements = f.statements.get();
-      full.map(WriteRow::name);
-      full.toOptional();
-      full.stream().count();
-      empty.orElse(List.of());
+      full.one().map(WriteRow::name);
+      full.one().toOptional();
+      full.rows().stream().count();
+      empty.one().orElse(null);
       assertEquals(statements, f.statements.get(), "Written access is detached");
     }
   }
@@ -80,19 +89,18 @@ abstract class AbstractSkisReturningContractTest {
       assertThrows(MutationException.class, () -> f.executor.deleteFrom(ROW).and(ROW.id().eq(1L)));
       assertThrows(MutationException.class, () -> f.executor.deleteFrom(ROW).where(ROW.id().eq(1L)).where(ROW.id().eq(2L)));
       assertThrows(MutationException.class, () -> f.executor.update(ROW).set(ROW.id(), 9L));
-      assertThrows(MutationException.class, () -> f.executor.update(ROW).set(ROW.version(), 9L));
       assertThrows(MutationException.class, () -> f.executor.update(ROW).set(ROW.name(), "a").set(ROW.name(), "b"));
       assertThrows(RuntimeException.class, () -> f.executor.update(ROW).set(ROW.name(), (String) null).allowAllRows().write());
       assertMutationShapeFailure(() -> f.executor.update(ROW)
-          .setExpression(ROW.name(), ROW.note()).allowAllRows().write());
+          .set(ROW.name(), ROW.note()).allowAllRows().write());
       assertMutationShapeFailure(() -> f.executor.update(ROW)
-          .setExpression(ROW.name(), ROW.as("other").name()).allowAllRows().write());
+          .set(ROW.name(), ROW.as("other").name()).allowAllRows().write());
       assertMutationShapeFailure(() -> f.executor.deleteFrom(ROW)
           .where(ROW.as("other").id().eq(1L)).write());
       assertMutationShapeFailure(() -> f.executor.update(ROW).set(ROW.note(), "unused")
           .where(ROW.as("other").id().eq(1L)).returning().write());
       assertMutationShapeFailure(() -> f.executor.update(ROW)
-          .setExpression(ROW.name(), ROW.note()).allowAllRows().returning().write());
+          .set(ROW.name(), ROW.note()).allowAllRows().returning().write());
       assertMutationShapeFailure(() -> f.executor.deleteFrom(ROW)
           .where(ROW.as("other").id().eq(1L)).returning().write());
       assertThrows(RuntimeException.class, () -> f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null))
@@ -117,31 +125,31 @@ abstract class AbstractSkisReturningContractTest {
     try (var f = new Fixture()) {
       f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
       assertEquals(1, f.executor.update(ROW)
-          .setExpression(ROW.note(), Sql.coalesce(Sql.value(String.class, null), Sql.value("count")))
+          .set(ROW.note(), Sql.coalesce(Sql.value(String.class, null), Sql.value("count")))
           .where(ROW.id().eq(1L)).and(Sql.value(String.class, null).isNull()).write());
       assertEquals("count", f.executor.findById(ROW, 1L).orElseThrow().note());
       var returned = f.executor.update(ROW)
-          .setExpression(ROW.note(), Sql.coalesce(Sql.value(String.class, null), Sql.value("returned")))
+          .set(ROW.note(), Sql.coalesce(Sql.value(String.class, null), Sql.value("returned")))
           .where(ROW.id().eq(1L)).and(Sql.value(String.class, null).isNull()).returning().write();
-      assertEquals("returned", returned.get().getFirst().note());
-      assertEquals(2L, returned.get().getFirst().version());
+      assertEquals("returned", returned.rows().getFirst().note());
+      assertEquals(0L, returned.rows().getFirst().version());
       assertEquals(0, f.executor.deleteFrom(ROW).where(Sql.value("keep").isNull()).write());
       var deleted = f.executor.deleteFrom(ROW)
           .where(Sql.coalesce(Sql.value(String.class, null), Sql.value("returned")).eq(ROW.note()))
           .returning().write();
       assertEquals(1, deleted.affectedRows());
-      assertEquals("returned", deleted.get().getFirst().note());
+      assertEquals("returned", deleted.rows().getFirst().note());
     }
   }
 
   @Test
-  void conditionsUseOneOperationAndVersionAdvanceWithoutImplicitOptimisticChecks() throws Exception {
+  void explicitConditionsKeepVersionUntilTheCallerAssignsIt() throws Exception {
     try (var f = new Fixture()) {
       for (long id = 1; id <= 3; id++) {
         f.executor.insertInto(ROW).value(new WriteRow(id, "row-" + id, null, null)).write();
       }
       int started = f.statements.get();
-      int rows = f.executor.update(ROW).setExpression(ROW.note(), Sql.concat(ROW.name(), Sql.value("!")))
+      int rows = f.executor.update(ROW).set(ROW.note(), Sql.concat(ROW.name(), Sql.value("!")))
           .where(ROW.id().eq(1L)).or(ROW.id().eq(2L)).and(ROW.name().eq("row-2")).write();
       assertEquals(1, rows, "where/and/or associate from left to right");
       assertEquals(started + 1, f.statements.get());
@@ -149,33 +157,38 @@ abstract class AbstractSkisReturningContractTest {
       assertEquals(1, f.executor.update(ROW).set(ROW.note(), "grouped")
           .where(ROW.id().eq(1L).or(ROW.id().eq(2L).and(ROW.note().isNull()))).write());
       assertEquals(0, f.executor.update(ROW).set(ROW.name(), "none").where(ROW.id().in(List.<Long>of())).write());
-      var deleted = f.executor.deleteFrom(ROW).where(ROW.id().in(List.of(1L, 3L)))
-          .returning(WriteReceiptPro.all()).write();
+      Written<WriteReceipt> deleted =
+          f.executor.deleteFrom(ROW).where(ROW.id().in(List.of(1L, 3L)))
+              .<WriteReceipt>returning(WriteReceiptPro.all()).write();
       assertEquals(2, deleted.affectedRows());
-      assertEquals(List.of(1L, 3L), deleted.get().stream().map(WriteReceipt::id).sorted().toList());
+      assertEquals(List.of(1L, 3L), deleted.rows().stream().map(WriteReceipt::id).sorted().toList());
       assertEquals(1, f.executor.update(ROW).set(ROW.name(), "all").allowAllRows().write());
       var changed = f.executor.findById(ROW, 2L).orElseThrow();
-      assertEquals(2L, changed.version());
+      assertEquals(0L, changed.version());
+      assertEquals(1, f.executor.update(ROW).set(ROW.version(), 2L).where(ROW.id().eq(2L)).write());
       assertThrows(OptimisticLockException.class,
-          () -> f.executor.updateById(ROW, new WriteRow(2L, "stale", null, 0L)));
+          () -> f.executor.updateById(ROW).value(new WriteRow(2L, "stale", null, 0L)).write());
       assertEquals(1, f.executor.deleteFrom(ROW).allowAllRows().write());
     }
   }
 
   @Test
-  void collectionStagesSnapshotInputsAndRefuseNonemptyExecutionUntilT05() throws Exception {
+  void collectionStagesSnapshotInputsAndRequireExplicitValuesForReturning() throws Exception {
     try (var f = new Fixture()) {
       var values = new ArrayList<WriteRow>();
       var empty = f.executor.insertInto(ROW).values(values);
       values.add(new WriteRow(1L, "later", null, null));
       assertEquals(0, empty.write());
-      assertTrue(empty.returning().write().isEmpty());
-      assertTrue(empty.returning(WriteViewPro.of(ROW.name(), ROW.note())).write().isEmpty());
-      assertTrue(empty.returning(WriteReceiptPro.all()).write().isEmpty());
-      assertThrows(MutationException.class, () -> f.executor.insertInto(ROW).values(values).write());
-      assertThrows(MutationException.class, () -> f.executor.insertInto(ROW).values(values).returning().write());
-      assertThrows(NullPointerException.class, () -> f.executor.insertInto(ROW).values(java.util.Arrays.asList((WriteRow) null)));
+      assertTrue(empty.returning().write().rows().isEmpty());
+      assertTrue(empty.returning(WriteViewPro.of(ROW.name(), ROW.note())).write().rows().isEmpty());
+      assertTrue(empty.returning(WriteReceiptPro.all()).write().rows().isEmpty());
       assertEquals(0, f.acquisitions.get());
+      assertThrows(MutationException.class, () -> f.executor.insertInto(ROW).values(values).returning().write());
+      assertEquals(0, f.acquisitions.get());
+      assertEquals(1, f.executor.insertInto(ROW).values(values).write());
+      assertEquals(1, f.acquisitions.get());
+      assertThrows(NullPointerException.class, () -> f.executor.insertInto(ROW).values(java.util.Arrays.asList((WriteRow) null)));
+      assertEquals(1, f.acquisitions.get());
     }
   }
 
@@ -187,7 +200,7 @@ abstract class AbstractSkisReturningContractTest {
       f.connection.setAutoCommit(false);
       var result = f.executor.insertInto(table).value(bean)
           .returning(WriteViewPro.of(table.name(), table.name())).write();
-      assertEquals(new WriteView("new", "new"), result.get());
+      assertEquals(new WriteView("new", "new"), result.one().get());
       assertEquals(1, bean.writes);
       String key = bean.getId();
       assertNotNull(key);
@@ -223,7 +236,339 @@ abstract class AbstractSkisReturningContractTest {
     }
   }
 
+  @Test
+  void independentRequestsPreserveNullRowsAndEmbeddedQueriesUseOuterOptions() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", "note", null))).write();
+      int statements = f.statements.get();
+      var request = Sql.select(ROW.note()).from(ROW).where(ROW.id().eq(1L)).fetchOne();
+      var inner = f.executor.select(ROW.id()).from(ROW)
+          .withOptions(ExecutionOptions.builder().maxRows(1).build());
+      var source = inner.as("selected_ids");
+      assertEquals(statements, f.statements.get(), "construction must not execute SQL");
+      var nullRow = f.executor.run(request);
+      assertTrue(nullRow.hasRow());
+      assertTrue(nullRow.isNull());
+      assertEquals(List.of(1L, 2L), f.executor.run(Sql.select(source.column(ROW.id())).from(source)
+          .orderBy(source.column(ROW.id()).asc()).fetchList()));
+      assertEquals(statements + 2, f.statements.get());
+    }
+  }
+
+  @Test
+  void scalarAndFixedRowReturningDistinguishNullFromNoRow() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
+      var scalar = f.executor.update(ROW).set(ROW.name(), "changed").where(ROW.id().eq(1L))
+          .returning(ROW.note()).write();
+      assertEquals(1, scalar.affectedRows());
+      assertTrue(scalar.one().hasRow());
+      assertTrue(scalar.one().isNull());
+      var pair = f.executor.update(ROW).setDefault(ROW.note()).where(ROW.id().eq(1L))
+          .returning(ROW.id(), ROW.note()).write();
+      assertEquals(new Row2<>(1L, null), pair.one().get());
+      assertThrows(NonUniqueResultException.class, () -> {
+        f.executor.insertInto(ROW).value(new WriteRow(2L, "two", null, null)).write();
+        f.executor.update(ROW).setNull(ROW.note()).allowAllRows().returning(ROW.id()).write().one();
+      });
+      assertFalse(f.executor.deleteFrom(ROW).where(ROW.id().eq(99L)).returning(ROW.note()).write().one().hasRow());
+    }
+  }
+
+  @Test
+  void entityBatchesChunkOnOneConnectionAndKeepMetadataVersions() throws Exception {
+    try (var f = new Fixture()) {
+      var rows = new ArrayList<WriteRow>();
+      for (long id = 1; id <= 600; id++) rows.add(new WriteRow(id, "row-" + id, null, null));
+      int acquisitions = f.acquisitions.get(), statements = f.statements.get();
+      assertEquals(600, f.executor.insertInto(ROW).values(rows).write());
+      assertEquals(acquisitions + 1, f.acquisitions.get());
+      assertEquals(statements + 3, f.statements.get());
+      acquisitions = f.acquisitions.get(); statements = f.statements.get();
+      assertEquals(2, f.executor.updateById(ROW).values(List.of(
+          new WriteRow(1L, "checked", null, 0L), new WriteRow(2L, "unchecked", null, null))).write());
+      assertEquals(acquisitions + 1, f.acquisitions.get());
+      assertEquals(statements + 2, f.statements.get(), "contiguous version shapes stay separate");
+      assertEquals(1L, f.executor.findById(ROW, 1L).orElseThrow().version());
+      assertEquals(1L, f.executor.findById(ROW, 2L).orElseThrow().version());
+      assertEquals(2, f.executor.deleteById(ROW).values(List.of(
+          new WriteRow(1L, "ignored", null, 1L), new WriteRow(2L, "ignored", null, 1L))).write());
+    }
+  }
+
+  @Test
+  void optimisticBatchFailureStopsLaterChunksAndRetainsInputFacts() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", null, null))).write();
+      var options = new BatchOptions(BatchMode.ADD_BATCH, 1, 1024, 8192);
+      var failure = assertThrows(BatchWriteException.class, () -> f.executor.updateById(ROW).values(List.of(
+          new WriteRow(1L, "stale", null, 99L), new WriteRow(2L, "unexecuted", null, 0L)))
+          .batchOptions(options).write());
+      assertEquals(SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT, failure.code());
+      assertEquals(BatchResult.Status.FAILED, failure.result().items().getFirst().status());
+      assertEquals(BatchResult.Status.NOT_EXECUTED, failure.result().items().get(1).status());
+      assertEquals(0, failure.result().knownAffectedRows());
+      assertTrue(failure.result().affectedRowsKnown());
+      assertEquals("two", f.executor.findById(ROW, 2L).orElseThrow().name());
+    }
+  }
+
+  @Test
+  void nativeValuesReturningUsesChunksWithoutAssumingInputOrder() throws Exception {
+    try (var f = new Fixture()) {
+      var options = new BatchOptions(BatchMode.VALUES, 2, 1024, 8192);
+      var returned = f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", "note", null), new WriteRow(3L, "three", null, null)))
+          .batchOptions(options).returning(ROW.id(), ROW.note()).write();
+      assertEquals(3, returned.affectedRows());
+      assertEquals(List.of(1L, 2L, 3L), returned.rows().stream().map(Row2::first).sorted().toList());
+      assertEquals(1, f.acquisitions.get());
+      assertEquals(2, f.statements.get());
+    }
+  }
+
+  @Test
+  void insertSelectAndRowAssignmentsKeepOneNativeStatement() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
+      var source = ROW.as("source_row");
+      var copied = f.executor.insertInto(ROW).columns(ROW.id(), ROW.name(), ROW.version())
+          .select(Sql.select(Sql.add(source.id(), 10L), source.name(), source.version()).from(source)
+              .where(source.id().eq(1L))).returning(ROW.id()).write();
+      assertEquals(11L, copied.one().get());
+      var values = Sql.select(Sql.count(source.id()), Sql.coalesce(Sql.min(source.name()), Sql.value("none")))
+          .from(source);
+      int statements = f.statements.get();
+      var changed = f.executor.update(ROW).set(Sql.row(ROW.version(), ROW.name()), values)
+          .where(ROW.id().eq(11L)).returning(ROW.version(), ROW.name()).write();
+      assertEquals(new Row2<>(2L, "one"), changed.one().get());
+      assertEquals(statements + 1, f.statements.get());
+      var missing = Sql.select(source.name()).from(source).where(source.id().eq(99L));
+      var nullResult = f.executor.update(ROW).set(ROW.note(), missing).where(ROW.id().eq(1L))
+          .returning(ROW.note()).write();
+      assertTrue(nullResult.one().hasRow());
+      assertTrue(nullResult.one().isNull());
+    }
+  }
+
+  @Test
+  void failedValuesReturningKeepsCompletedNullRowsAndTheDriverFailure() throws Exception {
+    try (var f = new Fixture()) {
+      var options = new BatchOptions(BatchMode.VALUES, 1, 1024, 8192);
+      var failure = assertThrows(BatchWriteException.class, () -> f.executor.insertInto(ROW)
+          .values(List.of(new WriteRow(1L, "first", null, null),
+              new WriteRow(1L, "duplicate", null, null)))
+          .batchOptions(options).returning(ROW.note()).write());
+      assertEquals(java.util.Collections.singletonList(null), failure.result().rows());
+      assertEquals(BatchResult.Status.SUCCEEDED, failure.result().items().getFirst().status());
+      assertEquals(BatchResult.Status.UNKNOWN, failure.result().items().get(1).status());
+      assertEquals(1, failure.result().knownAffectedRows());
+      assertFalse(failure.result().affectedRowsKnown());
+      Throwable cause = failure;
+      while (cause != null && !(cause instanceof io.skis.jdbc.JdbcExecutionException))
+        cause = cause.getCause();
+      assertInstanceOf(io.skis.jdbc.JdbcExecutionException.class, cause);
+      assertEquals(1, f.acquisitions.get());
+      assertEquals(2, f.statements.get());
+      assertEquals("first", f.executor.findById(ROW, 1L).orElseThrow().name());
+    }
+  }
+
+  @Test
+  void valuesFailuresDistinguishPreparationFromExecutionAndStopLaterChunks() throws Exception {
+    for (boolean returning : List.of(false, true)) {
+      for (boolean observed : List.of(false, true)) {
+        var phases = observed ? List.of("prepareStatement", "setString", "execute")
+            : List.of("setString", "execute");
+        for (String phase : phases) {
+          try (var f = new Fixture()) {
+            var prepared = new AtomicInteger();
+            var executions = new AtomicInteger();
+            var closed = new AtomicInteger();
+            var acquired = new AtomicInteger();
+            var released = new AtomicInteger();
+            var completed = new ArrayList<StatementCompletedEvent>();
+            var driverFailure = new SQLException("injected VALUES failure", "07000");
+            Connection connection = jdbcProxy(Connection.class, (ignored, method, arguments) -> {
+              if (!method.getName().equals("prepareStatement"))
+                return invokeJdbc(f.connection, method, arguments);
+              int attempt = prepared.incrementAndGet();
+              if (attempt == 2 && phase.equals("prepareStatement")) throw driverFailure;
+              var statement = (PreparedStatement) Objects.requireNonNull(
+                  invokeJdbc(f.connection, method, arguments));
+              return jdbcProxy(PreparedStatement.class, (proxy, action, inputs) -> {
+                if (action.getName().equals("close")) closed.incrementAndGet();
+                if (action.getName().startsWith("execute")) {
+                  int execution = executions.incrementAndGet();
+                  if (execution == 2 && phase.equals("execute")) throw driverFailure;
+                }
+                if (phase.equals("setString") && action.getName().equals("setString")
+                    && inputs != null && Objects.equals(inputs[1], "second")) throw driverFailure;
+                return invokeJdbc(statement, action, inputs);
+              });
+            });
+            var builder = Skis.builder(f.source).dialect(dialect())
+                .runtimeModels(List.of(WriteRowRuntimeModel.MODEL))
+                .connectionProvider(new ConnectionProvider() {
+                  @Override public Connection acquire(ExecutionContext context) {
+                    acquired.incrementAndGet();
+                    return connection;
+                  }
+                  @Override public void release(Connection actual, ExecutionContext context) {
+                    assertSame(connection, actual);
+                    released.incrementAndGet();
+                  }
+                });
+            if (observed) builder.listener(new ExecutionListener() {
+              @Override public void statementCompleted(StatementCompletedEvent event) { completed.add(event); }
+            });
+            var executor = builder.build();
+            var write = executor.insertInto(ROW).values(List.of(
+                new WriteRow(1L, "first", null, null),
+                new WriteRow(2L, "second", null, null),
+                new WriteRow(3L, "unexecuted", null, null)))
+                .batchOptions(new BatchOptions(BatchMode.VALUES, 1, 1024, 8192));
+            var failure = assertThrows(BatchWriteException.class, () -> {
+              if (returning) write.returning(ROW.note()).write();
+              else write.write();
+            });
+            boolean attempted = phase.equals("execute");
+            var result = failure.result();
+            assertEquals(BatchResult.Status.SUCCEEDED, result.items().get(0).status());
+            assertEquals(1, result.items().get(0).affectedRows());
+            assertEquals(attempted ? BatchResult.Status.UNKNOWN : BatchResult.Status.NOT_EXECUTED,
+                result.items().get(1).status());
+            assertEquals(!attempted, result.items().get(1).countKnown());
+            assertEquals(BatchResult.Status.NOT_EXECUTED, result.items().get(2).status());
+            assertEquals(1, result.knownAffectedRows());
+            assertEquals(!attempted, result.affectedRowsKnown());
+            assertEquals(returning ? java.util.Collections.singletonList(null) : List.of(), result.rows());
+            Throwable original = failure;
+            while (original.getCause() != null) original = original.getCause();
+            assertSame(driverFailure, original);
+            assertEquals(1, acquired.get());
+            assertEquals(1, released.get());
+            assertEquals(observed ? 2 : 1, prepared.get());
+            assertEquals(attempted ? 2 : 1, executions.get());
+            assertEquals(observed && !phase.equals("prepareStatement") ? 2 : 1, closed.get());
+            assertEquals(observed ? 2 : 0, completed.size());
+            if (observed) assertEquals(ExecutionOutcome.FAILED, completed.getLast().outcome());
+            assertTrue(f.executor.findById(ROW, 1L).isPresent());
+            assertTrue(f.executor.findById(ROW, 2L).isEmpty());
+            assertTrue(f.executor.findById(ROW, 3L).isEmpty());
+          }
+        }
+      }
+    }
+  }
+
+  @Test
+  void nativeWriteSourcesEitherExecuteOrFailBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", null, null))).write();
+      var source = ROW.as("write_source");
+      var update = f.executor.update(ROW).from(source).set(ROW.note(), source.name())
+          .where(ROW.id().eq(2L)).and(source.id().eq(1L)).returning(ROW.note());
+      var delete = f.executor.deleteFrom(ROW).using(source)
+          .where(ROW.id().eq(2L)).and(source.id().eq(1L)).returning(ROW.id());
+      int acquisitions = f.acquisitions.get();
+      if (dialect().capabilities().supports(DialectFeature.UPDATE_FROM)) {
+        assertEquals("one", update.write().one().get());
+        assertEquals(2L, delete.write().one().get());
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, assertThrows(SkisException.class, update::write).code());
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, assertThrows(SkisException.class, delete::write).code());
+        assertEquals(acquisitions, f.acquisitions.get());
+      }
+    }
+  }
+
+  @Test
+  void orderedMergeActionsRejectMixedReturningAndDeleteOnlyReturnsOldRows() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", "old", null))).write();
+      var id = Sql.output(ROW.id(), "source_id");
+      var source = Sql.values(row -> row.value(id, 1L));
+      var mixed = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+          .whenMatched(source.column(id).eq(1L)).thenDelete()
+          .whenMatched().thenUpdate().set(ROW.note(), "unreached");
+      int acquisitions = f.acquisitions.get();
+      assertThrows(MutationException.class, () -> mixed.returning(ROW.id()).write());
+      assertEquals(acquisitions, f.acquisitions.get());
+      if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
+        assertEquals(1, mixed.write());
+        assertTrue(f.executor.findById(ROW, 1L).isEmpty());
+        var second = Sql.values(row -> row.value(id, 2L));
+        var removed = f.executor.mergeInto(ROW).using(second).on(ROW.id().eq(second.column(id)))
+            .whenMatched().thenDelete().returning(ROW.id(), ROW.note()).write();
+        assertEquals(1, removed.affectedRows());
+        assertEquals(new Row2<>(2L, "old"), removed.one().get());
+        assertTrue(f.executor.findById(ROW, 2L).isEmpty());
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, assertThrows(SkisException.class, mixed::write).code());
+        assertEquals(acquisitions, f.acquisitions.get());
+      }
+    }
+  }
+
+  @Test
+  void tableMergeKeepsVersionsAndStrictValuesRequireAttributablePrimaryKeys() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", null, null))).write();
+      var table = ROW.as("merge_source");
+      var tableMerge = f.executor.mergeInto(ROW).using(table).on(ROW.id().eq(table.id()))
+          .whenMatched().thenUpdate().set(ROW.note(), table.name()).returning(ROW.id(), ROW.version());
+      int acquisitions = f.acquisitions.get();
+      if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
+        var written = tableMerge.write();
+        assertEquals(2, written.affectedRows());
+        assertTrue(written.rows().stream().allMatch(row -> row.second() == 0L));
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, assertThrows(SkisException.class, tableMerge::write).code());
+        assertEquals(acquisitions, f.acquisitions.get());
+      }
+      var id = Sql.output(ROW.id(), "checked_id");
+      var source = Sql.values(row -> row.value(id, 1L));
+      var nonKey = f.executor.mergeInto(ROW).using(source).on(ROW.version().eq(source.column(id)))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L);
+      var filtered = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+          .whenMatched(ROW.name().eq("skip")).thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L);
+      acquisitions = f.acquisitions.get();
+      assertThrows(MutationException.class, nonKey::write);
+      assertThrows(MutationException.class, filtered::write);
+      assertEquals(acquisitions, f.acquisitions.get());
+      if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
+        assertEquals(1, f.executor.mergeInto(ROW).using(source).on(source.column(id).eq(ROW.id()))
+            .whenMatched().thenUpdate().set(ROW.note(), "checked").expectedVersion(0L).write());
+        assertEquals(1L, f.executor.findById(ROW, 1L).orElseThrow().version());
+        assertEquals(1, f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+            .whenMatched().thenUpdate().set(ROW.version(), 7L).write());
+        assertEquals(7L, f.executor.findById(ROW, 1L).orElseThrow().version());
+      }
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <T> T jdbcProxy(Class<T> type, InvocationHandler handler) {
+    return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, handler);
+  }
+
+  private static @Nullable Object invokeJdbc(
+      Object target, Method method, @Nullable Object @Nullable [] arguments) throws Throwable {
+    try {
+      return method.invoke(target, arguments);
+    } catch (InvocationTargetException failure) {
+      throw Objects.requireNonNull(failure.getCause());
+    }
+  }
+
   private final class Fixture implements AutoCloseable {
+    final DataSource source;
     final Connection connection;
     final SkisExecutor executor;
     final AtomicInteger acquisitions = new AtomicInteger();
@@ -231,7 +576,7 @@ abstract class AbstractSkisReturningContractTest {
     final AtomicInteger compilations = new AtomicInteger();
 
     Fixture() throws Exception {
-      DataSource source = createDataSource();
+      source = createDataSource();
       connection = source.getConnection();
       try (var sql = connection.createStatement()) {
         sql.execute("CREATE TEMPORARY TABLE \"write_row\" (\"id\" BIGINT PRIMARY KEY, \"name\" VARCHAR(100) NOT NULL, \"note\" VARCHAR(100), \"version\" BIGINT NOT NULL)");

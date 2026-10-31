@@ -398,7 +398,7 @@ class QueryPlanKeyTest {
       LoaderEntityTable b = new LoaderEntityTable(swap ? first : second).as("b");
       List<SortSpecification> order = List.of(KEY_TABLE.id().asc(), a.id().asc(), b.id().asc());
       SelectQueryState<Pet> state =
-          SelectQueryState.create(selected, KEY_TABLE)
+          SelectQueryState.create(selected, QueryRelations.of(KEY_TABLE))
               .appendJoin(JoinType.CROSS, QueryRelations.of(a), null)
               .appendJoin(JoinType.CROSS, QueryRelations.of(b), null)
               .orderBy(order);

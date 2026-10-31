@@ -39,9 +39,10 @@ class DynamicMutationPlansTest {
     var plans = new DynamicMutationPlans(registry, new TestDialect());
     var factories = new AtomicInteger();
     var mapping = mapping(factories);
-    var inputs = MutationQuerySupport.inputs(registry, table, List.of(), null, false);
+    var inputs = MutationQuerySupport.inputs(registry, table, List.of(), null, null, null);
     var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
-    plans.count(new DynamicMutationPlans.Request<>(), "delete", statement, inputs, null);
+    var resolved = ResolvedStatement.analyze(statement);
+    plans.count(new DynamicMutationPlans.Request<>(), "delete", resolved, inputs, null);
     assertEquals(0, factories.get());
     plan(plans, table, mapping, new DynamicMutationPlans.Request<>());
     assertEquals(1, factories.get());
@@ -57,12 +58,12 @@ class DynamicMutationPlansTest {
     var model = model(LoaderValue.class, "value");
     var plans = new DynamicMutationPlans(EntityRuntimeRegistry.of(List.of(model)), new TestDialect());
     var table = new Table(model.entity());
-    var first = MutationQuerySupport.inputs(plans.registry(), table, List.of(), table.id().eq(1L), false);
-    var second = MutationQuerySupport.inputs(plans.registry(), table, List.of(), table.id().eq(2L), false);
+    var first = MutationQuerySupport.inputs(plans.registry(), table, List.of(), table.id().eq(1L), null, null);
+    var second = MutationQuerySupport.inputs(plans.registry(), table, List.of(), table.id().eq(2L), null, null);
     var a = plans.count(new DynamicMutationPlans.Request<>(), "delete",
-        new DeleteStatement(MutationQuerySupport.table(table), first.where()), first, null);
+        ResolvedStatement.analyze(new DeleteStatement(MutationQuerySupport.table(table), first.where())), first, null);
     var b = plans.count(new DynamicMutationPlans.Request<>(), "delete",
-        new DeleteStatement(MutationQuerySupport.table(table), second.where()), second, null);
+        ResolvedStatement.analyze(new DeleteStatement(MutationQuerySupport.table(table), second.where())), second, null);
     assertSame(a, b);
     var bound = new ArrayList<Long>();
     var statement = (PreparedStatement) java.lang.reflect.Proxy.newProxyInstance(
@@ -79,9 +80,9 @@ class DynamicMutationPlansTest {
     var plans = new DynamicMutationPlans(EntityRuntimeRegistry.of(List.of(model)), new TestDialect());
     var table = new Table(model.entity());
     var inputs = MutationQuerySupport.inputs(
-        plans.registry(), table, List.of(), table.id().in(List.of(11L, 13L)), false);
+        plans.registry(), table, List.of(), table.id().in(List.of(11L, 13L)), null, null);
     var plan = plans.count(new DynamicMutationPlans.Request<>(), "delete",
-        new DeleteStatement(MutationQuerySupport.table(table), inputs.where()), inputs, null);
+        ResolvedStatement.analyze(new DeleteStatement(MutationQuerySupport.table(table), inputs.where())), inputs, null);
     for (boolean observe : List.of(true, false)) {
       var indexes = new ArrayList<Integer>();
       var bound = new ArrayList<Long>();
@@ -128,14 +129,17 @@ class DynamicMutationPlansTest {
     assertCollected(fixture.references());
 
     var table = new Table(fixture.entity());
+    var condition = table.id().eq(29L);
     var inputs = MutationQuerySupport.inputs(
-        fixture.plans().registry(), table, List.of(), table.id().eq(29L), false);
+        fixture.plans().registry(), table, List.of(), condition, null, null);
     var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
+    var resolved = ResolvedStatement.analyze(statement);
     assertSame(fixture.count(), fixture.plans().count(
-        new DynamicMutationPlans.Request<>(), "delete", statement, inputs, null));
+        new DynamicMutationPlans.Request<>(), "delete", resolved, inputs, null));
+    var result = MutationQuerySupport.result(table, fixture.mapping().bind(table.name()));
+    var returningInputs = MutationQuerySupport.inputs(fixture.plans().registry(), table, List.of(), condition, null, result);
     var reused = fixture.plans().conditional(
-        new DynamicMutationPlans.Request<>(), "delete", statement, inputs,
-        MutationQuerySupport.result(table, fixture.mapping().bind(table.name())), null);
+        new DynamicMutationPlans.Request<>(), "delete", resolved, returningInputs, result, null);
     assertSame(fixture.returning(), reused);
     assertEquals("value", reused.decoder().decode(unusedResultSet(), RowReadContext.EMPTY));
     assertEquals(2, fixture.plans().statistics().size());
@@ -310,8 +314,9 @@ class DynamicMutationPlansTest {
       var dialect = new TestDialect();
       var plans = new DynamicMutationPlans(EntityRuntimeRegistry.of(List.of(model)), dialect);
       var table = new Table(model.entity());
-      var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), null, false);
+      var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), null, null, null);
       var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
+      var resolved = ResolvedStatement.analyze(statement);
       var locksField = DynamicMutationPlans.class.getDeclaredField("compilationLocks");
       locksField.setAccessible(true);
       var locks = (ReentrantLock[]) locksField.get(plans);
@@ -335,10 +340,10 @@ class DynamicMutationPlansTest {
       if (failing) {
         dialect.beforeValidation = () -> { throw failure; };
         assertSame(failure, assertThrows(IllegalStateException.class,
-            () -> plans.count(request, "delete", statement, inputs, observation)));
+            () -> plans.count(request, "delete", resolved, inputs, observation)));
       } else {
-        var first = plans.count(request, "delete", statement, inputs, observation);
-        assertSame(first, plans.count(request, "delete", statement, inputs, observation));
+        var first = plans.count(request, "delete", resolved, inputs, observation);
+        assertSame(first, plans.count(request, "delete", resolved, inputs, observation));
       }
       assertEquals(1, events.size(), "cache hits must not emit compilation notifications");
       assertEquals(failing ? ExecutionOutcome.FAILED : ExecutionOutcome.SUCCEEDED,
@@ -352,8 +357,9 @@ class DynamicMutationPlansTest {
     var dialect = new TestDialect();
     var plans = new DynamicMutationPlans(EntityRuntimeRegistry.of(List.of(model)), dialect);
     var table = new Table(model.entity());
-    var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), null, false);
+    var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), null, null, null);
     var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
+    var resolved = ResolvedStatement.analyze(statement);
     var entered = new CountDownLatch(1);
     var release = new CountDownLatch(1);
     var dispatcher = ExecutionListenerDispatcher.of(List.of(new ExecutionListener() {
@@ -370,12 +376,12 @@ class DynamicMutationPlansTest {
     var observation = dispatcher.startOperation(ExecutionOperationKind.DELETE, dialect.id());
     try (var executor = Executors.newFixedThreadPool(2)) {
       var owner = executor.submit(() -> plans.count(
-          new DynamicMutationPlans.Request<>(), "delete", statement, inputs, observation));
+          new DynamicMutationPlans.Request<>(), "delete", resolved, inputs, observation));
       try {
         assertTrue(entered.await(10, TimeUnit.SECONDS));
         int validations = dialect.validations.get();
         var waiter = executor.submit(() -> plans.count(
-            new DynamicMutationPlans.Request<>(), "delete", statement, inputs, null));
+            new DynamicMutationPlans.Request<>(), "delete", resolved, inputs, null));
         var reused = waiter.get(10, TimeUnit.SECONDS);
         assertEquals(validations, dialect.validations.get());
         assertFalse(owner.isDone());
@@ -428,17 +434,19 @@ class DynamicMutationPlansTest {
     var mapping = mapping(new AtomicInteger());
     var table = new Table(model.entity());
     var condition = table.id().eq(17L);
-    var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), condition, false);
+    var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), condition, null, null);
     var statement = new DeleteStatement(MutationQuerySupport.table(table), inputs.where());
+    var resolved = ResolvedStatement.analyze(statement);
     var selection = mapping.bind(table.name());
     var result = MutationQuerySupport.result(table, selection);
+    var returningInputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), condition, null, result);
     var countRequest = new DynamicMutationPlans.Request<io.skis.jdbc.internal.CompiledMutationPlan<@Nullable Object[]>>();
     var returningRequest = new DynamicMutationPlans.Request<DynamicMutationPlans.ConditionalPlan<String>>();
-    var count = plans.count(countRequest, "delete", statement, inputs, null);
-    var returning = plans.conditional(returningRequest, "delete", statement, inputs, result, null);
+    var count = plans.count(countRequest, "delete", resolved, inputs, null);
+    var returning = plans.conditional(returningRequest, "delete", resolved, returningInputs, result, null);
     return new RetentionFixture(plans, model.entity(), count, returning, mapping,
         List.of(new WeakReference<>(table), new WeakReference<>(condition), new WeakReference<>(inputs),
-            new WeakReference<>(statement), new WeakReference<>(selection), new WeakReference<>(result),
+            new WeakReference<>(statement), new WeakReference<>(selection), new WeakReference<>(result), new WeakReference<>(returningInputs),
             new WeakReference<>(countRequest), new WeakReference<>(returningRequest)));
   }
 
@@ -485,9 +493,10 @@ class DynamicMutationPlansTest {
       Table table, ProjectionMapping<String> mapping,
       DynamicMutationPlans.Request<DynamicMutationPlans.ConditionalPlan<String>> request) {
     var statement = new DeleteStatement(MutationQuerySupport.table(table), new BooleanPredicate(true));
-    var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), null, false);
-    return plans.conditional(request, "delete", statement, inputs,
-        MutationQuerySupport.result(table, mapping.bind(table.name())), null);
+    var resolved = ResolvedStatement.analyze(statement);
+    var result = MutationQuerySupport.result(table, mapping.bind(table.name()));
+    var inputs = MutationQuerySupport.inputs(plans.registry(), table, List.of(), null, null, result);
+    return plans.conditional(request, "delete", resolved, inputs, result, null);
   }
 
   private static ProjectionMapping<String> mapping(AtomicInteger creations) {

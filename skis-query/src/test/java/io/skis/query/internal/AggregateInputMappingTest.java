@@ -35,7 +35,7 @@ import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.SliceRequest;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.query.Sql;
@@ -136,7 +136,7 @@ class AggregateInputMappingTest {
           ResolvedValueMapping.codecFor(selectable, registry));
     }
     assertSame(JdbcCodecs.INTEGER,
-        ResolvedValueMapping.codecFor(Sql.value(Sql.parameter(Integer.class)), registry));
+        ResolvedValueMapping.codecFor(TestParameters.value(TestParameters.parameter(Integer.class)), registry));
     assertSame(JdbcCodecs.INTEGER,
         ResolvedValueMapping.codecFor(Sql.value(int.class, null), registry));
   }
@@ -270,44 +270,41 @@ class AggregateInputMappingTest {
   @Test
   void reusedParameterChecksEveryStandardSourceInBothOrdersBeforePruningAndCount() {
     var operations = operations(true);
-    var parameter = Sql.parameter(Integer.class);
-    var view = Sql.value(parameter);
+    var parameter = TestParameters.parameter(Integer.class);
+    var view = TestParameters.value(parameter);
     var custom = Sql.add(TABLE.number, Sql.value(1));
-    assertTypeFailure(() -> compile(operations.select(view).from(TABLE)
-        .where(custom.eq(parameter)).bind(parameter, 5)));
+    assertTypeFailure(() -> compile(TestParameters.bind(operations.select(view).from(TABLE).where(TestParameters.eq(custom, parameter)), parameter, 5)));
     for (boolean viewFirst : List.of(true, false)) {
       var condition = viewFirst
-          ? view.eq(5).and(custom.eq(parameter))
-          : custom.eq(parameter).and(view.eq(5));
+          ? view.eq(5).and(TestParameters.eq(custom, parameter))
+          : TestParameters.eq(custom, parameter).and(view.eq(5));
       for (var query : List.of(
-          operations.select(TABLE.id).from(TABLE).where(condition).bind(parameter, 5),
-          operations.select(TABLE.id).from(TABLE)
-              .where(condition.and(TABLE.id.in(List.of()))).bind(parameter, 5))) {
+          TestParameters.bind(operations.select(TABLE.id).from(TABLE).where(condition), parameter, 5),
+          TestParameters.bind(operations.select(TABLE.id).from(TABLE).where(condition.and(TABLE.id.in(List.of()))), parameter, 5))) {
         assertTypeFailure(() -> compile(query));
         assertTypeFailure(() -> compileCount(query));
       }
       // Replacing the standard binder with a physical built-in source must not discard it either.
-      var physicalParameter = Sql.parameter(Long.class);
+      var physicalParameter = TestParameters.parameter(Long.class);
       var customLong = Sql.cast(TABLE.number, Long.class, SqlType.BIGINT);
       var withPhysicalSource = viewFirst
-          ? customLong.eq(physicalParameter).and(TABLE.id.eq(physicalParameter))
-          : TABLE.id.eq(physicalParameter).and(customLong.eq(physicalParameter));
-      assertTypeFailure(() -> compile(operations.select(TABLE.id).from(TABLE)
-          .where(withPhysicalSource).bind(physicalParameter, 5L)));
+          ? TestParameters.eq(customLong, physicalParameter).and(TestParameters.eq(TABLE.id, physicalParameter))
+          : TestParameters.eq(TABLE.id, physicalParameter).and(TestParameters.eq(customLong, physicalParameter));
+      assertTypeFailure(() -> compile(TestParameters.bind(operations.select(TABLE.id).from(TABLE).where(withPhysicalSource), physicalParameter, 5L)));
     }
   }
 
   @Test
   void validStandardParameterReuseKeepsOneLogicalSlotAndIsolatedRuntimeMappings() {
-    var parameter = Sql.parameter(Integer.class);
-    var view = Sql.value(parameter);
+    var parameter = TestParameters.parameter(Integer.class);
+    var view = TestParameters.value(parameter);
     var computed = Sql.add(TABLE.number, Sql.value(1));
     var operations = operations(false);
     for (boolean viewFirst : List.of(true, false)) {
       var condition = viewFirst
-          ? view.eq(5).and(computed.eq(parameter))
-          : computed.eq(parameter).and(view.eq(5));
-      var query = operations.select(TABLE.id).from(TABLE).where(condition).bind(parameter, 5);
+          ? view.eq(5).and(TestParameters.eq(computed, parameter))
+          : TestParameters.eq(computed, parameter).and(view.eq(5));
+      var query = TestParameters.bind(operations.select(TABLE.id).from(TABLE).where(condition), parameter, 5);
       var compiled = compile(query);
       assertEquals(4, compiled.plan().parameterCount());
       // Both physical occurrences of p retain the same logical descriptor after mapping validation.
@@ -315,9 +312,8 @@ class AggregateInputMappingTest {
           .map(slot -> slot.ordinal()).distinct().count());
       compileCount(query);
     }
-    compile(operations.select(computed).from(TABLE).where(computed.eq(parameter)).bind(parameter, 5));
-    assertTypeFailure(() -> compile(operations(true).select(computed).from(TABLE)
-        .where(computed.eq(parameter)).bind(parameter, 5)));
+    compile(TestParameters.bind(operations.select(computed).from(TABLE).where(TestParameters.eq(computed, parameter)), parameter, 5));
+    assertTypeFailure(() -> compile(TestParameters.bind(operations(true).select(computed).from(TABLE).where(TestParameters.eq(computed, parameter)), parameter, 5)));
   }
 
   @Test
@@ -356,7 +352,7 @@ class AggregateInputMappingTest {
     var inner = TABLE.as("selected_inner");
     var scalar = Sql.scalar(Sql.select(Sql.sumAsLong(inner.number)).from(inner));
     for (boolean projection : List.of(false, true)) {
-      SelectQuery<? extends @Nullable Object> query = projection
+      ExecutableSelectQuery<? extends @Nullable Object> query = projection
           ? operations.select(summaryMapping().bind(TABLE.id, Sql.value(987654321L),
               Sql.value(BigInteger.ONE), Sql.value(BigDecimal.ONE), scalar)).from(TABLE)
           : operations.select(scalar).from(TABLE);
@@ -369,7 +365,7 @@ class AggregateInputMappingTest {
           QueryValidationException failure = assertThrows(QueryValidationException.class, action);
           assertMappingLocation(failure, block, "SELECT", "selected_inner.number");
           assertEquals("SELECT[0]",
-              Objects.requireNonNull(failure.diagnostics().query()).expressionPath());
+              Objects.requireNonNull(TestParameters.query(failure.diagnostics())).expressionPath());
           assertFalse(failure.diagnostics().safeText().contains("987654321"));
         }
       }
@@ -380,12 +376,12 @@ class AggregateInputMappingTest {
   void boundAggregateFailuresKeepOriginalLocationsForContentCountAndPruning() {
     var operations = operations(true);
     var sum = Sql.sumAsLong(TABLE.number);
-    var parameter = Sql.parameter(Long.class);
+    var parameter = TestParameters.parameter(Long.class);
     for (boolean explicit : List.of(false, true)) {
       var query = operations.select(Sql.countAll()).from(TABLE)
-          .having(explicit ? sum.gt(parameter) : sum.gt(987654321L));
+          .having(explicit ? TestParameters.gt(sum, parameter) : sum.gt(987654321L));
       if (explicit) {
-        query = query.bind(parameter, 987654321L);
+        query = TestParameters.bind(query, parameter, 987654321L);
       }
       for (var candidate : List.of(query, query.andHaving(Sql.countAll().in(List.of())))) {
         for (Executable action : List.<Executable>of(
@@ -399,9 +395,8 @@ class AggregateInputMappingTest {
 
     var inner = TABLE.as("bound_inner");
     var innerSum = Sql.sumAsLong(inner.number);
-    var description = Sql.select(Sql.countAll()).from(inner).having(innerSum.gt(parameter));
-    var nested = operations.select(TABLE.id).from(TABLE).where(Sql.exists(description))
-        .bind(parameter, 987654321L);
+    var description = Sql.select(Sql.countAll()).from(inner).having(TestParameters.gt(innerSum, parameter));
+    var nested = TestParameters.bind(operations.select(TABLE.id).from(TABLE).where(Sql.exists(description)), parameter, 987654321L);
     for (var candidate : List.of(nested, nested.and(TABLE.id.in(List.of())))) {
       for (Executable action : List.<Executable>of(
           () -> compile(candidate), () -> compileCount(candidate))) {
@@ -415,7 +410,7 @@ class AggregateInputMappingTest {
   private static void assertMappingLocation(
       QueryValidationException failure, String block, String clause, String input) {
     assertEquals(SkisErrorCode.QUERY_TYPE_MISMATCH, failure.code());
-    var location = Objects.requireNonNull(failure.diagnostics().query());
+    var location = Objects.requireNonNull(TestParameters.query(failure.diagnostics()));
     assertEquals(block, location.blockPath());
     assertEquals(clause, location.clause());
     assertTrue(Objects.requireNonNull(location.expressionPath()).startsWith(clause + '['));
@@ -518,15 +513,15 @@ class AggregateInputMappingTest {
     var builtin = QueryTestSupport.operations(original);
     var custom = QueryTestSupport.operations(replacement);
     var sum = Sql.sumAsLong(TABLE.number);
-    List<java.util.function.Function<QueryOperations, SelectQuery<?>>> queries = List.of(
+    List<java.util.function.Function<QueryOperations, ExecutableSelectQuery<?>>> queries = List.of(
         operations -> operations.select(Sql.countAll()).from(TABLE).having(sum.gt(0L)),
         operations -> operations.select(Sql.countAll()).from(TABLE).orderBy(sum.asc()),
         operations -> operations.select(Sql.countAll()).from(TABLE).having(sum.in(List.of())));
-    List<DefaultSelectQuery<?>> existing = new java.util.ArrayList<>();
+    List<DefaultExecutableSelectQuery<?>> existing = new java.util.ArrayList<>();
     List<Object> plans = new java.util.ArrayList<>();
     for (var factory : queries) {
-      var query = (DefaultSelectQuery<?>) factory.apply(builtin);
-      var first = query.compilation(QueryPagination.None.INSTANCE);
+      var query = (DefaultExecutableSelectQuery<?>) factory.apply(builtin);
+      var first = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
       assertSame(first.plan(), compile(factory.apply(builtin)).plan());
       assertTypeFailure(() -> compile(factory.apply(custom)));
       assertTypeFailure(() -> compileCount(factory.apply(custom)));
@@ -537,7 +532,7 @@ class AggregateInputMappingTest {
     assertEquals(0, replacement.projectionPlanCacheStatistics().missCount());
     assertEquals(3, original.invalidateProjectionPlans(ENTITY));
     for (int index = 0; index < existing.size(); index++) {
-      assertSame(plans.get(index), existing.get(index).compilation(QueryPagination.None.INSTANCE).plan());
+      assertSame(plans.get(index), TestParameters.compilation(existing.get(index), QueryPagination.None.INSTANCE).plan());
       assertNotSame(plans.get(index), compile(queries.get(index).apply(builtin)).plan());
     }
     // A known SQL grouping type retains its equality contract with a custom property Codec.
@@ -549,12 +544,12 @@ class AggregateInputMappingTest {
     assertSame(grouped.plan(), compile(pureGroup).plan());
   }
 
-  private static <R extends @Nullable Object> QueryCompilation<R> compile(SelectQuery<R> query) {
-    return ((DefaultSelectQuery<R>) query).compilation(QueryPagination.None.INSTANCE);
+  private static <R extends @Nullable Object> QueryCompilation<R> compile(ExecutableSelectQuery<R> query) {
+    return TestParameters.compilation(((DefaultExecutableSelectQuery<R>) query), QueryPagination.None.INSTANCE);
   }
 
-  private static <R extends @Nullable Object> QueryCompilation<Long> compileCount(SelectQuery<R> query) {
-    return ((DefaultSelectQuery<R>) query).countCompilation();
+  private static <R extends @Nullable Object> QueryCompilation<Long> compileCount(ExecutableSelectQuery<R> query) {
+    return TestParameters.countCompilation(((DefaultExecutableSelectQuery<R>) query));
   }
 
   private static QueryOperations operations(boolean custom) {

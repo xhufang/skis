@@ -159,10 +159,8 @@ abstract class AbstractSkisAggregateContractTest {
       var executor = executor(source, connection);
       var table = AggregateSampleTable.aggregateSampleTable;
       for (int shift : List.of(10, 20)) {
-        var parameter = Sql.parameter(Integer.class, "shift");
-        var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(parameter));
-        var query = executor.select(key).from(table).groupBy(key).orderBy(key.asc())
-            .bind(parameter, shift);
+        var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(shift));
+        var query = executor.select(key).from(table).groupBy(key).orderBy(key.asc());
         var before = executor.queryPlanCacheStatistics();
         assertEquals(List.of(shift, shift + 1, shift + 2), query.fetchList());
         var page = query.fetchPage(PageRequest.page(1, 1));
@@ -184,12 +182,13 @@ abstract class AbstractSkisAggregateContractTest {
       createRuntimeSamples(connection);
       var table = AggregateSampleTable.aggregateSampleTable;
       var inner = table.as("distinct_inner");
-      var ceiling = Sql.parameter(Long.class, "ceiling");
+      var template = queryFactory((Long ceiling) -> {
       var scalar = Sql.scalar(Sql.select(inner.id()).from(inner)
           .where(inner.id().eq(table.id())).and(inner.id().lt(ceiling)));
-      var template = executor(source, connection).select(scalar).from(table).distinct()
+      return executor(source, connection).select(scalar).from(table).distinct()
           .orderBy(scalar.asc());
-      var query = template.bind(ceiling, 10L);
+      });
+      var query = template.apply(10L);
       assertEquals(List.of(1L, 2L, 3L), query.fetchList());
       var page = query.fetchPage(PageRequest.page(1, 1));
       assertEquals(List.of(2L), page.items());
@@ -198,9 +197,9 @@ abstract class AbstractSkisAggregateContractTest {
       var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
       assertEquals(List.of(1L), first.items());
       assertEquals(List.of(2L), second.items());
-      assertEquals(second.items(), template.bind(ceiling, 10L)
+      assertEquals(second.items(), template.apply(10L)
           .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
-      var changed = template.bind(ceiling, 20L);
+      var changed = template.apply(20L);
       assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
           assertThrows(QueryValidationException.class, () -> changed
               .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
@@ -215,7 +214,7 @@ abstract class AbstractSkisAggregateContractTest {
       var executor = executor(source, connection);
       var table = AggregateSampleTable.aggregateSampleTable;
       var inner = table.as("repeated_inner");
-      var ceiling = Sql.parameter(Long.class, "ceiling");
+      Long ceiling = 10L;
       var scalar = Sql.scalar(Sql.select(inner.id()).from(inner)
           .where(inner.id().eq(table.id())).and(inner.id().lt(ceiling)));
       var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, Object.class, "repeated-scalar",
@@ -232,7 +231,7 @@ abstract class AbstractSkisAggregateContractTest {
         var secondValue = relation.column(secondOutput);
         var template = executor.select(secondValue).from(relation)
             .orderBy(secondValue.asc().nullsFirst());
-        var query = template.bind(ceiling, 10L);
+        var query = template;
         var page = query.fetchPage(PageRequest.page(1, 1));
         assertEquals(List.of(2L), page.items());
         assertEquals(3, page.totalElements());
@@ -242,16 +241,24 @@ abstract class AbstractSkisAggregateContractTest {
         var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
         assertEquals(List.of(1L), first.items());
         assertEquals(List.of(2L), second.items());
-        assertEquals(second.items(), template.bind(ceiling, 10L)
+        assertEquals(second.items(), template
             .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
-        var changed = template.bind(ceiling, 20L);
+        var changedScalar = Sql.scalar(Sql.select(inner.id()).from(inner)
+            .where(inner.id().eq(table.id())).and(inner.id().lt(20L)));
+        var changedExpression = expression == scalar ? changedScalar : Sql.cast(changedScalar, Long.class, SqlType.BIGINT);
+        var changedFirst = Sql.output(changedExpression, "first_value");
+        var changedSecond = Sql.output(changedExpression, "second_value");
+        var changedRelation = Sql.derived(Sql.select(tuple.bind(changedExpression, changedExpression)).from(table).distinct(),
+            "repeated_values", changedFirst, changedSecond);
+        var changedColumn = changedRelation.column(changedSecond);
+        var changed = executor.select(changedColumn).from(changedRelation).orderBy(changedColumn.asc().nullsFirst());
         assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
             assertThrows(QueryValidationException.class, () -> changed
                 .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
         var output = Sql.output(secondValue, "value");
         var outer = Sql.derived(Sql.select(secondValue).from(relation), "reexported_values", output);
         var outerQuery = executor.select(outer.column(output)).from(outer)
-            .orderBy(outer.column(output).asc().nullsFirst()).bind(ceiling, 10L);
+            .orderBy(outer.column(output).asc().nullsFirst());
         assertEquals(List.of(1L, 2L, 3L), outerQuery.fetchList());
         assertEquals(3, outerQuery.fetchPage(PageRequest.page(0, 1)).totalElements());
         assertEquals(List.of(2L), outerQuery.fetchSlice(SliceRequest.offset(1, 1)).items());
@@ -504,19 +511,20 @@ abstract class AbstractSkisAggregateContractTest {
       createRuntimeSamples(connection);
       SkisExecutor executor = executor(source, connection);
       var table = AggregateSampleTable.aggregateSampleTable;
-      var shift = Sql.parameter(Integer.class, "shift");
+      var template = queryFactory((Integer shift) -> {
       var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(shift));
-      var template = executor.select(key).from(table).groupBy(key).orderBy(key.asc());
-      var query = template.bind(shift, 10);
+      return executor.select(key).from(table).groupBy(key).orderBy(key.asc());
+      });
+      var query = template.apply(10);
       var expected = query.fetchList();
       var first = query.fetchSlice(SliceRequest.offset(0, 1));
       var second = query.fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1));
       var third = query.fetchSlice(SliceRequest.resume(second.nextContinuation().orElseThrow(), 1));
       assertEquals(expected, List.of(first.items().getFirst(), second.items().getFirst(), third.items().getFirst()));
       assertFalse(third.hasNext());
-      assertEquals(second.items(), template.bind(shift, 10)
+      assertEquals(second.items(), template.apply(10)
           .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)).items());
-      var changed = template.bind(shift, 20);
+      var changed = template.apply(20);
       assertEquals(SkisErrorCode.QUERY_CONTINUATION_INVALID,
           assertThrows(QueryValidationException.class, () -> changed
               .fetchSlice(SliceRequest.resume(first.nextContinuation().orElseThrow(), 1))).code());
@@ -753,9 +761,9 @@ abstract class AbstractSkisAggregateContractTest {
       var key = Sql.add(Sql.coalesce(table.number(), Sql.value(0)), Sql.value(10));
       assertEquals(List.of(10, 11, 12), executor.select(key).from(table).groupBy(key)
           .orderBy(key.asc()).fetchList());
-      var value = Sql.parameter(BigDecimal.class);
+      var value = new BigDecimal("1.2500");
       assertEquals(0, executor.select(Sql.value(value)).from(table)
-          .where(table.id().eq(1L)).bind(value, new BigDecimal("1.2500")).fetchOne().orElseThrow()
+          .where(table.id().eq(1L)).fetchOne().orElseThrow()
           .compareTo(new BigDecimal("1.2500")));
       assertEquals("A!", executor.select(Sql.caseWhen(table.number().gt(0),
               Sql.concat(table.category(), Sql.value("!")), Sql.value("none")))
@@ -1751,4 +1759,5 @@ abstract class AbstractSkisAggregateContractTest {
       return new PropertyMeta<>(ordinal, name, type, ColumnMeta.of(name, ordinal != 0));
     }
   }
+  private static <A, Q> java.util.function.Function<A, Q> queryFactory(java.util.function.Function<A, Q> factory) { return factory; }
 }

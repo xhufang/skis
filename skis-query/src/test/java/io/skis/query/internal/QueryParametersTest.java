@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.QueryValidationException;
-import io.skis.query.QueryParameter;
 import io.skis.query.Sql;
 import java.sql.Timestamp;
 import java.util.Arrays;
@@ -21,21 +20,20 @@ class QueryParametersTest {
 
   @Test
   void createsOpaqueIdentityReferencesWithoutValuesOrOrdinals() {
-    QueryParameter<Long> first = Sql.parameter(Long.class, "ownerId");
-    QueryParameter<Long> second = Sql.parameter(Long.class, "ownerId");
-    QueryParameter<Long> primitive = Sql.parameter(long.class);
+    QueryParameter<Long> first = TestParameters.parameter(Long.class);
+    QueryParameter<Long> second = TestParameters.parameter(Long.class);
+    QueryParameter<Long> primitive = TestParameters.parameter(long.class);
 
     assertNotEquals(first, second);
     assertEquals(Long.class, first.javaType());
     assertEquals(Long.class, primitive.javaType());
-    assertEquals("ownerId", first.diagnosticName().orElseThrow());
-    assertTrue(second.toString().contains("ownerId"));
+    assertEquals("QueryParameter<java.lang.Long>", second.toString());
   }
 
   @Test
   void capturesMutableValuesExactlyOnceAtTheBindingBoundary() {
-    QueryParameter<byte[]> bytes = Sql.parameter(byte[].class, "bytes");
-    QueryParameter<Timestamp> timestamp = Sql.parameter(Timestamp.class, "createdAt");
+    QueryParameter<byte[]> bytes = TestParameters.parameter(byte[].class);
+    QueryParameter<Timestamp> timestamp = TestParameters.parameter(Timestamp.class);
     byte[] sourceBytes = {1, 2, 3};
     Timestamp sourceTimestamp = Timestamp.valueOf("2026-09-10 10:11:12.123456789");
     Timestamp expectedTimestamp = (Timestamp) sourceTimestamp.clone();
@@ -59,7 +57,7 @@ class QueryParametersTest {
 
   @Test
   void appendsOnlyFinalPaginationSlotsWithoutResnapshottingBaseValues() {
-    QueryParameter<byte[]> bytes = Sql.parameter(byte[].class, "bytes");
+    QueryParameter<byte[]> bytes = TestParameters.parameter(byte[].class);
     byte[] source = {1, 2, 3};
     QueryArguments base = QueryParameters.of(bytes, source).valuesFor(List.of(bytes));
     source[0] = 9;
@@ -85,8 +83,8 @@ class QueryParametersTest {
 
   @Test
   void validatesDuplicateMissingExtraAndRuntimeJavaTypeBindings() {
-    QueryParameter<Long> used = Sql.parameter(Long.class, "used");
-    QueryParameter<Long> extra = Sql.parameter(Long.class, "extra");
+    QueryParameter<Long> used = TestParameters.parameter(Long.class);
+    QueryParameter<Long> extra = TestParameters.parameter(Long.class);
     QueryParameter<Long> required = DefaultQueryParameter.anonymousNonNull(Long.class);
     QueryParameters.Builder duplicate = QueryParameters.builder().bind(used, 1L);
 
@@ -107,8 +105,8 @@ class QueryParametersTest {
 
   @Test
   void validatesTheDescriptionBeforeProjectingValuesForOneFinalStatement() {
-    QueryParameter<Long> retained = Sql.parameter(Long.class, "retained");
-    QueryParameter<Long> removed = Sql.parameter(Long.class, "removed");
+    QueryParameter<Long> retained = TestParameters.parameter(Long.class);
+    QueryParameter<Long> removed = TestParameters.parameter(Long.class);
     QueryParameters parameters =
         QueryParameters.builder().bind(retained, 1L).bind(removed, 2L).build();
 
@@ -118,27 +116,28 @@ class QueryParametersTest {
   }
 
   @Test
-  void immutableBindReturnsAnIndependentEnvironmentAndSupportsExplicitNull() {
-    QueryParameter<String> parameter = Sql.parameter(String.class, "optionalName");
+  void immutableMergeKeepsEnvironmentsIndependentAndSupportsExplicitNull() {
+    QueryParameter<String> parameter = TestParameters.parameter(String.class);
     QueryParameters empty = QueryParameters.empty();
-    QueryParameters bound = empty.bind(parameter, null);
+    QueryParameters snapshot = QueryParameters.of(parameter, null);
+    QueryParameters bound = empty.merge(snapshot);
 
     assertTrue(empty.isEmpty());
-    assertEquals(1, bound.size());
+    assertSame(snapshot, bound);
     assertNull(bound.valuesFor(List.of(parameter)).getFirst());
   }
 
   @Test
   void builderResultsRemainIndependentWhenTheBuilderIsReused() {
-    QueryParameter<Long> first = Sql.parameter(Long.class, "first");
-    QueryParameter<Long> second = Sql.parameter(Long.class, "second");
+    QueryParameter<Long> first = TestParameters.parameter(Long.class);
+    QueryParameter<Long> second = TestParameters.parameter(Long.class);
     QueryParameters.Builder builder = QueryParameters.builder().bind(first, 1L);
 
     QueryParameters firstResult = builder.build();
     QueryParameters secondResult = builder.bind(second, 2L).build();
 
-    assertEquals(1, firstResult.size());
     assertEquals(List.of(1L), firstResult.valuesFor(List.of(first)));
+    firstResult.validateFor(List.of(first));
     assertEquals(List.of(1L, 2L), secondResult.valuesFor(List.of(first, second)));
   }
 

@@ -15,7 +15,6 @@ import io.skis.metadata.TableMeta;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
 import io.skis.query.SliceContinuation;
@@ -64,7 +63,7 @@ class QueryValueSnapshotsTest {
     assertThrows(QueryValidationException.class, () -> Sql.output(selectable, "value"));
     assertThrows(QueryValidationException.class, () -> Sql.output(nonNull, "value"));
     assertThrows(QueryValidationException.class, () -> TABLE.bytes().eq(selectable));
-    assertThrows(QueryValidationException.class, () -> TABLE.bytes().eq(parameter));
+    assertThrows(QueryValidationException.class, () -> TestParameters.eq(TABLE.bytes(), parameter));
     assertThrows(QueryValidationException.class, () -> Sql.selectFrom(TABLE).where(condition));
     assertThrows(QueryValidationException.class, () -> TABLE.bytes().isNotNull().and(condition));
     assertThrows(QueryValidationException.class, () -> QueryModels.sliceRequest(request));

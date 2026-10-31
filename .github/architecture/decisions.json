@@ -1250,7 +1250,7 @@
       "decisionVersion": "0.2.10-SNAPSHOT",
       "targetVersion": "0.2.10-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "条件写入、RETURNING及T04冲突/MERGE源码与测试已同步待验证；批量失败、三层BYPASS及真实流读取待实现和验证",
+      "remaining": "条件写入、RETURNING及T04冲突/MERGE源码与测试已同步待验证；T05原生更新/删除、调用值重构与批量失败、三层BYPASS及真实流读取待实现和验证",
       "task": "0.2.10:T03-T08",
       "anchors": [
         {
@@ -1378,6 +1378,261 @@
           "kind": "java",
           "path": "skis-mutation/src/test/java/io/skis/mutation/internal/WrittenTest.java",
           "type": "io.skis.mutation.internal.WrittenTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
+          "type": "io.skis.integration.AbstractSkisReturningContractTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0026",
+      "title": "原生删除语法与嵌入查询值捕获",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "原生删除与值捕获源码、合同已接线；PG/H2驱动、资源及消费者证据待CI验收",
+      "task": "0.2.10:T05",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/MutationRequests.java",
+          "type": "io.skis.mutation.internal.MutationRequests"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/NativeMerges.java",
+          "type": "io.skis.mutation.internal.NativeMerges"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryParameters.java",
+          "type": "io.skis.query.internal.QueryParameters"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
+          "type": "io.skis.integration.AbstractSkisReturningContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ComposableQueryModelTest.java",
+          "type": "io.skis.query.internal.ComposableQueryModelTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0027",
+      "title": "SQL DSL 可组合性与参数使用模型重构",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "统一DSL与内部值模型源码、合同已接线；类型、缓存隔离及端到端证据待CI验收",
+      "task": "0.2.10:T05",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/AbstractSelectQuery.java",
+          "type": "io.skis.query.internal.AbstractSelectQuery"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/ExpressionCapture.java",
+          "type": "io.skis.query.internal.ExpressionCapture"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/QueryParameters.java",
+          "type": "io.skis.query.internal.QueryParameters"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/SqlAstTraversal.java",
+          "type": "io.skis.sql.ast.SqlAstTraversal"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ComposableQueryModelTest.java",
+          "type": "io.skis.query.internal.ComposableQueryModelTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryValueSnapshotsTest.java",
+          "type": "io.skis.query.internal.QueryValueSnapshotsTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0028",
+      "title": "原生 UPDATE 组合与显式赋值边界",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "显式SET、FROM与MERGE源码、合同已接线；类型空性、方言及端到端证据待CI验收",
+      "task": "0.2.10:T05",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/UpdateSet.java",
+          "type": "io.skis.mutation.UpdateSet"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/WriteInputCompiler.java",
+          "type": "io.skis.query.internal.WriteInputCompiler"
+        },
+        {
+          "kind": "java",
+          "path": "skis-sql-ast/src/main/java/io/skis/sql/ast/RowAssignment.java",
+          "type": "io.skis.sql.ast.RowAssignment"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/internal/DialectQueryFeatures.java",
+          "type": "io.skis.dialect.internal.DialectQueryFeatures"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
+          "type": "io.skis.integration.AbstractSkisReturningContractTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/MutationTypeSafetyCompilationTest.java",
+          "type": "io.skis.mutation.MutationTypeSafetyCompilationTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/StructuredWritePipelineTest.java",
+          "type": "io.skis.dialect.support.StructuredWritePipelineTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0029",
+      "title": "统一 SELECT 模型与 run 执行请求",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "双入口与run源码、旧公开API删除及合同已接线；nullness、消费者和执行上下文证据待CI验收",
+      "task": "0.2.10:T05",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/SelectQuery.java",
+          "type": "io.skis.query.SelectQuery"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/ExecutableSelectQuery.java",
+          "type": "io.skis.query.ExecutableSelectQuery"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/QueryRequest.java",
+          "type": "io.skis.query.QueryRequest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/DefaultQueryRequest.java",
+          "type": "io.skis.query.internal.DefaultQueryRequest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/internal/DefaultQueryOperations.java",
+          "type": "io.skis.query.internal.DefaultQueryOperations"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/ComposableQueryModelTest.java",
+          "type": "io.skis.query.internal.ComposableQueryModelTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/test/java/io/skis/query/internal/QueryTypeSafetyCompilationTest.java",
+          "type": "io.skis.query.internal.QueryTypeSafetyCompilationTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
+          "type": "io.skis.integration.AbstractSkisReturningContractTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0030",
+      "title": "来源输出、行结果与集合写入定稿",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "来源、行结果、写入组合与批量源码及合同已接线；真实驱动、部分失败及资源证据待CI验收",
+      "task": "0.2.10:T05",
+      "anchors": [
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/DerivedRelation.java",
+          "type": "io.skis.query.DerivedRelation"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/Row2.java",
+          "type": "io.skis.query.Row2"
+        },
+        {
+          "kind": "java",
+          "path": "skis-query/src/main/java/io/skis/query/Row3.java",
+          "type": "io.skis.query.Row3"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/Written.java",
+          "type": "io.skis.mutation.Written"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/BatchWrites.java",
+          "type": "io.skis.mutation.internal.BatchWrites"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/main/java/io/skis/mutation/internal/ValuesBatches.java",
+          "type": "io.skis.mutation.internal.ValuesBatches"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/main/java/io/skis/jdbc/internal/JdbcExecutor.java",
+          "type": "io.skis.jdbc.internal.JdbcExecutor"
+        }
+      ],
+      "contracts": [
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/internal/BatchResultTest.java",
+          "type": "io.skis.mutation.internal.BatchResultTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-mutation/src/test/java/io/skis/mutation/internal/WrittenTest.java",
+          "type": "io.skis.mutation.internal.WrittenTest"
+        },
+        {
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/internal/JdbcBatchExecutionTest.java",
+          "type": "io.skis.jdbc.internal.JdbcBatchExecutionTest"
         },
         {
           "kind": "java",

@@ -2,6 +2,7 @@ package io.skis.mutation.internal;
 
 import io.skis.metadata.EntityMode;
 import io.skis.metadata.TableMeta;
+import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BetweenPredicate;
 import io.skis.sql.ast.BooleanPredicate;
@@ -15,26 +16,42 @@ import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.DerivedColumnExpression;
 import io.skis.sql.ast.DerivedOutputColumn;
+import io.skis.sql.ast.DerivedRelationReference;
+import io.skis.sql.ast.DerivedRelationSource;
+import io.skis.sql.ast.EntityRelationSource;
 import io.skis.sql.ast.ExcludedExpression;
+import io.skis.sql.ast.ExistsPredicate;
+import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
+import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.IncrementExpression;
 import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullPredicate;
+import io.skis.sql.ast.OffsetLimit;
+import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
+import io.skis.sql.ast.ScalarSubqueryExpression;
+import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
 import io.skis.sql.ast.TableExpression;
+import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** Detached, flat structural descriptors for the single-target mutation grammar. */
 final class MutationStructureKey {
@@ -73,7 +90,15 @@ final class MutationStructureKey {
     LIKE,
     IN,
     NOT,
-    INCREMENT
+    INCREMENT,
+    SELECT,
+    SOURCE,
+    ROW_ASSIGNMENT,
+    IN_SUBQUERY,
+    EXISTS,
+    SCALAR_SUBQUERY,
+    AGGREGATE,
+    SELECTED_OUTPUT
   }
 
   private record TableShape(
@@ -117,17 +142,30 @@ final class MutationStructureKey {
           parts.add(Kind.MERGE);
           parts.add(merge.keyForm());
           table(merge.target());
-          if (merge.source() != null) {
-            parts.add(merge.source().reference().alias());
-            outputs(merge.source().reference().outputs());
-            expressions(merge.source().parameters());
-          }
+          if (merge.source() != null) relation(merge.source());
           expression(merge.on());
-          expression(merge.matchedWhere());
-          parts.add(merge.assignments().size());
-          for (var assignment : merge.assignments()) {
-            expression(assignment.column());
-            expression(assignment.value());
+          parts.add(merge.actions().size());
+          for (var action : merge.actions()) {
+            parts.add(action.kind());
+            expression(action.condition());
+            parts.add(action.assignments().size());
+            for (var item : action.assignments()) {
+              if (item
+                  instanceof
+                  UpdateAssignment<?>(ColumnExpression<?, ?> column, SqlExpression<?> value)) {
+                parts.add(Kind.UPDATE);
+                expression(column);
+                expression(value);
+              } else if (item
+                  instanceof
+                  RowAssignment(List<ColumnExpression<?, ?>> columns, SelectStatement query)) {
+                parts.add(Kind.ROW_ASSIGNMENT);
+                expressions(columns);
+                statement(query);
+              }
+            }
+            expressions(action.columns());
+            expressions(action.values());
           }
           expressions(merge.insertColumns());
           expressions(merge.insertValues());
@@ -138,23 +176,112 @@ final class MutationStructureKey {
           table(insert.target());
           expressions(insert.columns());
           expressions(insert.values());
+          parts.add(insert.additionalRows().size());
+          for (var row : insert.additionalRows()) expressions(row);
+          parts.add(insert.query() != null);
+          if (insert.query() != null) statement(insert.query());
+        }
+        case SelectStatement select -> {
+          parts.add(Kind.SELECT);
+          parts.add(select.distinct());
+          expressions(select.selections());
+          parts.add(select.hiddenSelections().size());
+          for (var hidden : select.hiddenSelections()) {
+            parts.add(hidden.alias());
+            expression(hidden.expression());
+          }
+          from(select.fromClause());
+          optional(select.where().orElse(null));
+          expressions(select.groupBy());
+          optional(select.having().orElse(null));
+          parts.add(select.orderBy().size());
+          for (var order : select.orderBy()) {
+            parts.add(order.direction());
+            parts.add(order.nullOrder());
+            expression(order.expression());
+          }
+          var pagination = select.pagination().orElse(null);
+          parts.add(pagination == null ? "none" : pagination.getClass().getName());
+          if (pagination != null) {
+            if (pagination instanceof KeysetSeek seek) expression(seek.predicate());
+            expression(pagination.limit());
+            if (pagination instanceof OffsetLimit offset) expression(offset.offset());
+          }
         }
         case UpdateStatement update -> {
           parts.add(Kind.UPDATE);
           table(update.target());
           parts.add(update.assignments().size());
-          for (var assignment : update.assignments()) {
-            expression(assignment.column());
-            expression(assignment.value());
+          for (var item : update.assignments()) {
+            if (item
+                instanceof
+                UpdateAssignment<?>(ColumnExpression<?, ?> column, SqlExpression<?> value)) {
+              parts.add(Kind.UPDATE);
+              expression(column);
+              expression(value);
+            } else if (item
+                instanceof
+                RowAssignment(List<ColumnExpression<?, ?>> columns, SelectStatement query)) {
+              parts.add(Kind.ROW_ASSIGNMENT);
+              expressions(columns);
+              statement(query);
+            }
           }
+          parts.add(update.from() != null);
+          if (update.from() != null) from(update.from());
           expression(update.where());
         }
         case DeleteStatement delete -> {
           parts.add(Kind.DELETE);
           table(delete.target());
+          parts.add(delete.using() != null);
+          if (delete.using() != null) from(delete.using());
           expression(delete.where());
         }
         default -> throw new IllegalArgumentException("unsupported mutation structure");
+      }
+    }
+
+    private void optional(@Nullable SqlExpression<?> expression) {
+      parts.add(expression != null);
+      if (expression != null) expression(expression);
+    }
+
+    private void from(FromClause from) {
+      relation(from.root());
+      parts.add(from.joins().size());
+      for (var join : from.joins()) {
+        parts.add(join.type());
+        relation(join.right());
+        optional(join.on().orElse(null));
+      }
+    }
+
+    private void relation(RelationSource source) {
+      parts.add(Kind.SOURCE);
+      switch (source) {
+        case EntityRelationSource(TableExpression<?> table) -> {
+          parts.add(Kind.COLUMN);
+          table(table);
+        }
+        case DerivedRelationSource(
+                SelectStatement statement,
+                DerivedRelationReference reference) -> {
+          parts.add(Kind.DERIVED);
+          parts.add(reference.alias());
+          outputs(reference.outputs());
+          statement(statement);
+        }
+        case ParameterRelationSource(
+                List<ParameterSlot<?>> parameters,
+                DerivedRelationReference reference) -> {
+          parts.add(Kind.PARAMETER);
+          parts.add(reference.alias());
+          outputs(reference.outputs());
+          expressions(parameters);
+        }
+        case null, default ->
+            throw new IllegalArgumentException("unsupported mutation source structure");
       }
     }
 
@@ -187,6 +314,33 @@ final class MutationStructureKey {
 
     private void expression(SqlExpression<?> expression) {
       switch (expression) {
+        case InSubqueryPredicate<?> in -> {
+          parts.add(Kind.IN_SUBQUERY);
+          parts.add(in.negated());
+          expression(in.value());
+          statement(in.subquery());
+        }
+        case ExistsPredicate exists -> {
+          parts.add(Kind.EXISTS);
+          parts.add(exists.negated());
+          statement(exists.subquery());
+        }
+        case ScalarSubqueryExpression<?> scalar -> {
+          parts.add(Kind.SCALAR_SUBQUERY);
+          statement(scalar.subquery());
+        }
+        case AggregateExpression<?> aggregate -> {
+          parts.add(Kind.AGGREGATE);
+          parts.add(aggregate.kind());
+          parts.add(aggregate.distinct());
+          optional(aggregate.operand().orElse(null));
+          descriptor(aggregate);
+        }
+        case SelectedOutputReference<?> output -> {
+          parts.add(Kind.SELECTED_OUTPUT);
+          parts.add(output.position());
+          descriptor(output);
+        }
         case ExcludedExpression<?> excluded -> {
           parts.add(Kind.EXCLUDED);
           expression(excluded.column());
@@ -199,6 +353,7 @@ final class MutationStructureKey {
         }
         case ColumnExpression<?, ?> column -> {
           parts.add(Kind.COLUMN);
+          table(column.table());
           var property = column.property();
           parts.add(property.ordinal());
           parts.add(property.name());

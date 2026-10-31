@@ -15,8 +15,11 @@ import io.skis.dialect.support.SqlCompiler;
 import io.skis.dialect.support.SqlTemplate;
 import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.jdbc.internal.JdbcFingerprint;
+import io.skis.mapping.spi.EntityIdAccess;
 import io.skis.mapping.spi.EntityMutationBinders;
 import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mapping.spi.EntityVersionReader;
+import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.ParameterBinder;
 import io.skis.mapping.spi.ParameterBindingObserver;
@@ -94,7 +97,13 @@ final class MutationPlanCompiler {
             ? uncheckedUpdate
             : compileUpdate(entity, table, id, binders.updateById(), true);
     CompiledMutationPlan<Object> delete = compileDelete(model, table, id);
-    return new EntityMutationPlanSet<>(model, insert, checkedUpdate, uncheckedUpdate, delete);
+    CompiledMutationPlan<E> uncheckedDelete = compileEntityDelete(model, table, id, delete, false);
+    CompiledMutationPlan<E> checkedDelete =
+        entity.version().isEmpty()
+            ? uncheckedDelete
+            : compileEntityDelete(model, table, id, delete, true);
+    return new EntityMutationPlanSet<>(
+        model, insert, checkedUpdate, uncheckedUpdate, delete, checkedDelete, uncheckedDelete);
   }
 
   private <E> @Nullable CompiledMutationPlan<E> compileInsert(
@@ -187,6 +196,104 @@ final class MutationPlanCompiler {
     notifyPrewarm(
         ExecutionOperationKind.UPDATE_BY_ID, SkisStatementKind.UPDATE, startedNanos, plan, null);
     return plan;
+  }
+
+  /** Entity deletes reuse the bare-ID SQL unless they also compare the entity's version. */
+  @SuppressWarnings("unchecked")
+  private <E> CompiledMutationPlan<E> compileEntityDelete(
+      EntityRuntimeModel<E> model,
+      RuntimeMutationTable<E> table,
+      PropertyMeta<E, ?> id,
+      CompiledMutationPlan<Object> base,
+      boolean versionChecked) {
+    var binders = model.mutationBinders().orElseThrow();
+    if (!versionChecked) {
+      return new CompiledMutationPlan<>(
+          "deleteById",
+          dialect.id(),
+          base.renderedSql(),
+          new EntityDeleteBinder<>(
+              base.parameterBinder(), binders.idAccess(), null, null, Object.class));
+    }
+    var version = model.entity().version().orElseThrow();
+    long startedNanos = listenerDispatcher.enabled() ? System.nanoTime() : 0L;
+    CompiledMutationPlan<E> plan;
+    try {
+      List<ParameterSlot<?>> parameters = new ArrayList<>(2);
+      RenderedSql rendered =
+          render(
+              new DeleteStatement(
+                  table,
+                  LogicalPredicate.and(
+                      List.of(
+                          equalityPredicate(table, id, 0, parameters),
+                          equalityPredicate(table, version.property(), 1, parameters)))));
+      requireParameterShape(model.entity(), "deleteById", rendered, parameters);
+      plan =
+          new CompiledMutationPlan<>(
+              "deleteById",
+              dialect.id(),
+              rendered,
+              new EntityDeleteBinder<>(
+                  base.parameterBinder(),
+                  binders.idAccess(),
+                  binders.versionReader(),
+                  (JdbcTypeCodec<Object>) model.property(version.property()).codec(),
+                  version.property().javaType()));
+    } catch (RuntimeException | Error failure) {
+      notifyPrewarm(
+          ExecutionOperationKind.DELETE_BY_ID,
+          SkisStatementKind.DELETE,
+          startedNanos,
+          null,
+          failure);
+      throw failure;
+    }
+    notifyPrewarm(
+        ExecutionOperationKind.DELETE_BY_ID, SkisStatementKind.DELETE, startedNanos, plan, null);
+    return plan;
+  }
+
+  private record EntityDeleteBinder<E>(
+      ParameterBinder<Object> idBinder,
+      EntityIdAccess<E> idAccess,
+      @Nullable EntityVersionReader<E> versionReader,
+      @Nullable JdbcTypeCodec<Object> versionCodec,
+      Class<?> versionType)
+      implements ParameterBinder<E> {
+    @Override
+    public int bind(PreparedStatement statement, int first, E value, JdbcWriteContext context)
+        throws SQLException {
+      Object id = Objects.requireNonNull(idAccess.read(value), "entity primary key");
+      int next = idBinder.bind(statement, first, id, context);
+      if (versionReader != null)
+        Objects.requireNonNull(versionCodec)
+            .bind(
+                statement,
+                next++,
+                Objects.requireNonNull(versionReader.read(value), "expected version"),
+                context);
+      return next;
+    }
+
+    @Override
+    public int bindObserved(
+        PreparedStatement statement,
+        int first,
+        E value,
+        JdbcWriteContext context,
+        ParameterBindingObserver observer)
+        throws SQLException {
+      Object id = Objects.requireNonNull(idAccess.read(value), "entity primary key");
+      int next = idBinder.bindObserved(statement, first, id, context, observer);
+      if (versionReader != null) {
+        Object expected = Objects.requireNonNull(versionReader.read(value), "expected version");
+        Objects.requireNonNull(versionCodec).bind(statement, next, expected, context);
+        if (observer.needsMore()) observer.bound(next, versionType, expected);
+        next++;
+      }
+      return next;
+    }
   }
 
   private <E> CompiledMutationPlan<Object> compileDelete(

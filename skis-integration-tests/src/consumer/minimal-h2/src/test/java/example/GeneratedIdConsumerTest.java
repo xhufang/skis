@@ -35,7 +35,7 @@ class GeneratedIdConsumerTest {
       var input = new GeneratedTicket(null, "consumer");
       Written<GeneratedTicket> result =
           executor.insertInto(GeneratedTicketTable.generatedTicketTable).value(input).returning().write();
-      UUID id = result.get().id();
+      UUID id = result.one().get().id();
       assertNotNull(id);
       assertEquals(4, id.version());
       assertNull(input.id());

@@ -10,7 +10,7 @@ import io.skis.projection.skis.EmployeeProjectViewPro;
 import io.skis.projection.skis.ProjectPrincipalViewPro;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.runtime.SkisExecutor;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,7 +48,7 @@ public class ProjectServiceImpl implements ProjectService {
   public int updateProject(Project project) {
     Objects.requireNonNull(project, "project");
     project.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(PROJECT, project);
+    return skisExecutor.updateById(PROJECT).value(project).write();
   }
 
   @Override
@@ -136,7 +136,7 @@ public class ProjectServiceImpl implements ProjectService {
         .fetchList();
   }
 
-  private SelectQuery<ProjectPrincipalView> principalQuery() {
+  private ExecutableSelectQuery<ProjectPrincipalView> principalQuery() {
     return skisExecutor
         .select(ProjectPrincipalViewPro.all())
         .from(PROJECT)

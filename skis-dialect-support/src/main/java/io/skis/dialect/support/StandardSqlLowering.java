@@ -6,6 +6,7 @@ import io.skis.dialect.spi.DialectLowering;
 import io.skis.dialect.spi.PortableLowering;
 import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.StatementAst;
 import java.util.Objects;
@@ -60,7 +61,8 @@ public final class StandardSqlLowering implements DialectLowering {
     if (lowered instanceof ReturningStatement returning) {
       ReturningStatement.Form form =
           capabilities.supports(DialectFeature.MUTATION_RESULT_TABLE)
-              ? returning.mutation() instanceof DeleteStatement
+              ? (returning.mutation() instanceof DeleteStatement
+                      || returning.mutation() instanceof MergeStatement merge && merge.onlyDelete())
                   ? ReturningStatement.Form.OLD_TABLE
                   : ReturningStatement.Form.FINAL_TABLE
               : ReturningStatement.Form.NATIVE;

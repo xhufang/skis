@@ -57,6 +57,13 @@ final class QueryScopeAnalyzer {
     return analysis;
   }
 
+  static QueryBlockAnalysis analyzeInStatement(
+      SelectStatement statement,
+      QueryBlockPath path,
+      QueryBlockAnalysis.ScopeSnapshot parentScope) {
+    return new Analyzer(statement, path, parentScope, new StatementParameters()).analyze();
+  }
+
   private static QueryBlockAnalysis analyzeNested(
       SelectStatement statement,
       QueryBlockPath path,

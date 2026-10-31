@@ -8,6 +8,7 @@ import example.skis.PetAggregatePro;
 import example.skis.PetSummaryPro;
 import example.skis.PetTable;
 import io.skis.dialect.h2.H2Dialect;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.PageRequest;
 import io.skis.query.SliceRequest;
 import io.skis.query.Sql;
@@ -18,6 +19,7 @@ import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Function;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 
@@ -34,12 +36,12 @@ class MinimalConsumerTest {
       var id = Sql.output(pet.id(), "id"); var name = Sql.output(pet.name(), "name");
       var incoming = Sql.values(row -> row.value(id, 1L).value(name, "merged")).as("incoming");
       var request = executor.mergeInto(pet).using(incoming).on(pet.id().eq(incoming.column(id)))
-          .whenMatched().thenUpdate().setExpression(pet.name(), incoming.column(name))
+          .whenMatched().thenUpdate().set(pet.name(), incoming.column(name))
           .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
               .value(pet.id(), incoming.column(id))
               .value(pet.name(), incoming.column(name)))
           .returning(PetSummaryPro.of(pet.id(), pet.name()));
-      assertEquals(List.of(new PetSummary(1L, "merged")), request.write().get());
+      assertEquals(new PetSummary(1L, "merged"), request.write().one().get());
       assertEquals(1, request.write().affectedRows());
       assertEquals(1L, executor.findById(pet, 1L).orElseThrow().version());
     }
@@ -65,22 +67,24 @@ class MinimalConsumerTest {
       executor.insertInto(pet).value(new Pet(2L, "aggregate-a", null)).write();
       executor.insertInto(pet).value(new Pet(3L, "aggregate-b", null)).write();
 
-      var suffix = Sql.parameter(String.class, "suffix");
-      var key = Sql.concat(pet.name(), Sql.value(suffix));
       var count = Sql.countAll();
-      var template =
-          executor
-              .select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
-              .from(pet)
-              .groupBy(key)
-              .having(count.ge(1L))
-              .orderBy(key.asc());
-      var query = template.bind(suffix, "-first");
+      Function<String, ExecutableSelectQuery<PetAggregate>> queries =
+          suffix -> {
+            var key = Sql.concat(pet.name(), Sql.value(suffix));
+            return executor
+                .select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
+                .from(pet)
+                .groupBy(key)
+                .having(count.ge(1L))
+                .orderBy(key.asc());
+          };
+      var query = queries.apply("-first");
       List<PetAggregate> expected =
           List.of(
               new PetAggregate("aggregate-a-first", 2L, BigInteger.valueOf(3L)),
               new PetAggregate("aggregate-b-first", 1L, BigInteger.valueOf(3L)));
       assertEquals(expected, query.fetchList());
+      assertEquals(List.of(3L), executor.run(Sql.select(count).from(pet).fetchList()));
       var page = query.fetchPage(PageRequest.page(0, 1));
       assertEquals(2L, page.totalElements());
       assertEquals(expected.subList(0, 1), page.items());
@@ -98,7 +102,7 @@ class MinimalConsumerTest {
       assertEquals(expected.subList(0, 1), filtered.items());
       assertEquals(
           List.of("aggregate-a-second", "aggregate-b-second"),
-          template.bind(suffix, "-second").fetchList().stream().map(PetAggregate::name).toList());
+          queries.apply("-second").fetchList().stream().map(PetAggregate::name).toList());
 
       var emptyGlobal =
           executor.select(count).from(pet).where(pet.id().in(List.of()))
@@ -106,7 +110,7 @@ class MinimalConsumerTest {
       assertEquals(1L, emptyGlobal.totalElements());
       assertEquals(List.of(0L), emptyGlobal.items());
       var emptyGroups =
-          template.where(pet.id().in(List.of())).bind(suffix, "-empty")
+          queries.apply("-empty").where(pet.id().in(List.of()))
               .fetchPage(PageRequest.page(0, 1));
       assertEquals(0L, emptyGroups.totalElements());
       assertTrue(emptyGroups.items().isEmpty());

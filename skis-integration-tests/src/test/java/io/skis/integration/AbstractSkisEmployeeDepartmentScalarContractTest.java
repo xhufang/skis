@@ -17,7 +17,6 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
-import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
 import io.skis.query.SingleColumnSelect;
 import io.skis.query.Slice;
@@ -101,8 +100,8 @@ abstract class AbstractSkisEmployeeDepartmentScalarContractTest {
               .build();
       EmployeeTable employee = EmployeeTable.employeeTable.as("e");
       DepartmentTable department = DepartmentTable.departmentTable.as("d");
-      QueryParameter<String> pattern = Sql.parameter(String.class, "departmentPattern");
-      QueryParameter<Long> minimumEmployeeId = Sql.parameter(Long.class, "minimumEmployeeId");
+      String pattern = "%部";
+      long minimumEmployeeId = 1L;
       Selectable<Long> departmentId =
           Sql.scalar(
               Sql.select(department.id())
@@ -118,7 +117,7 @@ abstract class AbstractSkisEmployeeDepartmentScalarContractTest {
               .where(employee.id().ge(minimumEmployeeId))
               .distinct()
               .orderBy(departmentId.asc().nullsLast());
-      var query = executor.query(description).bind(pattern, "%部").bind(minimumEmployeeId, 1L);
+      var query = executor.select(departmentId).from(employee).where(employee.id().ge(minimumEmployeeId)).distinct().orderBy(departmentId.asc().nullsLast());
 
       // Two employees share department 10; the unmatched department 30 becomes one SQL NULL.
       assertEquals(Arrays.asList(10L, 20L, null), query.fetchList());
@@ -142,8 +141,6 @@ abstract class AbstractSkisEmployeeDepartmentScalarContractTest {
               .from(employee)
               .where(employee.id().ge(minimumEmployeeId))
               .orderBy(employee.id().asc())
-              .bind(pattern, "%部")
-              .bind(minimumEmployeeId, 1L)
               .fetchSlice(SliceRequest.offset(0, 4));
       assertEquals(Arrays.asList(10L, 10L, 20L, null), nullableSlice.items());
       assertFalse(nullableSlice.hasNext());
@@ -157,11 +154,13 @@ abstract class AbstractSkisEmployeeDepartmentScalarContractTest {
               .orderBy(outerDepartment.id().asc());
       assertEquals(
           List.of(10L, 20L),
-          executor.query(nested).bind(pattern, "%部").bind(minimumEmployeeId, 1L).fetchList());
+          executor.run(nested.fetchList()));
 
-      assertEquals(
-          Arrays.asList(10L, null),
-          executor.query(description).bind(pattern, "研发%").bind(minimumEmployeeId, 1L).fetchList());
+      var changedDepartmentId = Sql.scalar(Sql.select(department.id()).from(department)
+          .where(department.id().eq(employee.departmentId()).and(department.name().like("研发%"))));
+      assertEquals(Arrays.asList(10L, null), executor.select(changedDepartmentId).from(employee)
+          .where(employee.id().ge(minimumEmployeeId)).distinct().orderBy(changedDepartmentId.asc().nullsLast()).fetchList());
+
     }
   }
 

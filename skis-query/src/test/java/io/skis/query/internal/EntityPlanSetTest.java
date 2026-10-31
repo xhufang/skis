@@ -45,9 +45,8 @@ import io.skis.metadata.TableMeta;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.Selectable;
 import io.skis.query.Sql;
 import io.skis.sql.ast.AggregateExpression;
@@ -299,7 +298,7 @@ class EntityPlanSetTest {
     assertEquals(SkisErrorCode.QUERY_AGGREGATE_CONTRACT, failure.code());
     assertEquals(
         QuerySemanticReason.AGGREGATE_IN_CLAUSE, failure.diagnostics().querySemantics().reason());
-    assertEquals("WHERE", failure.diagnostics().query().clause());
+    assertEquals("WHERE", TestParameters.query(failure.diagnostics()).clause());
     assertNull(failure.getCause());
   }
 
@@ -452,7 +451,7 @@ class EntityPlanSetTest {
   @Test
   void repeatedQueryBlockOccurrencesRelocateTheSameReferenceToDistinctLogicalSlots() {
     StatementParameterLayout layout = new StatementParameterLayout();
-    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
     StatementParameterLayout.QueryBlock firstBlock = layout.newQueryBlock();
     StatementParameterLayout.QueryBlock secondBlock = layout.newQueryBlock();
 
@@ -483,9 +482,9 @@ class EntityPlanSetTest {
     EntityRuntimeModel<Pet> runtimeModel = model();
     QueryPlanCompiler compiler = QueryTestSupport.compiler(
         EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
-    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
-    QueryCondition view = Sql.value(parameter).isNotNull();
-    QueryCondition column = TABLE.id().eq(parameter);
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
+    QueryCondition view = TestParameters.value(parameter).isNotNull();
+    QueryCondition column = TestParameters.eq(TABLE.id(), parameter);
     for (QueryCondition condition : List.of(view.and(column), column.and(view))) {
       CompiledQueryStructure structure = QueryModels.description(
           Sql.select(TABLE).from(TABLE).where(condition)).state().structure();
@@ -583,12 +582,12 @@ class EntityPlanSetTest {
         List.of(new PropertyRuntime<>(ID, delegated), new PropertyRuntime<>(NAME, JdbcCodecs.STRING)));
     QueryPlanCompiler compiler = QueryTestSupport.compiler(
         EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
-    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
-    Selectable<Long> view = Sql.value(parameter);
-    QueryCondition column = TABLE.id().eq(parameter);
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
+    Selectable<Long> view = TestParameters.value(parameter);
+    QueryCondition column = TestParameters.eq(TABLE.id(), parameter);
     for (QueryCondition condition : List.of(
         view.isNotNull().and(column), column.and(view.isNotNull()),
-        view.inParameters(List.of()).and(column), column.and(view.inParameters(List.of())))) {
+        TestParameters.inParameters(view, List.of()).and(column), column.and(TestParameters.inParameters(view, List.of())))) {
       SelectQueryState<Pet> state = QueryModels.description(
           Sql.select(TABLE).from(TABLE).where(condition)).state();
       CompiledQueryStructure content = state.structure();
@@ -610,7 +609,7 @@ class EntityPlanSetTest {
     QueryPlanCompiler compiler =
         QueryTestSupport.compiler(
             EntityRuntimeRegistry.of(List.of(runtimeModel)), TestDialect.INSTANCE);
-    QueryParameter<Long> parameter = Sql.parameter(Long.class, "id");
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
     StatementParameterLayout layout = new StatementParameterLayout();
     ParameterSlot<Long> slot = layout.newQueryBlock().parameter(TABLE.id(), parameter);
     QueryParameters parameters = QueryParameters.of(parameter, null);
@@ -764,8 +763,8 @@ class EntityPlanSetTest {
                       @Override
                       public void release(Connection connection, ExecutionContext context) {}
                     }));
-    SelectQuery<Pet> base = operations.selectFrom(TABLE);
-    SelectQuery<Pet> filtered =
+    ExecutableSelectQuery<Pet> base = operations.selectFrom(TABLE);
+    ExecutableSelectQuery<Pet> filtered =
         base.where(TABLE.name().isNull())
             .and(TABLE.id().ge(1L))
             .and(TABLE.name().like("Mi%").or(TABLE.name().like("Mo%")));
@@ -894,8 +893,8 @@ class EntityPlanSetTest {
     assertSame(options, observed.get());
 
     observed.set(null);
-    SelectQuery<Pet> baseQuery = operations.selectFrom(TABLE);
-    SelectQuery<Pet> configuredQuery = baseQuery.withOptions(options);
+    ExecutableSelectQuery<Pet> baseQuery = operations.selectFrom(TABLE);
+    ExecutableSelectQuery<Pet> configuredQuery = baseQuery.withOptions(options);
     assertThrows(QueryExecutionException.class, configuredQuery::fetchList);
     assertSame(options, observed.get());
     assertSame(baseQuery, baseQuery.withOptions(ExecutionOptions.NONE));

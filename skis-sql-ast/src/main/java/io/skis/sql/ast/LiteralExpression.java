@@ -1,6 +1,7 @@
 package io.skis.sql.ast;
 
 import java.util.Objects;
+import org.jspecify.annotations.Nullable;
 
 /**
  * An allow-listed SQL literal that cannot carry application text or arbitrary runtime values.
@@ -16,7 +17,8 @@ public final class LiteralExpression<T> implements SqlExpression<T> {
     TRUE,
     FALSE,
     ZERO,
-    ONE
+    ONE,
+    DEFAULT
   }
 
   private static final LiteralExpression<Boolean> TRUE =
@@ -52,6 +54,12 @@ public final class LiteralExpression<T> implements SqlExpression<T> {
   public static <T> LiteralExpression<T> nullLiteral(Class<T> javaType) {
     return new LiteralExpression<>(
         Kind.NULL, javaType, SqlType.fromJavaType(javaType), Nullability.NULLABLE);
+  }
+
+  /** Creates SQL DEFAULT for the root of a writable assignment or VALUES item. */
+  public static <T> LiteralExpression<T> defaultValue(Class<T> javaType) {
+    return new LiteralExpression<>(
+        Kind.DEFAULT, javaType, SqlType.fromJavaType(javaType), Nullability.NULLABLE);
   }
 
   /** Creates the allow-listed numeric literal {@code 0} for a numeric Java representation. */
@@ -100,7 +108,7 @@ public final class LiteralExpression<T> implements SqlExpression<T> {
   }
 
   @Override
-  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
+  public boolean equals(@Nullable Object other) {
     return this == other
         || other instanceof LiteralExpression<?> literal
             && kind == literal.kind

@@ -39,7 +39,7 @@ public class EmployeeProjectLinkServiceImpl implements EmployeeProjectLinkServic
   public int updateLink(EmployeeProjectLink link) {
     Objects.requireNonNull(link, "link");
     link.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(LINK, link);
+    return skisExecutor.updateById(LINK).value(link).write();
   }
 
   @Override

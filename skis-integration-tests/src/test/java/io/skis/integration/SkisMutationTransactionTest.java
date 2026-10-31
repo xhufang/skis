@@ -39,14 +39,14 @@ class SkisMutationTransactionTest {
     assertEquals(Long.valueOf(0L), stored.version());
 
     Pet update = new Pet(7L, "Mimi", new BigDecimal("13.25"), true, 0L, "ignored");
-    assertEquals(1, executor.updateById(PetTable.petTable, update));
+    assertEquals(1, executor.updateById(PetTable.petTable).value(update).write());
     Pet updated = executor.findById(PetTable.petTable, 7L).orElseThrow();
     assertEquals(new BigDecimal("13.25"), updated.weight());
     assertTrue(updated.adopted());
     assertEquals(Long.valueOf(1L), updated.version());
 
     assertThrows(
-        OptimisticLockException.class, () -> executor.updateById(PetTable.petTable, update));
+        OptimisticLockException.class, () -> executor.updateById(PetTable.petTable).value(update).write());
     assertEquals(1, executor.deleteById(PetTable.petTable, 7L));
     assertTrue(executor.findById(PetTable.petTable, 7L).isEmpty());
   }
@@ -68,7 +68,7 @@ class SkisMutationTransactionTest {
             stored.adopted(),
             stored.version(),
             stored.displayLabel());
-    assertEquals(1, executor.updateById(alias, changed));
+    assertEquals(1, executor.updateById(alias).value(changed).write());
     assertEquals("Alias Updated", executor.findById(alias, inserted.id()).orElseThrow().name());
     assertEquals(1, executor.deleteById(alias, inserted.id()));
     assertTrue(executor.findById(alias, inserted.id()).isEmpty());
@@ -102,7 +102,7 @@ class SkisMutationTransactionTest {
     executor.insertInto(PetTable.petTable).value(inserted).write();
     Pet update = new Pet(11L, "Lulu", new BigDecimal("4.25"), true, null, "ignored");
 
-    assertEquals(1, executor.updateById(PetTable.petTable, update));
+    assertEquals(1, executor.updateById(PetTable.petTable).value(update).write());
 
     Pet stored = executor.findById(PetTable.petTable, 11L).orElseThrow();
     assertEquals(Long.valueOf(1L), stored.version());

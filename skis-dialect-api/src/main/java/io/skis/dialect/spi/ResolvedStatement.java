@@ -2,10 +2,10 @@ package io.skis.dialect.spi;
 
 import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.dialect.internal.DialectQueryFeatures;
-import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
 import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.MergeStatement;
@@ -58,6 +58,14 @@ public final class ResolvedStatement {
     }
     this.occurrences = collector.occurrences();
     this.sourceOccurrences = collector.sources();
+  }
+
+  static ResolvedStatement nestedQuery(SelectStatement query) {
+    return new ResolvedStatement(query, SemanticValidator.analyzeNestedQuery(query));
+  }
+
+  static ResolvedStatement mutationQuery(SelectStatement query, FromClause outer) {
+    return new ResolvedStatement(query, SemanticValidator.analyzeMutationQuery(query, outer));
   }
 
   /**
@@ -118,12 +126,16 @@ public final class ResolvedStatement {
   /**
    * Adds explicit target outputs to this exact, already validated mutation.
    *
-   * <p>The new wrapper validates its output ownership without reanalyzing the unchanged mutation.
-   * Queries and mutations that already have a result wrapper are rejected by the RETURNING grammar.
+   * <p>The new wrapper validates its output ownership and, when outputs carry parameters, the
+   * statement-wide parameter ordinals, without reanalyzing the unchanged mutation. Queries and
+   * mutations that already have a result wrapper are rejected by the RETURNING grammar.
    */
-  public ResolvedStatement returning(List<ColumnExpression<?, ?>> selections) {
+  public ResolvedStatement returning(List<? extends SqlExpression<?>> selections) {
     ExecutionListenerDispatcher.rejectReentrantCall();
-    return new ResolvedStatement(new ReturningStatement(statement, selections), null);
+    ReturningStatement returning = new ReturningStatement(statement, selections);
+    // Output parameters join the mutation's namespace; recheck only the statement-wide ordinals.
+    SemanticValidator.validateReturningParameters(returning);
+    return new ResolvedStatement(returning, null);
   }
 
   /** Whether this stage owns a complete query-block analysis. */

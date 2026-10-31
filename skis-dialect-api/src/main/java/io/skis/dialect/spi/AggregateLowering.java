@@ -21,10 +21,12 @@ import io.skis.sql.ast.HiddenSelection;
 import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InSubqueryPredicate;
+import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.MergeAction;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.OrderByItem;
 import io.skis.sql.ast.ParameterRelationSource;
@@ -35,7 +37,9 @@ import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ResolvedExpression;
 import io.skis.sql.ast.ResolvedStructureKey;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SetAssignment;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -99,47 +103,79 @@ final class AggregateLowering {
     return switch (statement) {
       case ReturningStatement returning -> {
         StatementAst lowered = mutation(returning.mutation(), target);
-        yield lowered == returning.mutation()
+        List<SqlExpression<?>> outputs =
+            mutationValues(returning.selections(), target, FromClause.of(returning.target()));
+        yield lowered == returning.mutation() && outputs == returning.selections()
             ? returning
-            : new ReturningStatement(lowered, returning.selections(), returning.form());
+            : new ReturningStatement(lowered, outputs, returning.form());
       }
       case ConflictInsertStatement conflict -> {
-        var assignments = mutationAssignments(conflict.assignments(), target);
-        var where = (SqlPredicate) mutationExpression(conflict.updateWhere(), target, false);
-        yield assignments.equals(conflict.assignments()) && where == conflict.updateWhere()
+        var insert = (InsertStatement) mutation(conflict.insert(), target);
+        FromClause scope = FromClause.of(conflict.target());
+        var assignments = mutationAssignments(conflict.assignments(), target, scope);
+        var where = (SqlPredicate) mutationExpression(conflict.updateWhere(), target, false, scope);
+        yield insert == conflict.insert()
+                && assignments == conflict.assignments()
+                && where == conflict.updateWhere()
             ? conflict
             : new ConflictInsertStatement(
-                conflict.insert(),
-                conflict.conflictColumns(),
-                assignments,
-                where,
-                conflict.doNothing());
+                insert, conflict.conflictColumns(), assignments, where, conflict.doNothing());
       }
       case MergeStatement merge -> {
-        var assignments = mutationAssignments(merge.assignments(), target);
-        var on = (SqlPredicate) mutationExpression(merge.on(), target, false);
-        var where = (SqlPredicate) mutationExpression(merge.matchedWhere(), target, false);
+        RelationSource source =
+            merge.source() == null ? null : mutationRelation(merge.source(), target);
+        // One scope per statement: MergeStatement.scope() allocates a FromClause per call.
+        FromClause scope = merge.scope();
+        var on = (SqlPredicate) mutationExpression(merge.on(), target, false, scope);
+        List<MergeAction> actions = new ArrayList<>(merge.actions().size());
+        boolean changed = source != merge.source() || on != merge.on();
+        for (var action : merge.actions()) {
+          var condition =
+              (SqlPredicate) mutationExpression(action.condition(), target, false, scope);
+          List<SetAssignment> assignments = new ArrayList<>(action.assignments().size());
+          boolean assignmentsChanged = false;
+          for (var item : action.assignments()) {
+            SetAssignment lowered;
+            if (item instanceof UpdateAssignment<?> assignment)
+              lowered = assignment(assignment, target, scope);
+            else {
+              var row = (RowAssignment) item;
+              var query = mutationQuery(row.query(), scope, target);
+              lowered = query == row.query() ? row : new RowAssignment(row.columns(), query);
+            }
+            assignmentsChanged |= lowered != item;
+            assignments.add(lowered);
+          }
+          var values = mutationValues(action.values(), target, scope);
+          boolean rewritten =
+              condition != action.condition() || assignmentsChanged || values != action.values();
+          changed |= rewritten;
+          actions.add(
+              rewritten
+                  ? new MergeAction(action.kind(), condition, assignments, action.columns(), values)
+                  : action);
+        }
         var values = mutationValues(merge.insertValues(), target);
-        yield assignments == merge.assignments()
-                && on == merge.on()
-                && where == merge.matchedWhere()
-                && values == merge.insertValues()
-            ? merge
-            : new MergeStatement(
-                merge.target(),
-                merge.source(),
-                on,
-                where,
-                assignments,
-                merge.insertColumns(),
-                values,
-                merge.keys());
+        changed |= values != merge.insertValues();
+        yield changed
+            ? new MergeStatement(
+                merge.target(), source, on, actions, merge.insertColumns(), values, merge.keys())
+            : merge;
       }
       case UpdateStatement update -> {
-        List<UpdateAssignment<?>> assignments = null;
+        // One scope per statement: UpdateStatement.scope() allocates a FromClause per call.
+        FromClause scope = update.scope();
+        List<SetAssignment> assignments = null;
         for (int index = 0; index < update.assignments().size(); index++) {
-          UpdateAssignment<?> original = update.assignments().get(index);
-          UpdateAssignment<?> lowered = assignment(original, target);
+          SetAssignment original = update.assignments().get(index);
+          SetAssignment lowered;
+          if (original instanceof UpdateAssignment<?> scalar)
+            lowered = assignment(scalar, target, scope);
+          else {
+            var row = (RowAssignment) original;
+            SelectStatement query = mutationQuery(row.query(), scope, target);
+            lowered = query == row.query() ? row : new RowAssignment(row.columns(), query);
+          }
           if (lowered != original && assignments == null) {
             assignments = new ArrayList<>(update.assignments().size());
             assignments.addAll(update.assignments().subList(0, index));
@@ -148,27 +184,100 @@ final class AggregateLowering {
             assignments.add(lowered);
           }
         }
-        SqlPredicate where = (SqlPredicate) mutationExpression(update.where(), target, false);
-        yield assignments == null && where == update.where()
+        SqlPredicate where =
+            (SqlPredicate) mutationExpression(update.where(), target, false, scope);
+        FromClause from = mutationSources(update.from(), target);
+        yield assignments == null && where == update.where() && from == update.from()
             ? update
             : new UpdateStatement(
-                update.target(), assignments == null ? update.assignments() : assignments, where);
+                update.target(),
+                assignments == null ? update.assignments() : assignments,
+                where,
+                from);
       }
       case DeleteStatement delete -> {
-        SqlPredicate where = (SqlPredicate) mutationExpression(delete.where(), target, false);
-        yield where == delete.where() ? delete : new DeleteStatement(delete.target(), where);
+        SqlPredicate where =
+            (SqlPredicate) mutationExpression(delete.where(), target, false, delete.scope());
+        FromClause using = mutationSources(delete.using(), target);
+        yield where == delete.where() && using == delete.using()
+            ? delete
+            : new DeleteStatement(delete.target(), where, using);
       }
-      // INSERT slots already obtain their types from the target columns and generated binder.
+      case InsertStatement insert -> {
+        SelectStatement query =
+            insert.query() == null
+                ? null
+                : (SelectStatement) lower(ResolvedStatement.nestedQuery(insert.query()), target);
+        List<SqlExpression<?>> values = mutationValues(insert.values(), target);
+        List<List<SqlExpression<?>>> additional = new ArrayList<>(insert.additionalRows().size());
+        boolean changed = query != insert.query() || values != insert.values();
+        for (var row : insert.additionalRows()) {
+          var lowered = mutationValues(row, target);
+          changed |= lowered != row;
+          additional.add(lowered);
+        }
+        yield changed
+            ? new InsertStatement(insert.target(), insert.columns(), values, additional, query)
+            : insert;
+      }
+      // Other mutation kinds are handled independently.
       default -> statement;
     };
   }
 
+  private static SelectStatement mutationQuery(
+      SelectStatement query, FromClause outer, PortableLowering.AggregateTarget target) {
+    ResolvedStatement input = ResolvedStatement.mutationQuery(query, outer);
+    QueryBlockAnalysis analysis = Objects.requireNonNull(input.queryAnalysis());
+    if (requiresUnLowering(analysis, target)) return query;
+    AggregateLowering lowering = new AggregateLowering(input, target);
+    for (var source : outer.occurrences())
+      lowering.qualifiers.add(source.effectiveQualifier().toLowerCase(Locale.ROOT));
+    return lowering.select(query, analysis);
+  }
+
+  private static @Nullable FromClause mutationSources(
+      @Nullable FromClause sources, PortableLowering.AggregateTarget target) {
+    if (sources == null) return null;
+    RelationSource root = mutationRelation(sources.root(), target);
+    List<JoinClause> joins = new ArrayList<>(sources.joins().size());
+    boolean changed = root != sources.root();
+    for (JoinClause join : sources.joins()) {
+      List<JoinClause> visible = new ArrayList<>(sources.joins().subList(0, joins.size()));
+      visible.add(new JoinClause(JoinType.CROSS, join.right(), null));
+      FromClause onScope = new FromClause(sources.root(), visible);
+      RelationSource right = mutationRelation(join.right(), target);
+      SqlPredicate original = join.on().orElse(null);
+      SqlPredicate on =
+          original == null
+              ? null
+              : (SqlPredicate) mutationExpression(original, target, false, onScope);
+      changed |= right != join.right() || on != original;
+      joins.add(
+          right == join.right() && on == original ? join : new JoinClause(join.type(), right, on));
+    }
+    return changed ? new FromClause(root, joins) : sources;
+  }
+
+  private static RelationSource mutationRelation(
+      RelationSource source, PortableLowering.AggregateTarget target) {
+    if (!(source
+        instanceof
+        DerivedRelationSource(SelectStatement statement, DerivedRelationReference reference)))
+      return source;
+    SelectStatement lowered =
+        (SelectStatement) lower(ResolvedStatement.nestedQuery(statement), target);
+    return lowered == statement ? source : new DerivedRelationSource(lowered, reference);
+  }
+
   private static List<UpdateAssignment<?>> mutationAssignments(
-      List<UpdateAssignment<?>> original, PortableLowering.AggregateTarget target) {
+      List<UpdateAssignment<?>> original,
+      PortableLowering.AggregateTarget target,
+      FromClause outer) {
     List<UpdateAssignment<?>> changed = null;
     for (int i = 0; i < original.size(); i++) {
       var before = original.get(i);
-      var after = assignment(before, target);
+      var after = assignment(before, target, outer);
       if (after != before && changed == null) {
         changed = new ArrayList<>(original.size());
         changed.addAll(original.subList(0, i));
@@ -178,24 +287,38 @@ final class AggregateLowering {
     return changed == null ? original : List.copyOf(changed);
   }
 
+  @SuppressWarnings("unchecked")
+  private static List<SqlExpression<?>> unchangedValues(List<? extends SqlExpression<?>> values) {
+    return (List<SqlExpression<?>>) values;
+  }
+
   private static List<SqlExpression<?>> mutationValues(
-      List<SqlExpression<?>> original, PortableLowering.AggregateTarget target) {
+      List<? extends SqlExpression<?>> original, PortableLowering.AggregateTarget target) {
+    return mutationValues(original, target, null);
+  }
+
+  private static List<SqlExpression<?>> mutationValues(
+      List<? extends SqlExpression<?>> original,
+      PortableLowering.AggregateTarget target,
+      @Nullable FromClause outer) {
     List<SqlExpression<?>> changed = null;
     for (int index = 0; index < original.size(); index++) {
       SqlExpression<?> before = original.get(index);
-      SqlExpression<?> after = mutationExpression(before, target, false);
+      SqlExpression<?> after = mutationExpression(before, target, false, outer);
       if (after != before && changed == null) {
         changed = new ArrayList<>(original.size());
         changed.addAll(original.subList(0, index));
       }
       if (changed != null) changed.add(after);
     }
-    return changed == null ? original : List.copyOf(changed);
+    return changed == null ? unchangedValues(original) : List.copyOf(changed);
   }
 
   private static <T> UpdateAssignment<T> assignment(
-      UpdateAssignment<T> assignment, PortableLowering.AggregateTarget target) {
-    SqlExpression<?> value = mutationExpression(assignment.value(), target, false);
+      UpdateAssignment<T> assignment,
+      PortableLowering.AggregateTarget target,
+      @Nullable FromClause outer) {
+    SqlExpression<?> value = mutationExpression(assignment.value(), target, false, outer);
     if (value == assignment.value()) {
       return assignment;
     }
@@ -205,13 +328,16 @@ final class AggregateLowering {
   }
 
   private static SqlExpression<?> mutationExpression(
-      SqlExpression<?> original, PortableLowering.AggregateTarget target, boolean typeValue) {
+      SqlExpression<?> original,
+      PortableLowering.AggregateTarget target,
+      boolean typeValue,
+      @Nullable FromClause outer) {
     List<? extends SqlExpression<?>> operands = AstExpressions.operands(original);
     boolean typeOperands = requiresTypedOperands(original, operands);
     List<SqlExpression<?>> rewritten = null;
     for (int index = 0; index < operands.size(); index++) {
       SqlExpression<?> operand = operands.get(index);
-      SqlExpression<?> lowered = mutationExpression(operand, target, typeOperands);
+      SqlExpression<?> lowered = mutationExpression(operand, target, typeOperands, outer);
       if (lowered != operand && rewritten == null) {
         rewritten = new ArrayList<>(operands.size());
         rewritten.addAll(operands.subList(0, index));
@@ -220,11 +346,18 @@ final class AggregateLowering {
         rewritten.add(lowered);
       }
     }
+    SelectStatement nested = AstExpressions.subquery(original);
+    SelectStatement loweredQuery =
+        nested == null
+            ? null
+            : outer == null
+                ? (SelectStatement) lower(ResolvedStatement.nestedQuery(nested), target)
+                : mutationQuery(nested, outer, target);
     SqlExpression<?> result =
-        rewritten == null
+        rewritten == null && loweredQuery == nested
             ? original
             : AstExpressions.rebuild(
-                original, operands, rewritten, AstExpressions.subquery(original));
+                original, operands, rewritten == null ? operands : rewritten, loweredQuery);
     return typedValue(result, target, typeValue, false);
   }
 

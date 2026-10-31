@@ -18,11 +18,11 @@ public interface MutationOperations {
   /** Starts a conditional physical delete. */
   <E> DeleteWrite<E> deleteFrom(QueryTable<E> table);
 
-  /** Updates one entity by its generated primary-key and optimistic-version metadata. */
-  <E> int updateById(QueryTable<E> table, E value);
+  /** Entity update by primary key, with optional optimistic version metadata. */
+  <E> EntityById<E> updateById(QueryTable<E> table);
 
-  /** Updates one entity with immutable statement overrides. */
-  <E> int updateById(QueryTable<E> table, E value, ExecutionOptions executionOptions);
+  /** Entity delete by primary key and optional version; bare-ID overloads remain available. */
+  <E> EntityById<E> deleteById(QueryTable<E> table);
 
   /** Deletes one entity by its generated single-column primary key. */
   <E> int deleteById(QueryTable<E> table, Object id);

@@ -24,7 +24,21 @@ final class QueryRelations {
   }
 
   static QueryRelation of(DerivedRelation relation) {
-    return QueryModels.relation(Objects.requireNonNull(relation, "relation")).queryRelation();
+    DefaultDerivedRelation source =
+        QueryModels.relation(Objects.requireNonNull(relation, "relation"));
+    return source.parameters().isEmpty()
+        ? source.queryRelation()
+        : new CapturedQueryRelation(source.queryRelation(), source.parameters());
+  }
+
+  static QueryParameters parameters(QueryRelation relation) {
+    return relation instanceof CapturedQueryRelation captured
+        ? captured.parameters()
+        : QueryParameters.empty();
+  }
+
+  static QueryRelation structure(QueryRelation relation) {
+    return relation instanceof CapturedQueryRelation captured ? captured.structure() : relation;
   }
 
   static RelationSource compile(QueryRelation relation, QueryConditionCompiler compiler) {
@@ -50,5 +64,21 @@ final class DerivedQueryRelation implements QueryRelation {
   @Override
   public @Nullable QueryTable<?> entityTable() {
     return null;
+  }
+}
+
+/** Temporary capture carrier, detached before a relation enters immutable SQL structure. */
+record CapturedQueryRelation(QueryRelation structure, QueryParameters parameters)
+    implements QueryRelation {
+
+  @Override
+  public RelationSource compile(QueryConditionCompiler compiler) {
+    compiler.include(parameters);
+    return structure.compile(compiler);
+  }
+
+  @Override
+  public @Nullable QueryTable<?> entityTable() {
+    return structure.entityTable();
   }
 }

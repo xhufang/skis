@@ -6,21 +6,25 @@ import io.skis.core.spi.ExecutionContext;
 import io.skis.jdbc.internal.JdbcExecutor;
 import io.skis.jdbc.internal.JdbcTransaction;
 import io.skis.mutation.DeleteWrite;
+import io.skis.mutation.EntityById;
 import io.skis.mutation.InsertInto;
 import io.skis.mutation.MergeInto;
 import io.skis.mutation.MutationOperations;
 import io.skis.mutation.MutationPlanCacheStatistics;
 import io.skis.mutation.UpdateSet;
 import io.skis.mutation.internal.MutationPlanCatalog;
+import io.skis.query.ExecutableSelectQuery;
+import io.skis.query.ExecutableSingleColumnSelect;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryPlanCacheStatistics;
+import io.skis.query.QueryRequest;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectDescription;
+import io.skis.query.Row2;
+import io.skis.query.Row3;
 import io.skis.query.SelectFromStep;
-import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
 import io.skis.query.internal.QueryPlanCatalog;
 import java.util.Objects;
@@ -61,49 +65,52 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E> SelectQuery<E> selectFrom(QueryTable<E> table) {
+  public <E> ExecutableSelectQuery<E> selectFrom(QueryTable<E> table) {
     return queries.selectFrom(table);
   }
 
   @Override
-  public <E> SelectFromStep<SelectQuery<E>> select(QueryTable<E> table) {
+  public <E> SelectFromStep<ExecutableSelectQuery<E>> select(QueryTable<E> table) {
     return queries.select(table);
   }
 
   @Override
-  public <E> SelectFromStep<SelectQuery<@Nullable E>> selectNullable(QueryTable<E> table) {
+  public <E> SelectFromStep<ExecutableSelectQuery<@Nullable E>> selectNullable(
+      QueryTable<E> table) {
     return queries.selectNullable(table);
   }
 
   @Override
-  public <V> SelectFromStep<SelectQuery<V>> select(NonNullSelectable<V> selectable) {
+  public <V> SelectFromStep<ExecutableSingleColumnSelect<V>> select(
+      NonNullSelectable<V> selectable) {
     return queries.select(selectable);
   }
 
   @Override
-  public <V> SelectFromStep<SelectQuery<@Nullable V>> select(Selectable<V> selectable) {
+  public <V> SelectFromStep<ExecutableSingleColumnSelect<@Nullable V>> select(
+      Selectable<V> selectable) {
     return queries.select(selectable);
   }
 
   @Override
-  public <V> SelectFromStep<SelectQuery<@Nullable V>> selectNullable(
+  public <V> SelectFromStep<ExecutableSingleColumnSelect<@Nullable V>> selectNullable(
       NonNullSelectable<V> selectable) {
     return queries.selectNullable(selectable);
   }
 
   @Override
-  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
+  public <R> SelectFromStep<ExecutableSelectQuery<R>> select(ProjectionSelection<R> projection) {
     return queries.select(projection);
   }
 
   @Override
-  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection) {
+  public <R> SelectFromStep<ExecutableSelectQuery<R>> select(ProjectionType<R> projection) {
     return queries.select(projection);
   }
 
   @Override
-  public <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description) {
-    return queries.query(description);
+  public <T extends @Nullable Object> T run(QueryRequest<T> request) {
+    return queries.run(request);
   }
 
   @Override
@@ -127,13 +134,13 @@ final class DefaultSkisExecutor implements SkisExecutor {
   }
 
   @Override
-  public <E> int updateById(QueryTable<E> table, E value) {
-    return mutations.updateById(table, value);
+  public <E> EntityById<E> updateById(QueryTable<E> table) {
+    return mutations.updateById(table);
   }
 
   @Override
-  public <E> int updateById(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    return mutations.updateById(table, value, executionOptions);
+  public <E> EntityById<E> deleteById(QueryTable<E> table) {
+    return mutations.deleteById(table);
   }
 
   @Override
@@ -230,5 +237,78 @@ final class DefaultSkisExecutor implements SkisExecutor {
   @Override
   public void clearMutationPlanCache() {
     mutationPlans.clearDynamicPlans();
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<@Nullable A, @Nullable B>>> select(
+      Selectable<A> first, Selectable<B> second) {
+    return queries.select(first, second);
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<A, @Nullable B>>> select(
+      NonNullSelectable<A> first, Selectable<B> second) {
+    return queries.select(first, second);
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<@Nullable A, B>>> select(
+      Selectable<A> first, NonNullSelectable<B> second) {
+    return queries.select(first, second);
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<A, B>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second) {
+    return queries.select(first, second);
+  }
+
+  @Override
+  public <A, B, C>
+      SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, @Nullable B, @Nullable C>>> select(
+          Selectable<A> first, Selectable<B> second, Selectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, @Nullable B, @Nullable C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, Selectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, B, @Nullable C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, Selectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, B, @Nullable C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, Selectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, @Nullable B, C>>> select(
+      Selectable<A> first, Selectable<B> second, NonNullSelectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, @Nullable B, C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, NonNullSelectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, B, C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third) {
+    return queries.select(first, second, third);
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, B, C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third) {
+    return queries.select(first, second, third);
   }
 }

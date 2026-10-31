@@ -45,7 +45,7 @@ class SqlLoggingConsumerTest {
     TestLoggerProvider.EVENTS.clear();
     LoggingPet.resetReads();
     executor.inTransaction(session -> {
-      assertEquals(1, session.updateById(table, new LoggingPet(1L, "secret-updated", 0L)));
+      assertEquals(1, session.updateById(table).value(new LoggingPet(1L, "secret-updated", 0L)).write());
       assertTrue(session.findById(table, 1L).isPresent());
       return null;
     });

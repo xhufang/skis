@@ -479,7 +479,7 @@ class ProjectionQueryTest {
   private static <R> QueryCompilation<R> compileSpecial(
       ProjectionType<R> projection, List<QueryJoin> joins) {
     SelectQueryState<R> state =
-        SelectQueryState.create(SelectedResult.specialProjection(projection), PET_TABLE);
+        SelectQueryState.create(SelectedResult.specialProjection(projection), QueryRelations.of(PET_TABLE));
     for (QueryJoin join : joins) {
       state = state.appendJoin(join.type(), join.right(), join.on());
     }

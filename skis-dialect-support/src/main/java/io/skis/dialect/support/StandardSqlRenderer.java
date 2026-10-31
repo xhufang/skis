@@ -47,6 +47,7 @@ import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeAction;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
@@ -59,9 +60,11 @@ import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
+import io.skis.sql.ast.SetAssignment;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -137,19 +140,20 @@ public final class StandardSqlRenderer implements SqlRenderer {
 
   private RenderContext contextFor(StatementAst statement) {
     return switch (statement) {
-      case ReturningStatement returning ->
-          returning.mutation() instanceof MergeStatement merge
-              ? new RenderContext(merge.scope())
-              : returning.mutation() instanceof ConflictInsertStatement conflict
-                  ? new RenderContext(FromClause.of(conflict.target()))
-                  : new RenderContext(returning.target());
+      case ReturningStatement returning -> contextFor(returning.mutation());
       case ConflictInsertStatement conflict -> new RenderContext(FromClause.of(conflict.target()));
       case MergeStatement merge -> new RenderContext(merge.scope());
       case SelectStatement select -> new RenderContext(select.fromClause());
       case CountAst count -> new RenderContext(count.fromClause());
       case InsertStatement insert -> new RenderContext(insert.target());
-      case UpdateStatement update -> new RenderContext(update.target());
-      case DeleteStatement delete -> new RenderContext(delete.target());
+      case UpdateStatement update ->
+          update.from() == null
+              ? new RenderContext(update.target())
+              : new RenderContext(update.scope());
+      case DeleteStatement delete ->
+          delete.using() == null
+              ? new RenderContext(delete.target())
+              : new RenderContext(delete.scope());
       default -> throw unsupported("statement", statement);
     };
   }
@@ -172,18 +176,31 @@ public final class StandardSqlRenderer implements SqlRenderer {
     boolean resultTable = statement.form() != ReturningStatement.Form.NATIVE;
     if (resultTable) {
       context.sql.append("SELECT ");
-      renderReturningColumns(statement, context);
+      renderReturningColumns(
+          statement, new RenderContext(statement.target(), context.sql, statement.resultAlias()));
       context.sql.append(
           statement.form() == ReturningStatement.Form.OLD_TABLE
               ? " FROM OLD TABLE ("
               : " FROM FINAL TABLE (");
       renderStatement(statement.mutation(), context);
       context.sql.append(')');
+      if (statement.resultAlias() != null)
+        context.sql.append(" AS ").append(identifierRules.quote(statement.resultAlias().value()));
     } else {
       renderStatement(statement.mutation(), context);
       context.sql.append(" RETURNING ");
-      renderReturningColumns(statement, context);
+      // RETURNING resolves names against the target and every FROM/USING item, so outputs are
+      // qualified exactly when such sources exist; plain mutations keep unqualified outputs.
+      renderReturningColumns(
+          statement,
+          new RenderContext(
+              statement.target(), context.sql, null, hasMutationSources(statement.mutation())));
     }
+  }
+
+  private static boolean hasMutationSources(StatementAst mutation) {
+    return mutation instanceof UpdateStatement update && update.from() != null
+        || mutation instanceof DeleteStatement delete && delete.using() != null;
   }
 
   private void renderReturningColumns(ReturningStatement statement, RenderContext context) {
@@ -191,7 +208,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       if (index > 0) {
         context.sql.append(", ");
       }
-      renderColumnName(statement.selections().get(index), context);
+      renderExpression(statement.selections().get(index), context);
     }
   }
 
@@ -345,7 +362,12 @@ public final class StandardSqlRenderer implements SqlRenderer {
       }
       renderColumnName(statement.columns().get(index), context);
     }
-    context.sql.append(") VALUES (");
+    context.sql.append(") ");
+    if (statement.query() != null) {
+      renderSelect(statement.query(), context.relationChild(statement.query().fromClause()));
+      return;
+    }
+    context.sql.append("VALUES (");
     for (int index = 0; index < statement.values().size(); index++) {
       if (index > 0) {
         context.sql.append(", ");
@@ -353,6 +375,14 @@ public final class StandardSqlRenderer implements SqlRenderer {
       renderExpression(statement.values().get(index), context);
     }
     context.sql.append(')');
+    for (var row : statement.additionalRows()) {
+      context.sql.append(", (");
+      for (int index = 0; index < row.size(); index++) {
+        if (index > 0) context.sql.append(", ");
+        renderExpression(row.get(index), context);
+      }
+      context.sql.append(')');
+    }
   }
 
   private void renderConflict(ConflictInsertStatement statement, RenderContext context) {
@@ -376,12 +406,23 @@ public final class StandardSqlRenderer implements SqlRenderer {
     }
   }
 
-  private void renderAssignments(List<UpdateAssignment<?>> assignments, RenderContext context) {
+  private void renderAssignments(List<? extends SetAssignment> assignments, RenderContext context) {
     for (int i = 0; i < assignments.size(); i++) {
       if (i > 0) context.sql.append(", ");
-      renderColumnName(assignments.get(i).column(), context);
-      context.sql.append(" = ");
-      renderExpression(assignments.get(i).value(), context);
+      var item = assignments.get(i);
+      if (item
+          instanceof UpdateAssignment<?>(ColumnExpression<?, ?> column, SqlExpression<?> value)) {
+        renderColumnName(column, context);
+        context.sql.append(" = ");
+        renderExpression(value, context);
+      } else if (item
+          instanceof RowAssignment(List<ColumnExpression<?, ?>> columns, SelectStatement query)) {
+        context.sql.append('(');
+        renderColumns(columns, context);
+        context.sql.append(") = (");
+        renderSelect(query, context.child(query.fromClause()));
+        context.sql.append(')');
+      }
     }
   }
 
@@ -394,45 +435,54 @@ public final class StandardSqlRenderer implements SqlRenderer {
       context.sql.append(") KEY (");
       renderColumns(statement.keys(), context);
       context.sql.append(") VALUES (");
-    } else {
-      context.sql.append(" USING ");
-      renderRelation(Objects.requireNonNull(statement.source()), context);
-      context.sql.append(" ON ");
-      renderPredicate(statement.on(), context);
-      if (!statement.assignments().isEmpty()) {
-        context.sql.append(" WHEN MATCHED AND ");
-        renderPredicate(statement.matchedWhere(), context);
-        context.sql.append(" THEN UPDATE SET ");
-        renderAssignments(statement.assignments(), context);
+      renderValues(statement.insertValues(), context);
+      context.sql.append(')');
+      return;
+    }
+    context.sql.append(" USING ");
+    renderRelation(Objects.requireNonNull(statement.source()), context);
+    context.sql.append(" ON ");
+    renderPredicate(statement.on(), context);
+    for (var action : statement.actions()) {
+      context.sql.append(
+          action.kind() == MergeAction.Kind.INSERT ? " WHEN NOT MATCHED" : " WHEN MATCHED");
+      // An always-true branch condition is the unconditional form for every action kind.
+      if (!(action.condition() instanceof BooleanPredicate(boolean value) && value)) {
+        context.sql.append(" AND ");
+        renderPredicate(action.condition(), context);
       }
-      if (statement.insertColumns().isEmpty()) return;
-      context.sql.append(" WHEN NOT MATCHED THEN INSERT (");
-      renderColumns(statement.insertColumns(), context);
-      context.sql.append(") VALUES (");
+      switch (action.kind()) {
+        case DELETE -> context.sql.append(" THEN DELETE");
+        case UPDATE -> {
+          context.sql.append(" THEN UPDATE SET ");
+          renderAssignments(action.assignments(), context);
+        }
+        case INSERT -> {
+          context.sql.append(" THEN INSERT (");
+          renderColumns(action.columns(), context);
+          context.sql.append(") VALUES (");
+          renderValues(action.values(), context);
+          context.sql.append(')');
+        }
+      }
     }
-    for (int i = 0; i < statement.insertValues().size(); i++) {
+  }
+
+  private void renderValues(List<SqlExpression<?>> values, RenderContext context) {
+    for (int i = 0; i < values.size(); i++) {
       if (i > 0) context.sql.append(", ");
-      renderExpression(statement.insertValues().get(i), context);
+      renderExpression(values.get(i), context);
     }
-    context.sql.append(')');
   }
 
   private void renderUpdate(UpdateStatement statement, RenderContext context) {
     context.sql.append("UPDATE ");
     renderTable(statement.target(), context.sql);
     context.sql.append(" SET ");
-    for (int index = 0; index < statement.assignments().size(); index++) {
-      if (index > 0) {
-        context.sql.append(", ");
-      }
-      UpdateAssignment<?> assignment = statement.assignments().get(index);
-      renderColumnName(assignment.column(), context);
-      context.sql.append(" = ");
-      if (assignment.value() instanceof IncrementExpression<?> increment) {
-        renderIncrement(increment, context, false);
-      } else {
-        renderExpression(assignment.value(), context);
-      }
+    renderAssignments(statement.assignments(), context);
+    if (statement.from() != null) {
+      context.sql.append(" FROM ");
+      renderFromClause(statement.from(), context);
     }
     context.sql.append(" WHERE ");
     renderPredicate(statement.where(), context);
@@ -441,6 +491,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
   private void renderDelete(DeleteStatement statement, RenderContext context) {
     context.sql.append("DELETE FROM ");
     renderTable(statement.target(), context.sql);
+    if (statement.using() != null) {
+      context.sql.append(" USING ");
+      renderFromClause(statement.using(), context);
+    }
     context.sql.append(" WHERE ");
     renderPredicate(statement.where(), context);
   }
@@ -526,7 +580,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
         renderComparison(comparison, context);
         context.sql.append(')');
       }
-      case IncrementExpression<?> increment -> renderIncrement(increment, context, true);
+      case IncrementExpression<?> increment -> renderIncrement(increment, context);
       case LogicalPredicate logical -> {
         context.sql.append('(');
         renderLogical(logical, context);
@@ -599,6 +653,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     context.sql.append(
         switch (literal.kind()) {
           case NULL -> "NULL";
+          case DEFAULT -> "DEFAULT";
           case TRUE -> "TRUE";
           case FALSE -> "FALSE";
           case ZERO -> "0";
@@ -666,16 +721,10 @@ public final class StandardSqlRenderer implements SqlRenderer {
     context.sql.append(')');
   }
 
-  private void renderIncrement(
-      IncrementExpression<?> expression, RenderContext context, boolean parenthesize) {
-    if (parenthesize) {
-      context.sql.append('(');
-    }
+  private void renderIncrement(IncrementExpression<?> expression, RenderContext context) {
+    context.sql.append('(');
     renderExpression(expression.operand(), context);
-    context.sql.append(" + 1");
-    if (parenthesize) {
-      context.sql.append(')');
-    }
+    context.sql.append(" + 1)");
   }
 
   private void renderNull(NullPredicate predicate, RenderContext context) {
@@ -811,7 +860,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       throw invalid("cannot render a column outside the FROM scope");
     }
     if (context.qualifyColumns) {
-      String qualifier = table.alias().map(Identifier::value).orElse(table.entity().table().name());
+      String qualifier = context.qualifier(table);
       context.sql.append(identifierRules.quote(qualifier));
       context.sql.append('.');
     }
@@ -923,6 +972,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
     private final @Nullable TableExpression<?> mutationTarget;
     private final @Nullable RenderContext parent;
     private final boolean qualifyColumns;
+    private final @Nullable Identifier resultQualifier;
     private final StringBuilder sql;
 
     private RenderContext(FromClause fromClause) {
@@ -930,6 +980,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.mutationTarget = null;
       this.parent = null;
       this.qualifyColumns = true;
+      this.resultQualifier = null;
       this.sql = new StringBuilder();
     }
 
@@ -938,6 +989,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.mutationTarget = null;
       this.parent = Objects.requireNonNull(parent, "parent");
       this.qualifyColumns = true;
+      this.resultQualifier = null;
       this.sql = parent.sql;
     }
 
@@ -946,6 +998,7 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.mutationTarget = null;
       this.parent = null;
       this.qualifyColumns = true;
+      this.resultQualifier = null;
       this.sql = Objects.requireNonNull(sql, "sql");
     }
 
@@ -954,7 +1007,36 @@ public final class StandardSqlRenderer implements SqlRenderer {
       this.mutationTarget = Objects.requireNonNull(mutationTarget, "mutationTarget");
       this.parent = null;
       this.qualifyColumns = false;
+      this.resultQualifier = null;
       this.sql = new StringBuilder();
+    }
+
+    private RenderContext(
+        TableExpression<?> target, StringBuilder sql, @Nullable Identifier resultQualifier) {
+      this(target, sql, resultQualifier, resultQualifier != null);
+    }
+
+    /** Without a result qualifier, qualified target columns use the target alias or table name. */
+    private RenderContext(
+        TableExpression<?> target,
+        StringBuilder sql,
+        @Nullable Identifier resultQualifier,
+        boolean qualifyColumns) {
+      this.fromClause = null;
+      this.mutationTarget = target;
+      this.parent = null;
+      this.qualifyColumns = qualifyColumns;
+      this.resultQualifier = resultQualifier;
+      this.sql = sql;
+    }
+
+    private String qualifier(TableExpression<?> table) {
+      if (mutationTarget == table && resultQualifier != null) return resultQualifier.value();
+      if (fromClause != null && fromClause.occurrenceOf(table).isPresent())
+        return table.alias().map(Identifier::value).orElse(table.entity().table().name());
+      return parent == null
+          ? table.alias().map(Identifier::value).orElse(table.entity().table().name())
+          : parent.qualifier(table);
     }
 
     private RenderContext child(FromClause childFromClause) {

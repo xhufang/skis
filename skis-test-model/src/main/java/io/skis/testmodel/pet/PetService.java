@@ -101,7 +101,7 @@ public final class PetService {
    * advances the database version without performing a hidden read.
    */
   public int updateById(Pet pet) {
-    return skisExecutor.updateById(PET, pet);
+    return skisExecutor.updateById(PET).value(pet).write();
   }
 
   /** Delete by the generated single-primary-key Fast Path. */
@@ -153,7 +153,7 @@ public final class PetService {
   public Pet updateAndReload(Pet pet, Runnable afterCommit) {
     return skisExecutor.inTransaction(
         session -> {
-          session.updateById(PET, pet);
+          session.updateById(PET).value(pet).write();
           session.afterCommit(afterCommit);
           return session.findById(PET, pet.id()).orElseThrow();
         });
@@ -186,7 +186,7 @@ public final class PetService {
     return skisExecutor.inTransaction(
         session -> {
           session.insertInto(PET).value(newPet).write();
-          session.updateById(PET, changedPet);
+          session.updateById(PET).value(changedPet).write();
           Pet inserted = session.findById(PET, newPet.id()).orElseThrow();
           Pet updated = session.findById(PET, changedPet.id()).orElseThrow();
           session.afterCommit(afterCommit);

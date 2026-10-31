@@ -222,10 +222,7 @@ record ResolvedResultShape<R extends @Nullable Object>(
 
   @SuppressWarnings({"rawtypes", "unchecked"})
   private static ResolvedValueMapping<?> resolveUntyped(
-      Selectable<?> selectable,
-      SqlExpression<?> expression,
-      TableRuntimeScope scope,
-      int ordinal) {
+      Selectable<?> selectable, SqlExpression<?> expression, TableRuntimeScope scope, int ordinal) {
     return resolveSelection((Selectable) selectable, (SqlExpression) expression, scope, ordinal);
   }
 

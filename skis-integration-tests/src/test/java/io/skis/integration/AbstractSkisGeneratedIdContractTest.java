@@ -79,10 +79,10 @@ abstract class AbstractSkisGeneratedIdContractTest {
       var second = executor(source, connection, new AtomicInteger(), new AtomicInteger(), generator, compilations);
       int precompiled = compilations.get();
       assertTrue(precompiled > 0);
-      Long firstId = first.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "first")).returning().write().get().id();
+      Long firstId = first.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "first")).returning().write().one().get().id();
       Long sessionId;
       try (var session = second.beginTransaction()) {
-        sessionId = session.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "session")).returning().write().get().id();
+        sessionId = session.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "session")).returning().write().one().get().id();
         session.commit();
       }
       assertTrue(sessionId > firstId);
@@ -136,16 +136,16 @@ abstract class AbstractSkisGeneratedIdContractTest {
       var result = executor.insertInto(IdentityIdRecordTable.identityIdRecordTable).value(input).returning().write();
       assertEquals(1, result.affectedRows());
       assertNull(input.id());
-      assertNotNull(result.get().id());
-      assertNull(result.get().note(), "full RETURNING uses the entity decoder's transient default");
-      assertNotSame(input, result.get());
+      assertNotNull(result.one().get().id());
+      assertNull(result.one().get().note(), "full RETURNING uses the entity decoder's transient default");
+      assertNotSame(input, result.one().get());
       assertEquals(1, statements.get(), "RETURNING must not issue a hidden SELECT");
       var idOnly = executor.insertInto(IdentityOnlyIdRecordTable.identityOnlyIdRecordTable).value(new IdentityOnlyIdRecord(null)).returning().write();
-      assertNotNull(idOnly.get().id());
+      assertNotNull(idOnly.one().get().id());
       var integer = executor.insertInto(IntegerIdentityIdRecordTable.integerIdentityIdRecordTable).value(new IntegerIdentityIdRecord(null, "integer")).returning().write();
-      assertInstanceOf(Integer.class, integer.get().id());
+      assertInstanceOf(Integer.class, integer.one().get().id());
       assertEquals("record", executor.findById(IdentityIdRecordTable.identityIdRecordTable,
-          result.get().id()).orElseThrow().name());
+          result.one().get().id()).orElseThrow().name());
     }
   }
 
@@ -156,20 +156,20 @@ abstract class AbstractSkisGeneratedIdContractTest {
       createTables(connection);
       var executor = executor(source, connection, new AtomicInteger(), new AtomicInteger());
       var assigned = new AssignedIdRecord(0L, "zero is assigned");
-      assertEquals(assigned, executor.insertInto(AssignedIdRecordTable.assignedIdRecordTable).value(assigned).returning().write().get());
+      assertEquals(assigned, executor.insertInto(AssignedIdRecordTable.assignedIdRecordTable).value(assigned).returning().write().one().get());
       assertEquals(1, executor.insertInto(AssignedIdRecordTable.assignedIdRecordTable).value(new AssignedIdRecord(1L, "count fast path")).write());
       var uuid = executor.insertInto(UuidIdRecordTable.uuidIdRecordTable).value(new UuidIdRecord(null, "uuid")).returning().write();
-      assertEquals(4, uuid.get().id().version());
-      assertEquals(2, uuid.get().id().variant());
+      assertEquals(4, uuid.one().get().id().version());
+      assertEquals(2, uuid.one().get().id().variant());
       var supplied = new UuidIdRecord(UUID.fromString("00000000-0000-1000-8000-000000000001"), "supplied");
-      assertEquals(supplied, executor.insertInto(UuidIdRecordTable.uuidIdRecordTable).value(supplied).returning().write().get());
+      assertEquals(supplied, executor.insertInto(UuidIdRecordTable.uuidIdRecordTable).value(supplied).returning().write().one().get());
       var snowflake = executor.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "snowflake")).returning().write();
-      assertTrue(snowflake.get().id() > 0);
-      assertEquals(17, (snowflake.get().id() >>> 12) & 1023);
+      assertTrue(snowflake.one().get().id() > 0);
+      assertEquals(17, (snowflake.one().get().id() >>> 12) & 1023);
       var versioned = executor.insertInto(VersionIdRecordTable.versionIdRecordTable).value(new VersionIdRecord(null, null, "version")).returning().write();
-      assertEquals(0L, versioned.get().version(), "RETURNING reads the initialized database version");
+      assertEquals(0L, versioned.one().get().version(), "RETURNING reads the initialized database version");
       assertEquals(Long.valueOf(0L), executor.findById(VersionIdRecordTable.versionIdRecordTable,
-          versioned.get().id()).orElseThrow().version());
+          versioned.one().get().id()).orElseThrow().version());
       assertThrows(JdbcExecutionException.class,
           () -> executor.insertInto(UuidIdRecordTable.uuidIdRecordTable).value(supplied).returning().write());
     }
@@ -187,7 +187,7 @@ abstract class AbstractSkisGeneratedIdContractTest {
       assertEquals(1, bean.writes);
       assertNotNull(bean.getId());
       var text = new UuidStringIdBean();
-      assertNotSame(text, executor.insertInto(UuidStringIdBeanTable.uuidStringIdBeanTable).value(text).returning().write().get());
+      assertNotSame(text, executor.insertInto(UuidStringIdBeanTable.uuidStringIdBeanTable).value(text).returning().write().one().get());
       assertEquals(1, text.reads);
       assertEquals(1, text.writes);
       assertEquals(UUID.fromString(text.getId()).toString(), text.getId());
@@ -234,13 +234,13 @@ abstract class AbstractSkisGeneratedIdContractTest {
       Long snowId;
       try (var session = executor.beginTransaction()) {
         session.insertInto(IdentityIdBeanTable.identityIdBeanTable).value(bean).returning().write();
-        snowId = session.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "rollback")).returning().write().get().id();
+        snowId = session.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "rollback")).returning().write().one().get().id();
         session.rollback();
       }
       assertNotNull(bean.getId());
       assertEquals(1, bean.writes);
       assertTrue(executor.findById(IdentityIdBeanTable.identityIdBeanTable, bean.getId()).isEmpty());
-      Long nextId = executor.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "after rollback")).returning().write().get().id();
+      Long nextId = executor.insertInto(SnowflakeIdRecordTable.snowflakeIdRecordTable).value(new SnowflakeIdRecord(null, "after rollback")).returning().write().one().get().id();
       assertTrue(nextId > snowId);
       assertEquals(17, (nextId >>> 12) & 1023);
     }

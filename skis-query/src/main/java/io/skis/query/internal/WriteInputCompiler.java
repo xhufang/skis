@@ -3,9 +3,32 @@ package io.skis.query.internal;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.metadata.PropertyMeta;
-import io.skis.query.*;
-import io.skis.sql.ast.*;
-import java.util.*;
+import io.skis.query.DerivedOutput;
+import io.skis.query.DerivedRelation;
+import io.skis.query.NonNullSelectable;
+import io.skis.query.QueryCondition;
+import io.skis.query.QueryTable;
+import io.skis.query.SelectSource;
+import io.skis.query.Selectable;
+import io.skis.query.ValuesSource;
+import io.skis.sql.ast.BooleanPredicate;
+import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.IncrementExpression;
+import io.skis.sql.ast.ParameterRelationSource;
+import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.RelationSource;
+import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SetAssignment;
+import io.skis.sql.ast.SqlExpression;
+import io.skis.sql.ast.SqlPredicate;
+import io.skis.sql.ast.UpdateAssignment;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import org.jspecify.annotations.Nullable;
 
 /** Invocation preparation: one dense parameter namespace for all write clauses. */
@@ -15,6 +38,7 @@ public final class WriteInputCompiler {
   private final StatementParameterLayout layout;
   private final QueryParameterBindings bindings = new QueryParameterBindings();
   private final QueryConditionCompiler compiler;
+  private List<SqlExpression<?>> outputs = List.of();
 
   public WriteInputCompiler(EntityRuntimeRegistry registry, QueryTable<?> target, int prefix) {
     this.registry = registry;
@@ -45,8 +69,60 @@ public final class WriteInputCompiler {
         : QueryConditions.compile(condition, compiler);
   }
 
+  public SelectStatement query(SelectSource<?> source) {
+    var model = QueryModels.description(source);
+    compiler.include(model.parameters);
+    return compiler.subquery(model.state);
+  }
+
   public SqlExpression<?> expression(Selectable<?> value) {
     return compiler.expression(value);
+  }
+
+  public RelationSource relation(QueryTable<?> source) {
+    return RelationSource.entity(MutationQuerySupport.table(source));
+  }
+
+  public RelationSource relation(DerivedRelation source) {
+    QueryRelation relation = QueryRelations.of(source);
+    compiler.include(QueryRelations.parameters(relation));
+    return QueryRelations.compile(QueryRelations.structure(relation), compiler);
+  }
+
+  public List<SetAssignment> setAssignments(
+      List<MutationQuerySupport.Assignment> inputs, boolean automaticVersion) {
+    List<SetAssignment> assignments = new ArrayList<>(inputs.size() + 1);
+    for (var input : inputs)
+      assignments.add(MutationQuerySupport.setAssignment(target, input, compiler));
+    if (automaticVersion)
+      target
+          .entity()
+          .version()
+          .ifPresent(version -> assignments.add(increment(version.property())));
+    return List.copyOf(assignments);
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  public SqlPredicate expectedVersion(
+      @Nullable Number expected, @Nullable NonNullSelectable<? extends Number> expression) {
+    var property = target.entity().version().orElseThrow().property();
+    SqlExpression value =
+        expression == null
+            ? values(List.of(selectable(property)), new Object[] {Objects.requireNonNull(expected)})
+                .getFirst()
+            : expression(expression);
+    return new ComparisonPredicate(column(property), ComparisonOperator.EQUAL, value);
+  }
+
+  @SuppressWarnings({"rawtypes", "unchecked"})
+  public void initializeVersion(
+      List<ColumnExpression<?, ?>> columns, List<SqlExpression<?>> values) {
+    var version = target.entity().version().orElse(null);
+    if (version == null
+        || columns.stream().anyMatch(column -> column.property() == version.property())) return;
+    Object initial = version.strategy().initialize((Class) version.property().javaType(), null);
+    columns.add(column(version.property()));
+    values.add(values(List.of(selectable(version.property())), new Object[] {initial}).getFirst());
   }
 
   public List<UpdateAssignment<?>> assignments(
@@ -72,7 +148,7 @@ public final class WriteInputCompiler {
     for (int i = 0; i < values.length; i++) {
       Selectable column = columns.get(i);
       QueryParameter parameter =
-          new DefaultQueryParameter<>(column.javaType(), column.nullability(), null);
+          new DefaultQueryParameter<>(column.javaType(), column.nullability());
       // Public values() has already captured mutable JDBC inputs; do not deep-copy again.
       compiler.include(QueryParameters.ofOwnedSnapshot(parameter, values[i]));
       result.add(compiler.parameter(column, parameter));
@@ -88,7 +164,7 @@ public final class WriteInputCompiler {
       DerivedOutput output = owned.outputs.get(i);
       Selectable template = ((DefaultDerivedOutput) output).selectable();
       QueryParameter parameter =
-          new DefaultQueryParameter<>(output.javaType(), output.nullability(), null);
+          new DefaultQueryParameter<>(output.javaType(), output.nullability());
       compiler.include(QueryParameters.ofOwnedSnapshot(parameter, owned.values[i]));
       parameters.add(compiler.parameter(template, parameter));
     }
@@ -99,6 +175,10 @@ public final class WriteInputCompiler {
     List<ColumnExpression<?, ?>> result = new ArrayList<>(columns.size());
     for (Selectable<?> column : columns) result.add(MutationQuerySupport.column(target, column));
     return List.copyOf(result);
+  }
+
+  public void returning(MutationQuerySupport.@Nullable Result<?> result) {
+    if (result != null) outputs = result.compile(compiler);
   }
 
   public MutationQuerySupport.Inputs finish() {
@@ -126,6 +206,8 @@ public final class WriteInputCompiler {
         new BooleanPredicate(true),
         List.copyOf(codecs),
         cacheable ? Optional.of(List.copyOf(identities)) : Optional.empty(),
-        parameters.projectValues(layout.parameterReferences()));
+        parameters.projectValues(layout.parameterReferences()),
+        null,
+        outputs);
   }
 }

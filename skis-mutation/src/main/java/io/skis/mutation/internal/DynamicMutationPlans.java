@@ -14,7 +14,6 @@ import io.skis.dialect.support.SqlTemplate;
 import io.skis.jdbc.internal.CompiledMutationPlan;
 import io.skis.jdbc.internal.JdbcFingerprint;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
-import io.skis.mapping.spi.InsertArguments;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.JdbcWriteContext;
 import io.skis.mapping.spi.ParameterBinder;
@@ -26,7 +25,7 @@ import io.skis.query.internal.MutationQuerySupport.Inputs;
 import io.skis.query.internal.MutationQuerySupport.Result;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ParameterSlot;
-import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.StatementAst;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
@@ -71,11 +70,6 @@ final class DynamicMutationPlans {
     }
   }
 
-  static final class InsertRequest<E, R> {
-    final Request<Plan<R, E>> assigned = new Request<>();
-    final Request<Plan<R, InsertArguments<E>>> generated = new Request<>();
-  }
-
   private record Lookup<T>(@Nullable Key key, Supplier<T> compile) {}
 
   private <T> T resolve(
@@ -102,6 +96,21 @@ final class DynamicMutationPlans {
     return registry;
   }
 
+  int batchParameterLimit(int configured) {
+    return switch (dialect.maxStatementParameters().kind()) {
+      case EXPLICIT ->
+          Math.min(configured, dialect.maxStatementParameters().maximum().orElseThrow());
+      case UNKNOWN, UNBOUNDED -> configured;
+    };
+  }
+
+  void validateBatchParameters(int count, int configured) {
+    if (count > batchParameterLimit(configured))
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+          "batch statement exceeds its final parameter budget");
+  }
+
   boolean supportsGeneratedKeys() {
     return dialect.capabilities().supports(DialectFeature.JDBC_GENERATED_KEYS);
   }
@@ -109,8 +118,8 @@ final class DynamicMutationPlans {
   CompiledMutationPlan<@Nullable Object[]> count(
       Request<CompiledMutationPlan<@Nullable Object[]>> request,
       String operation,
-      StatementAst statement,
-      MutationQuerySupport.Inputs inputs,
+      ResolvedStatement resolved,
+      Inputs inputs,
       @Nullable OperationObservation observation) {
     Lookup<CompiledMutationPlan<@Nullable Object[]>> known = request.lookup;
     if (known != null) return cached(known.key(), observation, operation, known.compile());
@@ -122,25 +131,25 @@ final class DynamicMutationPlans {
           Key key =
               inputs
                   .cacheIdentity()
-                  .map(identity -> new Key(statement, null, identity))
+                  .map(identity -> new Key(resolved.statement(), null, identity))
                   .orElse(null);
           List<JdbcTypeCodec<?>> codecs = inputs.codecs();
           return new Lookup<>(
               key,
               () -> {
-                RenderedSql sql = render(statement);
+                RenderedSql sql = render(resolved);
                 return new CompiledMutationPlan<>(
                     operation, dialect.id(), sql, new ValuesBinder(sql.parameters(), codecs));
               });
         });
   }
 
-  <R> ConditionalPlan<R> conditional(
+  <R extends @Nullable Object> ConditionalPlan<R> conditional(
       Request<ConditionalPlan<R>> request,
       String operation,
-      StatementAst statement,
-      MutationQuerySupport.Inputs inputs,
-      MutationQuerySupport.Result<R> result,
+      ResolvedStatement resolved,
+      Inputs inputs,
+      Result<R> result,
       @Nullable OperationObservation observation) {
     Lookup<ConditionalPlan<R>> known = request.lookup;
     if (known != null) return cached(known.key(), observation, operation, known.compile());
@@ -148,132 +157,34 @@ final class DynamicMutationPlans {
         request,
         observation,
         operation,
-        () ->
-            conditionalLookup(
-                operation,
-                new ReturningStatement(statement, result.columns()),
-                null,
-                inputs,
-                result));
-  }
-
-  <R> ConditionalPlan<R> conditional(
-      Request<ConditionalPlan<R>> request,
-      ResolvedStatement resolved,
-      Inputs inputs,
-      Result<R> result,
-      @Nullable OperationObservation observation) {
-    Lookup<ConditionalPlan<R>> known = request.lookup;
-    if (known != null) return cached(known.key(), observation, "merge", known.compile());
-    return resolve(
-        request,
-        observation,
-        "merge",
         () -> {
-          ResolvedStatement returning = resolved.returning(result.columns());
-          return conditionalLookup("merge", returning.statement(), returning, inputs, result);
+          ResolvedStatement returning = resolved.returning(inputs.returningExpressions());
+          return conditionalLookup(operation, returning, inputs, result);
         });
   }
 
-  private <R> Lookup<ConditionalPlan<R>> conditionalLookup(
+  private <R extends @Nullable Object> Lookup<ConditionalPlan<R>> conditionalLookup(
       String operation,
-      StatementAst returning,
-      @Nullable ResolvedStatement resolved,
+      ResolvedStatement returning,
       MutationQuerySupport.Inputs inputs,
       MutationQuerySupport.Result<R> result) {
     Optional<?> identity = result.cacheIdentity(registry);
     Key key =
         identity.isPresent() && inputs.cacheIdentity().isPresent()
-            ? new Key(returning, identity.get(), inputs.cacheIdentity().orElseThrow())
+            ? new Key(returning.statement(), identity.get(), inputs.cacheIdentity().orElseThrow())
             : null;
     List<JdbcTypeCodec<?>> codecs = inputs.codecs();
-    int columnCount = result.columns().size();
+    int columnCount = inputs.returningExpressions().size();
     return new Lookup<>(
         key,
         () -> {
-          RenderedSql sql = resolved == null ? render(returning) : render(resolved);
+          RenderedSql sql = render(returning);
           CompiledMutationPlan<@Nullable Object[]> plan =
               new CompiledMutationPlan<>(
                   operation, dialect.id(), sql, new ValuesBinder(sql.parameters(), codecs));
-          RowDecoder<R> decoder = result.decoder(registry);
+          RowDecoder<R> decoder = result.decoder(registry, inputs.returningExpressions());
           return new ConditionalPlan<>(plan, decoder, columnCount);
         });
-  }
-
-  <E, R, P> Plan<R, P> insert(
-      Request<Plan<R, P>> request,
-      StatementAst statement,
-      EntityMutationPlanSet<E> entity,
-      CompiledMutationPlan<P> base,
-      MutationQuerySupport.Result<R> result,
-      boolean readKey,
-      @Nullable OperationObservation observation) {
-    Lookup<Plan<R, P>> known = request.lookup;
-    if (known != null) return cached(known.key(), observation, "insert", known.compile());
-    return resolve(
-        request,
-        observation,
-        "insert",
-        () -> {
-          ParameterBinder<P> binder = base.parameterBinder();
-          List<ColumnExpression<?, ?>> columns = new ArrayList<>();
-          for (var column : result.columns()) {
-            columns.add(entity.returningColumn(column.property()));
-          }
-          int found = -1;
-          if (readKey) {
-            for (int index = 0; index < columns.size(); index++) {
-              if (columns.get(index).property() == entity.idProperty()) {
-                found = index;
-                break;
-              }
-            }
-            if (found < 0) {
-              found = columns.size();
-              columns.add(entity.returningColumn(entity.idProperty()));
-            }
-          }
-          int keyIndex = found + 1;
-          ReturningStatement returning = new ReturningStatement(statement, columns);
-          Key key =
-              result
-                  .cacheIdentity(registry)
-                  .map(identity -> new Key(returning, identity, List.of(readKey)))
-                  .orElse(null);
-          return new Lookup<>(
-              key,
-              () -> {
-                RenderedSql sql = render(returning);
-                if (!sql.parameters().equals(base.renderedSql().parameters())) {
-                  throw MutationException.of(
-                      SkisErrorCode.MUTATION_PARAMETER_SHAPE,
-                      "RETURNING parameter layout cannot be consumed by the generated insert binder");
-                }
-                RowDecoder<R> decoder = result.decoder(registry);
-                JdbcTypeCodec<?> keyCodec = entity.idCodec();
-                RowDecoder<Returned<R>> rows =
-                    (rs, context) -> {
-                      R value =
-                          Objects.requireNonNull(
-                              decoder.decode(rs, context), "null returning value");
-                      Object id = readKey ? keyCodec.read(rs, keyIndex, context) : null;
-                      if (readKey && !entity.idProperty().javaType().isInstance(id)) {
-                        throw MutationException.of(
-                            SkisErrorCode.MUTATION_GENERATED_KEY_INVALID,
-                            "RETURNING did not provide a valid generated primary key");
-                      }
-                      return new Returned<>(value, id);
-                    };
-                return new Plan<>(
-                    new CompiledMutationPlan<>("insert", dialect.id(), sql, binder),
-                    rows,
-                    columns.size());
-              });
-        });
-  }
-
-  private RenderedSql render(StatementAst statement) {
-    return rendered(SqlCompiler.compile(statement, dialect));
   }
 
   private RenderedSql render(ResolvedStatement resolved) {
@@ -295,14 +206,19 @@ final class DynamicMutationPlans {
     return new RenderedSql(template.sql(), template.parameterLayout().slots());
   }
 
+  private RenderedSql renderedBatch(SqlTemplate template, int budget) {
+    validateBatchParameters(template.parameterLayout().size(), budget);
+    return new RenderedSql(template.sql(), template.parameterLayout().slots());
+  }
+
   /** Shares the existing bounded cache and only captures value-free compiler inputs. */
-  <R> StructuredPlan<R> structured(
+  <R extends @Nullable Object> StructuredPlan<R> structured(
       Request<StructuredPlan<R>> request,
       StructuredWrites.Prepared prepared,
       MutationQuerySupport.@Nullable Result<R> result,
       boolean readKey,
       @Nullable OperationObservation observation) {
-    String operation = prepared.merge() ? "merge" : "insert";
+    String operation = prepared.operation();
     Lookup<StructuredPlan<R>> known = request.lookup;
     if (known != null) return cached(known.key(), observation, operation, known.compile());
     return resolve(
@@ -314,13 +230,14 @@ final class DynamicMutationPlans {
           ParameterBinder<?> prefix = prepared.prefix();
           int prefixCount = prepared.prefixCount();
           var entity = prepared.entityPlans();
-          List<ColumnExpression<?, ?>> columns = new ArrayList<>();
-          if (result != null) columns.addAll(result.columns());
+          List<SqlExpression<?>> columns = new ArrayList<>();
+          if (result != null) columns.addAll(inputs.returningExpressions());
           int keyIndex = -1;
           if (readKey) {
             var id = Objects.requireNonNull(entity).idProperty();
             for (int i = 0; i < columns.size(); i++)
-              if (columns.get(i).property() == id) keyIndex = i;
+              if (columns.get(i) instanceof ColumnExpression<?, ?> column
+                  && column.property() == id) keyIndex = i;
             if (keyIndex < 0) {
               keyIndex = columns.size();
               columns.add(prepared.idColumn());
@@ -349,25 +266,20 @@ final class DynamicMutationPlans {
           return new Lookup<>(
               key,
               () -> {
-                RenderedSql sql = render(resolved);
-                for (int i = 0; i < prefixCount; i++) {
-                  if (i >= sql.parameters().size() || sql.parameters().get(i).ordinal() != i)
-                    throw MutationException.of(
-                        SkisErrorCode.MUTATION_PARAMETER_SHAPE,
-                        "structured INSERT changed the generated binder prefix");
-                }
+                RenderedSql sql =
+                    prepared.parameterBudget() == 0
+                        ? render(resolved)
+                        : renderedBatch(
+                            SqlCompiler.compile(resolved, dialect), prepared.parameterBudget());
                 CompiledMutationPlan<StructuredWrites.Arguments> compiled =
                     new CompiledMutationPlan<>(
                         operation,
                         dialect.id(),
                         sql,
-                        new StructuredBinder(
-                            prefix,
-                            prefixCount,
-                            sql.parameters().subList(prefixCount, sql.parameters().size()),
-                            codecs));
-                if (outputCount == 0) return new StructuredPlan<>(compiled, null, 0);
-                RowDecoder<R> values = result == null ? null : result.decoder(registry);
+                        StructuredBinder.create(prefix, prefixCount, sql.parameters(), codecs));
+                if (outputCount == 0) return new StructuredPlan<>(compiled, null, 0, null);
+                RowDecoder<R> values =
+                    result == null ? null : result.decoder(registry, inputs.returningExpressions());
                 RowDecoder<Returned<R>> decoder =
                     (rs, context) -> {
                       Object id = idCodec == null ? null : idCodec.read(rs, idIndex, context);
@@ -380,24 +292,55 @@ final class DynamicMutationPlans {
                           values == null
                               ? (R) Objects.requireNonNull(id)
                               : values.decode(rs, context);
-                      return new Returned<>(Objects.requireNonNull(value), id);
+                      return new Returned<>(value, id);
                     };
-                return new StructuredPlan<>(compiled, decoder, outputCount);
+                return new StructuredPlan<>(compiled, decoder, outputCount, values);
               });
         });
   }
 
-  record StructuredPlan<R>(
+  record StructuredPlan<R extends @Nullable Object>(
       CompiledMutationPlan<StructuredWrites.Arguments> statement,
       @Nullable RowDecoder<Returned<R>> decoder,
-      int columnCount) {}
+      int columnCount,
+      @Nullable RowDecoder<R> outputDecoder) {}
+
+  private record TailParameter(int offset, ParameterSlot<?> slot) {}
 
   private record StructuredBinder(
       @Nullable ParameterBinder<?> prefix,
       int prefixCount,
-      List<ParameterSlot<?>> positions,
+      int prefixOffset,
+      int parameterCount,
+      List<TailParameter> tail,
       List<JdbcTypeCodec<?>> codecs)
       implements ParameterBinder<StructuredWrites.Arguments> {
+
+    static StructuredBinder create(
+        @Nullable ParameterBinder<?> prefix,
+        int prefixCount,
+        List<ParameterSlot<?>> slots,
+        List<JdbcTypeCodec<?>> codecs) {
+      int offset = 0, seen = 0;
+      List<TailParameter> tail = new ArrayList<>(slots.size() - prefixCount);
+      for (int index = 0; index < slots.size(); index++) {
+        ParameterSlot<?> slot = slots.get(index);
+        if (slot.ordinal() < prefixCount) {
+          if (seen == 0) offset = index;
+          if (slot.ordinal() != seen || index != offset + seen)
+            throw MutationException.of(
+                SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+                "structured INSERT changed the generated binder segment");
+          seen++;
+        } else tail.add(new TailParameter(index, slot));
+      }
+      if (seen != prefixCount)
+        throw MutationException.of(
+            SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+            "structured INSERT omitted generated binder inputs");
+      return new StructuredBinder(
+          prefix, prefixCount, offset, slots.size(), List.copyOf(tail), codecs);
+    }
 
     @Override
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -409,19 +352,23 @@ final class DynamicMutationPlans {
         throws SQLException {
       if (prefix != null
           && ((ParameterBinder) prefix)
-                  .bind(statement, firstIndex, Objects.requireNonNull(arguments.base()), context)
-              != firstIndex + prefixCount)
-        throw new SQLException("generated INSERT binder did not bind its declared prefix");
-      for (int i = 0; i < positions.size(); i++) {
-        int ordinal = positions.get(i).ordinal() - prefixCount;
+                  .bind(
+                      statement,
+                      firstIndex + prefixOffset,
+                      Objects.requireNonNull(arguments.base()),
+                      context)
+              != firstIndex + prefixOffset + prefixCount)
+        throw new SQLException("generated INSERT binder did not bind its declared segment");
+      for (TailParameter position : tail) {
+        int ordinal = position.slot().ordinal() - prefixCount;
         ValuesBinder.bindValue(
             codecs.get(ordinal),
             statement,
-            firstIndex + prefixCount + i,
+            firstIndex + position.offset(),
             arguments.values()[ordinal],
             context);
       }
-      return firstIndex + prefixCount + positions.size();
+      return firstIndex + parameterCount;
     }
 
     @Override
@@ -437,16 +384,16 @@ final class DynamicMutationPlans {
           && ((ParameterBinder) prefix)
                   .bindObserved(
                       statement,
-                      firstIndex,
+                      firstIndex + prefixOffset,
                       Objects.requireNonNull(arguments.base()),
                       context,
                       observer)
-              != firstIndex + prefixCount)
-        throw new SQLException("generated INSERT binder did not bind its declared prefix");
+              != firstIndex + prefixOffset + prefixCount)
+        throw new SQLException("generated INSERT binder did not bind its declared segment");
       boolean observing = observer.needsMore();
-      for (int i = 0; i < positions.size(); i++) {
-        ParameterSlot<?> slot = positions.get(i);
-        int ordinal = slot.ordinal() - prefixCount, index = firstIndex + prefixCount + i;
+      for (TailParameter position : tail) {
+        ParameterSlot<?> slot = position.slot();
+        int ordinal = slot.ordinal() - prefixCount, index = firstIndex + position.offset();
         Object value = arguments.values()[ordinal];
         ValuesBinder.bindValue(codecs.get(ordinal), statement, index, value, context);
         if (observing) {
@@ -454,7 +401,7 @@ final class DynamicMutationPlans {
           observing = observer.needsMore();
         }
       }
-      return firstIndex + prefixCount + positions.size();
+      return firstIndex + parameterCount;
     }
   }
 
@@ -573,7 +520,6 @@ final class DynamicMutationPlans {
         switch (completed) {
           case null -> null;
           case CompiledMutationPlan<?> count -> count;
-          case Plan<?, ?> returning -> returning.statement();
           case ConditionalPlan<?> conditional -> conditional.statement();
           case StructuredPlan<?> structured -> structured.statement();
           default -> throw new IllegalStateException("unknown mutation plan type");
@@ -587,13 +533,10 @@ final class DynamicMutationPlans {
         failure);
   }
 
-  record Plan<R, P>(
-      CompiledMutationPlan<P> statement, RowDecoder<Returned<R>> decoder, int columnCount) {}
-
-  record ConditionalPlan<R>(
+  record ConditionalPlan<R extends @Nullable Object>(
       CompiledMutationPlan<@Nullable Object[]> statement, RowDecoder<R> decoder, int columnCount) {}
 
-  record Returned<R>(R value, @Nullable Object key) {
+  record Returned<R extends @Nullable Object>(R value, @Nullable Object key) {
     @Override
     public String toString() {
       return "ReturnedRow[values redacted]";

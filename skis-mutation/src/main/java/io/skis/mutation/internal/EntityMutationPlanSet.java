@@ -32,12 +32,12 @@ final class EntityMutationPlanSet<E> {
   private final @Nullable CompiledMutationPlan<E> checkedUpdate;
   private final @Nullable CompiledMutationPlan<E> uncheckedUpdate;
   private final CompiledMutationPlan<Object> delete;
+  private final CompiledMutationPlan<E> checkedDelete, uncheckedDelete;
   private final @Nullable CompiledMutationPlan<InsertArguments<E>> generatedInsert;
   private final boolean recordEntity;
   private final PropertyMeta<E, ?> idProperty;
   private final IdGeneration generation;
   private final JdbcTypeCodec<?> idCodec;
-  private final RuntimeMutationTable<E> insertTable;
   private final InsertStatement insertStatement;
 
   EntityMutationPlanSet(
@@ -45,7 +45,9 @@ final class EntityMutationPlanSet<E> {
       @Nullable CompiledMutationPlan<E> insert,
       @Nullable CompiledMutationPlan<E> checkedUpdate,
       @Nullable CompiledMutationPlan<E> uncheckedUpdate,
-      CompiledMutationPlan<Object> delete) {
+      CompiledMutationPlan<Object> delete,
+      CompiledMutationPlan<E> checkedDelete,
+      CompiledMutationPlan<E> uncheckedDelete) {
     this.model = Objects.requireNonNull(model, "model");
     this.binders =
         model
@@ -61,12 +63,14 @@ final class EntityMutationPlanSet<E> {
     this.checkedUpdate = checkedUpdate;
     this.uncheckedUpdate = uncheckedUpdate;
     this.delete = Objects.requireNonNull(delete, "delete");
+    this.checkedDelete = Objects.requireNonNull(checkedDelete, "checkedDelete");
+    this.uncheckedDelete = Objects.requireNonNull(uncheckedDelete, "uncheckedDelete");
     this.recordEntity = model.entity().javaType().isRecord();
     var primaryKey = model.entity().primaryKey().orElseThrow();
     this.idProperty = primaryKey.properties().getFirst();
     this.generation = primaryKey.generation();
     this.idCodec = model.property(idProperty).codec();
-    this.insertTable = new RuntimeMutationTable<>(model.entity());
+    RuntimeMutationTable<E> insertTable = new RuntimeMutationTable<>(model.entity());
     List<ColumnExpression<?, ?>> columns = new ArrayList<>();
     List<SqlExpression<?>> values = new ArrayList<>();
     for (var property : model.entity().properties()) {
@@ -108,11 +112,6 @@ final class EntityMutationPlanSet<E> {
     return insertStatement;
   }
 
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  ColumnExpression<?, ?> returningColumn(PropertyMeta<?, ?> property) {
-    return insertTable.expression((PropertyMeta) property);
-  }
-
   CompiledMutationPlan<E> insert() {
     if (insert == null) {
       throw MutationException.of(
@@ -151,15 +150,14 @@ final class EntityMutationPlanSet<E> {
     return idCodec;
   }
 
-  UpdateExecution<E> update(E value) {
-    Object expectedVersion = readExpectedVersion(value);
-    CompiledMutationPlan<E> selected = expectedVersion == null ? uncheckedUpdate : checkedUpdate;
-    if (selected == null) {
+  CompiledMutationPlan<E> entityPlan(boolean delete, boolean checked) {
+    if (delete) return checked ? checkedDelete : uncheckedDelete;
+    CompiledMutationPlan<E> plan = checked ? checkedUpdate : uncheckedUpdate;
+    if (plan == null)
       throw MutationException.of(
           SkisErrorCode.MUTATION_NO_UPDATABLE_PROPERTIES,
           "entity '" + entity().entityName() + "' has no updatable properties");
-    }
-    return new UpdateExecution<>(selected, expectedVersion != null);
+    return plan;
   }
 
   @Nullable Object readExpectedVersion(E value) {
@@ -189,6 +187,4 @@ final class EntityMutationPlanSet<E> {
     }
     return expected;
   }
-
-  record UpdateExecution<E>(CompiledMutationPlan<E> plan, boolean versionChecked) {}
 }

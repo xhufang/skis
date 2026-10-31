@@ -17,6 +17,7 @@ import io.skis.metadata.EntityMeta;
 import io.skis.metadata.IdGeneration;
 import io.skis.metadata.PropertyMeta;
 import io.skis.mutation.DeleteWrite;
+import io.skis.mutation.EntityById;
 import io.skis.mutation.InsertInto;
 import io.skis.mutation.MergeInto;
 import io.skis.mutation.MutationOperations;
@@ -35,7 +36,7 @@ import org.jspecify.annotations.Nullable;
 /** Default immutable entity mutation facade. */
 final class DefaultMutationOperations implements MutationOperations {
 
-  private final JdbcExecutor jdbcExecutor;
+  final JdbcExecutor jdbcExecutor;
   private final MutationPlanCatalog planCatalog;
   private final ExecutionListenerDispatcher listenerDispatcher;
   private final String dialectId;
@@ -88,7 +89,7 @@ final class DefaultMutationOperations implements MutationOperations {
     requirePlanSet(requireEntity(table));
   }
 
-  private void beforeWrite() {
+  void beforeWrite() {
     ExecutionListenerDispatcher.rejectReentrantCall();
     BooleanSupplier active = activeSession;
     if (active != null && !active.getAsBoolean()) {
@@ -179,124 +180,17 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  <E, R> Written<R> writeInsertReturning(
-      QueryTable<E> table,
-      E value,
-      ExecutionOptions options,
-      MutationQuerySupport.Result<R> result,
-      DynamicMutationPlans.InsertRequest<E, R> request) {
+  int writeConditional(MutationRequests.WriteRequest<?> request, ExecutionOptions options) {
     beforeWrite();
-    OperationObservation observation = startObservation(ExecutionOperationKind.INSERT);
-    try {
-      EntityMutationPlanSet<E> plans = requirePlanSet(requireEntity(table));
-      requireEntityValue(plans.entity(), value);
-      Object originalId = readId(plans, value);
-      validateId(plans, originalId);
-      IdGeneration generation = plans.generation();
-      ExecutionContext context = ExecutionContext.of(options);
-      DynamicMutationPlans.Returned<R> returned;
-      if (generation == IdGeneration.ASSIGNED) {
-        DynamicMutationPlans.Plan<R, E> plan =
-            dynamicPlans()
-                .insert(
-                    request.assigned,
-                    plans.insertStatement(),
-                    plans,
-                    plans.insert(),
-                    result,
-                    false,
-                    observation);
-        returned = executeInsertReturning(plan, value, context, observation);
-      } else {
-        boolean readKey = !plans.recordEntity();
-        DynamicMutationPlans.Plan<R, InsertArguments<E>> plan =
-            dynamicPlans()
-                .insert(
-                    request.generated,
-                    plans.insertStatement(),
-                    plans,
-                    plans.generatedInsert(),
-                    result,
-                    readKey,
-                    observation);
-        Object effectiveId = originalId;
-        if (effectiveId == null && generation != IdGeneration.IDENTITY) {
-          effectiveId = generateId(plans);
-        }
-        returned =
-            executeInsertReturning(
-                plan, new InsertArguments<>(value, effectiveId), context, observation);
-      }
-      if (generation != IdGeneration.ASSIGNED
-          && !plans.recordEntity()
-          && !Objects.equals(originalId, returned.key())) {
-        try {
-          E applied = plans.idAccess().apply(value, Objects.requireNonNull(returned.key()));
-          requireEntityValue(plans.entity(), applied);
-        } catch (SQLException | RuntimeException failure) {
-          throw idFailure(
-              plans,
-              SkisErrorCode.MUTATION_ID_APPLY_FAILED,
-              "primary-key application failed after SQL and resource completion",
-              failure);
-        }
-      }
-      Written<R> completed = new DefaultWritten<>(1, returned.value());
-      completeSucceeded(observation);
-      return completed;
-    } catch (RuntimeException | Error failure) {
-      completeFailed(observation, failure);
-      throw failure;
-    }
-  }
-
-  private <R, P> DynamicMutationPlans.Returned<R> executeInsertReturning(
-      DynamicMutationPlans.Plan<R, P> plan,
-      P parameters,
-      ExecutionContext context,
-      @Nullable OperationObservation observation) {
-    return jdbcExecutor.executeReturningOne(
-        plan.statement(),
-        plan.decoder(),
-        plan.columnCount(),
-        parameters,
-        context,
-        observation,
-        StatementPurpose.PRIMARY);
-  }
-
-  <E> int writeEmptyBatch(QueryTable<E> table, List<E> entities, ExecutionOptions options) {
-    Objects.requireNonNull(options, "options");
-    beforeWrite();
-    OperationObservation observation = startObservation(ExecutionOperationKind.INSERT);
-    try {
-      requireWritable(table);
-      if (!entities.isEmpty()) {
-        throw MutationException.of(
-            SkisErrorCode.MUTATION_UNSUPPORTED,
-            "nonempty collection insertion requires the batch execution capability");
-      }
-      completeSucceeded(observation);
-      return 0;
-    } catch (RuntimeException | Error failure) {
-      completeFailed(observation, failure);
-      throw failure;
-    }
-  }
-
-  int writeConditional(MutationRequests.Conditional<?> request, ExecutionOptions options) {
-    beforeWrite();
-    OperationObservation observation =
-        startObservation(
-            request.update ? ExecutionOperationKind.UPDATE : ExecutionOperationKind.DELETE);
+    OperationObservation observation = startObservation(request.operationKind());
     try {
       MutationRequests.Prepared prepared = request.prepare();
       var plan =
           dynamicPlans()
               .count(
-                  request.countPlan,
-                  request.update ? "update" : "delete",
-                  prepared.statement(),
+                  request.countPlan(),
+                  request.operationName(),
+                  prepared.resolved(),
                   prepared.inputs(),
                   observation);
       int rows =
@@ -311,6 +205,7 @@ final class DefaultMutationOperations implements MutationOperations {
             SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
             "conditional write did not report an exact affected-row count");
       }
+      request.completed(rows);
       completeSucceeded(observation);
       return rows;
     } catch (RuntimeException | Error failure) {
@@ -319,24 +214,22 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  @SuppressWarnings("Convert2Diamond")
-  <R> Written<List<R>> writeConditionalReturning(
-      MutationRequests.Conditional<?> request,
+  <E, R extends @Nullable Object> Written<R> writeConditionalReturning(
+      MutationRequests.ReturningInput<E, R> returning,
       ExecutionOptions options,
-      MutationQuerySupport.Result<R> result,
       DynamicMutationPlans.Request<DynamicMutationPlans.ConditionalPlan<R>> requestPlan) {
+    MutationRequests.WriteRequest<E> request = returning.request;
+    MutationQuerySupport.Result<R> result = returning.result;
     beforeWrite();
-    OperationObservation observation =
-        startObservation(
-            request.update ? ExecutionOperationKind.UPDATE : ExecutionOperationKind.DELETE);
+    OperationObservation observation = startObservation(request.operationKind());
     try {
-      MutationRequests.Prepared prepared = request.prepare();
+      MutationRequests.Prepared prepared = returning.prepare();
       var plan =
           dynamicPlans()
               .conditional(
                   requestPlan,
-                  request.update ? "update" : "delete",
-                  prepared.statement(),
+                  request.operationName(),
+                  prepared.resolved(),
                   prepared.inputs(),
                   result,
                   observation);
@@ -349,8 +242,8 @@ final class DefaultMutationOperations implements MutationOperations {
               ExecutionContext.of(options),
               observation,
               StatementPurpose.PRIMARY);
-      Written<List<R>> completed =
-          new DefaultWritten<List<R>>(rows.size(), rows.isEmpty() ? null : rows);
+      Written<R> completed = DefaultWritten.ownedRows(rows.size(), rows);
+      request.completed(rows.size());
       completeSucceeded(observation);
       return completed;
     } catch (RuntimeException | Error failure) {
@@ -359,7 +252,7 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  private static <E> @Nullable Object readId(EntityMutationPlanSet<E> plans, E value) {
+  static <E> @Nullable Object readId(EntityMutationPlanSet<E> plans, E value) {
     try {
       return plans.idAccess().read(value);
     } catch (SQLException | RuntimeException failure) {
@@ -375,7 +268,7 @@ final class DefaultMutationOperations implements MutationOperations {
     beforeWrite();
     OperationObservation observation =
         startObservation(
-            request.spec.merge ? ExecutionOperationKind.MERGE : ExecutionOperationKind.INSERT);
+            request.spec.key ? ExecutionOperationKind.MERGE : ExecutionOperationKind.INSERT);
     try {
       Object expected = request.expectedValue();
       var prepared = request.prepare(expected != null);
@@ -417,7 +310,7 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   @SuppressWarnings("Convert2Diamond")
-  <E, R> Written<R> writeStructuredOne(
+  <E, R extends @Nullable Object> Written<R> writeStructuredOne(
       StructuredWrites.Request<E> request,
       MutationQuerySupport.Result<R> result,
       StructuredWrites.Choices<R> choices,
@@ -425,10 +318,10 @@ final class DefaultMutationOperations implements MutationOperations {
     beforeWrite();
     OperationObservation observation =
         startObservation(
-            request.spec.merge ? ExecutionOperationKind.MERGE : ExecutionOperationKind.INSERT);
+            request.spec.key ? ExecutionOperationKind.MERGE : ExecutionOperationKind.INSERT);
     try {
       Object expected = request.expectedValue();
-      var prepared = request.prepare(expected != null);
+      var prepared = choices.prepare(request, expected != null, result);
       boolean readKey = needsStructuredKey(prepared);
       var plan =
           dynamicPlans()
@@ -447,46 +340,6 @@ final class DefaultMutationOperations implements MutationOperations {
       validateStructuredCount(request, prepared, count);
       if (row != null && readKey) applyStructuredKey(request, prepared, arguments, row.key());
       Written<R> completed = new DefaultWritten<R>(count, row == null ? null : row.value());
-      completeSucceeded(observation);
-      return completed;
-    } catch (RuntimeException | Error failure) {
-      completeFailed(observation, failure);
-      throw failure;
-    }
-  }
-
-  @SuppressWarnings("Convert2Diamond")
-  <E, R> Written<List<R>> writeStructuredMany(
-      StructuredWrites.Request<E> request,
-      MutationQuerySupport.Result<R> result,
-      StructuredWrites.Choices<R> choices,
-      ExecutionOptions options) {
-    beforeWrite();
-    OperationObservation observation = startObservation(ExecutionOperationKind.MERGE);
-    try {
-      Object expected = request.expectedValue();
-      var prepared = request.prepare(expected != null);
-      var arguments = structuredArguments(request, prepared, expected, true);
-      var plan =
-          dynamicPlans()
-              .conditional(
-                  choices.many(prepared.checked()),
-                  prepared.resolved(),
-                  prepared.inputs(),
-                  result,
-                  observation);
-      List<R> rows =
-          jdbcExecutor.executeReturning(
-              plan.statement(),
-              plan.decoder(),
-              plan.columnCount(),
-              arguments.values(),
-              ExecutionContext.of(options),
-              observation,
-              StatementPurpose.PRIMARY);
-      validateStructuredCount(request, prepared, rows.size());
-      Written<List<R>> completed =
-          new DefaultWritten<List<R>>(rows.size(), rows.isEmpty() ? null : rows);
       completeSucceeded(observation);
       return completed;
     } catch (RuntimeException | Error failure) {
@@ -539,9 +392,7 @@ final class DefaultMutationOperations implements MutationOperations {
 
   private static void validateStructuredCount(
       StructuredWrites.Request<?> request, StructuredWrites.Prepared prepared, int rows) {
-    if (rows < 0
-        || prepared.single() && rows > 1
-        || !request.spec.conflict && !request.spec.merge && rows != 1)
+    if (rows < 0 || rows > 1 || !request.spec.conflict && !request.spec.key && rows != 1)
       throw MutationException.of(
           SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
           "structured write returned an invalid affected-row count");
@@ -619,7 +470,7 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  private Object generateId(EntityMutationPlanSet<?> plans) {
+  Object generateId(EntityMutationPlanSet<?> plans) {
     try {
       if (plans.generation() == IdGeneration.SNOWFLAKE) {
         return planCatalog.snowflakeIds().nextId();
@@ -680,42 +531,13 @@ final class DefaultMutationOperations implements MutationOperations {
   }
 
   @Override
-  public <E> int updateById(QueryTable<E> table, E value) {
-    return updateById(table, value, ExecutionContext.EMPTY);
+  public <E> EntityById<E> updateById(QueryTable<E> table) {
+    return EntityWrites.start(this, table, false);
   }
 
   @Override
-  public <E> int updateById(QueryTable<E> table, E value, ExecutionOptions executionOptions) {
-    return updateById(
-        table,
-        value,
-        ExecutionContext.of(Objects.requireNonNull(executionOptions, "executionOptions")));
-  }
-
-  private <E> int updateById(QueryTable<E> table, E value, ExecutionContext context) {
-    beforeWrite();
-    OperationObservation observation = startObservation(ExecutionOperationKind.UPDATE_BY_ID);
-    try {
-      EntityMeta<E> entity = requireEntity(table);
-      EntityMutationPlanSet<E> plans = requirePlanSet(entity);
-      requireEntityValue(entity, value);
-      EntityMutationPlanSet.UpdateExecution<E> execution = plans.update(value);
-      int affected =
-          jdbcExecutor.executeUpdate(
-              execution.plan(), value, context, observation, StatementPurpose.PRIMARY);
-      if (execution.versionChecked() && affected == 0) {
-        throw OptimisticLockException.of(
-            "optimistic update conflict for entity '" + entity.entityName() + "'");
-      }
-      if (affected > 1) {
-        throw unexpectedRowCount(entity, "updateById", affected, "at most one");
-      }
-      completeSucceeded(observation);
-      return affected;
-    } catch (RuntimeException | Error failure) {
-      completeFailed(observation, failure);
-      throw failure;
-    }
+  public <E> EntityById<E> deleteById(QueryTable<E> table) {
+    return EntityWrites.start(this, table, true);
   }
 
   @Override
@@ -753,18 +575,17 @@ final class DefaultMutationOperations implements MutationOperations {
     }
   }
 
-  private @Nullable OperationObservation startObservation(ExecutionOperationKind operationKind) {
+  @Nullable OperationObservation startObservation(ExecutionOperationKind operationKind) {
     return listenerDispatcher.startOperation(operationKind, dialectId);
   }
 
-  private static void completeSucceeded(@Nullable OperationObservation observation) {
+  static void completeSucceeded(@Nullable OperationObservation observation) {
     if (observation != null) {
       observation.completeSucceeded(ExecutionTermination.COMPLETED);
     }
   }
 
-  private static void completeFailed(
-      @Nullable OperationObservation observation, Throwable failure) {
+  static void completeFailed(@Nullable OperationObservation observation, Throwable failure) {
     if (observation != null) {
       observation.completeFailed(failure, SkisDiagnosticStage.EXECUTION);
     }
@@ -778,7 +599,7 @@ final class DefaultMutationOperations implements MutationOperations {
     return Objects.requireNonNull(table, "table").entity();
   }
 
-  private static <E> void requireEntityValue(EntityMeta<E> entity, E value) {
+  static <E> void requireEntityValue(EntityMeta<E> entity, E value) {
     Objects.requireNonNull(value, "value");
     if (!entity.javaType().isInstance(value)) {
       throw MutationException.of(

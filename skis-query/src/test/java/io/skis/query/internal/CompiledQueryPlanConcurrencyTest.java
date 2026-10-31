@@ -27,7 +27,6 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryTable;
 import io.skis.query.Sql;
@@ -261,21 +260,21 @@ class CompiledQueryPlanConcurrencyTest {
 
   private static QueryCompilation<PetView> groupedProjectionQuery(QueryPlanCatalog catalog, long value) {
     PetTable table = new PetTable();
-    var query = (DefaultSelectQuery<PetView>) QueryTestSupport.operations(catalog)
+    var query = (DefaultExecutableSelectQuery<PetView>) QueryTestSupport.operations(catalog)
         .select(projectionMapping().bind(Sql.countAll(), table.name())).from(table)
         .where(table.id().ge(value)).groupBy(table.name());
-    return query.compilation(QueryPagination.None.INSTANCE);
+    return TestParameters.compilation(query, QueryPagination.None.INSTANCE);
   }
 
   private static QueryCompilation<PetView> projectionQuery(QueryPlanCatalog catalog, long value) {
     PetTable table = new PetTable();
-    DefaultSelectQuery<PetView> query =
-        (DefaultSelectQuery<PetView>)
+    DefaultExecutableSelectQuery<PetView> query =
+        (DefaultExecutableSelectQuery<PetView>)
             QueryTestSupport.operations(catalog)
                 .select(projectionMapping().bind(table.id(), table.name()))
                 .from(table)
                 .where(table.id().eq(value));
-    return query.compilation(QueryPagination.None.INSTANCE);
+    return TestParameters.compilation(query, QueryPagination.None.INSTANCE);
   }
 
   private static QueryCompilation<OrderedRow<String>> orderedQuery(
@@ -303,7 +302,7 @@ class CompiledQueryPlanConcurrencyTest {
       IntFunction<Object> parameter,
       IntFunction<Map<Integer, Object>> row)
       throws Exception {
-    QueryParameter<Object> reference = Sql.parameter(Object.class, "concurrentValue");
+    QueryParameter<Object> reference = TestParameters.parameter(Object.class);
     return invokeConcurrently(
         index ->
             new Invocation<>(

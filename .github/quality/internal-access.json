@@ -233,35 +233,35 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.query.internal.DefaultSelectQuery$CachedPlan",
+      "caller": "io.skis.query.internal.DefaultExecutableSelectQuery$CachedPlan",
       "target": "io.skis.jdbc.internal.CompiledQueryPlan",
       "reason": "Retains the immutable terminal-operation plan and statement AST without invocation values.",
       "owner": "T03",
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "caller": "io.skis.query.internal.DefaultExecutableSelectQuery",
       "target": "io.skis.core.internal.OperationObservation",
       "reason": "Carries invocation-local observation through compilation and execution without entering shared plans.",
       "owner": "T03",
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "caller": "io.skis.query.internal.DefaultExecutableSelectQuery",
       "target": "io.skis.jdbc.internal.CompiledQueryPlan",
       "reason": "Shares the immutable compiled binder/decoder plan without invocation values.",
       "owner": "T03",
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "caller": "io.skis.query.internal.DefaultExecutableSelectQuery",
       "target": "io.skis.jdbc.internal.JdbcPageResult",
       "reason": "Transfers content/count execution outcomes without changing resource ownership.",
       "owner": "T03",
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.query.internal.DefaultSelectQuery",
+      "caller": "io.skis.query.internal.DefaultExecutableSelectQuery",
       "target": "io.skis.jdbc.internal.JdbcRow",
       "reason": "Preserves row presence independently of a nullable decoded value.",
       "owner": "T03",
@@ -695,13 +695,6 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.mutation.internal.DynamicMutationPlans$Plan",
-      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
-      "reason": "Compiles value-free statement templates and reuses the existing JDBC mutation execution kernel.",
-      "owner": "0.2.10:T03",
-      "exit": "Review with qualified JPMS exports before 1.0"
-    },
-    {
       "caller": "io.skis.mutation.internal.DynamicMutationPlans$ConditionalPlan",
       "target": "io.skis.jdbc.internal.CompiledMutationPlan",
       "reason": "Compiles value-free statement templates and reuses the existing JDBC mutation execution kernel.",
@@ -867,6 +860,545 @@
       "target": "io.skis.query.internal.MutationQuerySupport",
       "reason": "Owns typed write clauses or prepared invocation inputs; no values enter shared plans.",
       "owner": "0.2.10:T04",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$BatchConnection",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$1",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$1",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Prepares T05 write parameters and result codecs against the executor-owned canonical registry.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$1",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$1",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$1",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$Chunk",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$Input",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$Input",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites$Ledger",
+      "target": "io.skis.jdbc.internal.JdbcBatchOutcome",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.jdbc.internal.JdbcBatchOutcome",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.jdbc.internal.JdbcExecutor$BatchConnection",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.BatchWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.jdbc.internal.JdbcRow",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Prepares T05 write parameters and result codecs against the executor-owned canonical registry.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Returning",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Single",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Single",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Single",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites$Single",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.EntityWrites",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.InsertSelects$Request",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Prepares T05 write parameters and result codecs against the executor-owned canonical registry.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.InsertSelects$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.InsertSelects$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.InsertSelects$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.InsertSelects$Request",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.InsertSelects",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
+      "target": "io.skis.query.internal.MutationQuerySupport$Sources",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Delete",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Delete",
+      "target": "io.skis.query.internal.MutationQuerySupport$Sources",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$ReturningInput",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$Update",
+      "target": "io.skis.query.internal.MutationQuerySupport$Sources",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$WriteRequest",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$WriteRequest",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$WriteRequest",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.MutationRequests$WriteRequest",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Action",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Collector",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$DerivedSource",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Request",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Prepares T05 write parameters and result codecs against the executor-owned canonical registry.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Request",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Request",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$Source",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$TableSource",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.NativeMerges$ValuesInput",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Choices",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.StructuredWrites$Single",
+      "target": "io.skis.query.internal.MutationQuerySupport$Assignment",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Prepares T05 write parameters and result codecs against the executor-owned canonical registry.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches$Planner",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.core.internal.OperationObservation",
+      "reason": "Preserves invocation-local observation across T05 batch execution without retaining it in shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.jdbc.internal.JdbcBatchOutcome",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.jdbc.internal.JdbcExecutor",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.jdbc.internal.JdbcExecutor$BatchConnection",
+      "reason": "Reuses the single JDBC execution kernel, exact batch outcomes and immutable generated plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.query.internal.WriteInputCompiler",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.WriteSelections",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.WriteSelections",
+      "target": "io.skis.query.internal.MutationQuerySupport$Result",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.ReturningSelection",
+      "target": "io.skis.query.internal.QueryDsl",
+      "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.WriteCodecs",
+      "target": "io.skis.mapping.internal.EntityRuntimeRegistry",
+      "reason": "Validates positional write codecs against canonical property mappings before JDBC execution.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
+      "caller": "io.skis.mutation.internal.WriteCodecs",
+      "target": "io.skis.query.internal.MutationQuerySupport",
+      "reason": "Resolves query-fed write output codecs through the shared SELECT mapping rules before JDBC execution.",
+      "owner": "0.2.10:T05",
       "exit": "Review with qualified JPMS exports before 1.0"
     }
   ]

@@ -37,9 +37,8 @@ import io.skis.query.DerivedOutput;
 import io.skis.query.DerivedRelation;
 import io.skis.query.NonNullDerivedOutput;
 import io.skis.query.NonNullSelectable;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectDescription;
+import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
 import io.skis.query.SingleColumnSelect;
 import io.skis.query.Sql;
@@ -76,7 +75,7 @@ class DerivedRelationDslTest {
   @Test
   void validatesExplicitOrderedShapeHandleMembershipAndAliasReuse() {
     PetTable inner = new PetTable().as("inner_pet");
-    SelectDescription<Pet> description = Sql.selectFrom(inner);
+    SelectQuery<Pet> description = Sql.selectFrom(inner);
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "pet_id");
     DerivedOutput<String> name = Sql.output(inner.name(), "display_name");
     DerivedRelation first = Sql.derived(description, "first_pet", id, name);
@@ -151,9 +150,9 @@ class DerivedRelationDslTest {
   void matchesRebuiltScalarOutputsByLogicalParameterIdentity() {
     PetTable scalarSource = new PetTable().as("scalar_pet");
     PetTable outer = new PetTable().as("outer_pet");
-    QueryParameter<Long> shared = Sql.parameter(Long.class, "shared");
+    QueryParameter<Long> shared = TestParameters.parameter(Long.class);
     SingleColumnSelect<Long> child =
-        Sql.select(scalarSource.id()).from(scalarSource).where(scalarSource.id().eq(shared));
+        Sql.select(scalarSource.id()).from(scalarSource).where(TestParameters.eq(scalarSource.id(), shared));
     Selectable<Long> selectedScalar = Sql.scalar(child);
     Selectable<Long> rebuiltScalar = Sql.scalar(child);
     DerivedOutput<Long> output = Sql.output(rebuiltScalar, "scalar_id");
@@ -164,9 +163,9 @@ class DerivedRelationDslTest {
     assertSame(output, accepted.outputs().getFirst());
     assertEquals(Nullability.NULLABLE, accepted.column(output).nullability());
 
-    QueryParameter<Long> independent = Sql.parameter(Long.class, "shared");
+    QueryParameter<Long> independent = TestParameters.parameter(Long.class);
     SingleColumnSelect<Long> independentChild =
-        Sql.select(scalarSource.id()).from(scalarSource).where(scalarSource.id().eq(independent));
+        Sql.select(scalarSource.id()).from(scalarSource).where(TestParameters.eq(scalarSource.id(), independent));
     DerivedOutput<Long> wrong = Sql.output(Sql.scalar(independentChild), "scalar_id");
 
     QueryValidationException failure =
@@ -244,15 +243,15 @@ class DerivedRelationDslTest {
   @Test
   void propagatesNestedParametersAndPhysicalCodecThroughADerivedRoot() throws Exception {
     PetTable inner = new PetTable().as("inner_pet");
-    QueryParameter<Long> minimum = Sql.parameter(Long.class, "minimum");
+    QueryParameter<Long> minimum = TestParameters.parameter(Long.class);
     SingleColumnSelect<Long> child =
-        Sql.select(inner.id()).from(inner).where(inner.id().gt(minimum));
+        Sql.select(inner.id()).from(inner).where(TestParameters.gt(inner.id(), minimum));
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "pet_id");
     DerivedRelation relation = Sql.derived(child, "filtered_pets", id);
     NonNullSelectable<Long> derivedId = relation.column(id);
-    QueryParameter<Long> maximum = Sql.parameter(Long.class, "maximum");
+    QueryParameter<Long> maximum = TestParameters.parameter(Long.class);
     SingleColumnSelect<Long> description =
-        Sql.select(derivedId).from(relation).where(derivedId.lt(maximum));
+        Sql.select(derivedId).from(relation).where(TestParameters.lt(derivedId, maximum));
     QueryParameters parameters =
         QueryParameters.builder().bind(minimum, 10L).bind(maximum, 50L).build();
 
@@ -404,12 +403,12 @@ class DerivedRelationDslTest {
   }
 
   private static <R> QueryCompilation<R> compile(
-      SelectDescription<R> description, QueryParameters parameters) {
+      SelectQuery<R> description, QueryParameters parameters) {
     return compile(description, parameters, registry());
   }
 
   private static <R> QueryCompilation<R> compile(
-      SelectDescription<R> description,
+      SelectQuery<R> description,
       QueryParameters parameters,
       EntityRuntimeRegistry registry) {
     SelectQueryState<R> state = QueryModels.description(description).state();

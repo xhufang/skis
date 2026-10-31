@@ -34,7 +34,7 @@ import io.skis.query.PageRequest;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.SliceRequest;
 import io.skis.query.spi.ProjectionMapping;
 import io.skis.query.Sql;
@@ -142,7 +142,7 @@ class GroupedPaginationTest {
     assertFalse(count.plan().sql().contains("LIMIT"));
     assertFalse(count.plan().sql().contains("OFFSET"));
     assertEquals(List.of("!", 4L, 2L), arguments(count));
-    var content = ((DefaultSelectQuery<?>) query).compilation(new QueryPagination.Offset(3, 9));
+    var content = TestParameters.compilation(((DefaultExecutableSelectQuery<?>) query), new QueryPagination.Offset(3, 9));
     assertTrue(arguments(content).contains("?"));
     assertTrue(arguments(content).contains(9L));
   }
@@ -216,18 +216,16 @@ class GroupedPaginationTest {
   void repeatedDistinctScalarOutputsSupportEitherOrderingAliasAndReexport() {
     var operations = operations();
     var inner = TABLE.as("repeated_inner");
-    var ceiling = Sql.parameter(Long.class, "ceiling");
+    var ceiling = TestParameters.parameter(Long.class);
     var scalar = Sql.scalar(Sql.select(inner.id).from(inner)
-        .where(inner.id.eq(TABLE.id)).and(inner.id.lt(ceiling)));
+        .where(inner.id.eq(TABLE.id)).and(TestParameters.lt(inner.id, ceiling)));
     var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, Object.class, "repeated-scalar",
         List.of(new ProjectionMapping.Parameter(0, "first", Long.class, Nullability.NULLABLE, 0),
             new ProjectionMapping.Parameter(1, "second", Long.class, Nullability.NULLABLE, 1)),
         readers -> (rows, context) -> new Object());
-    var detail = operations.select(tuple.bind(scalar, scalar)).from(TABLE).bind(ceiling, 10L);
-    assertEquals(List.of(10L, 10L), arguments(((DefaultSelectQuery<?>) detail)
-        .compilation(QueryPagination.None.INSTANCE)));
-    assertEquals(List.of(10L), arguments(((DefaultSelectQuery<?>) detail.distinct())
-        .compilation(QueryPagination.None.INSTANCE)));
+    var detail = TestParameters.bind(operations.select(tuple.bind(scalar, scalar)).from(TABLE), ceiling, 10L);
+    assertEquals(List.of(10L, 10L), arguments(TestParameters.compilation(((DefaultExecutableSelectQuery<?>) detail), QueryPagination.None.INSTANCE)));
+    assertEquals(List.of(10L), arguments(TestParameters.compilation(((DefaultExecutableSelectQuery<?>) detail.distinct()), QueryPagination.None.INSTANCE)));
     for (Selectable<Long> expression : List.<Selectable<Long>>of(
         scalar, Sql.cast(scalar, Long.class, SqlType.BIGINT))) {
       var firstOutput = Sql.output(expression, "first_value");
@@ -237,27 +235,25 @@ class GroupedPaginationTest {
       var first = derived.column(firstOutput);
       var second = derived.column(secondOutput);
       for (var ordered : List.of(first, second)) {
-        var query = operations.select(second).from(derived).orderBy(ordered.asc()).bind(ceiling, 10L);
+        var query = TestParameters.bind(operations.select(second).from(derived).orderBy(ordered.asc()), ceiling, 10L);
         assertReachesJdbc(() -> query.fetchPage(PageRequest.page(0, 2)));
         assertReachesJdbc(() -> query.fetchSlice(SliceRequest.offset(0, 2)));
         assertEquals(List.of(10L), arguments(count(query)));
       }
       var reexport = Sql.output(second, "value");
       var outer = Sql.derived(Sql.select(second).from(derived), "reexported_values", reexport);
-      var query = operations.select(outer.column(reexport)).from(outer)
-          .orderBy(outer.column(reexport).asc()).bind(ceiling, 10L);
+      var query = TestParameters.bind(operations.select(outer.column(reexport)).from(outer).orderBy(outer.column(reexport).asc()), ceiling, 10L);
       assertReachesJdbc(() -> query.fetchPage(PageRequest.page(0, 2)));
       assertReachesJdbc(() -> query.fetchSlice(SliceRequest.offset(0, 2)));
     }
-    var independent = Sql.parameter(Long.class, "ceiling");
+    var independent = TestParameters.parameter(Long.class);
     var otherScalar = Sql.scalar(Sql.select(inner.id).from(inner)
-        .where(inner.id.eq(TABLE.id)).and(inner.id.lt(independent)));
+        .where(inner.id.eq(TABLE.id)).and(TestParameters.lt(inner.id, independent)));
     var firstOutput = Sql.output(scalar, "first_value");
     var secondOutput = Sql.output(otherScalar, "second_value");
     var derived = Sql.derived(Sql.select(tuple.bind(scalar, otherScalar)).from(TABLE).distinct(),
         "independent_values", firstOutput, secondOutput);
-    var incomplete = operations.select(derived.column(secondOutput)).from(derived)
-        .orderBy(derived.column(secondOutput).asc()).bind(ceiling, 10L).bind(independent, 10L);
+    var incomplete = TestParameters.bind(TestParameters.bind(operations.select(derived.column(secondOutput)).from(derived).orderBy(derived.column(secondOutput).asc()), ceiling, 10L), independent, 10L);
     assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
         assertThrows(QueryValidationException.class,
             () -> incomplete.fetchSlice(SliceRequest.offset(0, 2))).code());
@@ -314,12 +310,12 @@ class GroupedPaginationTest {
     var first = derived.column(firstOutput);
     var second = derived.column(secondOutput);
     var inner = TABLE.as("scalar_items");
-    var ceilingA = Sql.parameter(Long.class, "ceiling");
-    var ceilingB = Sql.parameter(Long.class, "ceiling");
+    var ceilingA = TestParameters.parameter(Long.class);
+    var ceilingB = TestParameters.parameter(Long.class);
     var scalarA = Sql.scalar(Sql.select(inner.id).from(inner)
-        .where(inner.category.eq(first)).and(inner.id.lt(ceilingA)));
+        .where(inner.category.eq(first)).and(TestParameters.lt(inner.id, ceilingA)));
     var scalarB = Sql.scalar(Sql.select(inner.id).from(inner)
-        .where(inner.category.eq(first)).and(inner.id.lt(ceilingB)));
+        .where(inner.category.eq(first)).and(TestParameters.lt(inner.id, ceilingB)));
     var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, Object.class, "aliases-and-scalars",
         List.of(new ProjectionMapping.Parameter(0, "first", String.class, Nullability.NULLABLE, 0),
             new ProjectionMapping.Parameter(1, "second", String.class, Nullability.NULLABLE, 1),
@@ -327,8 +323,7 @@ class GroupedPaginationTest {
             new ProjectionMapping.Parameter(3, "b", Long.class, Nullability.NULLABLE, 3)),
         readers -> (rows, context) -> new Object());
     var operations = operations();
-    var query = operations.select(tuple.bind(first, second, scalarA, scalarB)).from(derived)
-        .distinct().orderBy(second.asc(), scalarA.asc()).bind(ceilingA, 10L).bind(ceilingB, 10L);
+    var query = TestParameters.bind(TestParameters.bind(operations.select(tuple.bind(first, second, scalarA, scalarB)).from(derived).distinct().orderBy(second.asc(), scalarA.asc()), ceilingA, 10L), ceilingB, 10L);
     assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
         assertThrows(QueryValidationException.class,
             () -> query.fetchPage(PageRequest.page(0, 2))).code());
@@ -396,18 +391,15 @@ class GroupedPaginationTest {
   @Test
   void offsetOrderingSignaturesIncludeExpressionStructureAndParameterIdentity() {
     var operations = operations();
-    var a = Sql.parameter(String.class, "a");
-    var b = Sql.parameter(String.class, "b");
-    var keyA = Sql.concat(TABLE.category, Sql.value(a));
-    var keyB = Sql.concat(TABLE.category, Sql.value(b));
-    var first = (DefaultSelectQuery<?>) operations.select(keyA).from(TABLE).groupBy(keyA)
-        .orderBy(keyA.asc()).bind(a, "!");
-    var rebound = (DefaultSelectQuery<?>) operations.select(keyA).from(TABLE).groupBy(keyA)
-        .orderBy(keyA.asc()).bind(a, "?");
+    var a = TestParameters.parameter(String.class);
+    var b = TestParameters.parameter(String.class);
+    var keyA = Sql.concat(TABLE.category, TestParameters.value(a));
+    var keyB = Sql.concat(TABLE.category, TestParameters.value(b));
+    var first = (DefaultExecutableSelectQuery<?>) TestParameters.bind(operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyA.asc()), a, "!");
+    var rebound = (DefaultExecutableSelectQuery<?>) TestParameters.bind(operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyA.asc()), a, "?");
     assertEquals(first.orderSignature(), rebound.orderSignature());
     assertEquals(first.queryFingerprint(), rebound.queryFingerprint());
-    var wrong = operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyB.asc())
-        .bind(a, "!").bind(b, "!");
+    var wrong = TestParameters.bind(TestParameters.bind(operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyB.asc()), a, "!"), b, "!");
     assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT,
         assertThrows(QueryValidationException.class,
             () -> wrong.fetchSlice(SliceRequest.offset(0, 1))).code());
@@ -425,36 +417,32 @@ class GroupedPaginationTest {
   void distinctCorrelatedScalarOrderingRetainsLogicalParametersAndRequiresTheWholeTuple() {
     var operations = operations();
     var inner = TABLE.as("inner_rows");
-    var ceiling = Sql.parameter(Long.class, "ceiling");
+    var ceiling = TestParameters.parameter(Long.class);
     var scalar = Sql.scalar(Sql.select(inner.id).from(inner)
-        .where(inner.id.eq(TABLE.id)).and(inner.id.lt(ceiling)));
-    var query = operations.select(scalar).from(TABLE).distinct().orderBy(scalar.asc())
-        .bind(ceiling, 10L);
+        .where(inner.id.eq(TABLE.id)).and(TestParameters.lt(inner.id, ceiling)));
+    var query = TestParameters.bind(operations.select(scalar).from(TABLE).distinct().orderBy(scalar.asc()), ceiling, 10L);
     assertReachesJdbc(() -> query.fetchPage(PageRequest.page(0, 2)));
     assertReachesJdbc(() -> query.fetchSlice(SliceRequest.offset(0, 2)));
     assertEquals(List.of(10L), arguments(count(query)));
     var computed = Sql.coalesce(scalar, Sql.value(-1L));
-    var expressionQuery = operations.select(computed).from(TABLE).distinct()
-        .orderBy(computed.asc()).bind(ceiling, 10L);
+    var expressionQuery = TestParameters.bind(operations.select(computed).from(TABLE).distinct().orderBy(computed.asc()), ceiling, 10L);
     assertReachesJdbc(() -> expressionQuery.fetchSlice(SliceRequest.offset(0, 2)));
 
     var tuple = ProjectionMapping.generated(GeneratedModelAbi.CURRENT, Object.class, "scalar-tuple",
         List.of(new ProjectionMapping.Parameter(0, "id", Long.class, Nullability.NON_NULL, 0),
             new ProjectionMapping.Parameter(1, "scalar", Long.class, Nullability.NULLABLE, 1)),
         readers -> (rows, context) -> new Object());
-    var incomplete = operations.select(tuple.bind(TABLE.id, scalar)).from(TABLE).distinct()
-        .orderBy(TABLE.id.asc()).bind(ceiling, 10L);
+    var incomplete = TestParameters.bind(operations.select(tuple.bind(TABLE.id, scalar)).from(TABLE).distinct().orderBy(TABLE.id.asc()), ceiling, 10L);
     assertEquals(SkisErrorCode.QUERY_PAGINATION_UNSTABLE_ORDER,
         assertThrows(QueryValidationException.class,
             () -> incomplete.fetchSlice(SliceRequest.offset(0, 2))).code());
     assertReachesJdbc(() -> incomplete.orderBy(TABLE.id.asc(), scalar.asc())
         .fetchSlice(SliceRequest.offset(0, 2)));
 
-    var other = Sql.parameter(Long.class, "ceiling");
+    var other = TestParameters.parameter(Long.class);
     var otherScalar = Sql.scalar(Sql.select(inner.id).from(inner)
-        .where(inner.id.eq(TABLE.id)).and(inner.id.lt(other)));
-    assertThrows(QueryValidationException.class, () -> query.orderBy(otherScalar.asc())
-        .bind(other, 10L).fetchSlice(SliceRequest.offset(0, 2)));
+        .where(inner.id.eq(TABLE.id)).and(TestParameters.lt(inner.id, other)));
+    assertThrows(QueryValidationException.class, () -> TestParameters.bind(query.orderBy(otherScalar.asc()), other, 10L).fetchSlice(SliceRequest.offset(0, 2)));
   }
 
   @Test
@@ -558,7 +546,7 @@ class GroupedPaginationTest {
         dialect.validated.clear();
         dialect.lowered.clear();
         dialect.rendered.clear();
-        SelectQuery<?> query;
+        ExecutableSelectQuery<?> query;
         if (shape == 1) {
           var key = Sql.concat(TABLE.category, Sql.value("!"));
           query = operations.select(key).from(TABLE).groupBy(key).orderBy(key.asc());
@@ -602,8 +590,8 @@ class GroupedPaginationTest {
     }
   }
 
-  private static QueryCompilation<Long> count(SelectQuery<?> query) {
-    return ((DefaultSelectQuery<?>) query).countCompilation();
+  private static QueryCompilation<Long> count(ExecutableSelectQuery<?> query) {
+    return TestParameters.countCompilation(((DefaultExecutableSelectQuery<?>) query));
   }
 
   private static List<@Nullable Object> arguments(QueryCompilation<?> query) {

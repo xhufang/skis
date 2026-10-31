@@ -44,6 +44,7 @@
       "io.skis.jdbc.JdbcExecutorTest",
       "io.skis.jdbc.JdbcFailureContractTest",
       "io.skis.jdbc.JdbcTransactionTest",
+      "io.skis.jdbc.internal.JdbcBatchExecutionTest",
       "io.skis.jdbc.internal.ParameterLoggingTest",
       "io.skis.jdbc.ReturningExecutionTest"
     ],
@@ -62,6 +63,7 @@
       "io.skis.query.internal.AggregateQueryDslTest",
       "io.skis.query.internal.CachedQueryPlanRetentionTest",
       "io.skis.query.internal.CompiledQueryPlanConcurrencyTest",
+      "io.skis.query.internal.ComposableQueryModelTest",
       "io.skis.query.internal.DerivedRelationDslTest",
       "io.skis.query.internal.EntityPlanSetTest",
       "io.skis.query.internal.GroupedPaginationTest",
@@ -85,7 +87,9 @@
       "io.skis.mutation.MutationExecutionDiagnosticsTest",
       "io.skis.mutation.MutationPlanCompilerTest",
       "io.skis.mutation.MutationTypeSafetyCompilationTest",
+      "io.skis.mutation.internal.BatchResultTest",
       "io.skis.mutation.internal.MutationParameterBindingTest",
+      "io.skis.mutation.internal.WriteCodecsTest",
       "io.skis.mutation.internal.WrittenTest",
       "io.skis.mutation.internal.DynamicMutationPlansTest"
     ],

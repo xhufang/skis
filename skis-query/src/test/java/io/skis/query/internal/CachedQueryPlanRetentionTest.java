@@ -132,10 +132,10 @@ class CachedQueryPlanRetentionTest {
     RetentionTable table = new RetentionTable(marker);
     String value = new String("aggregate-only-" + label);
     var key = Sql.concat(table.name(), Sql.value(value));
-    var query = (DefaultSelectQuery<String>) QueryTestSupport.operations(catalog)
+    var query = (DefaultExecutableSelectQuery<String>) QueryTestSupport.operations(catalog)
         .select(key).from(table).groupBy(key).having(Sql.countAll().gt(1L)).orderBy(key.asc());
-    var content = query.compilation(new QueryPagination.Offset(2, 4));
-    var count = query.countCompilation();
+    var content = TestParameters.compilation(query, new QueryPagination.Offset(2, 4));
+    var count = TestParameters.countCompilation(query);
     assertTrue(content.plan().sql().contains("VALUES"));
     references.addAll(List.of(tracked("aggregate query " + label, query),
         tracked("aggregate expression " + label, key), tracked("aggregate value " + label, value),
@@ -197,8 +197,8 @@ class CachedQueryPlanRetentionTest {
             dispatcher.startOperation(ExecutionOperationKind.FETCH_PAGE, TestDialect.INSTANCE.id()));
     RetentionTable table = new RetentionTable(new Object());
     String value = new String("observed-value-" + label);
-    DefaultSelectQuery<RetentionEntity> query =
-        (DefaultSelectQuery<RetentionEntity>)
+    DefaultExecutableSelectQuery<RetentionEntity> query =
+        (DefaultExecutableSelectQuery<RetentionEntity>)
             QueryTestSupport.operations(catalog).selectFrom(table).where(table.name().eq(value));
     QueryCompilation<Long> compilation = query.countCompilation(observation);
     observation.completeSucceeded(ExecutionTermination.COMPLETED);
@@ -239,10 +239,10 @@ class CachedQueryPlanRetentionTest {
     QueryCondition condition = table.name().eq(conditionValue);
     ProjectionMapping<RetentionView> mapping = projectionMapping();
     ProjectionSelection<RetentionView> selection = mapping.bind(table.id(), table.name());
-    DefaultSelectQuery<RetentionView> query =
-        (DefaultSelectQuery<RetentionView>)
+    DefaultExecutableSelectQuery<RetentionView> query =
+        (DefaultExecutableSelectQuery<RetentionView>)
             QueryTestSupport.operations(catalog).select(selection).from(table).where(condition);
-    QueryCompilation<RetentionView> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<RetentionView> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
     references.addAll(
         List.of(
             tracked("query " + label, query),
@@ -293,13 +293,13 @@ class CachedQueryPlanRetentionTest {
     QueryPlanCatalog catalog =
         new QueryPlanCatalog(REGISTRY, TestDialect.INSTANCE, 4, Duration.ofMinutes(1));
     QueryOperations operations = QueryTestSupport.operations(catalog);
-    DefaultSelectQuery<Object> first =
-        (DefaultSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
-    DefaultSelectQuery<Object> second =
-        (DefaultSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
+    DefaultExecutableSelectQuery<Object> first =
+        (DefaultExecutableSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
+    DefaultExecutableSelectQuery<Object> second =
+        (DefaultExecutableSelectQuery<Object>) operations.select(selection).from(KEY_TABLE);
     assertSame(
-        first.compilation(QueryPagination.None.INSTANCE).plan(),
-        second.compilation(QueryPagination.None.INSTANCE).plan());
+        TestParameters.compilation(first, QueryPagination.None.INSTANCE).plan(),
+        TestParameters.compilation(second, QueryPagination.None.INSTANCE).plan());
     assertEquals(
         new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 4), catalog.projectionPlanCacheStatistics());
     // Only catalog and weak references leave this method: no query L0 survives the clear barrier.

@@ -6,8 +6,10 @@ import io.skis.query.DerivedOutput;
 import io.skis.query.DerivedRelation;
 import io.skis.query.NonNullDerivedOutput;
 import io.skis.query.NonNullSelectable;
-import io.skis.query.SelectDescription;
+import io.skis.query.SelectQuery;
+import io.skis.query.SelectSource;
 import io.skis.query.Selectable;
+import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.DerivedOutputColumn;
 import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.DerivedRelationSource;
@@ -20,30 +22,115 @@ import io.skis.sql.ast.ResolvedExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import org.jspecify.annotations.Nullable;
 
 /** Framework-owned reusable SELECT source with an explicit, typed public output shape. */
 final class DefaultDerivedRelation implements DerivedRelation {
 
   private final SelectQueryState<?> state;
+  private final QueryParameters parameters;
   private final List<DerivedOutput<?>> outputs;
   private final IdentityHashMap<DerivedOutput<?>, Integer> ordinals;
+  private final Map<Object, Integer> selectedOrdinals;
   private final DerivedRelationReference reference;
   private final List<Selectable<?>> columns;
   private final QueryRelation queryRelation;
 
-  DefaultDerivedRelation(
-      SelectDescription<?> description, Identifier alias, List<DerivedOutput<?>> outputs) {
-    SelectDescription<?> checked = Objects.requireNonNull(description, "description");
-    this.state = QueryModels.description(checked).state();
-    this.outputs = copyAndValidateOutputs(state, outputs);
-    this.ordinals = indexOutputs(this.outputs);
-    this.reference = createReference(alias, this.outputs);
-    this.columns = createColumns(this.outputs);
-    this.queryRelation = new DerivedQueryRelation(this);
+  DefaultDerivedRelation(SelectQuery<?> source, Identifier alias, List<DerivedOutput<?>> outputs) {
+    this(
+        QueryModels.description(source).state,
+        QueryModels.description(source).parameters,
+        alias,
+        copyAndValidateOutputs(QueryModels.description(source).state, outputs));
     validateCompletedShape(compilePreview());
+  }
+
+  DefaultDerivedRelation(SelectSource<?> source, Identifier alias) {
+    this(
+        QueryModels.description(source).state,
+        QueryModels.description(source).parameters,
+        alias,
+        QueryModels.description(source).state.inferredOutputs());
+  }
+
+  private DefaultDerivedRelation(
+      SelectQueryState<?> state,
+      QueryParameters parameters,
+      Identifier alias,
+      List<DerivedOutput<?>> outputs) {
+    this.state = state;
+    this.parameters = parameters;
+    this.outputs = outputs;
+    if (parameters.isEmpty()) {
+      this.ordinals = indexOutputs(outputs);
+      this.selectedOrdinals = indexSelections(state.selected().outputSelectables());
+      this.reference = createReference(alias, outputs);
+      this.columns = createColumns(outputs);
+      this.queryRelation = new DerivedQueryRelation(this);
+    } else {
+      // Columns and structural relations must never retain their source's invocation values.
+      DefaultDerivedRelation structure =
+          new DefaultDerivedRelation(state, QueryParameters.empty(), alias, outputs);
+      this.ordinals = structure.ordinals;
+      this.selectedOrdinals = structure.selectedOrdinals;
+      this.reference = structure.reference;
+      this.columns = structure.columns;
+      this.queryRelation = structure.queryRelation;
+    }
+  }
+
+  QueryParameters parameters() {
+    return parameters;
+  }
+
+  /** Infers output handles; callers use the memoized {@link SelectQueryState#inferredOutputs()}. */
+  static List<DerivedOutput<?>> inferOutputs(SelectQueryState<?> state) {
+    SelectStatement statement =
+        QueryStructureCompiler.compileSubquery(
+            state, new StatementParameterLayout(), new QueryParameterBindings());
+    QueryBlockAnalysis analysis = SemanticValidator.analyzeComplete(statement);
+    List<Selectable<?>> selected = state.selected().outputSelectables();
+    @Nullable Nullability[] nullabilities = selectionNullabilities(analysis, selected.size());
+    List<DerivedOutput<?>> outputs = new ArrayList<>(selected.size());
+    Set<String> names = new HashSet<>();
+    for (int index = 0; index < selected.size(); index++) {
+      Selectable<?> item = selected.get(index);
+      Identifier alias = outputAlias(item);
+      if (!names.add(alias.value()))
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_DERIVED_SHAPE, "duplicate derived output alias: " + alias.value());
+      outputs.add(inferredOutput(item, alias, Objects.requireNonNull(nullabilities[index])));
+    }
+    return List.copyOf(outputs);
+  }
+
+  private static Identifier outputAlias(Selectable<?> item) {
+    if (item instanceof ExpressionSelectable<?> expression && expression.outputAlias() != null)
+      return expression.outputAlias();
+    var expression = SelectableSupport.expression(item);
+    if (expression instanceof ColumnExpression<?, ?> column)
+      return Identifier.of(column.property().column().name());
+    if (item instanceof DerivedColumnSelectable<?> column)
+      return QueryModels.output(column.output()).aliasIdentifier();
+    throw QueryValidationException.of(
+        SkisErrorCode.QUERY_DERIVED_SHAPE, "a computed derived output requires a SELECT alias");
+  }
+
+  private static <V> DerivedOutput<V> inferredOutput(
+      Selectable<V> item, Identifier alias, Nullability effective) {
+    if (!effective.isNullable() && item instanceof NonNullSelectable<?> nonNull) {
+      @SuppressWarnings("unchecked")
+      NonNullSelectable<V> typed = (NonNullSelectable<V>) nonNull;
+      return new DefaultNonNullDerivedOutput<>(typed, alias);
+    }
+    return new DefaultDerivedOutput<>(item, alias, effective);
   }
 
   /** Explicit relation alias used to qualify every output column. */
@@ -68,7 +155,7 @@ final class DefaultDerivedRelation implements DerivedRelation {
   /** Creates another occurrence over the same SELECT and handles with a different alias. */
   DerivedRelation as(Identifier alias) {
     return new DefaultDerivedRelation(
-        new DefaultSelectDescription<>(state), Objects.requireNonNull(alias, "alias"), outputs);
+        state, parameters, Objects.requireNonNull(alias, "alias"), outputs);
   }
 
   /** Resolves one nullable output handle that belongs to this relation shape. */
@@ -83,6 +170,77 @@ final class DefaultDerivedRelation implements DerivedRelation {
     return nonNullColumnAt(ordinal);
   }
 
+  @Override
+  public <V> Selectable<V> column(Selectable<V> selected) {
+    return columnAt(requireSelected(selected));
+  }
+
+  @Override
+  public <V> NonNullSelectable<V> column(NonNullSelectable<V> selected) {
+    int ordinal = requireSelected(selected);
+    if (!(columns.get(ordinal) instanceof NonNullSelectable<?>))
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
+          "selected source expression is effectively nullable; use columnNullable");
+    return nonNullColumnAt(ordinal);
+  }
+
+  @Override
+  public <V> Selectable<V> columnNullable(NonNullSelectable<V> selected) {
+    return columnAt(requireSelected(selected));
+  }
+
+  private int requireSelected(Selectable<?> selected) {
+    SelectableSupport.requireFramework(selected);
+    Integer found = selectedOrdinals.get(selectionKey(selected));
+    if (found == null)
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_DERIVED_SHAPE,
+          "expression is not selected by this source occurrence");
+    if (found < 0)
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_DERIVED_SHAPE,
+          "selected source expression is ambiguous; name each SELECT occurrence");
+    return found;
+  }
+
+  private static Map<Object, Integer> indexSelections(List<Selectable<?>> selected) {
+    Map<Object, Integer> indexed = new HashMap<>(selected.size());
+    for (int ordinal = 0; ordinal < selected.size(); ordinal++) {
+      Object key = selectionKey(selected.get(ordinal));
+      if (indexed.putIfAbsent(key, ordinal) != null) indexed.put(key, -1);
+    }
+    return Map.copyOf(indexed);
+  }
+
+  private static Object selectionKey(Selectable<?> selected) {
+    return switch (selected) {
+      case QueryColumn<?, ?> column -> new SelectionIdentity(column.table(), column.property());
+      case DerivedColumnSelectable<?> column ->
+          new SelectionIdentity(
+              QueryModels.relation(column.relation()).reference(), column.output());
+      case ExpressionSelectable<?> expression when expression.outputAlias() != null ->
+          expression.compilationIdentity();
+      case ExpressionSelectable<?> expression -> SelectableSupport.expressionIdentity(expression);
+      case ScalarSubquerySelectable<?> scalar -> SelectableSupport.expressionIdentity(scalar);
+      default -> selected;
+    };
+  }
+
+  private record SelectionIdentity(Object source, Object column) {
+    @Override
+    public boolean equals(@Nullable Object other) {
+      return other instanceof SelectionIdentity(Object sour, Object col)
+          && source == sour
+          && column == col;
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * System.identityHashCode(source) + System.identityHashCode(column);
+    }
+  }
+
   DerivedRelationReference reference() {
     return reference;
   }
@@ -92,6 +250,7 @@ final class DefaultDerivedRelation implements DerivedRelation {
   }
 
   DerivedRelationSource compile(QueryConditionCompiler compiler) {
+    compiler.include(parameters);
     return new DerivedRelationSource(compiler.subquery(state), reference);
   }
 
@@ -113,9 +272,10 @@ final class DefaultDerivedRelation implements DerivedRelation {
       throw QueryValidationException.ofCause(
           SkisErrorCode.QUERY_DERIVED_SHAPE, failure, "derived SELECT semantic validation failed");
     }
+    @Nullable Nullability[] nullabilities = selectionNullabilities(analysis, outputs.size());
     for (int index = 0; index < outputs.size(); index++) {
       DerivedOutput<?> output = outputs.get(index);
-      Nullability effective = selectionNullability(analysis, index);
+      Nullability effective = Objects.requireNonNull(nullabilities[index]);
       if (!output.nullability().isNullable() && effective.isNullable()) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_NULLABILITY_CONTRACT,
@@ -127,18 +287,25 @@ final class DefaultDerivedRelation implements DerivedRelation {
     }
   }
 
-  private static Nullability selectionNullability(QueryBlockAnalysis analysis, int ordinal) {
+  private static @Nullable Nullability[] selectionNullabilities(
+      QueryBlockAnalysis analysis, int size) {
+    // Unresolved slots remain null until their visible SELECT expressions are indexed.
+    @Nullable Nullability[] results = new @Nullable Nullability[size];
     for (ResolvedExpression expression : analysis.expressions()) {
       ExpressionPosition position = expression.position();
       if (position.clause() == QueryClause.SELECT
-          && position.itemOrdinal() == ordinal
+          && position.itemOrdinal() < size
           && position.operandPath().isEmpty()) {
-        return expression.effectiveNullability();
+        results[position.itemOrdinal()] = expression.effectiveNullability();
       }
     }
-    throw QueryValidationException.of(
-        SkisErrorCode.QUERY_DERIVED_SHAPE,
-        "derived query has no resolved visible SELECT output #" + ordinal);
+    for (int ordinal = 0; ordinal < size; ordinal++) {
+      if (results[ordinal] == null)
+        throw QueryValidationException.of(
+            SkisErrorCode.QUERY_DERIVED_SHAPE,
+            "derived query has no resolved visible SELECT output #" + ordinal);
+    }
+    return results;
   }
 
   private int requireOrdinal(DerivedOutput<?> output) {

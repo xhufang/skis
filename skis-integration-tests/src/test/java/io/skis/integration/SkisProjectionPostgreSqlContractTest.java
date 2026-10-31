@@ -13,7 +13,7 @@ import io.skis.mutation.OptimisticLockException;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryCursor;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.Slice;
 import io.skis.query.SliceRequest;
 import io.skis.runtime.Skis;
@@ -86,13 +86,13 @@ class SkisProjectionPostgreSqlContractTest {
       assertEquals(Long.valueOf(0L), stored.version());
 
       Pet update = new Pet(id, "Mimi", new BigDecimal("13.25"), true, stored.version(), "ignored");
-      assertEquals(1, executor.updateById(PetTable.petTable, update));
+      assertEquals(1, executor.updateById(PetTable.petTable).value(update).write());
       Pet updated = executor.findById(PetTable.petTable, id).orElseThrow();
       assertEquals(new BigDecimal("13.25"), updated.weight());
       assertTrue(updated.adopted());
       assertEquals(Long.valueOf(1L), updated.version());
       assertThrows(
-          OptimisticLockException.class, () -> executor.updateById(PetTable.petTable, update));
+          OptimisticLockException.class, () -> executor.updateById(PetTable.petTable).value(update).write());
 
       assertThrows(
           IllegalStateException.class,
@@ -171,7 +171,7 @@ class SkisProjectionPostgreSqlContractTest {
                 ids.get(index), "page-" + index, new BigDecimal("10.00"), false, null, "ignored")).write();
       }
       PetTable pet = PetTable.petTable;
-      SelectQuery<Pet> query =
+      ExecutableSelectQuery<Pet> query =
           executor.selectFrom(pet).where(pet.id().in(ids)).orderBy(pet.id().asc());
 
       Page<Pet> page = query.fetchPage(PageRequest.page(1, 2));

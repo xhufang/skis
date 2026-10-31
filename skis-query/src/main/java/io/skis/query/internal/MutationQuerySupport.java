@@ -5,16 +5,25 @@ import io.skis.core.SkisErrorCode;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.JdbcTypeCodec;
 import io.skis.mapping.spi.RowDecoder;
+import io.skis.query.DerivedRelation;
+import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
+import io.skis.query.RowColumns;
+import io.skis.query.SelectSource;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.BooleanPredicate;
 import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.FromClause;
-import io.skis.sql.ast.IncrementExpression;
+import io.skis.sql.ast.JoinClause;
+import io.skis.sql.ast.JoinType;
+import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.RowAssignment;
+import io.skis.sql.ast.SelectStatement;
+import io.skis.sql.ast.SemanticValidator;
+import io.skis.sql.ast.SetAssignment;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.TableExpression;
@@ -54,16 +63,34 @@ public final class MutationQuerySupport {
     return value == null ? null : QueryValueSnapshots.capture(value);
   }
 
+  public static <V> Assignment setNull(Selectable<V> column) {
+    if (!column.nullability().isNullable())
+      throw new IllegalArgumentException("SET NULL requires a nullable target");
+    return new Assignment(
+        column, null, new ExpressionSelectable<>(LiteralExpression.nullLiteral(column.javaType())));
+  }
+
+  public static <V> Assignment setDefault(Selectable<V> column) {
+    return new Assignment(
+        column,
+        null,
+        new ExpressionSelectable<>(LiteralExpression.defaultValue(column.javaType())));
+  }
+
   public static final class Assignment {
     private final Selectable<?> column;
     private final @Nullable Selectable<?> expression;
     private final @Nullable QueryParameter<?> parameter;
     private final QueryParameters parameters;
+    private final @Nullable TargetRowColumns row;
+    private final @Nullable AbstractSelectQuery<?, ?> rowQuery;
 
     public Assignment(
         Selectable<?> column, @Nullable Object value, @Nullable Selectable<?> expression) {
       this.column = SelectableSupport.requireFramework(Objects.requireNonNull(column, "column"));
       this.expression = expression;
+      this.row = null;
+      this.rowQuery = null;
       if (expression == null) {
         QueryParameter<?> reference = parameter(column);
         this.parameter = reference;
@@ -74,8 +101,21 @@ public final class MutationQuerySupport {
       }
     }
 
+    private Assignment(TargetRowColumns row, AbstractSelectQuery<?, ?> query) {
+      this.row = row;
+      this.rowQuery = query;
+      this.column = row.columns().getFirst();
+      this.expression = null;
+      this.parameter = null;
+      this.parameters = query.parameters;
+    }
+
+    public List<Selectable<?>> columns() {
+      return row == null ? List.of(column) : row.columns();
+    }
+
     private static <V> QueryParameter<V> parameter(Selectable<V> column) {
-      return new DefaultQueryParameter<>(column.javaType(), column.nullability(), null);
+      return new DefaultQueryParameter<>(column.javaType(), column.nullability());
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -98,11 +138,13 @@ public final class MutationQuerySupport {
   }
 
   public record Inputs(
-      List<UpdateAssignment<?>> assignments,
+      List<? extends SetAssignment> assignments,
       SqlPredicate where,
       List<JdbcTypeCodec<?>> codecs,
       Optional<List<Object>> cacheIdentity,
-      @Nullable Object[] values) {
+      @Nullable Object[] values,
+      @Nullable FromClause sources,
+      List<SqlExpression<?>> returningExpressions) {
     @Override
     public String toString() {
       return "MutationInputs[values redacted]";
@@ -115,28 +157,22 @@ public final class MutationQuerySupport {
       QueryTable<E> target,
       List<Assignment> assignments,
       @Nullable QueryCondition condition,
-      boolean update) {
+      @Nullable Sources sourceTree,
+      @Nullable Result<?> returning) {
     StatementParameterLayout layout = new StatementParameterLayout();
     QueryParameterBindings bindings = new QueryParameterBindings();
     QueryConditionCompiler compiler = new QueryConditionCompiler(layout, bindings);
-    List<UpdateAssignment<?>> compiled = new ArrayList<>(assignments.size() + 1);
+    FromClause sourceAst = sourceTree == null ? null : sourceTree.compile(compiler);
+    List<SetAssignment> compiled = new ArrayList<>(assignments.size());
     for (Assignment assignment : assignments) {
-      compiled.add(assignment(target, assignment, compiler));
-    }
-    if (update) {
-      target
-          .entity()
-          .version()
-          .ifPresent(
-              version ->
-                  compiled.add(
-                      increment(QueryTableModel.of(target).internalColumn(version.property()))));
+      compiled.add(setAssignment(target, assignment, compiler));
     }
     SqlPredicate where =
         condition == null
             ? new BooleanPredicate(true)
             : QueryConditions.compile(condition, compiler);
-    TableRuntimeScope scope = TableRuntimeScope.resolve(registry, FromClause.of(table(target)));
+    List<SqlExpression<?>> outputs = returning == null ? List.of() : returning.compile(compiler);
+    TableRuntimeScope scope = TableRuntimeScope.resolve(registry, sourceScope(target, sourceAst));
     for (Selectable<?> source : layout.builtinParameterSources()) {
       ResolvedValueMapping.requireBuiltinParameterSource(source, scope.outputCodec(source));
     }
@@ -161,12 +197,94 @@ public final class MutationQuerySupport {
         where,
         List.copyOf(codecs),
         cacheable ? Optional.of(List.copyOf(identities)) : Optional.empty(),
-        parameters.projectValues(references));
+        parameters.projectValues(references),
+        sourceAst,
+        outputs);
   }
 
-  private static <V> UpdateAssignment<V> increment(QueryColumn<?, V> column) {
-    return new UpdateAssignment<>(
-        column.expression(), new IncrementExpression<>(column.expression()));
+  private static FromClause sourceScope(QueryTable<?> target, @Nullable FromClause sources) {
+    if (sources == null) return FromClause.of(table(target));
+    List<JoinClause> joins = new ArrayList<>(sources.joins());
+    joins.add(new JoinClause(JoinType.CROSS, table(target), null));
+    return new FromClause(sources.root(), joins);
+  }
+
+  public static Sources source(QueryTable<?> table) {
+    return new Sources(QueryRelations.of(table), List.of(), QueryParameters.empty());
+  }
+
+  public static Sources source(DerivedRelation relation) {
+    QueryRelation source = QueryRelations.of(relation);
+    return new Sources(
+        QueryRelations.structure(source), List.of(), QueryRelations.parameters(source));
+  }
+
+  /** Immutable, value-separated source tree shared with SELECT construction. */
+  public static final class Sources {
+    private final QueryRelation root;
+    private final List<QueryJoin> joins;
+    private final QueryParameters parameters;
+
+    private Sources(QueryRelation root, List<QueryJoin> joins, QueryParameters parameters) {
+      this.root = root;
+      this.joins = joins;
+      this.parameters = parameters;
+    }
+
+    public Sources join(QueryTable<?> table, JoinType type, @Nullable QueryCondition on) {
+      return append(QueryRelations.of(table), type, on);
+    }
+
+    public Sources join(DerivedRelation relation, JoinType type, @Nullable QueryCondition on) {
+      return append(QueryRelations.of(relation), type, on);
+    }
+
+    private Sources append(QueryRelation relation, JoinType type, @Nullable QueryCondition on) {
+      ExpressionCapture capture = new ExpressionCapture();
+      capture.include(QueryRelations.parameters(relation));
+      QueryCondition condition = on == null ? null : capture.condition(on);
+      List<QueryJoin> next = new ArrayList<>(joins.size() + 1);
+      next.addAll(joins);
+      next.add(new QueryJoin(type, QueryRelations.structure(relation), condition));
+      return new Sources(root, List.copyOf(next), parameters.merge(capture.parameters()));
+    }
+
+    FromClause compile(QueryConditionCompiler compiler) {
+      compiler.include(parameters);
+      List<JoinClause> compiled = new ArrayList<>(joins.size());
+      var source = QueryRelations.compile(root, compiler);
+      for (QueryJoin join : joins) {
+        var right = QueryRelations.compile(join.right(), compiler);
+        SqlPredicate on = join.on() == null ? null : QueryConditions.compile(join.on(), compiler);
+        compiled.add(new JoinClause(join.type(), right, on));
+      }
+      return new FromClause(source, compiled);
+    }
+  }
+
+  public static Assignment rowAssignment(RowColumns columns, SelectSource<?> query) {
+    if (!(columns instanceof TargetRowColumns row))
+      throw new IllegalArgumentException("target row was not created by SKIS");
+    return new Assignment(row, QueryModels.description(query));
+  }
+
+  /** Query-fed writes use the same value provenance and built-in Codec rules as SELECT results. */
+  public static List<JdbcTypeCodec<?>> queryOutputCodecs(
+      EntityRuntimeRegistry registry,
+      SelectStatement query,
+      @Nullable FromClause outerSources,
+      List<JdbcTypeCodec<?>> parameterCodecs) {
+    return QueryInputMappings.outputCodecs(registry, query, outerSources, parameterCodecs);
+  }
+
+  static SetAssignment setAssignment(
+      QueryTable<?> target, Assignment input, QueryConditionCompiler compiler) {
+    if (input.row == null) return assignment(target, input, compiler);
+    compiler.include(input.parameters);
+    List<ColumnExpression<?, ?>> columns = new ArrayList<>(input.row.columns().size());
+    for (Selectable<?> selected : input.row.columns()) columns.add(column(target, selected));
+    return new RowAssignment(
+        columns, compiler.subquery(Objects.requireNonNull(input.rowQuery).state));
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -186,26 +304,7 @@ public final class MutationQuerySupport {
   }
 
   public static <E> Result<E> result(QueryTable<E> target) {
-    return new Result<>(
-        target,
-        SelectedResult.entity(target),
-        List.copyOf(QueryTableModel.of(target).selections()));
-  }
-
-  /** Validates a collection return selection without allocating an unused result descriptor. */
-  public static <R> void validateReturningProjection(
-      QueryTable<?> target, ProjectionSelection<R> projection) {
-    ProjectionSelection<R> selected = QueryModels.projection(projection);
-    for (Selectable<?> selectable : selected.selections()) {
-      column(target, selectable);
-    }
-  }
-
-  /** Resolves dedicated projection sources and checks that they all belong to the write target. */
-  public static <R> void validateReturningProjection(
-      QueryTable<?> target, ProjectionType<R> projection) {
-    validateReturningProjection(
-        target, ProjectionSourceBinder.bind(projection, QueryRelations.of(target), List.of()));
+    return new Result<>(target, SelectedResult.entity(target));
   }
 
   public static <R> Result<R> result(QueryTable<?> target, ProjectionType<R> projection) {
@@ -214,47 +313,46 @@ public final class MutationQuerySupport {
   }
 
   public static <R> Result<R> result(QueryTable<?> target, ProjectionSelection<R> projection) {
-    ProjectionSelection<R> selected = QueryModels.projection(projection);
-    List<ColumnExpression<?, ?>> columns = new ArrayList<>(selected.selections().size());
-    for (Selectable<?> selectable : selected.selections()) {
-      columns.add(column(target, selectable));
-    }
-    return new Result<>(target, SelectedResult.projection(selected), List.copyOf(columns));
+    return new Result<>(target, SelectedResult.projection(QueryModels.projection(projection)));
   }
 
-  /** Value-free return selection; generated decoder creation is deferred until a cache miss. */
-  public static final class Result<R> {
+  public static <V> Result<V> result(QueryTable<?> target, NonNullSelectable<V> selection) {
+    return new Result<>(target, SelectedResult.requiredScalar(selection));
+  }
+
+  public static <V> Result<@Nullable V> result(QueryTable<?> target, Selectable<V> selection) {
+    SelectedResult<@Nullable V> selected = SelectedResult.nullableScalar(selection);
+    return new Result<@Nullable V>(target, selected);
+  }
+
+  /** Invocation-owned values and a detached result model; shared plans retain only its decoder. */
+  public static final class Result<R extends @Nullable Object> {
     private final QueryTable<?> target;
     private final SelectedResult<R> selected;
-    private final List<ColumnExpression<?, ?>> columns;
+    private final QueryParameters parameters;
 
-    private Result(
-        QueryTable<?> target, SelectedResult<R> selected, List<ColumnExpression<?, ?>> columns) {
+    private Result(QueryTable<?> target, SelectedResult<R> selection) {
       this.target = target;
-      this.selected = selected;
-      this.columns = columns;
+      ExpressionCapture capture = new ExpressionCapture();
+      this.selected = selection.capture(capture);
+      this.parameters = capture.parameters();
     }
 
-    /** Registry-owned Codec sources, result/factory contracts and loader-aware type tokens. */
+    List<SqlExpression<?>> compile(QueryConditionCompiler compiler) {
+      compiler.include(parameters);
+      List<SqlExpression<?>> outputs = selected.compileExpressions(compiler, false);
+      SemanticValidator.validateReturning(table(target), outputs);
+      return outputs;
+    }
+
     public Optional<?> cacheIdentity(EntityRuntimeRegistry registry) {
       return selected.planKeyResultShape(new QueryPlanKey.IdentityScope(registry));
     }
 
-    public List<ColumnExpression<?, ?>> columns() {
-      return columns;
-    }
-
-    public RowDecoder<R> decoder(EntityRuntimeRegistry registry) {
+    public RowDecoder<R> decoder(
+        EntityRuntimeRegistry registry, List<SqlExpression<?>> expressions) {
       TableRuntimeScope scope = TableRuntimeScope.resolve(registry, FromClause.of(table(target)));
-      RowDecoder<R> decoder = selected.resolve(scope, new ArrayList<>(columns)).decoder();
-      return (resultSet, context) -> {
-        R value = decoder.decode(resultSet, context);
-        if (value == null) {
-          throw MutationException.of(
-              SkisErrorCode.MUTATION_RETURNING_SHAPE, "generated RETURNING decoder returned null");
-        }
-        return value;
-      };
+      return selected.resolve(scope, expressions).decoder();
     }
 
     @Override

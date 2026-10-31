@@ -33,7 +33,7 @@ class GeneratedIdConsumerTest {
       var executor = Skis.builder(source).dialect(PostgreSqlDialect.INSTANCE)
           .runtimeModels(List.of(GeneratedTicketRuntimeModel.MODEL)).build();
       Written<GeneratedTicket> result = executor.insertInto(GeneratedTicketTable.generatedTicketTable).value(new GeneratedTicket(null, "consumer")).returning().write();
-      Long id = result.get().id();
+      Long id = result.one().get().id();
       assertNotNull(id);
       try {
         assertEquals("consumer", executor.findById(GeneratedTicketTable.generatedTicketTable, id)

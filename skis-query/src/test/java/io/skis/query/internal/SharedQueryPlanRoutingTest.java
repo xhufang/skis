@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.skis.core.ExecutionOptions;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisDiagnosticStage;
 import io.skis.core.SkisErrorCode;
@@ -46,10 +47,9 @@ import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.Selectable;
 import io.skis.query.SortSpecification;
 import io.skis.query.Sql;
@@ -117,10 +117,10 @@ class SharedQueryPlanRoutingTest {
   @Test
   void freshQueriesSharePlansButKeepTheirOwnAstAndArgumentsAndL0SkipsL1() throws Exception {
     Fixture fixture = fixture(16, true);
-    DefaultSelectQuery<Long> first = scalar(fixture, 1L);
-    QueryCompilation<Long> a = first.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> local = first.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> b = scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+    DefaultExecutableSelectQuery<Long> first = scalar(fixture, 1L);
+    QueryCompilation<Long> a = TestParameters.compilation(first, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> local = TestParameters.compilation(first, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> b = TestParameters.compilation(scalar(fixture, 2L), QueryPagination.None.INSTANCE);
 
     assertSame(a.plan(), local.plan());
     assertSame(a.ast(), local.ast());
@@ -156,8 +156,8 @@ class SharedQueryPlanRoutingTest {
     Fixture fixture = fixture(16, true);
     PetTable pet = new PetTable().as("p");
     OwnerTable owner = new OwnerTable().as("o");
-    DefaultSelectQuery<Long> query =
-        (DefaultSelectQuery<Long>)
+    DefaultExecutableSelectQuery<Long> query =
+        (DefaultExecutableSelectQuery<Long>)
             fixture
                 .operations()
                 .select(pet.id)
@@ -166,9 +166,9 @@ class SharedQueryPlanRoutingTest {
                 .on(pet.id.eq(owner.id))
                 .orderBy(pet.id.asc());
 
-    QueryCompilation<Long> content = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> offset = query.compilation(new QueryPagination.Offset(10, 20));
-    QueryCompilation<Long> keyset = query.compilation(new QueryPagination.Keyset(10, List.of(7L)));
+    QueryCompilation<Long> content = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> offset = TestParameters.compilation(query, new QueryPagination.Offset(10, 20));
+    QueryCompilation<Long> keyset = TestParameters.compilation(query, new QueryPagination.Keyset(10, List.of(7L)));
 
     assertEquals(
         "SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" LEFT JOIN \"owner\" AS \"o\" "
@@ -250,11 +250,11 @@ class SharedQueryPlanRoutingTest {
         Sql.derived(Sql.select(inner.id).from(inner), "derived_owner", output);
     DerivedRelation replacement = original.as("derived_owner");
     CompiledQueryStructure originalStructure =
-        SelectQueryState.create(SelectedResult.requiredScalar(original.column(output)), original)
+        SelectQueryState.create(SelectedResult.requiredScalar(original.column(output)), QueryRelations.of(original))
             .structure();
     CompiledQueryStructure replacementStructure =
         SelectQueryState.create(
-                SelectedResult.requiredScalar(replacement.column(output)), replacement)
+                SelectedResult.requiredScalar(replacement.column(output)), QueryRelations.of(replacement))
             .structure();
 
     TableRuntimeScope scope = TableRuntimeScope.resolve(REGISTRY, originalStructure.fromClause());
@@ -268,11 +268,11 @@ class SharedQueryPlanRoutingTest {
   void rewrittenMembershipValidatesOriginalAndFinalStructuresWithoutLegacyReanalysis() {
     Fixture fixture = fixture(16, true);
     PetTable pet = new PetTable().as("p");
-    DefaultSelectQuery<Long> query =
-        (DefaultSelectQuery<Long>)
+    DefaultExecutableSelectQuery<Long> query =
+        (DefaultExecutableSelectQuery<Long>)
             fixture.operations().select(pet.id).from(pet).where(pet.id.in(List.of()));
 
-    QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
 
     assertEquals("SELECT \"p\".\"id\" FROM \"pet\" AS \"p\" WHERE FALSE", compilation.plan().sql());
     assertEquals(2, fixture.dialect().validations.get());
@@ -305,8 +305,8 @@ class SharedQueryPlanRoutingTest {
     Fixture fixture = fixture(16, true);
     PetTable first = new PetTable();
     PetTable second = new PetTable();
-    DefaultSelectQuery<Long> a = orderedScalar(fixture, first, 1L);
-    DefaultSelectQuery<Long> b = orderedScalar(fixture, second, 2L);
+    DefaultExecutableSelectQuery<Long> a = orderedScalar(fixture, first, 1L);
+    DefaultExecutableSelectQuery<Long> b = orderedScalar(fixture, second, 2L);
     List<QueryPagination> firstPages =
         List.of(
             QueryPagination.None.INSTANCE,
@@ -323,8 +323,8 @@ class SharedQueryPlanRoutingTest {
             new QueryPagination.Keyset(9, Arrays.asList(null, 8L)));
     List<Object> plans = new ArrayList<>();
     for (int index = 0; index < firstPages.size(); index++) {
-      QueryCompilation<Long> left = a.compilation(firstPages.get(index));
-      QueryCompilation<Long> right = b.compilation(secondPages.get(index));
+      QueryCompilation<Long> left = TestParameters.compilation(a, firstPages.get(index));
+      QueryCompilation<Long> right = TestParameters.compilation(b, secondPages.get(index));
       assertSame(left.plan(), right.plan());
       for (Object previous : plans) {
         assertNotSame(previous, left.plan());
@@ -333,9 +333,9 @@ class SharedQueryPlanRoutingTest {
       assertEquals(2L, bindings(right).getFirst());
     }
     // Returning to a previous shape misses the single recent-plan slot and reuses shared L1.
-    assertSame(plans.getFirst(), a.compilation(QueryPagination.None.INSTANCE).plan());
+    assertSame(plans.getFirst(), TestParameters.compilation(a, QueryPagination.None.INSTANCE).plan());
     assertEquals(new QueryPlanCacheStatistics(6, 5, 0, 0, 5, 16), fixture.stats());
-    assertEquals(List.of(2L, 8L, 9), bindings(b.compilation(secondPages.getLast())));
+    assertEquals(List.of(2L, 8L, 9), bindings(TestParameters.compilation(b, secondPages.getLast())));
   }
 
   @Test
@@ -357,13 +357,13 @@ class SharedQueryPlanRoutingTest {
     Fixture baseline = fixture(0, true);
     List<QueryCompilation<Long>> expected =
         pages.stream()
-            .map(page -> orderedScalar(baseline, new PetTable(), 1L).compilation(page))
+            .map(page -> TestParameters.compilation(orderedScalar(baseline, new PetTable(), 1L), page))
             .toList();
 
     // Stable L1, disabled L1 and an unstable dialect all use the same query-local publication path.
     for (int mode = 0; mode < 3; mode++) {
       Fixture fixture = fixture(mode == 1 ? 0 : 16, mode != 2);
-      DefaultSelectQuery<Long> query = orderedScalar(fixture, new PetTable(), 1L);
+      DefaultExecutableSelectQuery<Long> query = orderedScalar(fixture, new PetTable(), 1L);
       RenderSequence sequence = new RenderSequence();
       fixture.dialect().sequence = sequence;
       List<Future<QueryCompilation<Long>>> futures = new ArrayList<>();
@@ -371,7 +371,7 @@ class SharedQueryPlanRoutingTest {
         try {
           for (int index = 0; index < pages.size(); index++) {
             QueryPagination page = pages.get(index);
-            futures.add(workers.submit(() -> query.compilation(page)));
+            futures.add(workers.submit(() -> TestParameters.compilation(query, page)));
             assertTrue(sequence.entered.get(index).await(5, TimeUnit.SECONDS));
           }
           for (int index = pages.size() - 1; index >= 0; index--) {
@@ -379,7 +379,7 @@ class SharedQueryPlanRoutingTest {
             QueryCompilation<Long> completed = futures.get(index).get(5, TimeUnit.SECONDS);
             assertPaginationCompilation(
                 expected.get(index), completed, expectedBindings.get(index));
-            QueryCompilation<Long> local = query.compilation(changedValues.get(index));
+            QueryCompilation<Long> local = TestParameters.compilation(query, changedValues.get(index));
             assertSame(completed.plan(), local.plan());
             assertPaginationCompilation(expected.get(index), local, changedBindings.get(index));
           }
@@ -390,7 +390,7 @@ class SharedQueryPlanRoutingTest {
       }
       // Offset finished last. Revisiting every other shape must not reuse that shape's SQL/Binder.
       for (int index = pages.size() - 1; index >= 0; index--) {
-        QueryCompilation<Long> revisited = query.compilation(changedValues.get(index));
+        QueryCompilation<Long> revisited = TestParameters.compilation(query, changedValues.get(index));
         assertPaginationCompilation(expected.get(index), revisited, changedBindings.get(index));
         if (mode == 0) {
           assertSame(futures.get(index).get(5, TimeUnit.SECONDS).plan(), revisited.plan());
@@ -488,16 +488,14 @@ class SharedQueryPlanRoutingTest {
     Fixture fixture = fixture(16, true);
     PetTable outer = new PetTable().as("p");
     OwnerTable owner = new OwnerTable().as("o");
-    QueryParameter<Long> parameter = Sql.parameter(Long.class);
-    var lookup = Sql.select(owner.id).from(owner).where(owner.id.ge(parameter));
-    DefaultSelectQuery<Long> query =
-        (DefaultSelectQuery<Long>)
-            fixture
-                .operations()
-                .query(Sql.select(Sql.scalar(lookup)).from(outer))
-                .bind(parameter, 7L);
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
+    var lookup = Sql.select(owner.id).from(owner).where(TestParameters.ge(owner.id, parameter));
+    DefaultExecutableSelectQuery<Long> query =
+        (DefaultExecutableSelectQuery<Long>)
+            TestParameters.bind(TestParameters.query(fixture
+                .operations(), Sql.select(Sql.scalar(lookup)).from(outer)), parameter, 7L);
 
-    QueryCompilation<Long> count = query.distinct().countCompilation();
+    QueryCompilation<Long> count = TestParameters.countCompilation(query.distinct());
 
     assertEquals(
         "SELECT COUNT(DISTINCT (SELECT \"o\".\"id\" FROM \"owner\" AS \"o\" "
@@ -522,18 +520,18 @@ class SharedQueryPlanRoutingTest {
     for (int shape = 0; shape < 4; shape++) {
       Fixture fixture = fixture(16, true);
       PetTable table = new PetTable().as("p");
-      DefaultSelectQuery<Long> query =
+      DefaultExecutableSelectQuery<Long> query =
           switch (shape) {
             case 0 -> scalar(fixture, table, 7L);
             case 1 -> scalar(fixture, table, 7L).distinct();
             case 2 -> nested(fixture, 3, 7L);
             case 3 ->
-                (DefaultSelectQuery<Long>)
+                (DefaultExecutableSelectQuery<Long>)
                     fixture.operations().select(table.id).from(table).where(table.id.in(List.of()));
             default -> throw new AssertionError(shape);
           };
 
-      QueryCompilation<Long> count = query.countCompilation();
+      QueryCompilation<Long> count = TestParameters.countCompilation(query);
 
       assertTrue(count.ast() instanceof CountAst, "shape " + shape);
       fixture.dialect().assertAnalysisHandoff(count.ast());
@@ -574,17 +572,17 @@ class SharedQueryPlanRoutingTest {
     for (int shape = 0; shape < 6; shape++) {
       Fixture fixture = fixture(32, true);
       QueryCompilation<Long> rootOnly =
-          scalar(fixture, 1L).compilation(QueryPagination.None.INSTANCE);
-      DefaultSelectQuery<Long> first = nested(fixture, shape, 11L);
-      DefaultSelectQuery<Long> second = nested(fixture, shape, 22L);
-      QueryCompilation<Long> a = first.compilation(QueryPagination.None.INSTANCE);
-      QueryCompilation<Long> b = second.compilation(QueryPagination.None.INSTANCE);
+          TestParameters.compilation(scalar(fixture, 1L), QueryPagination.None.INSTANCE);
+      DefaultExecutableSelectQuery<Long> first = nested(fixture, shape, 11L);
+      DefaultExecutableSelectQuery<Long> second = nested(fixture, shape, 22L);
+      QueryCompilation<Long> a = TestParameters.compilation(first, QueryPagination.None.INSTANCE);
+      QueryCompilation<Long> b = TestParameters.compilation(second, QueryPagination.None.INSTANCE);
       assertSame(a.plan(), b.plan());
       assertNotSame(a.ast(), b.ast());
       assertEquals(List.of(11L), bindings(a));
       assertEquals(List.of(22L), bindings(b));
-      QueryCompilation<Long> countA = first.countCompilation();
-      QueryCompilation<Long> countB = second.countCompilation();
+      QueryCompilation<Long> countA = TestParameters.countCompilation(first);
+      QueryCompilation<Long> countB = TestParameters.countCompilation(second);
       assertSame(countA.plan(), countB.plan());
       assertEquals(shape == 3 ? List.of() : List.of(22L), bindings(countB));
       if (shape == 3) {
@@ -596,10 +594,10 @@ class SharedQueryPlanRoutingTest {
       assertEquals(2, fixture.catalog().invalidateProjectionPlans(OWNER));
       assertEquals(1, fixture.stats().size());
       assertSame(
-          rootOnly.plan(), scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE).plan());
-      DefaultSelectQuery<Long> rebuilt = nested(fixture, shape, 33L);
-      assertNotSame(a.plan(), rebuilt.compilation(QueryPagination.None.INSTANCE).plan());
-      assertNotSame(countA.plan(), rebuilt.countCompilation().plan());
+          rootOnly.plan(), TestParameters.compilation(scalar(fixture, 2L), QueryPagination.None.INSTANCE).plan());
+      DefaultExecutableSelectQuery<Long> rebuilt = nested(fixture, shape, 33L);
+      assertNotSame(a.plan(), TestParameters.compilation(rebuilt, QueryPagination.None.INSTANCE).plan());
+      assertNotSame(countA.plan(), TestParameters.countCompilation(rebuilt).plan());
       assertEquals(new QueryPlanCacheStatistics(3, 5, 0, 2, 3, 32), fixture.stats());
     }
   }
@@ -644,12 +642,12 @@ class SharedQueryPlanRoutingTest {
     assertEquals(List.of(3L, 4L), bindings(alsoTwo));
     assertEquals(List.of(3L, 4L, 5L), bindings(three));
 
-    QueryParameter<Long> parameter = Sql.parameter(Long.class);
-    var description = Sql.select(table.id).from(table).where(table.id.eq(parameter));
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
+    var description = Sql.select(table.id).from(table).where(TestParameters.eq(table.id, parameter));
     QueryCompilation<Long> nullValue =
-        compile(fixture.operations().query(description).bind(parameter, null));
+        compile(TestParameters.bind(TestParameters.query(fixture.operations(), description), parameter, null));
     QueryCompilation<Long> nonNullValue =
-        compile(fixture.operations().query(description).bind(parameter, 6L));
+        compile(TestParameters.bind(TestParameters.query(fixture.operations(), description), parameter, 6L));
     QueryCompilation<Long> required =
         compile(fixture.operations().select(table.id).from(table).where(table.id.eq(6L)));
     assertSame(nullValue.plan(), nonNullValue.plan());
@@ -657,19 +655,19 @@ class SharedQueryPlanRoutingTest {
     assertEquals(java.util.Collections.singletonList(null), bindings(nullValue));
     assertEquals(List.of(6L), bindings(nonNullValue));
 
-    DefaultSelectQuery<Long> plain =
-        (DefaultSelectQuery<Long>) fixture.operations().select(table.id).from(table);
-    assertNotSame(plain.countCompilation().plan(), plain.distinct().countCompilation().plan());
+    DefaultExecutableSelectQuery<Long> plain =
+        (DefaultExecutableSelectQuery<Long>) fixture.operations().select(table.id).from(table);
+    assertNotSame(TestParameters.countCompilation(plain).plan(), TestParameters.countCompilation(plain.distinct()).plan());
   }
 
   @Test
   void disabledAndUnstableDialectBypassL1ButKeepL0AndWorkingL2() throws Exception {
     for (Fixture fixture : List.of(fixture(0, true), fixture(16, false))) {
-      DefaultSelectQuery<Long> query = scalar(fixture, 1L);
-      QueryCompilation<Long> first = query.compilation(QueryPagination.None.INSTANCE);
-      assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+      DefaultExecutableSelectQuery<Long> query = scalar(fixture, 1L);
+      QueryCompilation<Long> first = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+      assertSame(first.plan(), TestParameters.compilation(query, QueryPagination.None.INSTANCE).plan());
       QueryCompilation<Long> second =
-          scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+          TestParameters.compilation(scalar(fixture, 2L), QueryPagination.None.INSTANCE);
       assertNotSame(first.plan(), second.plan());
       assertEquals(List.of(2L), bindings(second));
       assertEquals(0, fixture.stats().hitCount());
@@ -695,16 +693,16 @@ class SharedQueryPlanRoutingTest {
     Object previous = null;
     for (long value : List.of(1L, 2L)) {
       PetTable table = new PetTable();
-      DefaultSelectQuery<Long> query =
-          (DefaultSelectQuery<Long>)
+      DefaultExecutableSelectQuery<Long> query =
+          (DefaultExecutableSelectQuery<Long>)
               fixture
                   .operations()
                   .select(table.id)
                   .from(table)
                   .where(table.id.ge(value).and(Sql.exists(Sql.selectFrom(external))));
-      QueryCompilation<Long> compiled = query.compilation(QueryPagination.None.INSTANCE);
+      QueryCompilation<Long> compiled = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
       assertNotSame(previous, compiled.plan());
-      assertSame(compiled.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+      assertSame(compiled.plan(), TestParameters.compilation(query, QueryPagination.None.INSTANCE).plan());
       assertEquals(List.of(value), bindings(compiled));
       assertTrue(compiled.plan().sql().contains("external_rows"));
       previous = compiled.plan();
@@ -716,18 +714,18 @@ class SharedQueryPlanRoutingTest {
   @Test
   void capacityOneClearAndInvalidationPreserveExistingL0ButForceFreshCompilation() {
     Fixture fixture = fixture(1, true);
-    DefaultSelectQuery<Long> original = scalar(fixture, 1L);
-    QueryCompilation<Long> a = original.compilation(QueryPagination.None.INSTANCE);
-    scalar(fixture, 2L).countCompilation();
-    QueryCompilation<Long> b = scalar(fixture, 3L).compilation(QueryPagination.None.INSTANCE);
+    DefaultExecutableSelectQuery<Long> original = scalar(fixture, 1L);
+    QueryCompilation<Long> a = TestParameters.compilation(original, QueryPagination.None.INSTANCE);
+    TestParameters.countCompilation(scalar(fixture, 2L));
+    QueryCompilation<Long> b = TestParameters.compilation(scalar(fixture, 3L), QueryPagination.None.INSTANCE);
     assertNotSame(a.plan(), b.plan());
     assertEquals(2, fixture.stats().evictionCount());
     fixture.catalog().clearProjectionPlans();
-    assertSame(a.plan(), original.compilation(QueryPagination.None.INSTANCE).plan());
-    QueryCompilation<Long> c = scalar(fixture, 4L).compilation(QueryPagination.None.INSTANCE);
+    assertSame(a.plan(), TestParameters.compilation(original, QueryPagination.None.INSTANCE).plan());
+    QueryCompilation<Long> c = TestParameters.compilation(scalar(fixture, 4L), QueryPagination.None.INSTANCE);
     assertNotSame(b.plan(), c.plan());
     assertEquals(1, fixture.catalog().invalidateProjectionPlans(PET));
-    assertNotSame(c.plan(), scalar(fixture, 5L).compilation(QueryPagination.None.INSTANCE).plan());
+    assertNotSame(c.plan(), TestParameters.compilation(scalar(fixture, 5L), QueryPagination.None.INSTANCE).plan());
     assertEquals(2, fixture.stats().invalidationCount());
     assertEquals(1, fixture.stats().size());
   }
@@ -738,9 +736,9 @@ class SharedQueryPlanRoutingTest {
     fixture.dialect().failNext = true;
     assertThrows(
         QueryValidationException.class,
-        () -> scalar(fixture, 1L).compilation(QueryPagination.None.INSTANCE));
+        () -> TestParameters.compilation(scalar(fixture, 1L), QueryPagination.None.INSTANCE));
     assertEquals(0, fixture.stats().size());
-    scalar(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+    TestParameters.compilation(scalar(fixture, 2L), QueryPagination.None.INSTANCE);
     PetTable root = new PetTable();
     PetTable foreignOccurrence = new PetTable();
     assertThrows(
@@ -772,7 +770,7 @@ class SharedQueryPlanRoutingTest {
                   () -> {
                     assertTrue(start.await(5, TimeUnit.SECONDS));
                     QueryCompilation<Long> compiled =
-                        scalar(fixture, ownValue).compilation(QueryPagination.None.INSTANCE);
+                        TestParameters.compilation(scalar(fixture, ownValue), QueryPagination.None.INSTANCE);
                     assertEquals(List.of(ownValue), bindings(compiled));
                     return compiled;
                   }));
@@ -1105,23 +1103,23 @@ class SharedQueryPlanRoutingTest {
   @Test
   void groupedContentOffsetAndCountKeepIndependentLayoutsAndLocalReuse() throws Exception {
     Fixture fixture = fixture(16, true, true);
-    DefaultSelectQuery<Long> first = grouped(fixture, 1L);
-    DefaultSelectQuery<Long> second = grouped(fixture, 2L);
-    QueryCompilation<Long> content = first.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> offset = first.compilation(new QueryPagination.Offset(3, 6));
-    QueryCompilation<Long> count = first.countCompilation();
+    DefaultExecutableSelectQuery<Long> first = grouped(fixture, 1L);
+    DefaultExecutableSelectQuery<Long> second = grouped(fixture, 2L);
+    QueryCompilation<Long> content = TestParameters.compilation(first, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> offset = TestParameters.compilation(first, new QueryPagination.Offset(3, 6));
+    QueryCompilation<Long> count = TestParameters.countCompilation(first);
     assertNotSame(content.plan(), offset.plan());
     assertNotSame(content.plan(), count.plan());
-    assertSame(content.plan(), second.compilation(QueryPagination.None.INSTANCE).plan());
-    QueryCompilation<Long> later = second.compilation(new QueryPagination.Offset(9, 18));
+    assertSame(content.plan(), TestParameters.compilation(second, QueryPagination.None.INSTANCE).plan());
+    QueryCompilation<Long> later = TestParameters.compilation(second, new QueryPagination.Offset(9, 18));
     assertSame(offset.plan(), later.plan());
     assertEquals(List.of(2L, 12L, 9, 18L), bindings(later));
-    QueryCompilation<Long> secondCount = second.countCompilation();
+    QueryCompilation<Long> secondCount = TestParameters.countCompilation(second);
     assertSame(count.plan(), secondCount.plan());
     assertEquals(List.of(2L, 12L), bindings(secondCount));
     assertFalse(secondCount.plan().sql().contains("OFFSET"));
-    assertSame(secondCount.plan(), second.countCompilation().plan());
-    assertSame(later.plan(), second.compilation(new QueryPagination.Offset(1, 2)).plan());
+    assertSame(secondCount.plan(), TestParameters.countCompilation(second).plan());
+    assertSame(later.plan(), TestParameters.compilation(second, new QueryPagination.Offset(1, 2)).plan());
     assertEquals(new QueryPlanCacheStatistics(3, 3, 0, 0, 3, 16), fixture.stats());
     assertEquals(3, fixture.dialect().renders.get());
   }
@@ -1132,10 +1130,9 @@ class SharedQueryPlanRoutingTest {
     List<QueryCompilation<?>> compiled = new ArrayList<>();
     for (long value : List.of(11L, 22L)) {
       PetTable table = new PetTable();
-      QueryParameter<Long> parameter = Sql.parameter(Long.class, "delta");
-      var key = Sql.add(table.id, Sql.value(parameter));
-      var query = fixture.operations().select(key).from(table).groupBy(key)
-          .having(Sql.max(table.id).gt(parameter)).orderBy(key.asc()).bind(parameter, value);
+      QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
+      var key = Sql.add(table.id, TestParameters.value(parameter));
+      var query = TestParameters.bind(fixture.operations().select(key).from(table).groupBy(key).having(TestParameters.gt(Sql.max(table.id), parameter)).orderBy(key.asc()), parameter, value);
       QueryCompilation<?> content = compile(query);
       assertTrue(content.plan().sql().contains("VALUES"));
       assertTrue(bindings(content).stream().allMatch(binding -> Long.valueOf(value).equals(binding)));
@@ -1152,18 +1149,16 @@ class SharedQueryPlanRoutingTest {
     Fixture fixture = fixture(16, true, true);
     for (long value : List.of(1L, 2L)) {
       PetTable table = new PetTable();
-      var first = Sql.parameter(Long.class, "same");
-      var second = Sql.parameter(Long.class, "same");
-      var query = fixture.operations().select(Sql.countAll()).from(table)
-          .where(table.id.ge(first)).having(Sql.countAll().gt(second))
-          .bind(first, value).bind(second, value + 10);
+      var first = TestParameters.parameter(Long.class);
+      var second = TestParameters.parameter(Long.class);
+      var query = TestParameters.bind(TestParameters.bind(fixture.operations().select(Sql.countAll()).from(table)
+          .where(TestParameters.ge(table.id, first)).having(TestParameters.gt(Sql.countAll(), second)), first, value), second, value + 10);
       assertEquals(List.of(value, value + 10), bindings(compile(query)));
-      var illegalKey = Sql.add(table.id, Sql.value(first));
-      var independentKey = Sql.add(table.id, Sql.value(second));
+      var illegalKey = Sql.add(table.id, TestParameters.value(first));
+      var independentKey = Sql.add(table.id, TestParameters.value(second));
       assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT,
-          assertThrows(QueryValidationException.class, () -> compile(fixture.operations()
-              .select(illegalKey).from(table).groupBy(independentKey)
-              .bind(first, value).bind(second, value))).code());
+          assertThrows(QueryValidationException.class, () -> compile(TestParameters.bind(TestParameters.bind(fixture.operations()
+              .select(illegalKey).from(table).groupBy(independentKey), first, value), second, value))).code());
     }
     assertEquals(new QueryPlanCacheStatistics(1, 1, 0, 0, 1, 16), fixture.stats());
   }
@@ -1174,20 +1169,20 @@ class SharedQueryPlanRoutingTest {
     PetTable table = new PetTable();
     OwnerTable owner = new OwnerTable().as("aggregate_owner");
     var aggregate = Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner));
-    var query = (DefaultSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
+    var query = (DefaultExecutableSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
         .having(aggregate.in(List.of()));
-    QueryCompilation<Long> first = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> count = query.countCompilation();
+    QueryCompilation<Long> first = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = TestParameters.countCompilation(query);
     assertFalse(first.plan().sql().contains("aggregate_owner"));
     assertFalse(count.plan().sql().contains("aggregate_owner"));
     assertEquals(2, fixture.catalog().invalidateProjectionPlans(OWNER));
     assertEquals(0, fixture.stats().size());
-    assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
-    assertSame(count.plan(), query.countCompilation().plan());
-    var fresh = (DefaultSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
+    assertSame(first.plan(), TestParameters.compilation(query, QueryPagination.None.INSTANCE).plan());
+    assertSame(count.plan(), TestParameters.countCompilation(query).plan());
+    var fresh = (DefaultExecutableSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
         .having(aggregate.in(List.of()));
-    assertNotSame(first.plan(), fresh.compilation(QueryPagination.None.INSTANCE).plan());
-    assertNotSame(count.plan(), fresh.countCompilation().plan());
+    assertNotSame(first.plan(), TestParameters.compilation(fresh, QueryPagination.None.INSTANCE).plan());
+    assertNotSame(count.plan(), TestParameters.countCompilation(fresh).plan());
   }
 
   @Test
@@ -1205,7 +1200,7 @@ class SharedQueryPlanRoutingTest {
           var maximum = Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner));
           condition = condition.and(maximum.in(List.of()));
         }
-        var state = SelectQueryState.create(selected, table)
+        var state = SelectQueryState.create(selected, QueryRelations.of(table))
             .where(condition).orderBy(List.of(table.id.asc()));
         CompiledQueryStructure structure = state.structure();
         QueryPlanCompiler compiler = fixture.catalog().compiler();
@@ -1253,12 +1248,12 @@ class SharedQueryPlanRoutingTest {
     for (int mode = 0; mode < 3; mode++) {
       Fixture fixture = fixture(mode == 1 ? 0 : 1, mode != 2, true);
       var query = grouped(fixture, 1L);
-      QueryCompilation<Long> first = query.compilation(QueryPagination.None.INSTANCE);
-      assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
-      QueryCompilation<Long> next = grouped(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+      QueryCompilation<Long> first = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+      assertSame(first.plan(), TestParameters.compilation(query, QueryPagination.None.INSTANCE).plan());
+      QueryCompilation<Long> next = TestParameters.compilation(grouped(fixture, 2L), QueryPagination.None.INSTANCE);
       if (mode == 0) {
         assertSame(first.plan(), next.plan());
-        query.countCompilation();
+        TestParameters.countCompilation(query);
         assertEquals(1, fixture.stats().evictionCount());
       } else {
         assertNotSame(first.plan(), next.plan());
@@ -1266,13 +1261,13 @@ class SharedQueryPlanRoutingTest {
         assertEquals(0, fixture.stats().hitCount());
       }
       fixture.catalog().clearProjectionPlans();
-      assertSame(first.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+      assertSame(first.plan(), TestParameters.compilation(query, QueryPagination.None.INSTANCE).plan());
       fixture.dialect().failNext = true;
       assertThrows(QueryValidationException.class,
-          () -> grouped(fixture, 3L).compilation(QueryPagination.None.INSTANCE));
+          () -> TestParameters.compilation(grouped(fixture, 3L), QueryPagination.None.INSTANCE));
       assertEquals(0, fixture.stats().size());
       assertEquals(List.of(4L, 14L),
-          bindings(grouped(fixture, 4L).compilation(QueryPagination.None.INSTANCE)));
+          bindings(TestParameters.compilation(grouped(fixture, 4L), QueryPagination.None.INSTANCE)));
     }
   }
 
@@ -1286,17 +1281,17 @@ class SharedQueryPlanRoutingTest {
       fixture.dialect().release = release;
       try (var workers = Executors.newSingleThreadExecutor()) {
         Future<QueryCompilation<Long>> old = workers.submit(
-            () -> grouped(fixture, 1L).compilation(QueryPagination.None.INSTANCE));
+            () -> TestParameters.compilation(grouped(fixture, 1L), QueryPagination.None.INSTANCE));
         try {
           assertTrue(entered.await(5, TimeUnit.SECONDS));
           if (clear) fixture.catalog().clearProjectionPlans();
           else assertEquals(0, fixture.catalog().invalidateProjectionPlans(PET));
           fixture.dialect().entered = null;
           fixture.dialect().release = null;
-          QueryCompilation<Long> fresh = grouped(fixture, 2L).compilation(QueryPagination.None.INSTANCE);
+          QueryCompilation<Long> fresh = TestParameters.compilation(grouped(fixture, 2L), QueryPagination.None.INSTANCE);
           release.countDown();
           assertNotSame(old.get(5, TimeUnit.SECONDS).plan(), fresh.plan());
-          assertSame(fresh.plan(), grouped(fixture, 3L).compilation(QueryPagination.None.INSTANCE).plan());
+          assertSame(fresh.plan(), TestParameters.compilation(grouped(fixture, 3L), QueryPagination.None.INSTANCE).plan());
           assertEquals(1, fixture.stats().size());
           assertEquals(List.of(2L, 12L), bindings(fresh));
         } finally {
@@ -1322,7 +1317,7 @@ class SharedQueryPlanRoutingTest {
           long ownValue = value;
           futures.add(workers.submit(() -> {
             assertTrue(start.await(5, TimeUnit.SECONDS));
-            var result = grouped(fixture, ownValue).compilation(QueryPagination.None.INSTANCE);
+            var result = TestParameters.compilation(grouped(fixture, ownValue), QueryPagination.None.INSTANCE);
             assertEquals(List.of(ownValue, ownValue + 10), bindings(result));
             return result;
           }));
@@ -1374,18 +1369,17 @@ class SharedQueryPlanRoutingTest {
   void aggregateL0AndL1ReuseSkipLoweringButKeepOriginalValidationAndNewFinalStages() {
     Fixture fixture = fixture(16, true, true);
     var first = grouped(fixture, 1L).andHaving(Sql.countAll().in(List.of()));
-    var content = first.compilation(QueryPagination.None.INSTANCE);
+    var content = TestParameters.compilation(first, QueryPagination.None.INSTANCE);
     int validations = fixture.dialect().validations.get();
-    assertSame(content.plan(), first.compilation(QueryPagination.None.INSTANCE).plan());
+    assertSame(content.plan(), TestParameters.compilation(first, QueryPagination.None.INSTANCE).plan());
     assertEquals(validations, fixture.dialect().validations.get());
-    assertSame(content.plan(), grouped(fixture, 2L).andHaving(Sql.countAll().in(List.of()))
-        .compilation(QueryPagination.None.INSTANCE).plan());
+    assertSame(content.plan(), TestParameters.compilation(grouped(fixture, 2L).andHaving(Sql.countAll().in(List.of())), QueryPagination.None.INSTANCE).plan());
     assertTrue(fixture.dialect().validations.get() > validations,
         "a new query still validates its original mapping and dialect contract");
     assertEquals(1, fixture.dialect().lowerings.get());
     assertEquals(1, fixture.dialect().renders.get());
-    var offset = first.compilation(new QueryPagination.Offset(2, 4));
-    var count = first.countCompilation();
+    var offset = TestParameters.compilation(first, new QueryPagination.Offset(2, 4));
+    var count = TestParameters.countCompilation(first);
     assertNotSame(content.ast(), offset.ast());
     assertNotSame(offset.ast(), count.ast());
     assertTrue(count.ast() instanceof CountAst);
@@ -1400,8 +1394,8 @@ class SharedQueryPlanRoutingTest {
     PetTable table = new PetTable();
     byte[] first = {1, 2};
     byte[] second = {3, 4};
-    var a = fixture.operations().select(Sql.value(first)).from(table);
-    var b = fixture.operations().select(Sql.value(second)).from(table);
+    var a = fixture.operations().select(TestParameters.value(first)).from(table);
+    var b = fixture.operations().select(TestParameters.value(second)).from(table);
     first[0] = 99;
     second[0] = 88;
     var compiledA = compile(a);
@@ -1416,9 +1410,9 @@ class SharedQueryPlanRoutingTest {
     assertEquals(new QueryPlanCacheStatistics(2, 2, 0, 0, 2, 16), fixture.stats());
   }
 
-  private static SelectQuery<?> aggregateQuery(Fixture fixture, int shape, long value) {
+  private static ExecutableSelectQuery<?> aggregateQuery(Fixture fixture, int shape, long value) {
     PetTable table = new PetTable();
-    QueryParameter<Long> ownerMinimum = Sql.parameter(Long.class, "ownerMinimum");
+    QueryParameter<Long> ownerMinimum = TestParameters.parameter(Long.class);
     Selectable<?> expression = switch (shape) {
       case 0 -> Sql.countAll();
       case 1 -> Sql.count(table.name);
@@ -1434,14 +1428,14 @@ class SharedQueryPlanRoutingTest {
       case 11 -> Sql.concat(table.name, Sql.value("suffix"));
       case 12 -> {
         OwnerTable owner = new OwnerTable().as("scalar_owner");
-        yield Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner).where(owner.id.ge(ownerMinimum)));
+        yield Sql.scalar(Sql.select(Sql.max(owner.id)).from(owner).where(TestParameters.ge(owner.id, ownerMinimum)));
       }
       case 13 -> {
         OwnerTable owner = new OwnerTable().as("derived_owner");
         var maximum = Sql.max(owner.id);
         var output = Sql.output(maximum, "maximum");
         var derived = Sql.derived(
-            Sql.select(maximum).from(owner).where(owner.id.ge(ownerMinimum)), "totals", output);
+            Sql.select(maximum).from(owner).where(TestParameters.ge(owner.id, ownerMinimum)), "totals", output);
         yield derived.column(output);
       }
       case 14 -> Sql.value(value);
@@ -1449,15 +1443,15 @@ class SharedQueryPlanRoutingTest {
     };
     if (shape == 13) {
       var derived = ((DerivedColumnSelectable<?>) expression).relation();
-      return fixture.operations().select(expression).from(derived).bind(ownerMinimum, value);
+      return TestParameters.bind(fixture.operations().select(expression).from(derived), ownerMinimum, value);
     }
-    SelectQuery<?> query = fixture.operations().select(expression).from(table).where(table.id.ge(value));
-    return shape == 12 ? query.bind(ownerMinimum, value) : query;
+    ExecutableSelectQuery<?> query = fixture.operations().select(expression).from(table).where(table.id.ge(value));
+    return shape == 12 ? TestParameters.bind(query, ownerMinimum, value) : query;
   }
 
-  private static DefaultSelectQuery<Long> grouped(Fixture fixture, long value) {
+  private static DefaultExecutableSelectQuery<Long> grouped(Fixture fixture, long value) {
     PetTable table = new PetTable();
-    return (DefaultSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
+    return (DefaultExecutableSelectQuery<Long>) fixture.operations().select(Sql.countAll()).from(table)
         .where(table.id.ge(value)).groupBy(table.name).having(Sql.countAll().gt(value + 10))
         .orderBy(table.name.asc());
   }
@@ -1520,15 +1514,15 @@ class SharedQueryPlanRoutingTest {
             StatementPurpose.PRIMARY);
   }
 
-  private static DefaultSelectQuery<Long> nested(Fixture fixture, int shape, long value) {
+  private static DefaultExecutableSelectQuery<Long> nested(Fixture fixture, int shape, long value) {
     PetTable outer = new PetTable().as("p");
     OwnerTable inner = new OwnerTable().as("q");
-    QueryParameter<Long> parameter = Sql.parameter(Long.class);
+    QueryParameter<Long> parameter = TestParameters.parameter(Long.class);
     QueryParameters parameters = QueryParameters.of(parameter, value);
-    var lookup = Sql.select(inner.id).from(inner).where(inner.id.ge(parameter));
+    var lookup = Sql.select(inner.id).from(inner).where(TestParameters.ge(inner.id, parameter));
     return switch (shape) {
       case 0 ->
-          (DefaultSelectQuery<Long>)
+          (DefaultExecutableSelectQuery<Long>)
               fixture
                   .operations()
                   .select(outer.id)
@@ -1536,60 +1530,52 @@ class SharedQueryPlanRoutingTest {
                   .join(inner)
                   .on(outer.id.eq(inner.id).and(inner.id.ge(value)));
       case 1 ->
-          (DefaultSelectQuery<Long>)
-              fixture
-                  .operations()
-                  .query(
+          (DefaultExecutableSelectQuery<Long>)
+              TestParameters.bind(TestParameters.query(fixture
+                  .operations(),
                       Sql.select(outer.id)
                           .from(outer)
-                          .where(Sql.exists(lookup.and(inner.id.eq(outer.id)))))
-                  .bind(parameter, value);
+                          .where(Sql.exists(lookup.and(inner.id.eq(outer.id))))), parameter, value);
       case 2 ->
-          (DefaultSelectQuery<Long>)
-              fixture
-                  .operations()
-                  .query(Sql.select(outer.id).from(outer).where(outer.id.in(lookup)))
-                  .bind(parameter, value);
+          (DefaultExecutableSelectQuery<Long>)
+              TestParameters.bind(TestParameters.query(fixture
+                  .operations(), Sql.select(outer.id).from(outer).where(outer.id.in(lookup))), parameter, value);
       case 3 ->
           query(
               fixture,
-              SelectQueryState.create(SelectedResult.nullableScalar(Sql.scalar(lookup)), outer),
+              SelectQueryState.create(SelectedResult.nullableScalar(Sql.scalar(lookup)), QueryRelations.of(outer)),
               parameters);
       case 4, 5 -> {
         var output = Sql.output(inner.id, "id");
         DerivedRelation derived = Sql.derived(lookup, "d", output);
         yield shape == 4
-            ? (DefaultSelectQuery<Long>)
-                fixture
-                    .operations()
-                    .query(
+            ? (DefaultExecutableSelectQuery<Long>)
+                TestParameters.bind(TestParameters.query(fixture
+                    .operations(),
                         Sql.select(outer.id)
                             .from(outer)
                             .join(derived)
-                            .on(outer.id.eq(derived.column(output))))
-                    .bind(parameter, value)
-            : (DefaultSelectQuery<Long>)
-                fixture
-                    .operations()
-                    .query(Sql.select(derived.column(output)).from(derived))
-                    .bind(parameter, value);
+                            .on(outer.id.eq(derived.column(output)))), parameter, value)
+            : (DefaultExecutableSelectQuery<Long>)
+                TestParameters.bind(TestParameters.query(fixture
+                    .operations(), Sql.select(derived.column(output)).from(derived)), parameter, value);
       }
       default -> throw new AssertionError(shape);
     };
   }
 
-  private static DefaultSelectQuery<Long> scalar(Fixture fixture, long value) {
+  private static DefaultExecutableSelectQuery<Long> scalar(Fixture fixture, long value) {
     return scalar(fixture, new PetTable(), value);
   }
 
-  private static DefaultSelectQuery<Long> scalar(Fixture fixture, PetTable table, long value) {
-    return (DefaultSelectQuery<Long>)
+  private static DefaultExecutableSelectQuery<Long> scalar(Fixture fixture, PetTable table, long value) {
+    return (DefaultExecutableSelectQuery<Long>)
         fixture.operations().select(table.id).from(table).where(table.id.ge(value));
   }
 
-  private static DefaultSelectQuery<Long> orderedScalar(
+  private static DefaultExecutableSelectQuery<Long> orderedScalar(
       Fixture fixture, PetTable table, long value) {
-    return (DefaultSelectQuery<Long>)
+    return (DefaultExecutableSelectQuery<Long>)
         fixture
             .operations()
             .select(table.id)
@@ -1598,27 +1584,23 @@ class SharedQueryPlanRoutingTest {
             .orderBy(table.name.asc().nullsFirst(), table.id.asc());
   }
 
-  private static <R extends @Nullable Object> QueryCompilation<R> compile(SelectQuery<R> query) {
-    return ((DefaultSelectQuery<R>) query).compilation(QueryPagination.None.INSTANCE);
+  private static <R extends @Nullable Object> QueryCompilation<R> compile(ExecutableSelectQuery<R> query) {
+    return TestParameters.compilation(((DefaultExecutableSelectQuery<R>) query), QueryPagination.None.INSTANCE);
   }
 
   private static <R> QueryCompilation<R> compileSelected(
       Fixture fixture, PetTable table, SelectedResult<R> selected) {
-    return query(fixture, SelectQueryState.create(selected, table))
-        .compilation(QueryPagination.None.INSTANCE);
+    return TestParameters.compilation(query(fixture, SelectQueryState.create(selected, QueryRelations.of(table))), QueryPagination.None.INSTANCE);
   }
 
-  private static <R> DefaultSelectQuery<R> query(Fixture fixture, SelectQueryState<R> state) {
+  private static <R> DefaultExecutableSelectQuery<R> query(Fixture fixture, SelectQueryState<R> state) {
     return query(fixture, state, state.structure().validationStructure().parameters());
   }
 
-  private static <R> DefaultSelectQuery<R> query(
+  private static <R> DefaultExecutableSelectQuery<R> query(
       Fixture fixture, SelectQueryState<R> state, QueryParameters parameters) {
-    return DefaultSelectQuery.create(
-        (DefaultQueryOperations) fixture.operations(),
-        fixture.catalog().compiler(),
-        state,
-        parameters);
+    return ((DefaultQueryOperations) fixture.operations()).executable(
+        new DefaultSelectQuery<>(state, parameters, Set.of()), ExecutionOptions.NONE);
   }
 
   private static ProjectionSelection<IdView> projection(PetTable table) {

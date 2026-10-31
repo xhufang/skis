@@ -42,11 +42,10 @@ import io.skis.query.NullPlacement;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
-import io.skis.query.SelectDescription;
 import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.SingleColumnSelect;
 import io.skis.query.SingleRow;
 import io.skis.query.SliceRequest;
@@ -123,19 +122,19 @@ class JoinQueryDslTest {
   @Test
   void selectsAJoinedEntityFromAnIndependentRootAndKeepsTheOriginalQueryImmutable() {
     QueryOperations operations = operations();
-    SelectQuery<Owner> base = operations.select(OWNER_TABLE).from(PET_TABLE);
-    SelectQuery<Owner> joined = base.join(OWNER_TABLE).on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
+    ExecutableSelectQuery<Owner> base = operations.select(OWNER_TABLE).from(PET_TABLE);
+    ExecutableSelectQuery<Owner> joined = base.join(OWNER_TABLE).on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
 
     assertNotSame(base, joined);
     assertThrows(
         QueryValidationException.class,
-        () -> ((DefaultSelectQuery<Owner>) base).compilation(QueryPagination.None.INSTANCE));
+        () -> TestParameters.compilation(((DefaultExecutableSelectQuery<Owner>) base), QueryPagination.None.INSTANCE));
     assertThrows(
         QueryValidationException.class,
-        () -> ((DefaultSelectQuery<Owner>) base).countCompilation());
+        () -> TestParameters.countCompilation(((DefaultExecutableSelectQuery<Owner>) base)));
 
     QueryCompilation<Owner> compilation =
-        ((DefaultSelectQuery<Owner>) joined).compilation(QueryPagination.None.INSTANCE);
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Owner>) joined), QueryPagination.None.INSTANCE);
     assertEquals(
         "SELECT \"owner\".\"id\", \"owner\".\"owner_name\" "
             + "FROM \"shelter\".\"pet\" INNER JOIN \"shelter\".\"owner\" "
@@ -145,7 +144,7 @@ class JoinQueryDslTest {
 
   @Test
   void buildsReusableDescriptionsWithoutAnExecutorAndPreservesTheirResultContracts() {
-    SelectDescription<Pet> entity = Sql.selectFrom(PET_TABLE);
+    SelectQuery<Pet> entity = Sql.selectFrom(PET_TABLE);
     SingleColumnSelect<Long> requiredValue =
         Sql.select(PET_TABLE.id())
             .from(PET_TABLE)
@@ -156,16 +155,15 @@ class JoinQueryDslTest {
     SingleColumnSelect<@Nullable String> nullableValue =
         Sql.select(OWNER_TABLE.name()).from(OWNER_TABLE).where(OWNER_TABLE.name().isNotNull());
 
-    SelectQuery<Pet> entityQuery = operations().query(entity);
-    SelectQuery<Long> requiredValueQuery = operations().query(requiredValue);
-    SelectQuery<@Nullable String> nullableValueQuery = operations().query(nullableValue);
+    ExecutableSelectQuery<Pet> entityQuery = TestParameters.query(operations(), entity);
+    ExecutableSelectQuery<Long> requiredValueQuery = TestParameters.query(operations(), requiredValue);
+    ExecutableSelectQuery<@Nullable String> nullableValueQuery = TestParameters.query(operations(), nullableValue);
 
-    assertTrue(entityQuery instanceof DefaultSelectQuery<?>);
-    assertTrue(requiredValueQuery instanceof DefaultSelectQuery<?>);
-    assertTrue(nullableValueQuery instanceof DefaultSelectQuery<?>);
+    assertTrue(entityQuery instanceof DefaultExecutableSelectQuery<?>);
+    assertTrue(requiredValueQuery instanceof DefaultExecutableSelectQuery<?>);
+    assertTrue(nullableValueQuery instanceof DefaultExecutableSelectQuery<?>);
     String chainedSql =
-        ((DefaultSelectQuery<Long>) requiredValueQuery)
-            .compilation(QueryPagination.None.INSTANCE)
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Long>) requiredValueQuery), QueryPagination.None.INSTANCE)
             .plan()
             .sql();
     assertTrue(chainedSql.contains("SELECT DISTINCT"));
@@ -173,52 +171,52 @@ class JoinQueryDslTest {
     assertTrue(chainedSql.contains("ORDER BY"));
     for (String terminal : List.of("fetchList", "fetchPage", "cursor", "stream", "withOptions")) {
       assertFalse(
-          Arrays.stream(SelectDescription.class.getMethods())
+          Arrays.stream(SelectQuery.class.getMethods())
               .anyMatch(method -> method.getName().equals(terminal)));
     }
   }
 
   @Test
   void adaptsExplicitlyBoundDescriptionsThroughTheSameSelectPipelineAndSql() {
-    QueryParameter<String> name = Sql.parameter(String.class, "petName");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> description =
-        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq(name));
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(TestParameters.eq(PET_TABLE.name(), name));
     QueryOperations operations = operations();
-    DefaultSelectQuery<Long> described =
-        (DefaultSelectQuery<Long>) operations.query(description).bind(name, "Mimi");
-    DefaultSelectQuery<Long> legacy =
-        (DefaultSelectQuery<Long>)
+    DefaultExecutableSelectQuery<Long> described =
+        (DefaultExecutableSelectQuery<Long>) TestParameters.bind(TestParameters.query(operations, description), name, "Mimi");
+    DefaultExecutableSelectQuery<Long> legacy =
+        (DefaultExecutableSelectQuery<Long>)
             operations.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq("Mimi"));
 
     QueryCompilation<Long> describedCompilation =
-        described.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> legacyCompilation = legacy.compilation(QueryPagination.None.INSTANCE);
+        TestParameters.compilation(described, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> legacyCompilation = TestParameters.compilation(legacy, QueryPagination.None.INSTANCE);
 
     assertEquals(legacyCompilation.plan().sql(), describedCompilation.plan().sql());
     assertEquals(List.of("Mimi"), (QueryArguments) describedCompilation.argument());
 
-    QueryParameter<Long> firstId = Sql.parameter(Long.class, "firstId");
-    QueryParameter<Long> secondId = Sql.parameter(Long.class, "secondId");
+    QueryParameter<Long> firstId = TestParameters.parameter(Long.class);
+    QueryParameter<Long> secondId = TestParameters.parameter(Long.class);
     SingleColumnSelect<Long> membership =
         Sql.select(PET_TABLE.id())
             .from(PET_TABLE)
-            .where(PET_TABLE.id().inParameters(List.of(firstId, secondId)));
-    DefaultSelectQuery<Long> membershipQuery =
-        (DefaultSelectQuery<Long>)
-            operations.query(membership).bind(firstId, 1L).bind(secondId, 2L);
+            .where(TestParameters.inParameters(PET_TABLE.id(), List.of(firstId, secondId)));
+    DefaultExecutableSelectQuery<Long> membershipQuery =
+        (DefaultExecutableSelectQuery<Long>)
+            TestParameters.bind(TestParameters.bind(TestParameters.query(operations, membership), firstId, 1L), secondId, 2L);
     QueryCompilation<Long> membershipCompilation =
-        membershipQuery.compilation(QueryPagination.None.INSTANCE);
+        TestParameters.compilation(membershipQuery, QueryPagination.None.INSTANCE);
     assertEquals(List.of(1L, 2L), (QueryArguments) membershipCompilation.argument());
   }
 
   @Test
   void executesReusableDescriptionsWithFreshBindingsAndTheirDeclaredNullability() {
-    QueryParameter<String> petName = Sql.parameter(String.class, "petName");
+    QueryParameter<String> petName = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> petIdDescription =
-        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq(petName));
-    QueryParameter<Long> ownerId = Sql.parameter(Long.class, "ownerId");
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(TestParameters.eq(PET_TABLE.name(), petName));
+    QueryParameter<Long> ownerId = TestParameters.parameter(Long.class);
     SingleColumnSelect<@Nullable String> ownerNameDescription =
-        Sql.select(OWNER_TABLE.name()).from(OWNER_TABLE).where(OWNER_TABLE.id().eq(ownerId));
+        Sql.select(OWNER_TABLE.name()).from(OWNER_TABLE).where(TestParameters.eq(OWNER_TABLE.id(), ownerId));
     ScriptedQueryConnectionProvider connections =
         new ScriptedQueryConnectionProvider(
             List.of(
@@ -228,21 +226,21 @@ class JoinQueryDslTest {
                 List.of()));
     QueryOperations operations = queryPlanCatalog().bind(new JdbcExecutor(connections));
 
-    DefaultSelectQuery<Long> mimi =
-        (DefaultSelectQuery<Long>) operations.query(petIdDescription).bind(petName, "Mimi");
-    DefaultSelectQuery<Long> momo =
-        (DefaultSelectQuery<Long>) operations.query(petIdDescription).bind(petName, "Momo");
+    DefaultExecutableSelectQuery<Long> mimi =
+        (DefaultExecutableSelectQuery<Long>) TestParameters.bind(TestParameters.query(operations, petIdDescription), petName, "Mimi");
+    DefaultExecutableSelectQuery<Long> momo =
+        (DefaultExecutableSelectQuery<Long>) TestParameters.bind(TestParameters.query(operations, petIdDescription), petName, "Momo");
 
     assertEquals(
-        mimi.compilation(QueryPagination.None.INSTANCE).plan().sql(),
-        momo.compilation(QueryPagination.None.INSTANCE).plan().sql());
+        TestParameters.compilation(mimi, QueryPagination.None.INSTANCE).plan().sql(),
+        TestParameters.compilation(momo, QueryPagination.None.INSTANCE).plan().sql());
     assertEquals(List.of(101L), mimi.fetchList());
     assertEquals(List.of(202L), momo.fetchList());
 
     SingleRow<@Nullable String> presentNull =
-        operations.query(ownerNameDescription).bind(ownerId, 7L).fetchOne();
+        TestParameters.bind(TestParameters.query(operations, ownerNameDescription), ownerId, 7L).fetchOne();
     SingleRow<@Nullable String> noRow =
-        operations.query(ownerNameDescription).bind(ownerId, 8L).fetchOne();
+        TestParameters.bind(TestParameters.query(operations, ownerNameDescription), ownerId, 8L).fetchOne();
 
     assertTrue(presentNull.hasRow() && presentNull.isNull());
     assertTrue(!noRow.hasRow());
@@ -253,29 +251,28 @@ class JoinQueryDslTest {
   }
 
   @Test
-  void rejectsCapturedDescriptionValuesAndInvalidParameterEnvironmentsBeforeJdbc() {
-    QueryValidationException captured =
-        assertThrows(
-            QueryValidationException.class,
-            () -> Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq("Mimi")));
-    assertTrue(captured.getMessage().contains("cannot capture ordinary values"));
+  void capturesIndependentValuesAndRejectsInvalidInternalParameterEnvironmentsBeforeJdbc() {
+    var captured = QueryModels.description(
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq("Mimi")));
+    assertEquals(List.of("Mimi"), captured.parameters.valuesFor(
+        captured.state.structure().validationStructure().parameters()));
 
-    QueryParameter<String> used = Sql.parameter(String.class, "used");
-    QueryParameter<String> extra = Sql.parameter(String.class, "extra");
+    QueryParameter<String> used = TestParameters.parameter(String.class);
+    QueryParameter<String> extra = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> description =
-        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq(used));
+        Sql.select(PET_TABLE.id()).from(PET_TABLE).where(TestParameters.eq(PET_TABLE.name(), used));
     QueryOperations operations = operations();
-    DefaultSelectQuery<Long> missing = (DefaultSelectQuery<Long>) operations.query(description);
+    DefaultExecutableSelectQuery<Long> missing = (DefaultExecutableSelectQuery<Long>) TestParameters.query(operations, description);
     assertThrows(
-        QueryValidationException.class, () -> missing.compilation(QueryPagination.None.INSTANCE));
+        QueryValidationException.class, () -> TestParameters.compilation(missing, QueryPagination.None.INSTANCE));
     assertThrows(
         QueryValidationException.class,
-        () -> operations.query(description).bind(used, "Mimi").bind(extra, "unused"));
+        () -> TestParameters.bind(TestParameters.bind(TestParameters.query(operations, description), used, "Mimi"), extra, "unused"));
   }
 
   @Test
   void selectsAJoinedScalarFromAnIndependentRoot() {
-    SelectQuery<Long> query =
+    ExecutableSelectQuery<Long> query =
         operations()
             .select(OWNER_TABLE.id())
             .from(PET_TABLE)
@@ -283,7 +280,7 @@ class JoinQueryDslTest {
             .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
 
     QueryCompilation<Long> compilation =
-        ((DefaultSelectQuery<Long>) query).compilation(QueryPagination.None.INSTANCE);
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Long>) query), QueryPagination.None.INSTANCE);
 
     assertEquals(
         "SELECT \"owner\".\"id\" FROM \"shelter\".\"pet\" "
@@ -293,31 +290,31 @@ class JoinQueryDslTest {
 
   @Test
   void allowsRequiredEntitiesOnOuterJoinNonNullSidesAndCrossJoins() {
-    DefaultSelectQuery<Pet> leftRoot =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> leftRoot =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .leftJoin(OWNER_TABLE)
                 .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
-    DefaultSelectQuery<Owner> rightTarget =
-        (DefaultSelectQuery<Owner>)
+    DefaultExecutableSelectQuery<Owner> rightTarget =
+        (DefaultExecutableSelectQuery<Owner>)
             operations()
                 .select(OWNER_TABLE)
                 .from(PET_TABLE)
                 .rightJoin(OWNER_TABLE)
                 .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
-    DefaultSelectQuery<Owner> crossTarget =
-        (DefaultSelectQuery<Owner>)
+    DefaultExecutableSelectQuery<Owner> crossTarget =
+        (DefaultExecutableSelectQuery<Owner>)
             operations().select(OWNER_TABLE).from(PET_TABLE).crossJoin(OWNER_TABLE);
 
-    leftRoot.compilation(QueryPagination.None.INSTANCE);
-    rightTarget.compilation(QueryPagination.None.INSTANCE);
-    crossTarget.compilation(QueryPagination.None.INSTANCE);
+    TestParameters.compilation(leftRoot, QueryPagination.None.INSTANCE);
+    TestParameters.compilation(rightTarget, QueryPagination.None.INSTANCE);
+    TestParameters.compilation(crossTarget, QueryPagination.None.INSTANCE);
   }
 
   @Test
   void rejectsRequiredResultsOnTheFinalNullExtendedSideBeforeJdbc() {
-    SelectQuery<Owner> requiredOwner =
+    ExecutableSelectQuery<Owner> requiredOwner =
         operations()
             .select(OWNER_TABLE)
             .from(PET_TABLE)
@@ -327,13 +324,12 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Owner>) requiredOwner)
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Owner>) requiredOwner), QueryPagination.None.INSTANCE));
 
     assertTrue(ownerFailure.getMessage().contains("null-extended table occurrence #1"));
     assertTrue(ownerFailure.getMessage().contains("selectNullable(table)"));
 
-    SelectQuery<Long> requiredOwnerId =
+    ExecutableSelectQuery<Long> requiredOwnerId =
         operations()
             .select(OWNER_TABLE.id())
             .from(PET_TABLE)
@@ -343,11 +339,10 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Long>) requiredOwnerId)
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Long>) requiredOwnerId), QueryPagination.None.INSTANCE));
     assertTrue(scalarFailure.getMessage().contains("selectNullable(selectable)"));
 
-    SelectQuery<Pet> requiredRoot =
+    ExecutableSelectQuery<Pet> requiredRoot =
         operations()
             .selectFrom(PET_TABLE)
             .rightJoin(OWNER_TABLE)
@@ -356,8 +351,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Pet>) requiredRoot)
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) requiredRoot), QueryPagination.None.INSTANCE));
     assertTrue(rootFailure.getMessage().contains("null-extended table occurrence #0"));
   }
 
@@ -407,7 +401,7 @@ class JoinQueryDslTest {
 
     QueryValidationException failure =
         assertThrows(
-            QueryValidationException.class, () -> ((DefaultCountQuery) countQuery).compilation());
+            QueryValidationException.class, () -> TestParameters.countCompilation(countQuery));
 
     assertTrue(failure.getMessage().contains("requires complete non-null primary-key metadata"));
     assertTrue(failure.getMessage().contains("table occurrence #0"));
@@ -415,7 +409,7 @@ class JoinQueryDslTest {
 
   @Test
   void keysetUsesOuterJoinEffectiveNullabilityForPhysicalNonNullColumns() {
-    SelectQuery<@Nullable Pet> query =
+    ExecutableSelectQuery<@Nullable Pet> query =
         operations()
             .selectNullable(PET_TABLE)
             .from(PET_TABLE)
@@ -433,7 +427,7 @@ class JoinQueryDslTest {
 
   @Test
   void ordersByFinalJoinColumnsAndRequiresEveryOccurrencePrimaryKeyForPagination() {
-    SelectQuery<Pet> stable =
+    ExecutableSelectQuery<Pet> stable =
         operations()
             .selectFrom(PET_TABLE)
             .orderBy(OWNER_TABLE.id().asc(), PET_TABLE.id().asc())
@@ -441,16 +435,16 @@ class JoinQueryDslTest {
             .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()));
 
     QueryCompilation<Pet> compilation =
-        ((DefaultSelectQuery<Pet>) stable).compilation(new QueryPagination.Offset(11, 20));
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) stable), new QueryPagination.Offset(11, 20));
     assertTrue(
         compilation.plan().sql().contains("ORDER BY \"owner\".\"id\" ASC, \"pet\".\"id\" ASC"));
 
-    SelectQuery<Pet> invisible = operations().selectFrom(PET_TABLE).orderBy(OWNER_TABLE.id().asc());
+    ExecutableSelectQuery<Pet> invisible = operations().selectFrom(PET_TABLE).orderBy(OWNER_TABLE.id().asc());
     assertThrows(
         QueryValidationException.class,
-        () -> ((DefaultSelectQuery<Pet>) invisible).compilation(QueryPagination.None.INSTANCE));
+        () -> TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) invisible), QueryPagination.None.INSTANCE));
 
-    SelectQuery<Pet> rootOnly =
+    ExecutableSelectQuery<Pet> rootOnly =
         operations()
             .selectFrom(PET_TABLE)
             .join(OWNER_TABLE)
@@ -462,7 +456,7 @@ class JoinQueryDslTest {
     assertTrue(missingJoinedKey.getMessage().contains("COLUMN"));
     assertTrue(missingJoinedKey.getMessage().contains("missing final identity component"));
 
-    SelectQuery<Pet> missingMetadata =
+    ExecutableSelectQuery<Pet> missingMetadata =
         operations().selectFrom(PET_TABLE).crossJoin(VIEW_TABLE).orderBy(PET_TABLE.id().asc());
     QueryValidationException missingViewKey =
         assertThrows(
@@ -480,20 +474,20 @@ class JoinQueryDslTest {
   void replacingOrderingDoesNotReuseAStructurallyEqualForeignTableOccurrence() {
     OwnerTable joinedOwner = OWNER_TABLE.as("ordered_owner");
     OwnerTable foreignOwner = OWNER_TABLE.as("ordered_owner");
-    SelectQuery<Pet> original =
+    ExecutableSelectQuery<Pet> original =
         operations()
             .selectFrom(PET_TABLE)
             .join(joinedOwner)
             .on(PET_TABLE.ownerId().eq(joinedOwner.id()))
             .orderBy(joinedOwner.id().asc(), PET_TABLE.id().asc());
 
-    SelectQuery<Pet> replaced = original.orderBy(foreignOwner.id().asc(), PET_TABLE.id().asc());
+    ExecutableSelectQuery<Pet> replaced = original.orderBy(foreignOwner.id().asc(), PET_TABLE.id().asc());
 
     assertNotSame(original, replaced);
     QueryValidationException failure =
         assertThrows(
             QueryValidationException.class,
-            () -> ((DefaultSelectQuery<Pet>) replaced).compilation(QueryPagination.None.INSTANCE));
+            () -> TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) replaced), QueryPagination.None.INSTANCE));
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(failure.getCause().getMessage().contains("$ ORDER BY item #0"));
     assertTrue(failure.getCause().getMessage().contains("ordered_owner.id"));
@@ -507,7 +501,7 @@ class JoinQueryDslTest {
 
   @Test
   void distinctPaginationUsesTheSelectedTupleInsteadOfJoinOccurrenceKeys() {
-    SelectQuery<String> stableDistinct =
+    ExecutableSelectQuery<String> stableDistinct =
         operations()
             .select(PET_TABLE.name())
             .from(PET_TABLE)
@@ -520,7 +514,7 @@ class JoinQueryDslTest {
             AssertionError.class, () -> stableDistinct.fetchSlice(SliceRequest.offset(0, 10)));
     assertEquals("query compilation must not acquire JDBC", reachedJdbc.getMessage());
 
-    SelectQuery<Pet> incompleteTuple =
+    ExecutableSelectQuery<Pet> incompleteTuple =
         operations()
             .selectFrom(PET_TABLE)
             .crossJoin(VIEW_TABLE)
@@ -547,7 +541,7 @@ class JoinQueryDslTest {
                 new ProjectionMapping.Parameter(
                     1, "ownerName", String.class, Nullability.NULLABLE, 1)),
             readers -> (resultSet, context) -> new Object());
-    SelectQuery<Object> query =
+    ExecutableSelectQuery<Object> query =
         operations()
             .select(tuple.bind(PET_TABLE.id(), OWNER_TABLE.name()))
             .from(PET_TABLE)
@@ -556,7 +550,7 @@ class JoinQueryDslTest {
             .distinct()
             .orderBy(PET_TABLE.id().asc(), OWNER_TABLE.name().asc());
 
-    assertTrue(((DefaultCountQuery) query.countQuery()).compilation().plan().sql()
+    assertTrue(TestParameters.countCompilation(query.countQuery()).plan().sql()
         .startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
 
     AssertionError reachedJdbc =
@@ -567,22 +561,22 @@ class JoinQueryDslTest {
   @Test
   void joinCountsPreserveRowsDistinctEntitiesAndNullableEntityAbsence() {
     QueryCondition on = PET_TABLE.ownerId().eq(OWNER_TABLE.id());
-    SelectQuery<Pet> joined = operations().selectFrom(PET_TABLE).join(OWNER_TABLE).on(on);
-    String rowCount = ((DefaultCountQuery) joined.countQuery()).compilation().plan().sql();
+    ExecutableSelectQuery<Pet> joined = operations().selectFrom(PET_TABLE).join(OWNER_TABLE).on(on);
+    String rowCount = TestParameters.countCompilation(joined.countQuery()).plan().sql();
     assertEquals(
         "SELECT COUNT(*) FROM \"shelter\".\"pet\" INNER JOIN \"shelter\".\"owner\" "
             + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
         rowCount);
 
     String rootEntityCount =
-        ((DefaultCountQuery) joined.distinct().countQuery()).compilation().plan().sql();
+        TestParameters.countCompilation(joined.distinct().countQuery()).plan().sql();
     assertEquals(
         "SELECT COUNT(DISTINCT \"pet\".\"id\") FROM \"shelter\".\"pet\" "
             + "INNER JOIN \"shelter\".\"owner\" "
             + "ON \"pet\".\"owner_id\" = \"owner\".\"id\"",
         rootEntityCount);
 
-    SelectQuery<@Nullable Owner> nullableOwner =
+    ExecutableSelectQuery<@Nullable Owner> nullableOwner =
         operations()
             .selectNullable(OWNER_TABLE)
             .from(PET_TABLE)
@@ -590,7 +584,7 @@ class JoinQueryDslTest {
             .on(on)
             .distinct();
     String nullableOwnerCount =
-        ((DefaultCountQuery) nullableOwner.countQuery()).compilation().plan().sql();
+        TestParameters.countCompilation(nullableOwner.countQuery()).plan().sql();
     assertEquals(
         "SELECT COUNT(DISTINCT \"owner\".\"id\") "
             + "+ CASE WHEN COUNT(*) > COUNT(\"owner\".\"id\") THEN 1 ELSE 0 END "
@@ -603,29 +597,29 @@ class JoinQueryDslTest {
   void joinFingerprintsSeparateStructureAndOccurrenceButNotParameterValues() {
     OwnerTable primary = OWNER_TABLE.as("primary_owner");
     OwnerTable secondary = OWNER_TABLE.as("secondary_owner");
-    DefaultSelectQuery<Pet> ada =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> ada =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .join(primary)
                 .on(PET_TABLE.ownerId().eq(primary.id()).and(primary.name().eq("Ada")))
                 .orderBy(PET_TABLE.id().asc(), primary.id().asc());
-    DefaultSelectQuery<Pet> grace =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> grace =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .join(primary)
                 .on(PET_TABLE.ownerId().eq(primary.id()).and(primary.name().eq("Grace")))
                 .orderBy(PET_TABLE.id().asc(), primary.id().asc());
-    DefaultSelectQuery<Pet> left =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> left =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .leftJoin(primary)
                 .on(PET_TABLE.ownerId().eq(primary.id()).and(primary.name().eq("Ada")))
                 .orderBy(PET_TABLE.id().asc(), primary.id().asc());
-    DefaultSelectQuery<Pet> secondOccurrence =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> secondOccurrence =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .join(primary)
@@ -633,8 +627,8 @@ class JoinQueryDslTest {
                 .join(secondary)
                 .on(primary.id().eq(secondary.id()))
                 .orderBy(secondary.id().asc());
-    DefaultSelectQuery<Pet> firstOccurrence =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> firstOccurrence =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .join(primary)
@@ -651,11 +645,11 @@ class JoinQueryDslTest {
   @Test
   void compilesOnThenWhereParametersWithOneDenseStatementOrder() throws Exception {
     QueryCondition on = PET_TABLE.ownerId().eq(OWNER_TABLE.id()).and(OWNER_TABLE.name().eq("Ada"));
-    SelectQuery<Pet> query =
+    ExecutableSelectQuery<Pet> query =
         operations().selectFrom(PET_TABLE).join(OWNER_TABLE).on(on).where(PET_TABLE.id().gt(10L));
 
     QueryCompilation<Pet> compilation =
-        ((DefaultSelectQuery<Pet>) query).compilation(QueryPagination.None.INSTANCE);
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) query), QueryPagination.None.INSTANCE);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
@@ -698,8 +692,8 @@ class JoinQueryDslTest {
     QueryCondition firstOn =
         PET_TABLE.ownerId().eq(OWNER_TABLE.id()).and(OWNER_TABLE.name().eq("Ada"));
     QueryCondition secondOn = OWNER_TABLE.id().eq(reviewer.id()).and(reviewer.name().eq("Grace"));
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .join(OWNER_TABLE)
@@ -708,7 +702,7 @@ class JoinQueryDslTest {
                 .on(secondOn)
                 .where(PET_TABLE.name().eq("Mimi"));
 
-    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
     CompiledQueryStructure structure =
         QueryTestSupport.compile(
             PET_TABLE,
@@ -776,24 +770,24 @@ class JoinQueryDslTest {
   @Test
   void validatesOnAndWhereAgainstTheirActualTableReferenceScope() {
     OwnerTable reviewer = OWNER_TABLE.as("reviewer");
-    SelectQuery<Pet> futureReference =
+    ExecutableSelectQuery<Pet> futureReference =
         operations()
             .selectFrom(PET_TABLE)
             .join(OWNER_TABLE)
             .on(OWNER_TABLE.id().eq(reviewer.id()))
             .join(reviewer)
             .on(OWNER_TABLE.id().eq(reviewer.id()));
-    SelectQuery<Pet> invisibleWhere =
+    ExecutableSelectQuery<Pet> invisibleWhere =
         operations().selectFrom(PET_TABLE).where(OWNER_TABLE.id().isNotNull());
 
     assertThrows(
         QueryValidationException.class,
         () ->
-            ((DefaultSelectQuery<Pet>) futureReference).compilation(QueryPagination.None.INSTANCE));
+            TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) futureReference), QueryPagination.None.INSTANCE));
     assertThrows(
         QueryValidationException.class,
         () ->
-            ((DefaultSelectQuery<Pet>) invisibleWhere).compilation(QueryPagination.None.INSTANCE));
+            TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) invisibleWhere), QueryPagination.None.INSTANCE));
   }
 
   @Test
@@ -934,18 +928,18 @@ class JoinQueryDslTest {
   @Test
   void reusesJoinPlanAndCountAcrossCacheHits() {
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>)
             operations()
                 .selectFrom(PET_TABLE)
                 .join(OWNER_TABLE)
                 .on(PET_TABLE.ownerId().eq(OWNER_TABLE.id()).and(OWNER_TABLE.name().eq("Ada")))
                 .where(PET_TABLE.name().eq("Mimi"));
 
-    QueryCompilation<Pet> first = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Pet> second = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> firstCount = query.countCompilation();
-    QueryCompilation<Long> secondCount = query.countCompilation();
+    QueryCompilation<Pet> first = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> second = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> firstCount = TestParameters.countCompilation(query);
+    QueryCompilation<Long> secondCount = TestParameters.countCompilation(query);
 
     assertSame(first.plan(), second.plan());
     assertSame(first.ast(), second.ast());
@@ -962,26 +956,26 @@ class JoinQueryDslTest {
     Selectable ownerId = PET_TABLE.ownerId();
     Selectable ownerName = OWNER_TABLE.name();
 
-    assertThrows(QueryValidationException.class, () -> ownerId.eq(ownerName));
+    assertThrows(QueryValidationException.class, () -> TestParameters.eq(ownerId, ownerName));
   }
 
   @Test
   void embedsCorrelatedExistsWithOneStatementWideParameterLayout() {
     PetTable innerPet = PET_TABLE.as("exists_pet");
-    QueryParameter<Long> outerId = Sql.parameter(Long.class, "outerId");
-    QueryParameter<String> innerName = Sql.parameter(String.class, "innerName");
+    QueryParameter<Long> outerId = TestParameters.parameter(Long.class);
+    QueryParameter<String> innerName = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> matchingPets =
         Sql.select(innerPet.id())
             .from(innerPet)
-            .where(innerPet.ownerId().eq(PET_TABLE.id()).and(innerPet.name().eq(innerName)));
-    SelectDescription<Pet> description =
-        Sql.selectFrom(PET_TABLE).where(PET_TABLE.id().eq(outerId).and(Sql.exists(matchingPets)));
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>)
-            operations().query(description).bind(outerId, 7L).bind(innerName, "Mimi");
+            .where(innerPet.ownerId().eq(PET_TABLE.id()).and(TestParameters.eq(innerPet.name(), innerName)));
+    SelectQuery<Pet> description =
+        Sql.selectFrom(PET_TABLE).where(TestParameters.eq(PET_TABLE.id(), outerId).and(Sql.exists(matchingPets)));
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>)
+            TestParameters.bind(TestParameters.bind(TestParameters.query(operations(), description), outerId, 7L), innerName, "Mimi");
 
-    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> count = query.countCompilation();
+    QueryCompilation<Pet> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = TestParameters.countCompilation(query);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
@@ -1004,22 +998,22 @@ class JoinQueryDslTest {
   @Test
   void embedsCorrelatedInSubqueryWithOneStatementWideParameterLayout() {
     PetTable innerPet = PET_TABLE.as("membership_pet");
-    QueryParameter<Long> outerId = Sql.parameter(Long.class, "outerId");
-    QueryParameter<String> innerName = Sql.parameter(String.class, "innerName");
+    QueryParameter<Long> outerId = TestParameters.parameter(Long.class);
+    QueryParameter<String> innerName = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> ownerIds =
         Sql.select(innerPet.ownerId())
             .from(innerPet)
-            .where(innerPet.id().eq(PET_TABLE.id()).and(innerPet.name().eq(innerName)))
+            .where(innerPet.id().eq(PET_TABLE.id()).and(TestParameters.eq(innerPet.name(), innerName)))
             .orderBy(innerPet.id().asc());
-    SelectDescription<Pet> description =
+    SelectQuery<Pet> description =
         Sql.selectFrom(PET_TABLE)
-            .where(PET_TABLE.id().eq(outerId).and(PET_TABLE.ownerId().in(ownerIds)));
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>)
-            operations().query(description).bind(outerId, 7L).bind(innerName, "Mimi");
+            .where(TestParameters.eq(PET_TABLE.id(), outerId).and(PET_TABLE.ownerId().in(ownerIds)));
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>)
+            TestParameters.bind(TestParameters.bind(TestParameters.query(operations(), description), outerId, 7L), innerName, "Mimi");
 
-    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> count = query.countCompilation();
+    QueryCompilation<Pet> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = TestParameters.countCompilation(query);
     QueryBlockAnalysis analysis =
         SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
 
@@ -1049,22 +1043,22 @@ class JoinQueryDslTest {
   @Test
   void embedsScalarSubqueriesAcrossValuePositionsAndProjectsCountParameters() throws Exception {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
-    QueryParameter<String> ownerName = Sql.parameter(String.class, "ownerName");
+    QueryParameter<String> ownerName = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> ownerId =
         Sql.select(innerOwner.id())
             .from(innerOwner)
-            .where(innerOwner.id().eq(PET_TABLE.ownerId()).and(innerOwner.name().eq(ownerName)));
+            .where(innerOwner.id().eq(PET_TABLE.ownerId()).and(TestParameters.eq(innerOwner.name(), ownerName)));
     Selectable<Long> scalar = Sql.scalar(ownerId);
     SingleColumnSelect<Long> description =
         Sql.select(scalar)
             .from(PET_TABLE)
             .where(scalar.isNotNull())
             .orderBy(scalar.desc().nullsLast());
-    DefaultSelectQuery<Long> query =
-        (DefaultSelectQuery<Long>) operations().query(description).bind(ownerName, "Ada");
+    DefaultExecutableSelectQuery<Long> query =
+        (DefaultExecutableSelectQuery<Long>) TestParameters.bind(TestParameters.query(operations(), description), ownerName, "Ada");
 
-    QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> count = query.countCompilation();
+    QueryCompilation<Long> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> count = TestParameters.countCompilation(query);
     QueryBlockAnalysis analysis =
         SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
 
@@ -1114,11 +1108,11 @@ class JoinQueryDslTest {
             Sql.select(innerOwner.id())
                 .from(innerOwner)
                 .where(innerOwner.id().eq(PET_TABLE.ownerId())));
-    SelectDescription<Pet> description =
+    SelectQuery<Pet> description =
         Sql.selectFrom(PET_TABLE).where(scalar.eq(PET_TABLE.ownerId()));
-    DefaultSelectQuery<Pet> query = (DefaultSelectQuery<Pet>) operations().query(description);
+    DefaultExecutableSelectQuery<Pet> query = (DefaultExecutableSelectQuery<Pet>) TestParameters.query(operations(), description);
 
-    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
 
     assertEquals(
         "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
@@ -1133,15 +1127,15 @@ class JoinQueryDslTest {
   void validatesScalarCountSourcesBeforeRemovingTheirSelectionsAndParameters() {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
     OwnerTable invisible = OWNER_TABLE.as("invisible_owner");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
     Selectable<Long> invalid =
-        Sql.scalar(Sql.select(invisible.id()).from(innerOwner).where(innerOwner.name().eq(name)));
+        Sql.scalar(Sql.select(invisible.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), name)));
     CountQuery count =
-        operations().query(Sql.select(invalid).from(PET_TABLE)).bind(name, "Ada").countQuery();
+        TestParameters.bind(TestParameters.query(operations(), Sql.select(invalid).from(PET_TABLE)), name, "Ada").countQuery();
 
     QueryValidationException failure =
         assertThrows(
-            QueryValidationException.class, () -> ((DefaultCountQuery) count).compilation());
+            QueryValidationException.class, () -> TestParameters.countCompilation(count));
 
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(
@@ -1151,20 +1145,20 @@ class JoinQueryDslTest {
   @Test
   void prunesEmptyScalarMembershipParametersAndDenselyRebindsTheRemainingValues() {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
-    QueryParameter<Long> petId = Sql.parameter(Long.class, "petId");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
+    QueryParameter<Long> petId = TestParameters.parameter(Long.class);
     Selectable<Long> scalar =
-        Sql.scalar(Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(name)));
+        Sql.scalar(Sql.select(innerOwner.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), name)));
     for (boolean negated : List.of(false, true)) {
       QueryCondition membership = negated ? scalar.notIn(List.of()) : scalar.in(List.of());
-      SelectDescription<Pet> description =
-          Sql.selectFrom(PET_TABLE).where(membership.and(PET_TABLE.id().eq(petId)));
-      DefaultSelectQuery<Pet> query =
-          (DefaultSelectQuery<Pet>)
-              operations().query(description).bind(name, "Ada").bind(petId, 7L);
+      SelectQuery<Pet> description =
+          Sql.selectFrom(PET_TABLE).where(membership.and(TestParameters.eq(PET_TABLE.id(), petId)));
+      DefaultExecutableSelectQuery<Pet> query =
+          (DefaultExecutableSelectQuery<Pet>)
+              TestParameters.bind(TestParameters.bind(TestParameters.query(operations(), description), name, "Ada"), petId, 7L);
 
-      QueryCompilation<Pet> content = query.compilation(QueryPagination.None.INSTANCE);
-      QueryCompilation<Long> count = query.countCompilation();
+      QueryCompilation<Pet> content = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+      QueryCompilation<Long> count = TestParameters.countCompilation(query);
       String predicate = (negated ? "TRUE" : "FALSE") + " AND \"pet\".\"id\" = ?";
       assertEquals(
           "SELECT \"pet\".\"id\", \"pet\".\"owner_id\", \"pet\".\"pet_name\" "
@@ -1180,43 +1174,39 @@ class JoinQueryDslTest {
           content.plan().renderedSql().parameters().stream()
               .map(io.skis.sql.ast.ParameterSlot::ordinal)
               .toList());
-      assertSame(count.argument(), query.countCompilation().argument());
+      assertSame(count.argument(), TestParameters.countCompilation(query).argument());
 
       ScriptedQueryConnectionProvider connections =
           new ScriptedQueryConnectionProvider(List.of(List.of()));
-      queryPlanCatalog()
-          .bind(new JdbcExecutor(connections))
-          .query(description)
-          .bind(name, "Ada")
-          .bind(petId, 7L)
+      TestParameters.bind(TestParameters.bind(TestParameters.query(queryPlanCatalog().bind(new JdbcExecutor(connections)), description), name, "Ada"), petId, 7L)
           .fetchList();
       assertEquals(List.of(List.of(7L)), connections.bindings());
     }
 
-    SelectDescription<Pet> noRemainingParameters =
+    SelectQuery<Pet> noRemainingParameters =
         Sql.selectFrom(PET_TABLE).where(scalar.in(List.of()));
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>) operations().query(noRemainingParameters).bind(name, "Ada");
-    assertSame(NoParameters.INSTANCE, query.compilation(QueryPagination.None.INSTANCE).argument());
-    assertSame(NoParameters.INSTANCE, query.countCompilation().argument());
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>) TestParameters.bind(TestParameters.query(operations(), noRemainingParameters), name, "Ada");
+    assertSame(NoParameters.INSTANCE, TestParameters.compilation(query, QueryPagination.None.INSTANCE).argument());
+    assertSame(NoParameters.INSTANCE, TestParameters.countCompilation(query).argument());
     assertThrows(
         QueryValidationException.class,
-        () -> operations().query(noRemainingParameters).fetchList());
+        () -> TestParameters.query(operations(), noRemainingParameters).fetchList());
   }
 
   @Test
   void emptyScalarMembershipStillValidatesTheDiscardedOperandInItsOriginalScope() {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
     OwnerTable invisible = OWNER_TABLE.as("invisible_owner");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
     Selectable<Long> invalid =
-        Sql.scalar(Sql.select(invisible.id()).from(innerOwner).where(innerOwner.name().eq(name)));
-    SelectDescription<Pet> description = Sql.selectFrom(PET_TABLE).where(invalid.in(List.of()));
+        Sql.scalar(Sql.select(invisible.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), name)));
+    SelectQuery<Pet> description = Sql.selectFrom(PET_TABLE).where(invalid.in(List.of()));
 
     QueryValidationException failure =
         assertThrows(
             QueryValidationException.class,
-            () -> operations().query(description).bind(name, "Ada").fetchList());
+            () -> TestParameters.bind(TestParameters.query(operations(), description), name, "Ada").fetchList());
 
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(
@@ -1226,24 +1216,24 @@ class JoinQueryDslTest {
   @Test
   void distinguishesIndependentScalarOrderingParametersAndRejectsActualDuplicates() {
     OwnerTable innerOwner = OWNER_TABLE.as("scalar_owner");
-    QueryParameter<String> firstName = Sql.parameter(String.class, "name");
-    QueryParameter<String> secondName = Sql.parameter(String.class, "name");
+    QueryParameter<String> firstName = TestParameters.parameter(String.class);
+    QueryParameter<String> secondName = TestParameters.parameter(String.class);
     Selectable<Long> first =
         Sql.scalar(
-            Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(firstName)));
+            Sql.select(innerOwner.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), firstName)));
     Selectable<Long> second =
         Sql.scalar(
-            Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(secondName)));
+            Sql.select(innerOwner.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), secondName)));
     Selectable<Long> sameReference =
         Sql.scalar(
-            Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(firstName)));
-    SelectDescription<Pet> description =
+            Sql.select(innerOwner.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), firstName)));
+    SelectQuery<Pet> description =
         Sql.selectFrom(PET_TABLE).orderBy(first.asc(), second.asc());
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>)
-            operations().query(description).bind(firstName, "Ada").bind(secondName, "Grace");
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>)
+            TestParameters.bind(TestParameters.bind(TestParameters.query(operations(), description), firstName, "Ada"), secondName, "Grace");
 
-    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
 
     assertEquals(List.of("Ada", "Grace"), (QueryArguments) compilation.argument());
     assertEquals(
@@ -1260,34 +1250,31 @@ class JoinQueryDslTest {
     assertThrows(
         QueryValidationException.class,
         () ->
-            operations()
-                .query(Sql.select(first).from(PET_TABLE).distinct().orderBy(second.asc()))
-                .bind(firstName, "Ada")
-                .bind(secondName, "Grace")
+            TestParameters.bind(TestParameters.bind(TestParameters.query(operations(), Sql.select(first).from(PET_TABLE).distinct().orderBy(second.asc())), firstName, "Ada"), secondName, "Grace")
                 .fetchList());
   }
 
   @Test
   void ordersDistinctScalarOutputsWithoutAllocatingUnusedOrderingParameters() {
     OwnerTable lookup = OWNER_TABLE.as("scalar_owner");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
-    QueryParameter<Long> petId = Sql.parameter(Long.class, "petId");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
+    QueryParameter<Long> petId = TestParameters.parameter(Long.class);
     Selectable<Long> scalar =
         Sql.scalar(
             Sql.select(lookup.id())
                 .from(lookup)
-                .where(lookup.id().eq(PET_TABLE.ownerId()).and(lookup.name().eq(name))));
+                .where(lookup.id().eq(PET_TABLE.ownerId()).and(TestParameters.eq(lookup.name(), name))));
     SingleColumnSelect<Long> description =
         Sql.select(scalar)
             .from(PET_TABLE)
-            .where(PET_TABLE.id().eq(petId))
+            .where(TestParameters.eq(PET_TABLE.id(), petId))
             .distinct()
             .orderBy(scalar.desc().nullsFirst());
-    DefaultSelectQuery<Long> query =
-        (DefaultSelectQuery<Long>)
-            operations().query(description).bind(name, "Ada").bind(petId, 7L);
+    DefaultExecutableSelectQuery<Long> query =
+        (DefaultExecutableSelectQuery<Long>)
+            TestParameters.bind(TestParameters.bind(TestParameters.query(operations(), description), name, "Ada"), petId, 7L);
 
-    QueryCompilation<Long> content = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> content = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
     assertEquals(
         "SELECT DISTINCT (SELECT \"scalar_owner\".\"id\" FROM \"shelter\".\"owner\" AS "
             + "\"scalar_owner\" WHERE \"scalar_owner\".\"id\" = \"pet\".\"owner_id\" AND "
@@ -1300,12 +1287,12 @@ class JoinQueryDslTest {
         content.plan().renderedSql().parameters().stream()
             .map(io.skis.sql.ast.ParameterSlot::ordinal)
             .toList());
-    assertSame(content.plan(), query.compilation(QueryPagination.None.INSTANCE).plan());
+    assertSame(content.plan(), TestParameters.compilation(query, QueryPagination.None.INSTANCE).plan());
 
-    QueryCompilation<Long> page = query.compilation(new QueryPagination.Offset(2, 0));
+    QueryCompilation<Long> page = TestParameters.compilation(query, new QueryPagination.Offset(2, 0));
     assertTrue(page.plan().sql().endsWith("ORDER BY 1 DESC NULLS FIRST LIMIT ? OFFSET ?"));
     assertEquals(List.of("Ada", 7L, 2, 0L), (QueryArguments) page.argument());
-    QueryCompilation<Long> count = query.countCompilation();
+    QueryCompilation<Long> count = TestParameters.countCompilation(query);
     assertEquals(List.of("Ada", 7L), (QueryArguments) count.argument());
     assertEquals(
         List.of(0, 0, 1),
@@ -1315,11 +1302,7 @@ class JoinQueryDslTest {
 
     ScriptedQueryConnectionProvider connections =
         new ScriptedQueryConnectionProvider(List.of(List.of()));
-    queryPlanCatalog()
-        .bind(new JdbcExecutor(connections))
-        .query(description)
-        .bind(name, "Ada")
-        .bind(petId, 7L)
+    TestParameters.bind(TestParameters.bind(TestParameters.query(queryPlanCatalog().bind(new JdbcExecutor(connections)), description), name, "Ada"), petId, 7L)
         .fetchList();
     assertEquals(List.of(List.of("Ada", 7L)), connections.bindings());
   }
@@ -1328,18 +1311,18 @@ class JoinQueryDslTest {
   void validatesTheOriginalScalarOrderingOccurrenceBeforeSharingASelectedOutput() {
     OwnerTable lookup = OWNER_TABLE.as("scalar_owner");
     OwnerTable wrongInstance = OWNER_TABLE.as("scalar_owner");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
     Selectable<Long> selected =
-        Sql.scalar(Sql.select(lookup.id()).from(lookup).where(lookup.name().eq(name)));
+        Sql.scalar(Sql.select(lookup.id()).from(lookup).where(TestParameters.eq(lookup.name(), name)));
     Selectable<Long> invalidOrder =
-        Sql.scalar(Sql.select(wrongInstance.id()).from(lookup).where(lookup.name().eq(name)));
+        Sql.scalar(Sql.select(wrongInstance.id()).from(lookup).where(TestParameters.eq(lookup.name(), name)));
     SingleColumnSelect<Long> description =
         Sql.select(selected).from(PET_TABLE).distinct().orderBy(invalidOrder.asc());
 
     QueryValidationException failure =
         assertThrows(
             QueryValidationException.class,
-            () -> operations().query(description).bind(name, "Ada").fetchList());
+            () -> TestParameters.bind(TestParameters.query(operations(), description), name, "Ada").fetchList());
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(failure.getCause().getMessage().contains("ORDER BY[0]"));
     assertTrue(failure.getCause().getMessage().contains("not visible"));
@@ -1353,7 +1336,7 @@ class JoinQueryDslTest {
             Sql.select(innerOwner.id())
                 .from(innerOwner)
                 .where(innerOwner.id().eq(PET_TABLE.ownerId())));
-    SelectQuery<Pet> query =
+    ExecutableSelectQuery<Pet> query =
         operations().selectFrom(PET_TABLE).orderBy(scalar.asc().nullsLast(), PET_TABLE.id().asc());
 
     for (int pageSize : List.of(1, 100)) {
@@ -1367,7 +1350,7 @@ class JoinQueryDslTest {
         QueryValidationException.class, () -> query.fetchSlice(SliceRequest.keysetFirst(1)));
 
     QueryCompilation<Pet> pageContent =
-        ((DefaultSelectQuery<Pet>) query).compilation(new QueryPagination.Offset(10, 0));
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) query), new QueryPagination.Offset(10, 0));
     assertTrue(pageContent.plan().sql().contains("ORDER BY (SELECT "));
     assertTrue(pageContent.plan().sql().endsWith("LIMIT ? OFFSET ?"));
   }
@@ -1386,9 +1369,9 @@ class JoinQueryDslTest {
             List.of(List.of(Map.<Integer, Object>of()), List.of(), List.of(Map.of(1, "Ada"))));
     QueryOperations operations = queryPlanCatalog().bind(new JdbcExecutor(connections));
 
-    SingleRow<@Nullable String> presentNull = operations.query(description).fetchOne();
-    SingleRow<@Nullable String> noRow = operations.query(description).fetchOne();
-    SingleRow<@Nullable String> presentValue = operations.query(description).fetchOne();
+    SingleRow<@Nullable String> presentNull = TestParameters.query(operations, description).fetchOne();
+    SingleRow<@Nullable String> noRow = TestParameters.query(operations, description).fetchOne();
+    SingleRow<@Nullable String> presentValue = TestParameters.query(operations, description).fetchOne();
 
     assertTrue(presentNull.hasRow() && presentNull.isNull());
     assertTrue(!noRow.hasRow());
@@ -1444,7 +1427,7 @@ class JoinQueryDslTest {
     QueryExecutionException thrown =
         assertThrows(
             QueryExecutionException.class,
-            () -> operations.query(Sql.select(scalar).from(PET_TABLE)).fetchList());
+            () -> TestParameters.query(operations, Sql.select(scalar).from(PET_TABLE)).fetchList());
 
     assertSame(cardinality, thrown.getCause());
     assertEquals("21000", thrown.sqlState());
@@ -1460,23 +1443,21 @@ class JoinQueryDslTest {
   void rejectsInvalidDistinctOrderingInsideMembershipAndExistsSubqueries() {
     SingleColumnSelect<Long> invalidOwnerIds =
         Sql.select(OWNER_TABLE.id()).from(OWNER_TABLE).distinct().orderBy(OWNER_TABLE.name().asc());
-    SelectDescription<Pet> membershipDescription =
+    SelectQuery<Pet> membershipDescription =
         Sql.selectFrom(PET_TABLE).where(PET_TABLE.ownerId().in(invalidOwnerIds));
-    SelectDescription<Pet> existsDescription =
+    SelectQuery<Pet> existsDescription =
         Sql.selectFrom(PET_TABLE).where(Sql.exists(invalidOwnerIds));
 
     QueryValidationException membershipFailure =
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Pet>) operations().query(membershipDescription))
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) TestParameters.query(operations(), membershipDescription)), QueryPagination.None.INSTANCE));
     QueryValidationException existsFailure =
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Pet>) operations().query(existsDescription))
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) TestParameters.query(operations(), existsDescription)), QueryPagination.None.INSTANCE));
 
     assertTrue(membershipFailure.getMessage().contains("is not part of the selected result"));
     assertEquals(membershipFailure.getMessage(), existsFailure.getMessage());
@@ -1499,17 +1480,17 @@ class JoinQueryDslTest {
   @Test
   void relocatesOneDescriptionIntoIndependentInSubqueryOccurrences() {
     OwnerTable innerOwner = OWNER_TABLE.as("membership_owner");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> ownerIds =
-        Sql.select(innerOwner.id()).from(innerOwner).where(innerOwner.name().eq(name));
+        Sql.select(innerOwner.id()).from(innerOwner).where(TestParameters.eq(innerOwner.name(), name));
     SingleColumnSelect<Long> description =
         Sql.select(PET_TABLE.id())
             .from(PET_TABLE)
             .where(PET_TABLE.ownerId().in(ownerIds).or(PET_TABLE.ownerId().notIn(ownerIds)));
-    DefaultSelectQuery<Long> query =
-        (DefaultSelectQuery<Long>) operations().query(description).bind(name, "Ada");
+    DefaultExecutableSelectQuery<Long> query =
+        (DefaultExecutableSelectQuery<Long>) TestParameters.bind(TestParameters.query(operations(), description), name, "Ada");
 
-    QueryCompilation<Long> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
     QueryBlockAnalysis analysis =
         SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
 
@@ -1530,15 +1511,15 @@ class JoinQueryDslTest {
   @Test
   void relocatesOneDescriptionIntoIndependentExistsOccurrences() {
     PetTable innerPet = PET_TABLE.as("reused_pet");
-    QueryParameter<String> name = Sql.parameter(String.class, "name");
+    QueryParameter<String> name = TestParameters.parameter(String.class);
     SingleColumnSelect<Long> matchingPets =
-        Sql.select(innerPet.id()).from(innerPet).where(innerPet.name().eq(name));
-    SelectDescription<Owner> description =
+        Sql.select(innerPet.id()).from(innerPet).where(TestParameters.eq(innerPet.name(), name));
+    SelectQuery<Owner> description =
         Sql.selectFrom(OWNER_TABLE).where(Sql.exists(matchingPets).or(Sql.notExists(matchingPets)));
-    DefaultSelectQuery<Owner> query =
-        (DefaultSelectQuery<Owner>) operations().query(description).bind(name, "Mimi");
+    DefaultExecutableSelectQuery<Owner> query =
+        (DefaultExecutableSelectQuery<Owner>) TestParameters.bind(TestParameters.query(operations(), description), name, "Mimi");
 
-    QueryCompilation<Owner> compilation = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Owner> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
     QueryBlockAnalysis analysis =
         SemanticValidator.analyzeComplete((SelectStatement) compilation.ast());
 
@@ -1564,12 +1545,11 @@ class JoinQueryDslTest {
         Sql.select(witness.id())
             .from(witness)
             .where(witness.ownerId().eq(OWNER_TABLE.id()).and(witness.id().eq(joinedPet.id())));
-    SelectDescription<Owner> valid =
+    SelectQuery<Owner> valid =
         Sql.selectFrom(OWNER_TABLE).join(joinedPet).on(Sql.exists(onWitness));
 
     String sql =
-        ((DefaultSelectQuery<Owner>) operations().query(valid))
-            .compilation(QueryPagination.None.INSTANCE)
+        TestParameters.compilation(((DefaultExecutableSelectQuery<Owner>) TestParameters.query(operations(), valid)), QueryPagination.None.INSTANCE)
             .plan()
             .sql();
     assertTrue(sql.contains("ON EXISTS ("));
@@ -1583,7 +1563,7 @@ class JoinQueryDslTest {
         Sql.select(invalidWitness.id())
             .from(invalidWitness)
             .where(invalidWitness.ownerId().eq(futureOwner.id()));
-    SelectDescription<Owner> invalid =
+    SelectQuery<Owner> invalid =
         Sql.selectFrom(OWNER_TABLE)
             .join(firstPet)
             .on(Sql.exists(futureReference))
@@ -1594,8 +1574,7 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Owner>) operations().query(invalid))
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Owner>) TestParameters.query(operations(), invalid)), QueryPagination.None.INSTANCE));
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(failure.getCause().getMessage().contains("JOIN ON"));
     assertTrue(failure.getCause().getMessage().contains("before it is visible"));
@@ -1611,19 +1590,17 @@ class JoinQueryDslTest {
         assertThrows(
             QueryValidationException.class,
             () ->
-                ((DefaultSelectQuery<Long>) operations().query(correlated))
-                    .compilation(QueryPagination.None.INSTANCE));
+                TestParameters.compilation(((DefaultExecutableSelectQuery<Long>) TestParameters.query(operations(), correlated)), QueryPagination.None.INSTANCE));
     assertEquals(SkisErrorCode.QUERY_COMPILED_SHAPE, failure.code());
     assertTrue(failure.getCause().getMessage().contains("unresolved outer reference"));
 
-    SelectDescription<Owner> outer = Sql.selectFrom(OWNER_TABLE).where(Sql.exists(correlated));
-    ((DefaultSelectQuery<Owner>) operations().query(outer))
-        .compilation(QueryPagination.None.INSTANCE);
+    SelectQuery<Owner> outer = Sql.selectFrom(OWNER_TABLE).where(Sql.exists(correlated));
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Owner>) TestParameters.query(operations(), outer)), QueryPagination.None.INSTANCE);
   }
 
-  private static void assertJoinSql(SelectQuery<? extends @Nullable Pet> query, String keyword) {
+  private static void assertJoinSql(ExecutableSelectQuery<? extends @Nullable Pet> query, String keyword) {
     String sql =
-        ((DefaultSelectQuery<?>) query).compilation(QueryPagination.None.INSTANCE).plan().sql();
+        TestParameters.compilation(((DefaultExecutableSelectQuery<?>) query), QueryPagination.None.INSTANCE).plan().sql();
     assertJoinSql(sql, keyword);
   }
 
@@ -1665,30 +1642,30 @@ class JoinQueryDslTest {
     @SuppressWarnings("unchecked")
     QueryParameter<Long> reference = (QueryParameter<Long>)
         SelectableSupport.expressionIdentity(value).parameters().getFirst();
-    SelectQuery<Pet> base = operations.selectFrom(PET_TABLE);
-    List<SelectQuery<?>> captured = List.of(
+    ExecutableSelectQuery<Pet> base = operations.selectFrom(PET_TABLE);
+    List<ExecutableSelectQuery<?>> captured = List.of(
         operations.select(value).from(PET_TABLE),
         base.groupBy(value),
         base.having(Sql.countAll().ge(value)),
         base.where(value.eq(PET_TABLE.ownerId())),
         base.orderBy(value.asc()),
         base.join(OWNER_TABLE).on(value.eq(OWNER_TABLE.id())));
-    for (SelectQuery<?> query : captured) {
+    for (ExecutableSelectQuery<?> query : captured) {
       assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
-          assertThrows(QueryValidationException.class, () -> query.bind(reference, 18L)).code());
+          assertThrows(QueryValidationException.class, () -> TestParameters.bind(query, reference, 18L)).code());
     }
     // Reusing the same captured fragment across boundaries must retain its one binding identity.
-    SelectQuery<Long> shared = operations.select(value).from(PET_TABLE)
+    ExecutableSelectQuery<Long> shared = operations.select(value).from(PET_TABLE)
         .groupBy(value).where(value.isNotNull()).having(value.isNotNull()).orderBy(value.asc());
     assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
-        assertThrows(QueryValidationException.class, () -> shared.bind(reference, 18L)).code());
-    assertTrue(((DefaultSelectQuery<Pet>) base).compilation(QueryPagination.None.INSTANCE)
+        assertThrows(QueryValidationException.class, () -> TestParameters.bind(shared, reference, 18L)).code());
+    assertTrue(TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) base), QueryPagination.None.INSTANCE)
         .plan().sql().startsWith("SELECT"));
   }
 
   @Test
   void executableGroupingConstructionPreservesBranchesAndItsOwnDiagnosticCodes() {
-    SelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
+    ExecutableSelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
     assertEquals(SkisErrorCode.QUERY_GROUP_BY_CONTRACT,
         assertThrows(QueryValidationException.class, base::groupBy).code());
     assertEquals(SkisErrorCode.QUERY_GROUP_BY_CONTRACT,
@@ -1701,71 +1678,70 @@ class JoinQueryDslTest {
     assertEquals(SkisErrorCode.QUERY_HAVING_CONTRACT,
         assertThrows(QueryValidationException.class, () -> base.orHaving(PET_TABLE.id().isNotNull())).code());
     QueryCondition condition = PET_TABLE.id().isNotNull();
-    SelectQuery<Pet> branch = base.having(condition).where(condition);
+    ExecutableSelectQuery<Pet> branch = base.having(condition).where(condition);
     assertEquals(SkisErrorCode.QUERY_HAVING_CONTRACT,
         assertThrows(QueryValidationException.class, () -> branch.having(condition)).code());
     assertEquals(SkisErrorCode.QUERY_WHERE_CONTRACT,
         assertThrows(QueryValidationException.class, () -> branch.where(condition)).code());
     assertNotSame(base.groupBy(PET_TABLE.id()), base.groupBy(PET_TABLE.name()));
-    ((DefaultSelectQuery<Pet>) base).compilation(QueryPagination.None.INSTANCE);
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) base), QueryPagination.None.INSTANCE);
   }
 
   @Test
   void orderingOwnershipIsReleasedWhenLaterClausesCaptureTheSameValue() {
-    SelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
+    ExecutableSelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
     NonNullSelectable<Long> shared = Sql.value(13L);
     @SuppressWarnings("unchecked")
     QueryParameter<Long> parameter = (QueryParameter<Long>)
         SelectableSupport.expressionIdentity(shared).parameters().getFirst();
-    SelectQuery<Pet> ordered = base.orderBy(shared.asc());
-    List<SelectQuery<Pet>> retained = List.of(
+    ExecutableSelectQuery<Pet> ordered = base.orderBy(shared.asc());
+    List<ExecutableSelectQuery<Pet>> retained = List.of(
         ordered.where(shared.isNotNull()),
         ordered.groupBy(shared),
         ordered.having(shared.isNotNull()),
         ordered.join(OWNER_TABLE).on(shared.eq(OWNER_TABLE.id())));
-    for (SelectQuery<Pet> query : retained) {
-      SelectQuery<Pet> replaced = query.orderBy(PET_TABLE.id().asc());
+    for (ExecutableSelectQuery<Pet> query : retained) {
+      ExecutableSelectQuery<Pet> replaced = query.orderBy(PET_TABLE.id().asc());
       assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
-          assertThrows(QueryValidationException.class, () -> replaced.bind(parameter, 14L)).code());
+          assertThrows(QueryValidationException.class, () -> TestParameters.bind(replaced, parameter, 14L)).code());
     }
     // Descendants cannot change the original ordering's exclusive ownership.
-    ((DefaultSelectQuery<Pet>) ordered.orderBy(PET_TABLE.id().asc()))
-        .compilation(QueryPagination.None.INSTANCE);
-    QueryParameter<Long> explicit = Sql.parameter(Long.class, "id");
-    SelectQuery<Pet> bound = ordered.where(PET_TABLE.id().eq(explicit)).bind(explicit, 7L);
-    QueryCompilation<Pet> compiled = ((DefaultSelectQuery<Pet>) bound
-        .orderBy(PET_TABLE.id().asc())).compilation(QueryPagination.None.INSTANCE);
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) ordered.orderBy(PET_TABLE.id().asc())), QueryPagination.None.INSTANCE);
+    QueryParameter<Long> explicit = TestParameters.parameter(Long.class);
+    ExecutableSelectQuery<Pet> bound = TestParameters.bind(ordered.where(TestParameters.eq(PET_TABLE.id(), explicit)), explicit, 7L);
+    QueryCompilation<Pet> compiled = TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) bound
+        .orderBy(PET_TABLE.id().asc())), QueryPagination.None.INSTANCE);
     assertEquals(List.of(7L), compiled.argument());
     assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
-        assertThrows(QueryValidationException.class, () -> bound.bind(explicit, 8L)).code());
-    SelectQuery<Pet> replacedTwice = ordered
+        assertThrows(QueryValidationException.class, () -> TestParameters.bind(bound, explicit, 8L)).code());
+    ExecutableSelectQuery<Pet> replacedTwice = ordered
         .orderBy(Sql.value(14L).asc(), Sql.value(15L).desc())
         .orderBy(PET_TABLE.id().asc());
-    ((DefaultSelectQuery<Pet>) replacedTwice).compilation(QueryPagination.None.INSTANCE);
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) replacedTwice), QueryPagination.None.INSTANCE);
   }
 
   @Test
   void replacingOrderingReleasesOnlyValuesOwnedByTheOldOrdering() {
-    SelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
-    SelectQuery<Pet> ordered = base.orderBy(Sql.value(11L).asc());
-    SelectQuery<Pet> replacement = ordered.orderBy(PET_TABLE.id().asc());
-    ((DefaultSelectQuery<Pet>) replacement).compilation(QueryPagination.None.INSTANCE);
-    SelectQuery<Pet> withWhere = ordered.where(PET_TABLE.id().eq(7L));
-    QueryCompilation<Pet> compiled = ((DefaultSelectQuery<Pet>) withWhere
-        .orderBy(PET_TABLE.id().asc())).compilation(QueryPagination.None.INSTANCE);
+    ExecutableSelectQuery<Pet> base = operations().selectFrom(PET_TABLE);
+    ExecutableSelectQuery<Pet> ordered = base.orderBy(Sql.value(11L).asc());
+    ExecutableSelectQuery<Pet> replacement = ordered.orderBy(PET_TABLE.id().asc());
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) replacement), QueryPagination.None.INSTANCE);
+    ExecutableSelectQuery<Pet> withWhere = ordered.where(PET_TABLE.id().eq(7L));
+    QueryCompilation<Pet> compiled = TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) withWhere
+        .orderBy(PET_TABLE.id().asc())), QueryPagination.None.INSTANCE);
     assertTrue(compiled.plan().sql().contains("WHERE"));
-    SelectQuery<Pet> twice = ordered.orderBy(Sql.value(12L).desc()).distinct()
+    ExecutableSelectQuery<Pet> twice = ordered.orderBy(Sql.value(12L).desc()).distinct()
         .orderBy(PET_TABLE.id().asc());
-    ((DefaultSelectQuery<Pet>) twice).compilation(QueryPagination.None.INSTANCE);
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) twice), QueryPagination.None.INSTANCE);
     NonNullSelectable<Long> shared = Sql.value(13L);
     @SuppressWarnings("unchecked")
     QueryParameter<Long> parameter = (QueryParameter<Long>)
         SelectableSupport.expressionIdentity(shared).parameters().getFirst();
-    SelectQuery<Long> retained = operations().select(shared).from(PET_TABLE)
+    ExecutableSelectQuery<Long> retained = operations().select(shared).from(PET_TABLE)
         .orderBy(shared.asc()).orderBy(PET_TABLE.id().asc());
     assertEquals(SkisErrorCode.QUERY_PARAMETER_DECLARATION,
-        assertThrows(QueryValidationException.class, () -> retained.bind(parameter, 14L)).code());
-    ((DefaultSelectQuery<Pet>) base).compilation(QueryPagination.None.INSTANCE);
+        assertThrows(QueryValidationException.class, () -> TestParameters.bind(retained, parameter, 14L)).code());
+    TestParameters.compilation(((DefaultExecutableSelectQuery<Pet>) base), QueryPagination.None.INSTANCE);
   }
 
   private static QueryPlanCatalog queryPlanCatalog() {

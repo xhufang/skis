@@ -17,7 +17,6 @@ import io.skis.core.spi.OperationStartedEvent;
 import io.skis.jdbc.internal.JdbcCursor;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryCursor;
-import io.skis.query.QueryParameter;
 import io.skis.query.SliceRequest;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;

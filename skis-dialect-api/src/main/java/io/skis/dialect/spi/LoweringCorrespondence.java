@@ -30,8 +30,10 @@ import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
+import io.skis.sql.ast.SetAssignment;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
@@ -94,14 +96,25 @@ final class LoweringCorrespondence {
         MergeStatement second = (MergeStatement) lowered;
         require(
             first.target() == second.target()
-                && first.source() == second.source()
                 && first.keys().equals(second.keys())
-                && first.insertColumns().equals(second.insertColumns()),
-            "MERGE target, source or action columns changed");
+                && first.insertColumns().equals(second.insertColumns())
+                && first.actions().size() == second.actions().size(),
+            "MERGE target, form or actions changed");
+        require((first.source() == null) == (second.source() == null), "MERGE source kind changed");
+        if (first.source() != null)
+          check.relation(first.source(), Objects.requireNonNull(second.source()));
         check.expression(first.on(), second.on());
-        check.expression(first.matchedWhere(), second.matchedWhere());
-        check.assignments(first.assignments(), second.assignments());
         check.expressions(first.insertValues(), second.insertValues());
+        for (int i = 0; i < first.actions().size(); i++) {
+          var before = first.actions().get(i);
+          var after = second.actions().get(i);
+          require(
+              before.kind() == after.kind() && before.columns().equals(after.columns()),
+              "MERGE action order or columns changed");
+          check.expression(before.condition(), after.condition());
+          check.expressions(before.values(), after.values());
+          check.setAssignments(before.assignments(), after.assignments());
+        }
       }
       case InsertStatement first -> {
         InsertStatement second = (InsertStatement) lowered;
@@ -109,6 +122,14 @@ final class LoweringCorrespondence {
             first.target() == second.target() && first.columns().equals(second.columns()),
             "INSERT target or columns changed");
         check.expressions(first.values(), second.values());
+        require(
+            first.additionalRows().size() == second.additionalRows().size(),
+            "INSERT row count changed");
+        for (int index = 0; index < first.additionalRows().size(); index++)
+          check.expressions(first.additionalRows().get(index), second.additionalRows().get(index));
+        require((first.query() == null) == (second.query() == null), "INSERT source kind changed");
+        if (first.query() != null)
+          check.select(first.query(), Objects.requireNonNull(second.query()), true);
       }
       case UpdateStatement first -> {
         UpdateStatement second = (UpdateStatement) lowered;
@@ -119,14 +140,29 @@ final class LoweringCorrespondence {
         for (int index = 0; index < first.assignments().size(); index++) {
           var before = first.assignments().get(index);
           var after = second.assignments().get(index);
-          require(before.column().equals(after.column()), "UPDATE target column changed");
-          check.expression(before.value(), after.value());
+          if (before instanceof UpdateAssignment<?>(var column, var value)
+              && after instanceof UpdateAssignment<?>(var loweredColumn, var loweredValue)) {
+            require(column.equals(loweredColumn), "UPDATE target column changed");
+            check.expression(value, loweredValue);
+          } else if (before instanceof RowAssignment(var columns, var query)
+              && after instanceof RowAssignment(var loweredColumns, var loweredQuery)) {
+            require(columns.equals(loweredColumns), "UPDATE row columns changed");
+            check.select(query, loweredQuery, true);
+          } else {
+            throw mismatch("UPDATE assignment kind changed");
+          }
         }
+        require((first.from() == null) == (second.from() == null), "UPDATE FROM changed");
+        if (first.from() != null)
+          check.sources(first.from(), Objects.requireNonNull(second.from()), true);
         check.expression(first.where(), second.where());
       }
       case DeleteStatement first -> {
         DeleteStatement second = (DeleteStatement) lowered;
         require(first.target() == second.target(), "DELETE target changed");
+        require((first.using() == null) == (second.using() == null), "DELETE USING changed");
+        if (first.using() != null)
+          check.sources(first.using(), Objects.requireNonNull(second.using()), true);
         check.expression(first.where(), second.where());
       }
       case SelectStatement first ->
@@ -141,6 +177,26 @@ final class LoweringCorrespondence {
             first.nullCompensated() == second.nullCompensated(), "count NULL compensation changed");
       }
       default -> {}
+    }
+  }
+
+  private void setAssignments(
+      List<? extends SetAssignment> before, List<? extends SetAssignment> after) {
+    require(before.size() == after.size(), "assignment count changed");
+    for (int index = 0; index < before.size(); index++) {
+      var first = before.get(index);
+      var second = after.get(index);
+      if (first instanceof UpdateAssignment<?>(var column, var value)
+          && second instanceof UpdateAssignment<?>(var replacementColumn, var replacementValue)) {
+        require(column.equals(replacementColumn), "assignment target changed");
+        expression(value, replacementValue);
+      } else if (first instanceof RowAssignment(var columns, var query)
+          && second instanceof RowAssignment(var replacementColumns, var replacementQuery)) {
+        require(columns.equals(replacementColumns), "row assignment targets changed");
+        select(query, replacementQuery, true);
+      } else {
+        throw mismatch("assignment kind changed");
+      }
     }
   }
 
@@ -472,7 +528,11 @@ final class LoweringCorrespondence {
 
   private static void require(boolean valid, String detail) {
     if (!valid) {
-      throw new IllegalArgumentException("lowering output correspondence failed: " + detail);
+      throw mismatch(detail);
     }
+  }
+
+  private static IllegalArgumentException mismatch(String detail) {
+    return new IllegalArgumentException("lowering output correspondence failed: " + detail);
   }
 }
