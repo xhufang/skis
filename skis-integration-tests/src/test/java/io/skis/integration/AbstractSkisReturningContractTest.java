@@ -535,16 +535,22 @@ abstract class AbstractSkisReturningContractTest {
       var id = Sql.output(ROW.id(), "checked_id");
       var source = Sql.values(row -> row.value(id, 1L));
       var nonKey = f.executor.mergeInto(ROW).using(source).on(ROW.version().eq(source.column(id)))
-          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L);
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row
+              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("inserted")));
       var filtered = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
-          .whenMatched(ROW.name().eq("skip")).thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L);
+          .whenMatched(ROW.name().eq("skip")).thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row
+              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("inserted")));
       acquisitions = f.acquisitions.get();
       assertThrows(MutationException.class, nonKey::write);
       assertThrows(MutationException.class, filtered::write);
       assertEquals(acquisitions, f.acquisitions.get());
       if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
         assertEquals(1, f.executor.mergeInto(ROW).using(source).on(source.column(id).eq(ROW.id()))
-            .whenMatched().thenUpdate().set(ROW.note(), "checked").expectedVersion(0L).write());
+            .whenMatched().thenUpdate().set(ROW.note(), "checked").expectedVersion(0L)
+            .whenNotMatched().thenInsert(row -> row
+                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("inserted"))).write());
         assertEquals(1L, f.executor.findById(ROW, 1L).orElseThrow().version());
         assertEquals(1, f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
             .whenMatched().thenUpdate().set(ROW.version(), 7L).write());

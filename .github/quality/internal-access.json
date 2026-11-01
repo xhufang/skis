@@ -1339,6 +1339,13 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
+      "caller": "io.skis.mutation.internal.ValuesBatches",
+      "target": "io.skis.query.internal.MutationQuerySupport$Inputs",
+      "reason": "Binds captured fixed clause values alongside generated entity row inputs without copying snapshots.",
+      "owner": "0.2.10:T05",
+      "exit": "Review with qualified JPMS exports before 1.0"
+    },
+    {
       "caller": "io.skis.mutation.internal.WriteSelections",
       "target": "io.skis.query.internal.MutationQuerySupport",
       "reason": "Shares T05 write expression capture and typed result preparation; invocation values remain outside shared plans.",
