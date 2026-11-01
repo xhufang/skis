@@ -20,6 +20,8 @@ Spring Boot、其他未实现方言及可选能力继续按路线图开发，需
 0.2.10 T08 按本地 ADR-0031 为 PostgreSQL 方言登记唯一例外：`org.postgresql:postgresql` 只能以
 provided scope 参与编译，不作为传递运行时驱动。字节码仅允许
 `PostgreSqlCursorReadSupport` 引用 `PgConnection` 和 `PreferQueryMode`，用于直接确认真实流读取的驱动模式。
+PgJDBC 42.7.14 的非可选传递注解包 `org.checkerframework:checker-qual` 在该方言中同样仅准入 provided scope，
+保留驱动发布的依赖闭包；该准入不适用于其他模块，也不准入该坐标的 compile/runtime scope 或 Checker Framework 其他坐标。
 其他类/模块、驱动类型及 scope 继续拒绝；新增精确正负例，待当前 CI 验证，不扩大历史通过证据。
 
 公开发布边界仍为 parent、BOM 和 15 个生产 Jar，共 17 个 GAV；BOM 与发布白名单不变。
