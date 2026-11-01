@@ -86,6 +86,39 @@ class SqlLoggingConsumerTest {
     assertFalse(TestLoggerProvider.EVENTS.toString().contains("secret-result"));
   }
 
+  @Test void entityByIdStagesReadEachBoundKeyOnceWithAndWithoutParameterLogging() throws Exception {
+    var table = LoggingPetTable.loggingPetTable;
+    TestLoggerProvider.DEBUG.add(PARAMETERS);
+    for (boolean logParameters : List.of(false, true)) {
+      for (String mode : List.of("count", "returning", "batch")) {
+        var options = logParameters
+            ? SqlLoggingOptions.builder().parameters(true).build() : SqlLoggingOptions.NONE;
+        var executor = executor(options, new ArrayList<>());
+        executor.insertInto(table).value(new LoggingPet(1L, "before", 0L)).write();
+        var updated = new LoggingPet(1L, "after", 0L);
+        LoggingPet.resetReads();
+        switch (mode) {
+          case "count" -> assertEquals(1, executor.updateById(table).value(updated).write());
+          case "returning" -> assertEquals(1,
+              executor.updateById(table).value(updated).returning().write().affectedRows());
+          case "batch" -> assertEquals(1, executor.updateById(table).values(List.of(updated)).write());
+          default -> throw new AssertionError(mode);
+        }
+        assertEquals(List.of(1, 1, 2), LoggingPet.reads(), mode + ": update");
+        var deleted = new LoggingPet(1L, "after", 1L);
+        LoggingPet.resetReads();
+        switch (mode) {
+          case "count" -> assertEquals(1, executor.deleteById(table).value(deleted).write());
+          case "returning" -> assertEquals(1,
+              executor.deleteById(table).value(deleted).returning().write().affectedRows());
+          case "batch" -> assertEquals(1, executor.deleteById(table).values(List.of(deleted)).write());
+          default -> throw new AssertionError(mode);
+        }
+        assertEquals(List.of(1, 0, 2), LoggingPet.reads(), mode + ": delete");
+      }
+    }
+  }
+
   @Test void driverSensitiveFailureKeepsCauseWhileDefaultLogsContainOnlySafeMetadata() throws Exception {
     TestLoggerProvider.DEBUG.add(PARAMETERS);
     TestLoggerProvider.DEBUG.add("io.skis.sql");

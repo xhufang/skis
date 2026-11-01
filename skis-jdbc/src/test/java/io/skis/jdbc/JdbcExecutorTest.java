@@ -533,7 +533,7 @@ class JdbcExecutorTest {
             () -> executor.fetchList(bindingFailurePlan(bindFailure), SENSITIVE_PARAMETER));
 
     assertSame(bindFailure, thrown.getCause());
-    assertDiagnosticMessage(thrown, "query", "execution", "test", QUERY_SQL);
+    assertDiagnosticMessage(thrown, "query", "parameter-binding", "test", QUERY_SQL);
     assertEquals(1, bindFailure.getSuppressed().length);
     assertSame(statementCloseFailure, bindFailure.getSuppressed()[0]);
     assertEquals(1, thrown.getSuppressed().length);
@@ -1193,6 +1193,7 @@ class JdbcExecutorTest {
         switch (phase) {
           case "connection-acquire" -> JdbcPhase.ACQUIRE;
           case "statement-configuration" -> JdbcPhase.CONFIGURE;
+          case "parameter-binding" -> JdbcPhase.BIND;
           case "execution" -> JdbcPhase.EXECUTE;
           case "result-set-close" -> JdbcPhase.RESULT_SET_CLOSE;
           case "statement-close" -> JdbcPhase.STATEMENT_CLOSE;

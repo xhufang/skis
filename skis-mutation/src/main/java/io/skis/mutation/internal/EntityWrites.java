@@ -34,7 +34,12 @@ import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
-/** Entity by-ID stages retain generated binders and metadata version semantics. */
+/**
+ * Entity by-ID stages retain generated binders and metadata version semantics.
+ *
+ * <p>The plan validates and reads the key when binding. Only the optimistic version is read before
+ * binding, to choose the checked or unchecked plan.
+ */
 final class EntityWrites {
   private EntityWrites() {}
 
@@ -81,7 +86,7 @@ final class EntityWrites {
               delete ? ExecutionOperationKind.DELETE_BY_ID : ExecutionOperationKind.UPDATE_BY_ID);
       try {
         var plans = operations.plans(table);
-        validateEntity(plans, entity);
+        DefaultMutationOperations.requireEntityValue(plans.entity(), entity);
         boolean checked = plans.readExpectedVersion(entity) != null;
         int count =
             operations.jdbcExecutor.executeUpdate(
@@ -108,15 +113,6 @@ final class EntityWrites {
     public String toString() {
       return "EntityByIdWrite[values redacted]";
     }
-  }
-
-  static <E> void validateEntity(EntityMutationPlanSet<E> plans, E entity) {
-    DefaultMutationOperations.requireEntityValue(plans.entity(), entity);
-    Object id = DefaultMutationOperations.readId(plans, entity);
-    if (!plans.idProperty().javaType().isInstance(id))
-      throw MutationException.of(
-          SkisErrorCode.MUTATION_ID_VALUE_INVALID,
-          "entity byId requires a non-null primary key of its declared type");
   }
 
   private static void validateCount(int count, boolean checked) {
@@ -203,7 +199,7 @@ final class EntityWrites {
                   : ExecutionOperationKind.UPDATE_BY_ID);
       try {
         var plans = operations.plans(input.table);
-        validateEntity(plans, input.entity);
+        DefaultMutationOperations.requireEntityValue(plans.entity(), input.entity);
         boolean checking = plans.readExpectedVersion(input.entity) != null;
         var entry = entry(plans, checking);
         var plan =

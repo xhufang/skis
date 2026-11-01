@@ -16,11 +16,13 @@ class StructuredWritePipelineTest {
     var amount = new PropertyMeta<Object, Long>(2, "amount", Long.class, ColumnMeta.of("amount", true));
     var entity = EntityMeta.simple(Object.class, TableMeta.of("nullable_row"), List.of(id, name, amount),
         new PrimaryKeyMeta<>(List.of(id)), false);
-    var table = new TableExpression<>(entity) {
+    var table = new TableExpression<Object>(entity) {
       @Override public TableExpression<Object> as(Identifier alias) { throw new UnsupportedOperationException(); }
+      ColumnExpression<Object, String> name() { return column(name); }
+      ColumnExpression<Object, Long> amount() { return column(amount); }
     };
-    var text = new ColumnExpression<>(table, name);
-    var number = new ColumnExpression<>(table, amount);
+    var text = table.name();
+    var number = table.amount();
     var assignment = new RowAssignment(List.of(text, number), new SelectStatement(List.of(text, number), table));
     var update = new UpdateStatement(table, List.of(assignment), new BooleanPredicate(true));
     assertEquals(io.skis.core.SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,

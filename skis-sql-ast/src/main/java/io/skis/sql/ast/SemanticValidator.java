@@ -127,10 +127,11 @@ public final class SemanticValidator {
     List<QueryBlockAnalysis.ScopeSource> sources = new ArrayList<>(outer.occurrences().size());
     for (TableOccurrence occurrence : outer.occurrences()) {
       boolean nullable =
-          occurrence
-              .entityTable()
-              .map(outer::isNullExtended)
-              .orElseGet(() -> outer.isNullExtended(occurrence.derivedReference().orElseThrow()));
+          switch (occurrence.source()) {
+            case EntityRelationSource entity -> outer.isNullExtended(entity.table());
+            case DerivedRelationSource derived -> outer.isNullExtended(derived.reference());
+            case ParameterRelationSource parameters -> outer.isNullExtended(parameters.reference());
+          };
       sources.add(
           new QueryBlockAnalysis.ScopeSource(
               new ResolvedSourceIdentity(QueryBlockPath.root(), occurrence.occurrenceOrdinal()),
@@ -983,13 +984,14 @@ public final class SemanticValidator {
       for (int index = 0; index < visibleSources.size(); index++) {
         RelationSource source = visibleSources.get(index);
         boolean nullable =
-            source
-                .entityTable()
-                .map(table -> Boolean.TRUE.equals(visibleTables.get(table)))
-                .orElseGet(
-                    () ->
-                        Boolean.TRUE.equals(
-                            visibleDerivedRelations.get(source.derivedReference().orElseThrow())));
+            switch (source) {
+              case EntityRelationSource entity ->
+                  Boolean.TRUE.equals(visibleTables.get(entity.table()));
+              case DerivedRelationSource derived ->
+                  Boolean.TRUE.equals(visibleDerivedRelations.get(derived.reference()));
+              case ParameterRelationSource parameters ->
+                  Boolean.TRUE.equals(visibleDerivedRelations.get(parameters.reference()));
+            };
         sources.add(
             new QueryBlockAnalysis.ScopeSource(
                 new ResolvedSourceIdentity(QueryBlockPath.root(), index), source, nullable));

@@ -92,7 +92,7 @@ class ReturningExecutionTest {
   void preservesEveryFailurePhaseAndClosesOnlyAcquiredResourcesInOrder() {
     var phases = Map.ofEntries(
         Map.entry("acquire", JdbcPhase.ACQUIRE), Map.entry("prepare", JdbcPhase.EXECUTE),
-        Map.entry("configure", JdbcPhase.CONFIGURE), Map.entry("bind", JdbcPhase.EXECUTE),
+        Map.entry("configure", JdbcPhase.CONFIGURE), Map.entry("bind", JdbcPhase.BIND),
         Map.entry("execute", JdbcPhase.EXECUTE), Map.entry("metadata", JdbcPhase.EXECUTE),
         Map.entry("next", JdbcPhase.EXECUTE), Map.entry("decode", JdbcPhase.EXECUTE),
         Map.entry("read", JdbcPhase.EXECUTE), Map.entry("close-rows", JdbcPhase.RESULT_SET_CLOSE),

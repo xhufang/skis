@@ -128,7 +128,7 @@ class PostgreSqlConsumerTest {
       assertEquals(1L, emptyGlobal.totalElements());
       assertEquals(List.of(0L), emptyGlobal.items());
       var emptyGroups =
-          queries.apply("-empty").where(pet.id().in(List.of()))
+          queries.apply("-empty").and(pet.id().in(List.of()))
               .fetchPage(PageRequest.page(0, 1));
       assertEquals(0L, emptyGroups.totalElements());
       assertTrue(emptyGroups.items().isEmpty());

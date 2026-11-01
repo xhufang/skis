@@ -386,13 +386,9 @@ final class BatchWrites {
   }
 
   private static <E> void validateInput(Input<E> input, EntityMutationPlanSet<E> plans, E entity) {
-    if (input.kind != Kind.INSERT) EntityWrites.validateEntity(plans, entity);
-    else {
-      DefaultMutationOperations.requireEntityValue(plans.entity(), entity);
-      if (plans.generation() == IdGeneration.ASSIGNED)
-        DefaultMutationOperations.validateId(
-            plans, DefaultMutationOperations.readId(plans, entity));
-    }
+    DefaultMutationOperations.requireEntityValue(plans.entity(), entity);
+    if (input.kind == Kind.INSERT && plans.generation() == IdGeneration.ASSIGNED)
+      DefaultMutationOperations.validateId(plans, DefaultMutationOperations.readId(plans, entity));
   }
 
   private static <E> Chunk<?> chunk(
