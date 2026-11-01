@@ -14,6 +14,11 @@ public interface Dialect {
   /** Capabilities supported by this dialect implementation. */
   DialectCapabilities capabilities();
 
+  /** Driver policy for cursor/stream reads; unsupported unless explicitly verified. */
+  default CursorReadSupport cursorReadSupport() {
+    return CursorReadSupport.UNSUPPORTED;
+  }
+
   /**
    * Stable version of all dialect behavior that can affect validation, lowering, or rendered SQL.
    *
@@ -33,7 +38,8 @@ public interface Dialect {
    * <p>The default is {@code false}: third-party dialects remain executable, but must bypass the
    * shared L1 plan cache until they explicitly opt in. An implementation that returns {@code true}
    * must keep its identifier, capabilities, capability version, validation, lowering, and rendering
-   * behavior immutable and thread-safe for the lifetime of a plan catalog.
+   * behavior, including its cursor driver policy, immutable and thread-safe for the lifetime of a
+   * plan catalog.
    */
   default boolean hasStablePlanCacheIdentity() {
     return false;

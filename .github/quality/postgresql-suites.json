@@ -12,7 +12,8 @@
       "io.skis.integration.SkisJdbcTypePostgreSqlContractTest",
       "io.skis.integration.SkisEmployeeDepartmentScalarPostgreSqlContractTest",
       "io.skis.integration.SkisReturningPostgreSqlContractTest",
-      "io.skis.integration.SkisUpsertPostgreSqlContractTest"
+      "io.skis.integration.SkisUpsertPostgreSqlContractTest",
+      "io.skis.integration.SkisStreamingPostgreSqlContractTest"
     ]
   }
 }

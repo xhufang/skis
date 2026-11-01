@@ -85,6 +85,12 @@ public class ArchitectureContractTest {
     assertTrue(ArchitectureRules.forbiddenRuntime("org.springframework.jdbc.ConnectionHolder", false));
     assertFalse(ArchitectureRules.forbiddenRuntime("org.springframework.jdbc.ConnectionHolder", true));
     assertTrue(ArchitectureRules.forbiddenRuntime("org.postgresql.Driver", false));
+    assertTrue(ArchitectureRules.cursorDriverAccess(
+        "io.skis.dialect.postgresql.PostgreSqlCursorReadSupport", "org.postgresql.jdbc.PgConnection"));
+    assertFalse(ArchitectureRules.cursorDriverAccess(
+        "io.skis.jdbc.internal.JdbcExecutor", "org.postgresql.jdbc.PgConnection"));
+    assertFalse(ArchitectureRules.cursorDriverAccess(
+        "io.skis.dialect.postgresql.PostgreSqlCursorReadSupport", "org.postgresql.Driver"));
     assertTrue(ArchitectureRules.forbiddenRuntime("org.slf4j.simple.SimpleLogger", false));
     assertThrows(IllegalStateException.class, () -> ModulePolicy.requireSameModules(Set.of("known"), Set.of("known", "new-module")));
     assertThrows(IllegalStateException.class, () -> ModulePolicy.requireOutput(temporary.resolve("missing-classes")));

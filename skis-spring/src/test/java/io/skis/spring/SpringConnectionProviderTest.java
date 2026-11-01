@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.core.spi.ExecutionContext;
 import io.skis.core.TransactionException;
+import io.skis.dialect.spi.CursorReadSupport;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.jdbc.internal.CompiledQueryPlan;
 import io.skis.jdbc.internal.JdbcExecutor;
@@ -22,6 +23,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,11 +33,331 @@ import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.datasource.ConnectionHolder;
 import org.springframework.jdbc.support.JdbcTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionTimedOutException;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class SpringConnectionProviderTest {
+
+  @Test
+  void nestedCompletionClosesOnlyRolledBackCursorsAndKeepsOuterCursors() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    JdbcTransactionManager manager = new JdbcTransactionManager(dataSource);
+    TransactionTemplate outer = new TransactionTemplate(manager);
+    TransactionTemplate inner = new TransactionTemplate(manager);
+    inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+    for (boolean rollback : List.of(false, true)) {
+      List<Integer> closed = new ArrayList<>();
+      outer.executeWithoutResult(status -> {
+        Connection connection = acquire(provider);
+        provider.registerCursor(connection, () -> closed.add(0), ExecutionContext.EMPTY);
+        inner.executeWithoutResult(nested -> {
+          provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+          if (rollback) nested.setRollbackOnly();
+        });
+        assertEquals(rollback ? List.of(1) : List.of(), closed);
+        release(provider, connection);
+      });
+      assertEquals(List.of(1, 0), closed);
+      assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+    }
+  }
+
+  @Test
+  void rollbackFindsCursorsWhenTheirScopeWasCreatedAfterTheSavepoint() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    JdbcTransactionManager manager = new JdbcTransactionManager(dataSource);
+    TransactionTemplate outer = new TransactionTemplate(manager);
+    TransactionTemplate inner = new TransactionTemplate(manager);
+    inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+    for (boolean nestedTransaction : List.of(false, true)) {
+      List<Integer> closed = new ArrayList<>();
+      outer.executeWithoutResult(status -> {
+        Connection connection = acquire(provider);
+        if (nestedTransaction) {
+          inner.executeWithoutResult(nested -> {
+            provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+            nested.setRollbackOnly();
+          });
+        } else {
+          Object savepoint = status.createSavepoint();
+          provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+          status.rollbackToSavepoint(savepoint);
+          status.releaseSavepoint(savepoint);
+        }
+        assertEquals(List.of(1), closed);
+        provider.registerCursor(connection, () -> closed.add(2), ExecutionContext.EMPTY);
+        release(provider, connection);
+      });
+      assertEquals(List.of(1, 2), closed);
+      assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+    }
+  }
+
+  @Test
+  void manualSavepointsSurviveEarlyClosesAndRepeatedRollback() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions = new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    List<Integer> closed = new ArrayList<>();
+    transactions.executeWithoutResult(status -> {
+      Connection connection = acquire(provider);
+      provider.registerCursor(connection, () -> closed.add(0), ExecutionContext.EMPTY);
+      Object first = status.createSavepoint();
+      Runnable remove = provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+      org.junit.jupiter.api.Assertions.assertNotNull(remove);
+      Object second = status.createSavepoint();
+      // The cursor at a savepoint boundary may disappear before rollback reaches that boundary.
+      closed.add(1);
+      remove.run();
+      provider.registerCursor(connection, () -> closed.add(2), ExecutionContext.EMPTY);
+      status.rollbackToSavepoint(second);
+      assertEquals(List.of(1, 2), closed);
+      provider.registerCursor(connection, () -> closed.add(3), ExecutionContext.EMPTY);
+      status.rollbackToSavepoint(second);
+      assertEquals(List.of(1, 2, 3), closed);
+      provider.registerCursor(connection, () -> closed.add(4), ExecutionContext.EMPTY);
+      status.rollbackToSavepoint(first);
+      assertEquals(List.of(1, 2, 3, 4), closed);
+      status.releaseSavepoint(first);
+      remove.run();
+      release(provider, connection);
+    });
+    assertEquals(List.of(1, 2, 3, 4, 0), closed);
+    assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+  }
+
+  @Test
+  void outerSavepointRollbackAlsoClosesCursorsFromCommittedNestedScopes() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    JdbcTransactionManager manager = new JdbcTransactionManager(dataSource);
+    TransactionTemplate outer = new TransactionTemplate(manager);
+    TransactionTemplate inner = new TransactionTemplate(manager);
+    inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+    List<Integer> closed = new ArrayList<>();
+    outer.executeWithoutResult(status -> {
+      Connection connection = acquire(provider);
+      provider.registerCursor(connection, () -> closed.add(0), ExecutionContext.EMPTY);
+      inner.executeWithoutResult(nested -> {
+        provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+        inner.executeWithoutResult(deeper ->
+            provider.registerCursor(connection, () -> closed.add(2), ExecutionContext.EMPTY));
+        assertTrue(closed.isEmpty());
+        nested.setRollbackOnly();
+      });
+      assertEquals(List.of(2, 1), closed);
+      release(provider, connection);
+    });
+    assertEquals(List.of(2, 1, 0), closed);
+    assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+  }
+
+  @Test
+  void failedSavepointCleanupStillRollsBackAndPreventsOuterCommit() throws Exception {
+    for (Exception closeFailure : List.of(
+        new SQLException("cursor close failed", "HY000"),
+        new org.springframework.transaction.TransactionSystemException("cursor close failed"))) {
+      JdbcDataSource dataSource = database();
+      SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+      JdbcTransactionManager manager = new JdbcTransactionManager(dataSource);
+      TransactionTemplate outer = new TransactionTemplate(manager);
+      TransactionTemplate inner = new TransactionTemplate(manager);
+      inner.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
+      List<Integer> closed = new ArrayList<>();
+      IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+          outer.executeWithoutResult(status -> {
+            Connection connection = acquire(provider);
+            provider.registerCursor(connection, () -> closed.add(0), ExecutionContext.EMPTY);
+            executeUpdate(connection, "INSERT INTO pet(id, pet_name) VALUES (1, 'outer')");
+            inner.executeWithoutResult(nested -> {
+              executeUpdate(connection, "INSERT INTO pet(id, pet_name) VALUES (2, 'inner')");
+              provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+              provider.registerCursor(connection, () -> {
+                closed.add(2);
+                // Cleanup runs before the database rolls back the nested insert.
+                try (Statement statement = connection.createStatement();
+                    ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM pet")) {
+                  assertTrue(rows.next());
+                  assertEquals(2, rows.getInt(1));
+                }
+                throw closeFailure;
+              }, ExecutionContext.EMPTY);
+              provider.registerCursor(connection, () -> closed.add(3), ExecutionContext.EMPTY);
+              nested.setRollbackOnly();
+            });
+            assertEquals(List.of(3, 2, 1), closed);
+            // Reusing the nested row's key proves the JDBC savepoint rollback actually happened.
+            executeUpdate(connection, "INSERT INTO pet(id, pet_name) VALUES (2, 'after rollback')");
+            release(provider, connection);
+          }));
+      assertSame(closeFailure, failure.getCause());
+      assertEquals(List.of(3, 2, 1, 0), closed);
+      assertEquals(0, countRows(dataSource));
+      assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+    }
+  }
+
+  @Test
+  void deregistrationUsesIdentityAndPreservesReverseOrderAfterArbitraryEarlyCloses()
+      throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions = new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    for (boolean rollback : List.of(false, true)) {
+      List<Integer> closed = new ArrayList<>();
+      AtomicInteger comparisons = new AtomicInteger();
+      transactions.executeWithoutResult(status -> {
+        try {
+          Connection connection = provider.acquire(ExecutionContext.EMPTY);
+          List<AutoCloseable> resources = new ArrayList<>();
+          List<Runnable> removals = new ArrayList<>();
+          for (int index = 0; index < 8; index++) {
+            int id = index;
+            AtomicReference<Runnable> removal = new AtomicReference<>();
+            AutoCloseable resource = proxy(AutoCloseable.class, (object, method, args) ->
+                switch (method.getName()) {
+                  case "close" -> {
+                    closed.add(id);
+                    Runnable action = removal.get();
+                    if (action != null) action.run();
+                    yield null;
+                  }
+                  case "equals" -> {
+                    comparisons.incrementAndGet();
+                    yield object == args[0];
+                  }
+                  case "hashCode" -> System.identityHashCode(object);
+                  default -> throw new AssertionError(method.getName());
+                });
+            Runnable registration = provider.registerCursor(connection, resource, ExecutionContext.EMPTY);
+            org.junit.jupiter.api.Assertions.assertNotNull(registration);
+            removal.set(registration);
+            resources.add(resource);
+            removals.add(registration);
+          }
+          for (int index : List.of(0, 4, 7)) {
+            resources.get(index).close();
+            removals.get(index).run();
+          }
+          if (rollback) status.setRollbackOnly();
+        } catch (Exception failure) {
+          throw new AssertionError(failure);
+        }
+      });
+      assertEquals(List.of(0, 4, 7, 6, 5, 3, 2, 1), closed);
+      assertEquals(0, comparisons.get(), "deregistration must not search the active resources");
+      assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+    }
+  }
+
+  @Test
+  void failedCursorCleanupStillClosesOtherRegistrationsAndUnbindsTheScope() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions = new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    List<Integer> closed = new ArrayList<>();
+    SQLException closeFailure = new SQLException("cursor close failed", "HY000");
+    IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+        transactions.executeWithoutResult(status -> {
+          try {
+            Connection connection = provider.acquire(ExecutionContext.EMPTY);
+            provider.registerCursor(connection, () -> closed.add(1), ExecutionContext.EMPTY);
+            provider.registerCursor(connection, () -> {
+              closed.add(2);
+              throw closeFailure;
+            }, ExecutionContext.EMPTY);
+            provider.registerCursor(connection, () -> closed.add(3), ExecutionContext.EMPTY);
+          } catch (SQLException registrationFailure) {
+            throw new AssertionError(registrationFailure);
+          }
+        }));
+    assertSame(closeFailure, failure.getCause());
+    assertEquals(List.of(3, 2, 1), closed);
+    assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+  }
+
+  @Test
+  void suspendedTransactionsKeepIndependentCursorScopes() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    JdbcTransactionManager manager = new JdbcTransactionManager(dataSource);
+    TransactionTemplate outer = new TransactionTemplate(manager);
+    TransactionTemplate inner = new TransactionTemplate(manager);
+    inner.setPropagationBehavior(org.springframework.transaction.TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+    AtomicInteger outerCloses = new AtomicInteger();
+    AtomicInteger innerCloses = new AtomicInteger();
+    outer.executeWithoutResult(status -> {
+      try {
+        provider.registerCursor(provider.acquire(ExecutionContext.EMPTY),
+            outerCloses::incrementAndGet, ExecutionContext.EMPTY);
+        inner.executeWithoutResult(nested -> {
+          try {
+            provider.registerCursor(provider.acquire(ExecutionContext.EMPTY),
+                innerCloses::incrementAndGet, ExecutionContext.EMPTY);
+          } catch (SQLException failure) {
+            throw new AssertionError(failure);
+          }
+        });
+        assertEquals(1, innerCloses.get());
+        assertEquals(0, outerCloses.get());
+      } catch (SQLException failure) {
+        throw new AssertionError(failure);
+      }
+    });
+    assertEquals(1, outerCloses.get());
+    assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+  }
+
+  @Test
+  void closesRegisteredResourcesBeforeSpringCompletesTheTransaction() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions = new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    AtomicInteger closes = new AtomicInteger();
+    for (boolean rollback : List.of(false, true)) {
+      transactions.executeWithoutResult(status -> {
+        try {
+          Connection connection = provider.acquire(ExecutionContext.EMPTY);
+          provider.registerCursor(connection, () -> {
+            assertFalse(connection.getAutoCommit());
+            closes.incrementAndGet();
+          }, ExecutionContext.EMPTY);
+          if (rollback) status.setRollbackOnly();
+        } catch (SQLException failure) {
+          throw new AssertionError(failure);
+        }
+      });
+    }
+    assertEquals(2, closes.get());
+    try (var connection = dataSource.getConnection()) {
+      assertTrue(connection.getAutoCommit());
+    }
+  }
+
+  @Test
+  void earlyCloseDeregistersTheResourceFromSpringCompletion() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions = new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    AtomicInteger closes = new AtomicInteger();
+    transactions.executeWithoutResult(status -> {
+      try {
+        Connection connection = provider.acquire(ExecutionContext.EMPTY);
+        AutoCloseable resource = closes::incrementAndGet;
+        Runnable remove = provider.registerCursor(connection, resource, ExecutionContext.EMPTY);
+        org.junit.jupiter.api.Assertions.assertNotNull(remove);
+        resource.close();
+        remove.run();
+      } catch (Exception failure) {
+        throw new AssertionError(failure);
+      }
+    });
+    assertEquals(1, closes.get());
+  }
 
   @Test
   void delegatesNonTransactionalConnectionOwnershipToSpringUtilities() throws Exception {
@@ -174,7 +496,8 @@ class SpringConnectionProviderTest {
               "test",
               new RenderedSql("SELECT 1", List.of()),
               (preparedStatement, firstIndex, parameters, context) -> firstIndex,
-              (resultSet, context) -> resultSet.getString(1));
+              (resultSet, context) -> resultSet.getString(1),
+              CursorReadSupport.UNSUPPORTED);
 
       QueryExecutionException thrown =
           assertThrows(

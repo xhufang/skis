@@ -15,6 +15,14 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 本地仅静态核对文档和原始工件，未编译运行。合入后 push 按事件跳过依赖漏洞审查，
 该项已由 PR #91 的 [Compliance](https://github.com/xhufang/skis/actions/runs/40281380091) 验证。
 
+### T08 source implementation (verification pending)
+
+- PostgreSQL cursor/stream uses a cursor-only default fetch size of 256, forward-only/read-only statements and close-at-commit holdability. Explicit statement/Session/executor options retain priority; zero, auto-commit, simple protocol and unconfirmed single SQL are rejected before execution.
+- H2 explicitly rejects cursor/stream while retaining materialized queries. Existing H2 resource fixtures are covered by JDBC fakes and PostgreSQL driver contracts; H2 consumers now verify rejection.
+- Local and Spring transactions close open cursors before completion and pool return. Early closure deregisters resources; Spring scopes support suspension/resumption and retain only active cursors.
+- Spring nested/savepoint rollback closes cursors opened after the savepoint while preserving earlier cursors. Cleanup failures do not prevent the database rollback and are reported at outer completion, preventing a successful outer commit. Direct JDBC savepoints require explicit cursor cleanup.
+- Add driver policy and transaction resource registration SPIs, SKISQ035/036, deterministic server-side batch-reading and pooled-connection tests. PgJDBC is a provided dependency confined to one dialect adapter with exact architecture checks. No local compilation, tests or benchmark were run; current CI/driver evidence is pending.
+
 ### T04 source implementation (verification pending)
 
 - PG 冲突插入复用 insertInto，支持显式列/值、冲突目标、DO NOTHING/UPDATE、EXCLUDED、更新 WHERE 和适用版本检查。

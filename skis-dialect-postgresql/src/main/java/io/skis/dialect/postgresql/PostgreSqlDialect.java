@@ -1,5 +1,6 @@
 package io.skis.dialect.postgresql;
 
+import io.skis.dialect.spi.CursorReadSupport;
 import io.skis.dialect.spi.Dialect;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
@@ -76,6 +77,11 @@ public final class PostgreSqlDialect implements Dialect {
   @Override
   public DialectCapabilities capabilities() {
     return CAPABILITIES;
+  }
+
+  @Override
+  public CursorReadSupport cursorReadSupport() {
+    return PostgreSqlCursorReadSupport.INSTANCE;
   }
 
   @Override

@@ -215,7 +215,9 @@ class PostgreSqlConsumerTest {
 
       statements.clear();
       operations.clear();
-      try (Stream<Pet> rows = query.stream()) {
+      try (var session = executor.beginTransaction();
+          Stream<Pet> rows = session.run(Sql.selectFrom(pet).where(pet.id().in(ids))
+              .orderBy(pet.id().asc()).stream())) {
         assertEquals(ids.subList(0, 3), rows.map(Pet::id).toList());
         assertEquals(1, operations.size());
         assertEquals(1, statements.size());
@@ -229,7 +231,9 @@ class PostgreSqlConsumerTest {
 
       statements.clear();
       operations.clear();
-      try (Stream<Pet> rows = query.stream()) {
+      try (var session = executor.beginTransaction();
+          Stream<Pet> rows = session.selectFrom(pet).where(pet.id().in(ids))
+              .orderBy(pet.id().asc()).stream()) {
         assertEquals(ids.getFirst().longValue(), rows.findFirst().orElseThrow().id());
         assertTrue(operations.isEmpty());
       }

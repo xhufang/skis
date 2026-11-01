@@ -97,7 +97,11 @@ public interface ExecutableSelectQuery<R extends @Nullable Object> extends Selec
 
   Slice<R> fetchSlice(SliceRequest request);
 
-  /** Opens a cursor that must be read and closed sequentially on its creating thread. */
+  /**
+   * Opens a cursor for sequential reads on its creating thread. The dialect must support
+   * incremental reads; a positive fetch size, autoCommit=false and a supported driver mode are
+   * required.
+   */
   QueryCursor<R> cursor();
 
   /**
@@ -105,6 +109,7 @@ public interface ExecutableSelectQuery<R extends @Nullable Object> extends Selec
    *
    * <p>Use try-with-resources even for short-circuit terminals. Observed exhaustion completes the
    * resource lifecycle immediately; closing afterward does not emit duplicate completion events.
+   * The same driver and transaction preconditions as {@link #cursor()} apply.
    */
   Stream<R> stream();
 }

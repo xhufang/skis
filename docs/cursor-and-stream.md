@@ -1,15 +1,45 @@
 # Cursor and stream resource ownership
 
-`QueryCursor<R>` and the JDK `Stream<R>` returned by `SelectQuery.stream()` provide incremental
-JDBC-backed reading. They are resource owners, not pagination continuations, and they are not
-thread-safe.
+`ExecutableSelectQuery<R>.cursor()` returns `QueryCursor<R>` and `.stream()` returns a JDK
+`Stream<R>`. Independent `SelectQuery<R>` terminals return requests, executed by executor/Session
+`run`. Both use the same incremental JDBC reader and resource lifetime. They are not thread-safe.
+
+The 0.2.10 T08 implementation and test sources are present; current CI and real-driver verification
+are pending. This section describes the source contract, not a completed driver acceptance result.
+
+## Driver and transaction conditions
+
+| Dialect / driver | cursor / stream | Conditions |
+| --- | --- | --- |
+| PostgreSQL / PgJDBC 42.7.11 baseline | Incremental server-portal reading | `autoCommit=false`, positive effective fetch size, a single SQL statement, extended protocol, forward-only/read-only, close at commit |
+| H2 | Rejected with `SKISQ035` | Use `fetchList` or another materialized terminal |
+| External dialect | Unsupported by default | Supply an immutable `CursorReadSupport` policy and independently verify the driver contract |
+
+PostgreSQL defaults to 256 rows per fetch **only for cursor/stream**. Option precedence is per-call
+override, then Session/executor defaults, then the streaming default. Explicit zero remains zero
+and fails with `SKISQ036`; it is never silently replaced. Ordinary materialized queries retain
+their existing JDBC defaults, including explicit zero.
+
+PgJDBC simple protocol and wrappers that cannot expose the supported driver connection are rejected.
+The PostgreSQL dialect has a provided PgJDBC dependency for direct driver-mode inspection; applications
+still supply their own runtime driver. No runtime reflection or hidden validation SQL is used.
+The lexical single-statement check runs once when a compiled plan is assembled, never per row or
+on an execution cache hit. Ambiguous backslash string syntax is conservatively rejected by resource
+terminals; ordinary DSL values are bound parameters.
+
+These conditions follow the [PgJDBC cursor contract](https://jdbc.postgresql.org/documentation/query/#getting-results-based-on-a-cursor)
+and [H2 result-set behavior](https://h2database.github.io/html/advanced.html#result_sets).
+SKIS does not start transactions or change an external connection's transaction state to make a
+resource terminal succeed. An acquired connection is released according to its provider's ownership
+rules when validation fails.
 
 ## Query cursor
 
 Use a cursor with try-with-resources whenever iteration may stop early:
 
 ```java
-try (QueryCursor<Pet> cursor = query.cursor()) {
+try (SkisSession session = executor.beginTransaction();
+    QueryCursor<Pet> cursor = session.selectFrom(PetTable.petTable).cursor()) {
   while (cursor.advance()) {
     Pet pet = cursor.current();
     // consume the current row
@@ -25,6 +55,8 @@ An abandoned cursor is detected by a JVM cleaner, which emits a warning containi
 dialect and SQL fingerprint. It does not release JDBC resources from the cleaner thread because
 externally managed providers may require release on the acquiring thread. Detection is a diagnostic
 safety net, not a replacement for try-with-resources.
+The cleaner action holds only SQL/dialect text and a closure flag, so transaction registrations
+cannot make it retain the cursor or its JDBC resources.
 
 The cursor owns and closes resources in this fixed order:
 
@@ -42,8 +74,9 @@ separate lifecycle phases without including SQL parameter values.
 `stream()` returns a sequential JDK stream whose close handler owns the query cursor:
 
 ```java
-try (Stream<Pet> rows = query.stream()) {
-  Optional<Pet> first = rows.filter(Pet::active).findFirst();
+try (SkisSession session = executor.beginTransaction();
+    Stream<Pet> rows = session.run(Sql.selectFrom(PetTable.petTable).stream())) {
+  Optional<Pet> first = rows.findFirst();
 }
 ```
 
@@ -60,6 +93,33 @@ parallel.
 
 Nullable scalar queries expose `QueryCursor<@Nullable V>` and `Stream<@Nullable V>`; a row whose
 selected SQL value is `NULL` is still a present cursor row.
+
+## Transaction completion and pools
+
+Local Sessions close still-open cursors before commit, rollback or closing the transaction. Early
+cursor close removes its registration. Connection state is restored by the owning transaction before
+provider release; cursor code itself does not change auto-commit, isolation or read-only state.
+Local and Spring scopes use direct registration handles: removal takes constant time and closing
+all remaining cursors takes linear time, in reverse-open order.
+
+`SpringConnectionProvider` registers one resource scope per transaction. Its synchronization runs
+before Spring's connection cleanup, supports transaction suspension/resumption and removes closed
+cursors immediately. Spring retains commit/rollback ownership. A manually managed external
+transaction/provider must uphold the `ConnectionProvider.registerCursor` contract or arrange
+explicit close before ending its transaction or returning its connection.
+
+For Spring `PROPAGATION_NESTED` and savepoints created through `TransactionStatus`, rollback closes
+only cursors opened after that savepoint, before the JDBC rollback occurs. Earlier cursors remain
+open, and releasing a savepoint keeps its cursors in the surrounding transaction. This also applies
+when the first cursor is opened after the savepoint was created. Direct JDBC savepoint operations
+do not emit Spring callbacks; their caller must close affected cursors explicitly.
+If cursor cleanup fails during savepoint rollback, Spring can still perform the database rollback.
+The scope retains the failure and reports it at transaction completion; an attempted outer commit
+fails and rolls back instead. Savepoint boundaries use weak keys so released savepoints are not
+retained until transaction completion; normal cursor registration and removal remain constant time.
+
+After Session completion, a retained cursor is closed and cannot expose a previously decoded row.
+Always keep streams inside their Session/transaction and use try-with-resources for short circuits.
 
 ## Execution listeners
 

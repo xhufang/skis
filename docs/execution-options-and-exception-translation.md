@@ -74,6 +74,11 @@ Zero is not the same as unset. JDBC defines zero timeout as unlimited, zero fetc
 driver hint default, and zero max rows as no row limit. These values can therefore override a
 non-zero executor default.
 
+Cursor/stream has an additional verified-driver contract: PostgreSQL uses 256 when no fetch size
+is configured, requires a positive effective fetch size and `autoCommit=false`, and rejects simple
+protocol. Explicit zero fails instead of being replaced. H2 rejects these resource terminals.
+Materialized queries retain the option semantics above. See [cursor conditions](cursor-and-stream.md).
+
 `fetchOne()` must inspect a second row to uphold its non-unique-result contract. If its effective
 positive max rows is 1, SKIS applies 2 internally; the operation still returns at most one value,
 but a second database row remains observable as `NonUniqueResultException`.

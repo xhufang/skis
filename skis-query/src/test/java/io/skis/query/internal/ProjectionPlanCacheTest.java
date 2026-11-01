@@ -1410,7 +1410,8 @@ class ProjectionPlanCacheTest {
             "test",
             new RenderedSql(sql, List.of()),
             (statement, firstIndex, argument, context) -> firstIndex,
-            (resultSet, context) -> new Pet(1L));
+            (resultSet, context) -> new Pet(1L),
+            io.skis.dialect.spi.CursorReadSupport.UNSUPPORTED);
     return new CachedQueryPlan<>(plan);
   }
 

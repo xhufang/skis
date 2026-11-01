@@ -721,7 +721,8 @@ final class QueryPlanCompiler {
         dialect.id(),
         rendered,
         new QueryParameterBinder(renderedBindings, logicalParameterCount),
-        rowDecoder);
+        rowDecoder,
+        dialect.cursorReadSupport());
   }
 
   private record QueryParameterBinder(List<RenderedBinding> bindings, int logicalParameterCount)

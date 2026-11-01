@@ -180,7 +180,9 @@ class SkisProjectionPostgreSqlContractTest {
       Slice<Pet> keysetSecond =
           query.fetchSlice(SliceRequest.resume(keysetFirst.nextContinuation().orElseThrow(), 2));
       List<Long> cursorIds = new java.util.ArrayList<>();
-      try (QueryCursor<Pet> cursor = query.cursor()) {
+      try (var session = executor.beginTransaction();
+          QueryCursor<Pet> cursor = session.run(
+              io.skis.query.Sql.selectFrom(pet).where(pet.id().in(ids)).orderBy(pet.id().asc()).cursor())) {
         while (cursor.advance()) {
           cursorIds.add(cursor.current().id());
         }

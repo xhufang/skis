@@ -17,6 +17,11 @@ T08 已删除 23 个远期占位根模块及未就绪 Boot 示例。检查递归
 Commons Logging 门面。测试依赖按 test scope 放行，不进入运行时准入。`skis-spring` 保留实际适配职责，
 Spring Boot、其他未实现方言及可选能力继续按路线图开发，需要时再创建具有真实职责的模块。
 
+0.2.10 T08 按本地 ADR-0031 为 PostgreSQL 方言登记唯一例外：`org.postgresql:postgresql` 只能以
+provided scope 参与编译，不作为传递运行时驱动。字节码仅允许
+`PostgreSqlCursorReadSupport` 引用 `PgConnection` 和 `PreferQueryMode`，用于直接确认真实流读取的驱动模式。
+其他类/模块、驱动类型及 scope 继续拒绝；新增精确正负例，待当前 CI 验证，不扩大历史通过证据。
+
 公开发布边界仍为 parent、BOM 和 15 个生产 Jar，共 17 个 GAV；BOM 与发布白名单不变。
 Central 排除剩余 6 个内部项目：test-support、test-model、integration-tests、benchmark、examples 和 H2 示例。
 发布检查同时拒绝 Reactor 中指向已删除 SKIS GAV 的依赖（含 dependencyManagement），并要求 test-support 的使用方

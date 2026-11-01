@@ -26,6 +26,7 @@ import io.skis.core.spi.StatementCompletedEvent;
 import io.skis.core.spi.StatementPurpose;
 import io.skis.core.spi.StatementStartedEvent;
 import io.skis.dialect.spi.ExceptionClassifier;
+import io.skis.dialect.spi.CursorReadSupport;
 import io.skis.dialect.spi.RenderedSql;
 import io.skis.dialect.spi.SqlExceptionCategory;
 import io.skis.jdbc.internal.CompiledMutationPlan;
@@ -56,6 +57,11 @@ import org.jspecify.annotations.Nullable;
 import org.junit.jupiter.api.Test;
 
 class JdbcExecutorTest {
+
+  private static final CursorReadSupport CURSOR_SUPPORT = new CursorReadSupport() {
+    @Override public int defaultFetchSize() { return 256; }
+    @Override public boolean supportsConnection(Connection connection) { return true; }
+  };
 
   private static final String QUERY_SQL = "SELECT name FROM pet WHERE id = ?";
   private static final String MUTATION_SQL = "DELETE FROM pet WHERE name = ?";
@@ -614,7 +620,8 @@ class JdbcExecutorTest {
             original.parameterBinder(),
             (resultSet, context) -> {
               throw primary;
-            });
+            },
+            CursorReadSupport.UNSUPPORTED);
 
     assertSame(
         primary, assertThrows(IllegalArgumentException.class, () -> executor.fetchList(failing, 1L)));
@@ -957,13 +964,15 @@ class JdbcExecutorTest {
             "test",
             new RenderedSql("SELECT name FROM pet LIMIT ? OFFSET ?", List.of()),
             (statement, firstIndex, value, context) -> firstIndex,
-            (resultSet, context) -> resultSet.getString(1));
+            (resultSet, context) -> resultSet.getString(1),
+            CursorReadSupport.UNSUPPORTED);
     CompiledQueryPlan<Long, Object> count =
         new CompiledQueryPlan<>(
             "test",
             new RenderedSql("SELECT COUNT(*) FROM pet", List.of()),
             (statement, firstIndex, value, context) -> firstIndex,
-            (resultSet, context) -> resultSet.getLong(1));
+            (resultSet, context) -> resultSet.getLong(1),
+            CursorReadSupport.UNSUPPORTED);
     List<Object> observed = new ArrayList<>();
     ExecutionListener listener =
         new ExecutionListener() {
@@ -1073,13 +1082,15 @@ class JdbcExecutorTest {
             "content-dialect",
             new RenderedSql(contentSql, List.of()),
             (statement, firstIndex, value, context) -> firstIndex,
-            (resultSet, context) -> resultSet.getString(1));
+            (resultSet, context) -> resultSet.getString(1),
+            CursorReadSupport.UNSUPPORTED);
     CompiledQueryPlan<Long, Object> count =
         new CompiledQueryPlan<>(
             "count-dialect",
             new RenderedSql(countSql, List.of()),
             (statement, firstIndex, value, context) -> firstIndex,
-            (resultSet, context) -> resultSet.getLong(1));
+            (resultSet, context) -> resultSet.getLong(1),
+            CursorReadSupport.UNSUPPORTED);
     ExecutionContext context =
         ExecutionContext.of(ExecutionOptions.builder().fetchSize(25).build());
 
@@ -1103,7 +1114,7 @@ class JdbcExecutorTest {
           statement.setLong(firstIndex, value);
           return firstIndex + 1;
         },
-        (resultSet, context) -> resultSet.getString(1));
+        (resultSet, context) -> resultSet.getString(1), CURSOR_SUPPORT);
   }
 
   private static CompiledQueryPlan<@Nullable String, Long> nullablePlan() {
@@ -1115,7 +1126,7 @@ class JdbcExecutorTest {
           statement.setLong(firstIndex, value);
           return firstIndex + 1;
         },
-        (resultSet, context) -> resultSet.getString(1));
+        (resultSet, context) -> resultSet.getString(1), CURSOR_SUPPORT);
   }
 
   private static JdbcExecutor configuredExecutor(
@@ -1139,7 +1150,8 @@ class JdbcExecutorTest {
           statement.setString(firstIndex, parameter);
           return firstIndex + 1;
         },
-        (resultSet, context) -> resultSet.getString(1));
+        (resultSet, context) -> resultSet.getString(1),
+        CursorReadSupport.UNSUPPORTED);
   }
 
   private static CompiledQueryPlan<String, String> bindingFailurePlan(SQLException failure) {
@@ -1150,7 +1162,8 @@ class JdbcExecutorTest {
         (statement, firstIndex, parameter, context) -> {
           throw failure;
         },
-        (resultSet, context) -> resultSet.getString(1));
+        (resultSet, context) -> resultSet.getString(1),
+        CursorReadSupport.UNSUPPORTED);
   }
 
   private static CompiledQueryPlan<String, String> decodingFailurePlan(SQLException failure) {
@@ -1164,7 +1177,7 @@ class JdbcExecutorTest {
         },
         (resultSet, context) -> {
           throw failure;
-        });
+        }, CURSOR_SUPPORT);
   }
 
   private static CompiledMutationPlan<String> sensitiveMutationPlan() {
@@ -1297,6 +1310,10 @@ class JdbcExecutorTest {
                       executionEvents.add("fetch-size:" + value);
                       yield null;
                     }
+                    case "getFetchSize" -> fetchSize.get();
+                    case "getResultSetType" -> ResultSet.TYPE_FORWARD_ONLY;
+                    case "getResultSetConcurrency" -> ResultSet.CONCUR_READ_ONLY;
+                    case "getResultSetHoldability" -> ResultSet.CLOSE_CURSORS_AT_COMMIT;
                     case "setMaxRows" -> {
                       failConfiguration(method.getName());
                       int value = (Integer) arguments[0];

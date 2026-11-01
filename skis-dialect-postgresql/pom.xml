@@ -12,6 +12,12 @@
   <description>PostgreSQL SQL dialect</description>
   <dependencies>
     <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <version>42.7.11</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>io.github.xhufang</groupId>
       <artifactId>skis-dialect-api</artifactId>
     </dependency>
@@ -92,6 +98,7 @@
                     <exclude>org.springframework.boot:*</exclude>
                   </excludes>
                   <includes>
+                    <include>org.postgresql:postgresql:*:*:provided</include>
                     <include>io.github.xhufang:skis-annotations</include>
                     <include>io.github.xhufang:skis-core</include>
                     <include>io.github.xhufang:skis-dialect-api</include>
