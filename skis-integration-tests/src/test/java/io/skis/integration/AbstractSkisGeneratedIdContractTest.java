@@ -10,6 +10,8 @@ import io.skis.integration.ids.skis.*;
 import io.skis.jdbc.JdbcExecutionException;
 import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.spi.EntityRuntimeModel;
+import io.skis.mutation.BatchMode;
+import io.skis.mutation.BatchWriteException;
 import io.skis.mutation.SnowflakeIdGenerator;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
@@ -31,6 +33,35 @@ abstract class AbstractSkisGeneratedIdContractTest {
       UuidIdRecordRuntimeModel.MODEL, SnowflakeIdRecordRuntimeModel.MODEL,
       IdentityIdBeanRuntimeModel.MODEL, UuidStringIdBeanRuntimeModel.MODEL,
       VersionIdRecordRuntimeModel.MODEL, RejectingIdRecordRuntimeModel.MODEL);
+
+  @Test
+  void identityBatchesOmitGeneratedKeysAndValuesReturningDecodesTheirActualIds() throws Exception {
+    for (BatchMode mode : BatchMode.values()) {
+      DataSource source = createDataSource();
+      try (Connection connection = source.getConnection()) {
+        createTables(connection);
+        var acquisitions = new AtomicInteger();
+        var executor = executor(source, connection, acquisitions, new AtomicInteger());
+        var table = IdentityIdRecordTable.identityIdRecordTable;
+        assertThrows(BatchWriteException.class, () -> executor.insertInto(table)
+            .values(List.of(new IdentityIdRecord(99L, "invalid", null))).batchMode(mode).write());
+        assertEquals(0, acquisitions.get());
+        var inputs = List.of(new IdentityIdRecord(null, "first", "transient"),
+            new IdentityIdRecord(null, "second", null));
+        assertEquals(2, executor.insertInto(table).values(inputs).batchMode(mode).write());
+        assertTrue(inputs.stream().allMatch(row -> row.id() == null));
+        if (mode == BatchMode.VALUES) {
+          var returned = executor.insertInto(table).values(List.of(
+              new IdentityIdRecord(null, "third", "transient"),
+              new IdentityIdRecord(null, "fourth", null))).batchMode(mode).returning().write();
+          assertEquals(2, returned.affectedRows());
+          assertEquals(2, returned.rows().size());
+          assertTrue(returned.rows().stream().allMatch(row -> row.id() != null && row.note() == null));
+          assertEquals(2, returned.rows().stream().map(IdentityIdRecord::id).distinct().count());
+        }
+      }
+    }
+  }
 
   @Test
   void defaultValuesUsesTheControlledCompilerAndRejectsMissingCapabilities() {

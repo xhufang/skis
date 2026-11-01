@@ -39,6 +39,195 @@ abstract class AbstractSkisReturningContractTest {
   protected abstract Dialect dialect();
 
   @Test
+  void entityReturningKeepsVersionChecksAcrossRepeatedRequests() throws Exception {
+    for (boolean checked : List.of(false, true)) {
+      try (var f = new Fixture()) {
+        f.executor.insertInto(ROW).value(new WriteRow(1L, "before", null, null)).write();
+        var input = new WriteRow(1L, "after", "updated", checked ? 0L : null);
+        var update = f.executor.updateById(ROW).value(input).returning();
+        var written = update.write();
+        assertEquals(1, written.affectedRows());
+        assertEquals(new WriteRow(1L, "after", "updated", 1L), written.one().get());
+        int compilations = f.compilations.get();
+        if (checked) assertThrows(OptimisticLockException.class, update::write);
+        else assertEquals(2L, update.write().one().get().version());
+        assertEquals(compilations, f.compilations.get());
+        assertEquals(checked ? 0L : null, input.version());
+
+        var delete = f.executor.deleteById(ROW)
+            .value(new WriteRow(1L, "ignored", null, checked ? 1L : null))
+            .returning(ROW.id(), ROW.name());
+        var deleted = delete.write();
+        assertEquals(1, deleted.affectedRows());
+        assertEquals(new Row2<>(1L, "after"), deleted.one().get());
+        compilations = f.compilations.get();
+        if (checked) assertThrows(OptimisticLockException.class, delete::write);
+        else {
+          var absent = delete.write();
+          assertEquals(0, absent.affectedRows());
+          assertTrue(absent.rows().isEmpty());
+          assertFalse(absent.one().hasRow());
+        }
+        assertEquals(compilations, f.compilations.get());
+      }
+    }
+  }
+
+  @Test
+  void entityReturningPreservesPresentNullScalarsAndValidatesProjectionScopeBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).value(new WriteRow(1L, "before", null, null)).write();
+      var entity = new WriteRow(1L, "after", null, null);
+      var written = f.executor.updateById(ROW).value(entity).returning(ROW.note()).write();
+      assertEquals(1, written.affectedRows());
+      assertTrue(written.one().hasRow());
+      assertNull(written.one().get());
+      assertEquals(java.util.Collections.singletonList(null), written.rows());
+      int acquisitions = f.acquisitions.get();
+      var foreign = ROW.as("foreign");
+      assertThrows(SkisException.class,
+          () -> f.executor.updateById(ROW).value(entity).returning(foreign.name()).write());
+      assertEquals(acquisitions, f.acquisitions.get());
+    }
+  }
+
+  @Test
+  void unversionedEntityReturningSupportsScalarAndFullRowImages() throws Exception {
+    try (var f = new Fixture()) {
+      var table = UuidStringIdBeanTable.uuidStringIdBeanTable;
+      var bean = new UuidStringIdBean();
+      bean.setName("before");
+      f.executor.insertInto(table).value(bean).write();
+      String id = Objects.requireNonNull(bean.getId());
+      bean.setName("after");
+      var update = f.executor.updateById(table).value(bean).returning(table.name());
+      assertEquals(List.of("after"), update.write().rows());
+      assertEquals("after", update.write().one().get());
+      var delete = f.executor.deleteById(table).value(bean).returning();
+      var row = delete.write().one().get();
+      assertEquals(id, row.getId());
+      assertEquals("after", row.getName());
+      assertFalse(delete.write().one().hasRow());
+    }
+  }
+
+  @Test
+  void valuesBatchesGenerateUuidArgumentsForCountAndReturningChunks() throws Exception {
+    try (var f = new Fixture()) {
+      var table = UuidStringIdBeanTable.uuidStringIdBeanTable;
+      var options = new BatchOptions(BatchMode.VALUES, 2, 1024, 8192);
+      var counted = new ArrayList<UuidStringIdBean>();
+      var returned = new ArrayList<UuidStringIdBean>();
+      for (int index = 0; index < 3; index++) {
+        var first = new UuidStringIdBean();
+        if (index == 0) first.setId("00000000-0000-0000-0000-000000000001");
+        first.setName("count-" + index);
+        counted.add(first);
+        var second = new UuidStringIdBean();
+        second.setName("return-" + index);
+        returned.add(second);
+      }
+      assertEquals(3, f.executor.insertInto(table).values(counted).batchOptions(options).write());
+      int acquisitions = f.acquisitions.get(), statements = f.statements.get();
+      var result = f.executor.insertInto(table).values(returned).batchOptions(options).returning().write();
+      assertEquals(3, result.affectedRows());
+      assertEquals(3, result.rows().size());
+      assertEquals(3, result.rows().stream().map(UuidStringIdBean::getId).distinct().count());
+      assertTrue(result.rows().stream().allMatch(row -> row.getId() != null));
+      assertEquals(java.util.Set.of("return-0", "return-1", "return-2"),
+          new java.util.HashSet<>(result.rows().stream().map(UuidStringIdBean::getName).toList()));
+      assertEquals(acquisitions + 1, f.acquisitions.get());
+      assertEquals(statements + 2, f.statements.get());
+      assertEquals(3, f.executor.deleteById(table).values(result.rows())
+          .batchOptions(options.withMode(BatchMode.ADD_BATCH)).write());
+      acquisitions = f.acquisitions.get();
+      for (String invalid : List.of("", "not-a-uuid", "00000000-0000-0000-0000-00000000000g",
+          "00000000x0000-0000-0000-000000000000", "A0000000-0000-0000-0000-000000000000",
+          "/0000000-0000-0000-0000-000000000000")) {
+        var bean = new UuidStringIdBean();
+        bean.setId(invalid);
+        assertThrows(BatchWriteException.class,
+            () -> f.executor.insertInto(table).values(List.of(bean)).batchOptions(options).write());
+        assertEquals(acquisitions, f.acquisitions.get());
+      }
+    }
+  }
+
+  @Test
+  void batchPreflightChecksEveryVersionShapeBeforeAcquiringAConnection() throws Exception {
+    for (boolean memoryBudget : List.of(false, true)) {
+      try (var f = new Fixture()) {
+        f.executor.insertInto(ROW).values(List.of(new WriteRow(1L, "one", null, null),
+            new WriteRow(2L, "two", null, null))).write();
+        var options = new BatchOptions(BatchMode.ADD_BATCH, 3,
+            memoryBudget ? 1024 : 3, memoryBudget ? 160 : 8192);
+        assertEquals(2, f.executor.updateById(ROW).values(List.of(
+            new WriteRow(1L, "allowed", null, null), new WriteRow(2L, "allowed", null, null)))
+            .batchOptions(options).write());
+        int acquisitions = f.acquisitions.get();
+        var failure = assertThrows(BatchWriteException.class, () ->
+            f.executor.updateById(ROW).values(List.of(new WriteRow(1L, "unexecuted", null, null),
+                new WriteRow(2L, "too-wide", null, 1L))).batchOptions(options).write());
+        assertEquals(acquisitions, f.acquisitions.get());
+        assertEquals(BatchResult.Status.NOT_EXECUTED, failure.result().items().getFirst().status());
+        assertEquals(BatchResult.Status.FAILED, failure.result().items().get(1).status());
+        assertEquals(0, failure.result().knownAffectedRows());
+        assertEquals("allowed", f.executor.findById(ROW, 1L).orElseThrow().name());
+        assertEquals("allowed", f.executor.findById(ROW, 2L).orElseThrow().name());
+      }
+    }
+  }
+
+  @Test
+  void batchCountValidationPreservesDriverFactsWithoutRetrying() throws Exception {
+    for (BatchMode mode : BatchMode.values()) {
+      for (int[] counts : List.of(new int[0], new int[] {-42}, new int[] {0}, new int[] {2},
+          new int[] {java.sql.Statement.SUCCESS_NO_INFO}, new int[] {java.sql.Statement.EXECUTE_FAILED})) {
+        if (mode == BatchMode.VALUES && counts.length == 0) continue;
+        try (var f = new Fixture()) {
+          var executions = new AtomicInteger();
+          var released = new AtomicInteger();
+          Connection connection = jdbcProxy(Connection.class, (ignored, method, arguments) -> {
+            var value = invokeJdbc(f.connection, method, arguments);
+            if (!method.getName().equals("prepareStatement")) return value;
+            var statement = (PreparedStatement) Objects.requireNonNull(value);
+            return jdbcProxy(PreparedStatement.class, (proxy, action, inputs) -> {
+              if (action.getName().equals("executeBatch")) {
+                executions.incrementAndGet();
+                return counts.clone();
+              }
+              if (action.getName().equals("executeUpdate")) {
+                executions.incrementAndGet();
+                return counts[0];
+              }
+              return invokeJdbc(statement, action, inputs);
+            });
+          });
+          var executor = Skis.builder(f.source).dialect(dialect())
+              .runtimeModels(List.of(WriteRowRuntimeModel.MODEL))
+              .connectionProvider(new ConnectionProvider() {
+                @Override public Connection acquire(ExecutionContext context) { return connection; }
+                @Override public void release(Connection actual, ExecutionContext context) {
+                  assertSame(connection, actual);
+                  released.incrementAndGet();
+                }
+              }).build();
+          var failure = assertThrows(BatchWriteException.class, () -> executor.insertInto(ROW)
+              .values(List.of(new WriteRow(1L, "unexecuted", null, null))).batchMode(mode).write());
+          assertEquals(SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT, failure.code());
+          assertEquals(1, executions.get());
+          assertEquals(1, released.get());
+          boolean known = counts.length == 1 && counts[0] >= 0;
+          assertEquals(known, failure.result().affectedRowsKnown());
+          assertEquals(known ? counts[0] : 0, failure.result().knownAffectedRows());
+          assertEquals(known, failure.result().items().getFirst().countKnown());
+          assertEquals(known ? counts[0] : 0, failure.result().items().getFirst().affectedRows());
+        }
+      }
+    }
+  }
+
+  @Test
   void insertUpdateDeleteReturnFullRowsAndBothProjectionKinds() throws Exception {
     try (var f = new Fixture()) {
       var full = f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).returning().write();
@@ -510,6 +699,58 @@ abstract class AbstractSkisReturningContractTest {
         assertTrue(f.executor.findById(ROW, 2L).isEmpty());
       } else {
         assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, assertThrows(SkisException.class, mixed::write).code());
+        assertEquals(acquisitions, f.acquisitions.get());
+      }
+    }
+  }
+
+  @Test
+  void strictMergeRejectsNullableOrSubstitutedSourceKeysBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      var id = Sql.output(ROW.id(), "id");
+      var alternate = Sql.output(ROW.id(), "alternate_id");
+      var source = Sql.values(row -> row.value(id, 1L).value(alternate, 2L));
+      var nullableId = Sql.outputNullable(ROW.id(), "nullable_id");
+      var nullable = Sql.values(row -> row.value(nullableId, 1L));
+      var table = ROW.as("source");
+      var tableInput = f.executor.mergeInto(ROW).using(table).on(ROW.id().eq(table.id()))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row.value(ROW.id(), table.id()).value(ROW.name(), table.name()));
+      var reversedNonKey = f.executor.mergeInto(ROW).using(source).on(source.column(id).eq(ROW.version()))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row.value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("invalid")));
+      var literalKey = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row.value(ROW.id(), Sql.value(2L)).value(ROW.name(), Sql.value("invalid")));
+      var substituted = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row.value(ROW.id(), source.column(alternate)).value(ROW.name(), Sql.value("invalid")));
+      var nullableKey = f.executor.mergeInto(ROW).using(nullable).on(ROW.id().eq(nullable.column(nullableId)))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
+          .whenNotMatched().thenInsert(row -> row.value(ROW.id(), nullable.column(nullableId)).value(ROW.name(), Sql.value("invalid")));
+      for (var invalid : List.of(tableInput, reversedNonKey, literalKey, substituted, nullableKey))
+        assertThrows(MutationException.class, invalid::write);
+      assertEquals(0, f.acquisitions.get());
+    }
+  }
+
+  @Test
+  void mergeBranchConditionsComposeBeforeTheirActions() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
+      var id = Sql.output(ROW.id(), "id");
+      var source = Sql.values(row -> row.value(id, 1L));
+      var request = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
+          .whenMatched().and(ROW.name().eq("one")).and(source.column(id).eq(1L))
+          .thenUpdate().set(ROW.note(), "composed")
+          .whenNotMatched().and(source.column(id).eq(2L))
+          .thenInsert(row -> row.value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("two")));
+      int acquisitions = f.acquisitions.get();
+      if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
+        assertEquals(1, request.write());
+        assertEquals("composed", f.executor.findById(ROW, 1L).orElseThrow().note());
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, assertThrows(SkisException.class, request::write).code());
         assertEquals(acquisitions, f.acquisitions.get());
       }
     }

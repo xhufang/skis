@@ -29,6 +29,7 @@
       "io.skis.sql.ast.DerivedTableAstTest",
       "io.skis.sql.ast.IdentifierTest",
       "io.skis.sql.ast.JoinAstTest",
+      "io.skis.sql.ast.MutationAstContractTest",
       "io.skis.sql.ast.ParameterRelationAstTest",
       "io.skis.sql.ast.QueryScopeAnalysisTest",
       "io.skis.sql.ast.ResultIdentityTest",
@@ -36,7 +37,8 @@
     ],
     "skis-dialect-api": [
       "io.skis.dialect.SqlRenderExceptionTest",
-      "io.skis.dialect.spi.DialectValueTypesTest"
+      "io.skis.dialect.spi.DialectValueTypesTest",
+      "io.skis.dialect.spi.LoweringCorrespondenceTest"
     ],
     "skis-jdbc": [
       "io.skis.jdbc.GeneratedKeysExecutionTest",
@@ -82,6 +84,7 @@
       "io.skis.query.internal.ValuesSourceTest"
     ],
     "skis-mutation": [
+      "io.skis.mutation.internal.MutationStructureKeyTest",
       "io.skis.mutation.IdGenerationContractTest",
       "io.skis.mutation.SnowflakeIdGeneratorTest",
       "io.skis.mutation.MutationExecutionDiagnosticsTest",

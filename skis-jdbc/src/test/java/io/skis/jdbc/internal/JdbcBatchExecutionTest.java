@@ -17,6 +17,24 @@ class JdbcBatchExecutionTest {
       new RenderedSql("INSERT INTO item(id) VALUES (?)", List.of(new ParameterSlot<>(0, Long.class, false))),
       (statement, first, value, context) -> { statement.setLong(first, value); return first + 1; });
 
+  @Test void batchAccessCannotEscapeItsConnectionScopeOrSubmitEmptyChunks() {
+    Scenario scenario = new Scenario();
+    var retained = new java.util.concurrent.atomic.AtomicReference<JdbcExecutor.BatchConnection>();
+    var executor = new JdbcExecutor(scenario.provider());
+    executor.executeBatchWork(PLAN, ExecutionContext.EMPTY, null, connection -> {
+      retained.set(connection);
+      assertThrows(IllegalArgumentException.class, () -> connection.addBatch(PLAN, List.of()));
+      return connection.addBatch(PLAN, List.of(11L));
+    });
+    var expired = retained.get();
+    assertThrows(IllegalStateException.class, () -> expired.addBatch(PLAN, List.of(12L)));
+    assertThrows(IllegalStateException.class, () -> expired.update(PLAN, 12L));
+    assertThrows(IllegalStateException.class,
+        () -> expired.returning(PLAN, (rows, context) -> rows.getLong(1), 1, 12L));
+    assertEquals(1, scenario.executed); assertEquals(1, scenario.prepared);
+    assertEquals(1, scenario.closed); assertEquals(1, scenario.released);
+  }
+
   @Test void ownsOneConnectionAndBindsEveryChunkWithoutTransactionChanges() {
     Scenario scenario = new Scenario();
     var executor = new JdbcExecutor(scenario.provider());

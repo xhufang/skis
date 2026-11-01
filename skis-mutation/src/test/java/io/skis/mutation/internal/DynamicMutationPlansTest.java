@@ -32,6 +32,27 @@ import org.junit.jupiter.api.Test;
 
 class DynamicMutationPlansTest {
   @Test
+  void cacheStatisticsRejectNegativeCountersAndActivityOnDisabledCaches() {
+    for (int index = 0; index < 6; index++) {
+      long[] values = {0, 0, 0, 0, 0, 1};
+      values[index] = -1;
+      assertThrows(IllegalArgumentException.class, () ->
+          new io.skis.mutation.MutationPlanCacheStatistics(values[0], values[1], values[2], values[3],
+              Math.toIntExact(values[4]), Math.toIntExact(values[5])));
+    }
+    assertThrows(IllegalArgumentException.class,
+        () -> new io.skis.mutation.MutationPlanCacheStatistics(0, 0, 0, 0, 2, 1));
+    for (int index = 0; index < 4; index++) {
+      long[] values = {0, 0, 0, 0};
+      values[index] = 1;
+      assertThrows(IllegalArgumentException.class, () ->
+          new io.skis.mutation.MutationPlanCacheStatistics(values[0], values[1], values[2], values[3], 0, 0));
+    }
+    assertEquals(0, new io.skis.mutation.MutationPlanCacheStatistics(0, 0, 0, 0, 0, 0).size());
+    assertEquals(1, new io.skis.mutation.MutationPlanCacheStatistics(2, 3, 4, 5, 1, 1).size());
+  }
+
+  @Test
   void countPlansDoNotCreateDecodersAndUnstableDialectsBypassSharedCaching() {
     var model = model(LoaderValue.class, "value");
     var table = new Table(model.entity());

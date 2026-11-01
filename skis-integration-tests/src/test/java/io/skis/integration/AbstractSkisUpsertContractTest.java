@@ -319,6 +319,52 @@ abstract class AbstractSkisUpsertContractTest {
     }
   }
 
+  @Test void strictConflictBatchesAcceptNumericExpressionAndMetadataVersions() throws Exception {
+    if (!pg()) return;
+    for (BatchMode mode : BatchMode.values()) {
+      for (int expected = 0; expected < 3; expected++) {
+        try (var f = new Fixture()) {
+          f.executor.insertInto(ROW).value(new WriteRow(1L, "seed", null, null)).write();
+          var update = f.executor.insertInto(ROW).values(List.of(
+              new WriteRow(1L, "changed", null, expected == 2 ? 0L : null),
+              new WriteRow(2L, "added", null, expected == 2 ? 0L : null)))
+              .batchMode(mode).onConflict(ROW.id()).doUpdate().set(ROW.name(), Sql.excluded(ROW.name()));
+          var request = expected == 0 ? update.expectedVersion(0L)
+              : expected == 1 ? update.expectedVersionExpression(Sql.value(0L)) : update;
+          assertEquals(2, request.write());
+          assertEquals(1L, f.executor.findById(ROW, 1L).orElseThrow().version());
+          assertEquals(0L, f.executor.findById(ROW, 2L).orElseThrow().version());
+          var failure = assertThrows(BatchWriteException.class, request::write);
+          assertEquals(SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT, failure.code());
+          assertEquals("changed", f.executor.findById(ROW, 1L).orElseThrow().name());
+        }
+      }
+    }
+  }
+
+  @Test void conflictBatchesKeepDoNothingAndReturningRowCountsExact() throws Exception {
+    if (!pg()) return;
+    for (BatchMode mode : BatchMode.values()) {
+      try (var f = new Fixture()) {
+        var ignore = f.executor.insertInto(ROW).values(List.of(
+            new WriteRow(1L, "one", null, null), new WriteRow(2L, "two", null, null)))
+            .batchMode(mode).onConflict(ROW.id()).doNothing();
+        assertEquals(2, ignore.write());
+        assertEquals(0, ignore.write());
+        if (mode == BatchMode.VALUES) {
+          assertTrue(ignore.returning(ROW.id()).write().rows().isEmpty());
+          var updated = f.executor.insertInto(ROW).values(List.of(
+              new WriteRow(1L, "one", null, null), new WriteRow(2L, "two", null, null)))
+              .batchMode(mode).onConflict(ROW.id()).doUpdate().set(ROW.note(), "checked")
+              .expectedVersionExpression(Sql.value(0L)).returning(ROW.id(), ROW.version()).write();
+          assertEquals(2, updated.affectedRows());
+          assertEquals(2, updated.rows().size());
+          assertTrue(updated.rows().stream().allMatch(row -> row.second() == 1L));
+        }
+      }
+    }
+  }
+
   @Test void strictConflictBatchesRejectAmbiguousShapesBeforeAnyChunkExecutes() throws Exception {
     if (!pg()) return;
     try (var f = new Fixture()) {
