@@ -17,6 +17,7 @@ import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.QueryClause;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ResolvedStructureKey;
+import io.skis.sql.ast.ResolvedStructureKey.Node;
 import io.skis.sql.ast.ReturningStatement;
 import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.ScalarSubqueryExpression;
@@ -307,10 +308,7 @@ public final class DialectQueryFeatures {
       QueryClause clause) {
     if (!(key
             instanceof
-            ResolvedStructureKey.Node(
-                String kind1,
-                List<String> attributes,
-                List<ResolvedStructureKey> children))
+            Node(String kind1, List<String> attributes, List<ResolvedStructureKey> children))
         || kind1.equals("SELECT_BLOCK")) {
       return;
     }
