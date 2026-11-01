@@ -81,7 +81,7 @@ abstract class AbstractSkisReturningContractTest {
       var written = f.executor.updateById(ROW).value(entity).returning(ROW.note()).write();
       assertEquals(1, written.affectedRows());
       assertTrue(written.one().hasRow());
-      assertNull(written.one().get());
+      assertTrue(written.one().isNull());
       assertEquals(java.util.Collections.singletonList(null), written.rows());
       int acquisitions = f.acquisitions.get();
       var foreign = ROW.as("foreign");
@@ -713,9 +713,10 @@ abstract class AbstractSkisReturningContractTest {
       var nullableId = Sql.outputNullable(ROW.id(), "nullable_id");
       var nullable = Sql.values(row -> row.value(nullableId, 1L));
       var table = ROW.as("source");
-      var tableInput = f.executor.mergeInto(ROW).using(table).on(ROW.id().eq(table.id()))
-          .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
-          .whenNotMatched().thenInsert(row -> row.value(ROW.id(), table.id()).value(ROW.name(), table.name()));
+      var tableUpdate = f.executor.mergeInto(ROW).using(table).on(ROW.id().eq(table.id()))
+          .whenMatched().thenUpdate().set(ROW.note(), "invalid");
+      assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+          assertThrows(MutationException.class, () -> tableUpdate.expectedVersion(0L)).code());
       var reversedNonKey = f.executor.mergeInto(ROW).using(source).on(source.column(id).eq(ROW.version()))
           .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
           .whenNotMatched().thenInsert(row -> row.value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("invalid")));
@@ -728,7 +729,7 @@ abstract class AbstractSkisReturningContractTest {
       var nullableKey = f.executor.mergeInto(ROW).using(nullable).on(ROW.id().eq(nullable.column(nullableId)))
           .whenMatched().thenUpdate().set(ROW.note(), "invalid").expectedVersion(0L)
           .whenNotMatched().thenInsert(row -> row.value(ROW.id(), nullable.column(nullableId)).value(ROW.name(), Sql.value("invalid")));
-      for (var invalid : List.of(tableInput, reversedNonKey, literalKey, substituted, nullableKey))
+      for (var invalid : List.of(reversedNonKey, literalKey, substituted, nullableKey))
         assertThrows(MutationException.class, invalid::write);
       assertEquals(0, f.acquisitions.get());
     }
