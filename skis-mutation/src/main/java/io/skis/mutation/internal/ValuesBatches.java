@@ -62,7 +62,7 @@ final class ValuesBatches {
         new LinkedHashMap<>(16, 0.75f, true) {
           // Full chunks plus the bounded partial-row buckets of one write.
           @Override
-          protected boolean removeEldestEntry(Map.Entry<Shape, Entry<R>> eldest) {
+          protected boolean removeEldestEntry(Map.Entry<Shape, ValuesBatches.Entry<R>> eldest) {
             return size() > 8;
           }
         };
@@ -260,7 +260,7 @@ final class ValuesBatches {
       return Integer.highestOneBit(rows);
     }
 
-    List<?> arguments(
+    List<? extends Object> arguments(
         int first, int end, EntityMutationPlanSet<E> plans, BatchWrites.Ledger ledger) {
       if (plans.generation() == IdGeneration.ASSIGNED) return input.entities.subList(first, end);
       List<InsertArguments<E>> values = new ArrayList<>(end - first);
@@ -301,10 +301,13 @@ final class ValuesBatches {
   }
 
   private record RowsBinder(ParameterBinder<Object> row, int width)
-      implements ParameterBinder<List<?>> {
+      implements ParameterBinder<List<? extends Object>> {
     @Override
     public int bind(
-        PreparedStatement statement, int first, List<?> inputs, JdbcWriteContext context)
+        PreparedStatement statement,
+        int first,
+        List<? extends Object> inputs,
+        JdbcWriteContext context)
         throws SQLException {
       int next = first;
       for (Object input : inputs) {
@@ -320,7 +323,7 @@ final class ValuesBatches {
     public int bindObserved(
         PreparedStatement statement,
         int first,
-        List<?> inputs,
+        List<? extends Object> inputs,
         JdbcWriteContext context,
         ParameterBindingObserver observer)
         throws SQLException {
@@ -336,7 +339,7 @@ final class ValuesBatches {
   }
 
   /** One-row plans bind the entity input itself; multi-row plans bind the ordered list. */
-  private static Object rowsBase(List<?> arguments) {
+  private static Object rowsBase(List<? extends Object> arguments) {
     return arguments.size() == 1 ? arguments.getFirst() : arguments;
   }
 
@@ -361,7 +364,7 @@ final class ValuesBatches {
         planner.plan(
             planner.entry(input.options.mode() == BatchMode.ADD_BATCH ? 1 : end, checked, plans),
             observation);
-    List<?> firstArguments = planner.arguments(0, end, plans, ledger);
+    var firstArguments = planner.arguments(0, end, plans, ledger);
     return input.operations.jdbcExecutor.executeBatchWork(
         first.statement(),
         ExecutionContext.of(options),
@@ -380,7 +383,7 @@ final class ValuesBatches {
                         plans,
                         ledger);
             ledger.begin(offset, next - offset);
-            List<?> arguments =
+            List<? extends Object> arguments =
                 offset == 0 ? firstArguments : planner.arguments(offset, next, plans, ledger);
             if (input.options.mode() == BatchMode.ADD_BATCH) {
               Entry<Object> entry = planner.entry(1, checking, plans);
@@ -444,7 +447,7 @@ final class ValuesBatches {
       int end =
           planner.end(0, planner.maximum(plans, checked, observation), checked, plans, ledger);
       var first = planner.plan(planner.entry(end, checked, plans), observation);
-      List<?> firstArguments = planner.arguments(0, end, plans, ledger);
+      var firstArguments = planner.arguments(0, end, plans, ledger);
       Written<R> written =
           operations.jdbcExecutor.executeBatchWork(
               first.statement(),

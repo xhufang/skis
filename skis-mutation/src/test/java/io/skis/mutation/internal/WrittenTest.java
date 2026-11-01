@@ -16,6 +16,9 @@ class WrittenTest {
     assertEquals(Collections.singletonList(null), presentNull.rows());
     assertEquals(0, absent.affectedRows());
     assertEquals(1, presentNull.affectedRows());
+    var ownedNull = DefaultWritten.<@Nullable String>ownedRows(1, Collections.singletonList(null));
+    assertEquals(presentNull.one(), ownedNull.one());
+    assertEquals(presentNull.rows(), ownedNull.rows());
   }
   @Test void reusesImmutableOwnedRowsAndRejectsNonUniqueOne() {
     List<String> source = List.of("first", "second");

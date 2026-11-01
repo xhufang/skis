@@ -45,13 +45,22 @@ final class DefaultWritten<R extends @Nullable Object> implements Written<R> {
   @Override
   public List<R> rows() {
     if (many != null) return many;
-    return size == 0 ? List.of() : Collections.singletonList(value);
+    return size == 0 ? List.of() : Collections.singletonList(singleValue());
   }
 
   @Override
   public SingleRow<R> one() {
     if (size > 1) throw NonUniqueResultException.of("write returned multiple rows");
-    return size == 0 ? SingleRow.noRow() : SingleRow.present(value);
+    return size == 0 ? SingleRow.noRow() : SingleRow.present(singleValue());
+  }
+
+  /**
+   * Called only for size one. The decoder's row type R already includes legal SQL NULL; the field's
+   * extra Nullable annotation also accommodates the absent-row sentinel.
+   */
+  @SuppressWarnings("NullAway")
+  private R singleValue() {
+    return value;
   }
 
   @Override

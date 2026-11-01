@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import io.skis.core.MutationException;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
-import io.skis.core.internal.ExecutionListenerDispatcher;
 import io.skis.core.spi.ExecutionContext;
 import io.skis.dialect.spi.*;
 import io.skis.dialect.support.StandardIdentifierRules;
@@ -15,6 +14,7 @@ import io.skis.jdbc.spi.ConnectionProvider;
 import io.skis.mapping.internal.EntityRuntimeRegistry;
 import io.skis.mapping.spi.*;
 import io.skis.metadata.*;
+import io.skis.mutation.MutationOperations;
 import io.skis.query.*;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -220,7 +220,7 @@ class WriteCodecsTest {
     assertTrue(Objects.requireNonNull(facts.detail()).contains("different JDBC codecs"));
   }
 
-  private static DefaultMutationOperations operations() {
+  private static MutationOperations operations() {
     ParameterBinder<Item> binder = (statement, first, value, context) -> first + 3;
     var binders = new EntityMutationBinders<>(binder, binder, binder, null,
         (statement, first, arguments, context) -> first + 3, new EntityIdAccess<Item>() {
@@ -234,8 +234,8 @@ class WriteCodecsTest {
         List.of(new PropertyRuntime<>(ID, JdbcCodecs.LONG),
             new PropertyRuntime<>(PLAIN, JdbcCodecs.STRING), new PropertyRuntime<>(CODED, CODEC)),
         binders);
-    return DefaultMutationOperations.of(EntityRuntimeRegistry.of(List.of(model)),
-        TestDialect.INSTANCE, ExecutionListenerDispatcher.NONE, new JdbcExecutor(new ConnectionProvider() {
+    return MutationRuntime.create(EntityRuntimeRegistry.of(List.of(model)),
+        TestDialect.INSTANCE, new JdbcExecutor(new ConnectionProvider() {
           @Override public Connection acquire(ExecutionContext context) {
             throw new AssertionError("Codec validation must finish before JDBC acquisition");
           }
