@@ -43,6 +43,9 @@ final class MutationTypeSafetyCompilationTest {
         Written<String> full = single.returning().write();
         Written<Integer> one = single.returning(reusable).write();
         Written<Integer> two = single.returning(special).write();
+        ReturningWrite<String> scalar = single.returning(column);
+        Written<String> scalarRow = scalar.write();
+        Written<Row2<String, Integer>> pair = single.returning(column, Sql.value(1)).write();
         Written<String> many = target.values(List.of(entity)).returning().write();
         Written<Integer> projected = target.values(List.of(entity)).returning(special).write();
         UpdateWrite<String> update = op.update(table).set(column, entity);
@@ -58,12 +61,13 @@ final class MutationTypeSafetyCompilationTest {
         "op.insertInto(table).returning();", "op.insertInto(table).value(entity).values(List.of(entity));",
         "op.insertInto(table).value(entity).value(entity);",
         "op.insertInto(table).value(entity).returning().returning();",
-        "op.insertInto(table).value(entity).returning(column);",
+        "Written<Integer> bad = op.insertInto(table).value(entity).returning(column).write();",
+        "Written<Row2<Integer, String>> bad = op.insertInto(table).value(entity).returning(column, Sql.value(1)).write();",
         "op.insertInto(table).value(entity).returning(String.class);",
         "op.insertInto(table).value(entity).returning((RowDecoder<String>) null);",
         "Written<String> bad = op.insertInto(table).value(entity).write();",
         "int bad = op.insertInto(table).value(entity).returning().write();",
-        "Written<String> bad = op.insertInto(table).values(List.of(entity)).returning().write();",
+        "Written<List<String>> bad = op.insertInto(table).values(List.of(entity)).returning().write();",
         "op.update(table).write();", "op.update(table).set(column, 1);")) {
       assertFalse(compile("samples.Contract", prefix + illegal + "}}",
           temporaryDirectory.resolve("illegal-" + index++)), illegal);
