@@ -2,63 +2,47 @@ package io.skis.query.internal;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
-import io.skis.query.QueryParameter;
 import io.skis.sql.ast.Nullability;
 import java.util.Objects;
-import java.util.Optional;
-import org.jspecify.annotations.Nullable;
 
 /**
  * Opaque, strongly typed reference to one query value.
  *
  * <p>A reference is identified by object identity. It deliberately contains neither a runtime value
- * nor a query-block, logical-slot, or JDBC parameter ordinal. An optional name is diagnostic
- * information only and never participates in parameter identity.
+ * nor a query-block, logical-slot, or JDBC parameter ordinal.
  */
 final class DefaultQueryParameter<V> implements QueryParameter<V> {
 
   private final Class<V> javaType;
   private final Nullability nullability;
-  private final @Nullable String diagnosticName;
 
-  DefaultQueryParameter(
-      Class<V> javaType, Nullability nullability, @Nullable String diagnosticName) {
+  DefaultQueryParameter(Class<V> javaType, Nullability nullability) {
     this.javaType = boxed(Objects.requireNonNull(javaType, "javaType"));
     this.nullability = Objects.requireNonNull(nullability, "nullability");
     if (this.javaType == Void.class) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_TYPE_MISMATCH, "query parameter Java type must not be void");
     }
-    if (diagnosticName != null && diagnosticName.isBlank()) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PARAMETER_VALUE, "query parameter diagnostic name must not be blank");
-    }
-    this.diagnosticName = diagnosticName;
   }
 
   /** Returns the boxed Java type accepted by this reference. */
+  @Override
   public Class<V> javaType() {
     return javaType;
   }
 
-  /** Returns the optional diagnostic name; the name is not the parameter's identity. */
-  public Optional<String> diagnosticName() {
-    return Optional.ofNullable(diagnosticName);
-  }
-
+  @Override
   public Nullability nullability() {
     return nullability;
   }
 
   static <V> QueryParameter<V> anonymousNonNull(Class<V> javaType) {
-    return new DefaultQueryParameter<>(javaType, Nullability.NON_NULL, null);
+    return new DefaultQueryParameter<>(javaType, Nullability.NON_NULL);
   }
 
   @Override
   public String toString() {
-    return diagnosticName == null
-        ? "QueryParameter<" + javaType.getTypeName() + ">"
-        : "QueryParameter[" + diagnosticName + ": " + javaType.getTypeName() + "]";
+    return "QueryParameter<" + javaType.getTypeName() + ">";
   }
 
   @SuppressWarnings("unchecked")

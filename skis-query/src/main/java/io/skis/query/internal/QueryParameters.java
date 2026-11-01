@@ -3,7 +3,7 @@ package io.skis.query.internal;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisDiagnostics;
 import io.skis.core.SkisErrorCode;
-import io.skis.query.QueryParameter;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -17,10 +17,51 @@ final class QueryParameters {
 
   private static final QueryParameters EMPTY = new QueryParameters(new IdentityHashMap<>());
 
-  private final Map<QueryParameter<?>, Binding> bindings;
+  private volatile @Nullable Map<QueryParameter<?>, Binding> bindings;
+  private final @Nullable QueryParameters left;
+  private final @Nullable QueryParameters right;
 
   private QueryParameters(IdentityHashMap<QueryParameter<?>, Binding> bindings) {
     this.bindings = Collections.unmodifiableMap(bindings);
+    this.left = null;
+    this.right = null;
+  }
+
+  private QueryParameters(QueryParameters left, QueryParameters right) {
+    this.left = left;
+    this.right = right;
+  }
+
+  /** Materializes one identity table only when a complete input is actually consumed. */
+  private Map<QueryParameter<?>, Binding> bindings() {
+    Map<QueryParameter<?>, Binding> existing = bindings;
+    if (existing != null) return existing;
+    synchronized (this) {
+      existing = bindings;
+      if (existing != null) return existing;
+      IdentityHashMap<QueryParameter<?>, Binding> flattened = new IdentityHashMap<>();
+      ArrayDeque<QueryParameters> pending = new ArrayDeque<>();
+      IdentityHashMap<QueryParameters, Boolean> visited = new IdentityHashMap<>();
+      pending.push(this);
+      while (!pending.isEmpty()) {
+        QueryParameters current = pending.pop();
+        if (visited.put(current, Boolean.TRUE) != null) continue;
+        Map<QueryParameter<?>, Binding> leaf = current.bindings;
+        if (leaf == null) {
+          pending.push(Objects.requireNonNull(current.right));
+          pending.push(Objects.requireNonNull(current.left));
+        } else {
+          leaf.forEach(
+              (parameter, binding) -> {
+                Binding previous = flattened.putIfAbsent(parameter, binding);
+                if (previous != null && previous != binding) throw duplicate(parameter);
+              });
+        }
+      }
+      existing = Collections.unmodifiableMap(flattened);
+      bindings = existing;
+      return existing;
+    }
   }
 
   static QueryParameters empty() {
@@ -46,62 +87,22 @@ final class QueryParameters {
     return new Builder();
   }
 
-  <V> QueryParameters bind(QueryParameter<V> parameter, @Nullable V value) {
-    Objects.requireNonNull(parameter, "parameter");
-    requireUnbound(parameter);
-    Binding captured = capture(parameter, value);
-    IdentityHashMap<QueryParameter<?>, Binding> appended = new IdentityHashMap<>(bindings);
-    appended.put(parameter, captured);
-    return new QueryParameters(appended);
-  }
-
-  void requireUnbound(QueryParameter<?> parameter) {
-    if (bindings.containsKey(parameter)) {
-      throw duplicate(parameter);
-    }
-  }
-
-  int size() {
-    return bindings.size();
-  }
-
   boolean isEmpty() {
-    return bindings.isEmpty();
+    Map<QueryParameter<?>, Binding> existing = bindings;
+    return existing != null && existing.isEmpty();
   }
 
   /** Returns a value-redacted diagnostic summary. */
   @Override
   public String toString() {
-    return "QueryParameters[size=" + bindings.size() + "]";
+    return "QueryParameters[size=" + bindings().size() + "]";
   }
 
   QueryParameters merge(QueryParameters other) {
     Objects.requireNonNull(other, "other");
-    if (this == other) {
-      return this;
-    }
-    if (other.isEmpty()) {
-      return this;
-    }
-    if (isEmpty()) {
-      return other;
-    }
-    IdentityHashMap<QueryParameter<?>, Binding> merged = null;
-    for (Map.Entry<QueryParameter<?>, Binding> entry : other.bindings.entrySet()) {
-      QueryParameter<?> parameter = entry.getKey();
-      Binding existing = bindings.get(parameter);
-      if (existing != null) {
-        if (existing != entry.getValue()) {
-          throw duplicate(parameter);
-        }
-      } else {
-        if (merged == null) {
-          merged = new IdentityHashMap<>(bindings);
-        }
-        merged.put(parameter, entry.getValue());
-      }
-    }
-    return merged == null ? this : new QueryParameters(merged);
+    if (this == other || other.isEmpty()) return this;
+    if (isEmpty()) return other;
+    return new QueryParameters(this, other);
   }
 
   /** Replaces exclusively owned bindings with one environment copy and no value recapture. */
@@ -109,24 +110,27 @@ final class QueryParameters {
     if (removed.isEmpty()) {
       return merge(replacement);
     }
-    IdentityHashMap<QueryParameter<?>, Binding> merged = new IdentityHashMap<>(bindings);
+    IdentityHashMap<QueryParameter<?>, Binding> merged = new IdentityHashMap<>(bindings());
     removed.forEach(merged::remove);
-    replacement.bindings.forEach(
-        (parameter, binding) -> {
-          Binding existing = merged.putIfAbsent(parameter, binding);
-          if (existing != null && existing != binding) {
-            throw duplicate(parameter);
-          }
-        });
+    replacement
+        .bindings()
+        .forEach(
+            (parameter, binding) -> {
+              Binding existing = merged.putIfAbsent(parameter, binding);
+              if (existing != null && existing != binding) {
+                throw duplicate(parameter);
+              }
+            });
     return merged.isEmpty() ? EMPTY : new QueryParameters(merged);
   }
 
   /** Records only replacement references which have no owner in the retained environment. */
   Set<QueryParameter<?>> replacementOnlyReferences(
       Set<QueryParameter<?>> removed, QueryParameters replacement) {
+    Map<QueryParameter<?>, Binding> retained = bindings();
     Set<QueryParameter<?>> exclusive = null;
-    for (QueryParameter<?> parameter : replacement.bindings.keySet()) {
-      if (!bindings.containsKey(parameter) || removed.contains(parameter)) {
+    for (QueryParameter<?> parameter : replacement.bindings().keySet()) {
+      if (!retained.containsKey(parameter) || removed.contains(parameter)) {
         if (exclusive == null) {
           exclusive = Collections.newSetFromMap(new IdentityHashMap<>());
         }
@@ -138,14 +142,18 @@ final class QueryParameters {
 
   /** Releases exclusive ownership when another clause captures the same binding references. */
   Set<QueryParameter<?>> withoutBoundReferences(Set<QueryParameter<?>> references) {
-    if (references.isEmpty() || bindings.isEmpty()) {
+    if (references.isEmpty()) {
+      return references;
+    }
+    Map<QueryParameter<?>, Binding> bound = bindings();
+    if (bound.isEmpty()) {
       return references;
     }
     Set<QueryParameter<?>> remaining = null;
     Set<QueryParameter<?>> candidates =
-        bindings.size() < references.size() ? bindings.keySet() : references;
+        bound.size() < references.size() ? bound.keySet() : references;
     for (QueryParameter<?> reference : candidates) {
-      if (references.contains(reference) && bindings.containsKey(reference)) {
+      if (references.contains(reference) && bound.containsKey(reference)) {
         if (remaining == null) {
           remaining = Collections.newSetFromMap(new IdentityHashMap<>());
           remaining.addAll(references);
@@ -167,16 +175,17 @@ final class QueryParameters {
    */
   void validateFor(List<QueryParameter<?>> declaredParameters) {
     Objects.requireNonNull(declaredParameters, "declaredParameters");
+    Map<QueryParameter<?>, Binding> supplied = bindings();
     IdentityHashMap<QueryParameter<?>, Boolean> declared = new IdentityHashMap<>();
     for (QueryParameter<?> parameter : declaredParameters) {
       Objects.requireNonNull(parameter, "parameter");
       declared.put(parameter, Boolean.TRUE);
-      if (!bindings.containsKey(parameter)) {
+      if (!supplied.containsKey(parameter)) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_PARAMETER_MISSING, "missing binding for " + describe(parameter));
       }
     }
-    for (QueryParameter<?> bound : bindings.keySet()) {
+    for (QueryParameter<?> bound : supplied.keySet()) {
       if (!declared.containsKey(bound)) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_PARAMETER_DECLARATION,
@@ -193,11 +202,12 @@ final class QueryParameters {
   /** Projects captured bindings into a fresh array owned by the consuming statement. */
   @Nullable Object[] projectValues(List<QueryParameter<?>> parameters) {
     Objects.requireNonNull(parameters, "parameters");
+    Map<QueryParameter<?>, Binding> supplied = bindings();
     @Nullable Object[] values = new @Nullable Object[parameters.size()];
     for (int index = 0; index < parameters.size(); index++) {
       QueryParameter<?> parameter = parameters.get(index);
       Objects.requireNonNull(parameter, "parameter");
-      Binding binding = bindings.get(parameter);
+      Binding binding = supplied.get(parameter);
       if (binding == null) {
         throw QueryValidationException.of(
             SkisErrorCode.QUERY_PARAMETER_MISSING, "missing binding for " + describe(parameter));
@@ -241,10 +251,7 @@ final class QueryParameters {
   }
 
   private static String describe(QueryParameter<?> parameter) {
-    return parameter
-        .diagnosticName()
-        .map(name -> "query parameter '" + name + "'")
-        .orElse("anonymous query parameter of type " + parameter.javaType().getTypeName());
+    return "query parameter of type " + parameter.javaType().getTypeName();
   }
 
   private record Binding(@Nullable Object value) {}
@@ -252,25 +259,39 @@ final class QueryParameters {
   /** Package-owned capture helper used while constructing ordinary value predicates. */
   static final class Builder {
 
-    private final IdentityHashMap<QueryParameter<?>, Binding> bindings;
+    private IdentityHashMap<QueryParameter<?>, Binding> bindings;
+    // Set once build() has published the current table; the next mutation copies it first.
+    private boolean published;
 
     private Builder() {
       this.bindings = new IdentityHashMap<>();
     }
 
+    private IdentityHashMap<QueryParameter<?>, Binding> owned() {
+      if (published) {
+        bindings = new IdentityHashMap<>(bindings);
+        published = false;
+      }
+      return bindings;
+    }
+
     void include(QueryParameters included) {
-      included.bindings.forEach(
-          (parameter, binding) -> {
-            Binding previous = bindings.putIfAbsent(parameter, binding);
-            if (previous != null && previous != binding) {
-              throw duplicate(parameter);
-            }
-          });
+      IdentityHashMap<QueryParameter<?>, Binding> bindings = owned();
+      included
+          .bindings()
+          .forEach(
+              (parameter, binding) -> {
+                Binding previous = bindings.putIfAbsent(parameter, binding);
+                if (previous != null && previous != binding) {
+                  throw duplicate(parameter);
+                }
+              });
     }
 
     /** Captures one value immediately and associates it with the reference by object identity. */
     <V> Builder bind(QueryParameter<V> parameter, @Nullable V value) {
       Objects.requireNonNull(parameter, "parameter");
+      IdentityHashMap<QueryParameter<?>, Binding> bindings = owned();
       if (bindings.containsKey(parameter)) {
         throw duplicate(parameter);
       }
@@ -278,9 +299,13 @@ final class QueryParameters {
       return this;
     }
 
-    /** Builds an immutable parameter environment. */
+    /** Builds an immutable parameter environment without copying the collected table. */
     QueryParameters build() {
-      return bindings.isEmpty() ? EMPTY : new QueryParameters(new IdentityHashMap<>(bindings));
+      if (bindings.isEmpty()) {
+        return EMPTY;
+      }
+      published = true;
+      return new QueryParameters(bindings);
     }
   }
 }
@@ -288,16 +313,23 @@ final class QueryParameters {
 /** Statement compilation collector kept separate from the structural slot layout. */
 final class QueryParameterBindings {
 
+  private QueryParameters first = QueryParameters.empty();
   private QueryParameters.@Nullable Builder parameters;
 
   void include(QueryParameters included) {
     Objects.requireNonNull(included, "included");
-    if (included.isEmpty()) {
+    if (included.isEmpty() || included == first) {
       return;
     }
     QueryParameters.Builder builder = parameters;
     if (builder == null) {
+      if (first.isEmpty()) {
+        // The common single-source statement reuses that environment without any copy.
+        first = included;
+        return;
+      }
       builder = QueryParameters.builder();
+      builder.include(first);
       parameters = builder;
     }
     builder.include(included);
@@ -305,6 +337,6 @@ final class QueryParameterBindings {
 
   QueryParameters parameters() {
     QueryParameters.Builder builder = parameters;
-    return builder == null ? QueryParameters.empty() : builder.build();
+    return builder == null ? first : builder.build();
   }
 }

@@ -20,7 +20,7 @@ import io.skis.core.spi.StatementStartedEvent;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.query.Page;
 import io.skis.query.PageRequest;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.SliceRequest;
 import io.skis.runtime.Skis;
 import io.skis.runtime.SkisExecutor;
@@ -45,7 +45,7 @@ class ExecutionListenerConsumerTest {
     seed(executor);
     recorder.events.clear();
     PetTable pet = PetTable.petTable;
-    SelectQuery<Pet> query =
+    ExecutableSelectQuery<Pet> query =
         executor.selectFrom(pet).where(pet.id().in(List.of(1L, 2L, 3L))).orderBy(pet.id().asc());
 
     Page<Pet> page = query.fetchPage(PageRequest.page(0, 2));
@@ -127,7 +127,7 @@ class ExecutionListenerConsumerTest {
     }
 
     first.events.clear();
-    SelectQuery<Pet> query =
+    ExecutableSelectQuery<Pet> query =
         executor.selectFrom(PetTable.petTable).orderBy(PetTable.petTable.id().asc());
     try (Stream<Pet> rows = query.stream()) {
       assertEquals(1L, rows.findFirst().orElseThrow().id());

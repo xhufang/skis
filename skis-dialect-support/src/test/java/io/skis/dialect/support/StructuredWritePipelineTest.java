@@ -10,6 +10,37 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class StructuredWritePipelineTest {
+  @Test void rowAssignmentsRequireTheirOwnDialectCapability() {
+    var id = new PropertyMeta<Object, Long>(0, "id", Long.class, ColumnMeta.of("id", false));
+    var name = new PropertyMeta<Object, String>(1, "name", String.class, ColumnMeta.of("name", true));
+    var amount = new PropertyMeta<Object, Long>(2, "amount", Long.class, ColumnMeta.of("amount", true));
+    var entity = EntityMeta.simple(Object.class, TableMeta.of("nullable_row"), List.of(id, name, amount),
+        new PrimaryKeyMeta<>(List.of(id)), false);
+    var table = new TableExpression<Object>(entity) {
+      @Override public TableExpression<Object> as(Identifier alias) { throw new UnsupportedOperationException(); }
+      ColumnExpression<Object, String> name() { return column(name); }
+      ColumnExpression<Object, Long> amount() { return column(amount); }
+    };
+    var source = new TableExpression<Object>(entity, Identifier.of("source")) {
+      @Override public TableExpression<Object> as(Identifier alias) { throw new UnsupportedOperationException(); }
+      ColumnExpression<Object, String> name() { return column(name); }
+      ColumnExpression<Object, Long> amount() { return column(amount); }
+    };
+    var text = table.name();
+    var number = table.amount();
+    var assignment = new RowAssignment(List.of(text, number), new SelectStatement(List.of(source.name(), source.amount()), source));
+    var update = new UpdateStatement(table, List.of(assignment), new BooleanPredicate(true));
+    assertEquals(io.skis.core.SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+        assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(update, dialect(true, null))).code());
+    Dialect enabled = new Dialect() {
+      @Override public String id() { return "row-assignment"; }
+      @Override public IdentifierRules identifierRules() { return StandardIdentifierRules.INSTANCE; }
+      @Override public DialectCapabilities capabilities() { return DialectCapabilities.of(DialectFeature.ROW_SUBQUERY_ASSIGNMENT); }
+      @Override public SqlRenderer renderer() { return new StandardSqlRenderer(this); }
+    };
+    assertTrue(SqlCompiler.compile(update, enabled).sql().contains("SET (\"name\", \"amount\") = (SELECT"));
+  }
+
   private static final PropertyMeta<Object, Long> ID = new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));
   private static final PropertyMeta<Object, String> NAME = new PropertyMeta<>(1, "name", String.class, ColumnMeta.of("name", false));
   private static final PropertyMeta<Object, Long> AMOUNT = new PropertyMeta<>(2, "amount", Long.class, ColumnMeta.of("amount", false));
@@ -60,14 +91,14 @@ class StructuredWritePipelineTest {
     var source = new ParameterRelationSource(List.of(id, name), reference);
     var sourceId = new DerivedColumnExpression<Long>(reference, 0);
     var sourceName = new DerivedColumnExpression<String>(reference, 1);
-    var merge = new MergeStatement(table, source, table.id().eq(sourceId), new BooleanPredicate(true),
-        List.of(new UpdateAssignment<>(table.name(), sourceName)), List.of(table.id(), table.name()),
-        List.of(sourceId, sourceName), List.of());
+    var merge = new MergeStatement(table, source, table.id().eq(sourceId), List.of(
+        MergeAction.update(new BooleanPredicate(true), List.of(new UpdateAssignment<>(table.name(), sourceName))),
+        MergeAction.insert(new BooleanPredicate(true), List.of(table.id(), table.name()), List.of(sourceId, sourceName))));
     var compiled = SqlCompiler.compile(new ReturningStatement(merge, List.of(table.id())), dialect(false, null));
     assertTrue(compiled.sql().startsWith("SELECT \"id\" FROM FINAL TABLE (MERGE INTO \"item\" USING "));
-    assertTrue(compiled.sql().contains(" ON \"item\".\"id\" = \"s\".\"id\" WHEN MATCHED AND TRUE THEN UPDATE SET \"name\" = \"s\".\"name\" WHEN NOT MATCHED THEN INSERT (\"id\", \"name\") VALUES (\"s\".\"id\", \"s\".\"name\")"));
+    assertTrue(compiled.sql().contains(" ON \"item\".\"id\" = \"s\".\"id\" WHEN MATCHED THEN UPDATE SET \"name\" = \"s\".\"name\" WHEN NOT MATCHED THEN INSERT (\"id\", \"name\") VALUES (\"s\".\"id\", \"s\".\"name\")"));
     assertEquals(List.of(id, name), compiled.parameterLayout().slots());
-    var key = new MergeStatement(table, null, new BooleanPredicate(true), new BooleanPredicate(true), List.of(),
+    var key = new MergeStatement(table, null, new BooleanPredicate(true), List.of(),
         List.of(table.id(), table.name()), List.of(id, name), List.of(table.id()));
     assertEquals("MERGE INTO \"item\" (\"id\", \"name\") KEY (\"id\") VALUES (?, ?)", SqlCompiler.compile(key, dialect(false, null)).sql());
     assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(merge, dialect(true, null)));
@@ -108,9 +139,9 @@ class StructuredWritePipelineTest {
         new DerivedOutputColumn(Identifier.of("name"), String.class, SqlType.VARCHAR, Nullability.NON_NULL)));
     var source = new ParameterRelationSource(List.of(name), reference);
     var quotient = new ArithmeticExpression<>(numerator, ArithmeticOperator.DIVIDE, denominator);
-    var merge = new MergeStatement(table, source, new BooleanPredicate(false), new BooleanPredicate(true),
-        List.of(), List.of(table.id(), table.name()),
-        List.of(quotient, new DerivedColumnExpression<>(reference, 0)), List.of());
+    var merge = new MergeStatement(table, source, new BooleanPredicate(false), List.of(
+        MergeAction.insert(new BooleanPredicate(true), List.of(table.id(), table.name()),
+            List.of(quotient, new DerivedColumnExpression<>(reference, 0)))));
 
     var compiled = SqlCompiler.compile(merge, dialect(false, null));
     assertTrue(compiled.sql().endsWith(
@@ -147,11 +178,11 @@ class StructuredWritePipelineTest {
     var sourceId = new DerivedColumnExpression<Long>(reference, 0);
     var statement = new MergeStatement(table, source,
         new InPredicate<>(sourceId, List.of(), true),
-        new InPredicate<>(table.id(), List.of(), false),
-        List.of(new UpdateAssignment<>(table.amount(),
-            new ArithmeticExpression<>(left, ArithmeticOperator.ADD, right))),
-        List.of(table.id(), table.amount()),
-        List.of(sourceId, new ArithmeticExpression<>(sourceId, ArithmeticOperator.ADD, inserted)), List.of());
+        List.of(MergeAction.update(new InPredicate<>(table.id(), List.of(), false),
+            List.of(new UpdateAssignment<>(table.amount(),
+                new ArithmeticExpression<>(left, ArithmeticOperator.ADD, right)))),
+            MergeAction.insert(new BooleanPredicate(true), List.of(table.id(), table.amount()),
+                List.of(sourceId, new ArithmeticExpression<>(sourceId, ArithmeticOperator.ADD, inserted)))));
 
     var compiled = SqlCompiler.compile(statement, dialect(false, null));
     assertTrue(compiled.sql().contains(" ON TRUE WHEN MATCHED AND FALSE THEN UPDATE SET"));
@@ -189,13 +220,16 @@ class StructuredWritePipelineTest {
         new DerivedOutputColumn(Identifier.of("id"), Long.class, SqlType.BIGINT, Nullability.NON_NULL)));
     var source = new ParameterRelationSource(List.of(id), reference);
     var sourceId = new DerivedColumnExpression<Long>(reference, 0);
-    var statement = new MergeStatement(table, source, table.id().eq(sourceId), new BooleanPredicate(true),
-        List.of(), List.of(table.id(), table.amount()), List.of(sourceId, sourceId), List.of());
+    var statement = new MergeStatement(table, source, table.id().eq(sourceId), List.of(
+        MergeAction.insert(new BooleanPredicate(true), List.of(table.id(), table.amount()), List.of(sourceId, sourceId))));
+    var equivalent = new MergeStatement(table, new ParameterRelationSource(List.of(id), reference),
+        statement.on(), statement.actions());
+    assertEquals(SqlCompiler.compile(statement, dialect(false, null)).sql(),
+        SqlCompiler.compile(statement, dialect(false, input -> equivalent)).sql());
     for (var changed : List.of(
-        new MergeStatement(table, new ParameterRelationSource(List.of(id), reference), statement.on(),
-            statement.matchedWhere(), List.of(), statement.insertColumns(), statement.insertValues(), List.of()),
-        new MergeStatement(table, source, statement.on(), statement.matchedWhere(), List.of(),
-            List.of(table.amount(), table.id()), statement.insertValues(), List.of()))) {
+        new MergeStatement(table, new ParameterRelationSource(List.of(new ParameterSlot<>(1, Long.class, false)), reference), statement.on(), statement.actions()),
+        new MergeStatement(table, source, statement.on(), List.of(MergeAction.insert(new BooleanPredicate(true),
+            List.of(table.amount(), table.id()), statement.actions().getFirst().values()))))) {
       assertThrows(SqlRenderException.class,
           () -> SqlCompiler.compile(statement, dialect(false, input -> changed)));
     }
@@ -216,22 +250,21 @@ class StructuredWritePipelineTest {
     var source = new ParameterRelationSource(List.of(id), reference);
     var sourceId = new DerivedColumnExpression<Long>(reference, 0);
     for (var invalid : List.of(
-        new MergeStatement(table, source, table.id().eq(sourceId), new BooleanPredicate(true), List.of(),
-            List.of(table.id(), table.id()), List.of(sourceId, sourceId), List.of()),
-        new MergeStatement(table, source, table.id().eq(sourceId), new BooleanPredicate(true),
-            List.of(new UpdateAssignment<>(table.id(), sourceId)), List.of(), List.of(), List.of()),
-        new MergeStatement(table, source, table.id().eq(sourceId), new BooleanPredicate(true),
-            List.of(new UpdateAssignment<>(table.amount(), sourceId),
-                new UpdateAssignment<>(table.amount(), sourceId)), List.of(), List.of(), List.of()),
-        new MergeStatement(table, null, new BooleanPredicate(true), new BooleanPredicate(true), List.of(),
+        new MergeStatement(table, source, table.id().eq(sourceId), List.of(MergeAction.insert(new BooleanPredicate(true),
+            List.of(table.id(), table.id()), List.of(sourceId, sourceId)))),
+        new MergeStatement(table, source, table.id().eq(sourceId), List.of(MergeAction.update(new BooleanPredicate(true),
+            List.of(new UpdateAssignment<>(table.id(), sourceId))))),
+        new MergeStatement(table, source, table.id().eq(sourceId), List.of(MergeAction.update(new BooleanPredicate(true),
+            List.of(new UpdateAssignment<>(table.amount(), sourceId), new UpdateAssignment<>(table.amount(), sourceId))))),
+        new MergeStatement(table, null, new BooleanPredicate(true), List.of(),
             List.of(table.id()), List.of(id), List.of(table.amount())),
-        new MergeStatement(table, null, new BooleanPredicate(true), new BooleanPredicate(true), List.of(),
+        new MergeStatement(table, null, new BooleanPredicate(true), List.of(),
             List.of(table.id()), List.of(id), List.of(table.id(), table.id())),
-        new MergeStatement(table, null, new BooleanPredicate(false), new BooleanPredicate(true), List.of(),
-            List.of(table.id()), List.of(id), List.of(table.id())),
-        new MergeStatement(table, null, new BooleanPredicate(true), new BooleanPredicate(false), List.of(),
+        new MergeStatement(table, null, new BooleanPredicate(false), List.of(),
             List.of(table.id()), List.of(id), List.of(table.id())))) {
       assertThrows(IllegalArgumentException.class, () -> ResolvedStatement.analyze(invalid));
     }
+    assertThrows(IllegalArgumentException.class, () -> new MergeStatement(table, null, new BooleanPredicate(true),
+        List.of(MergeAction.delete(new BooleanPredicate(true))), List.of(table.id()), List.of(id), List.of(table.id())));
   }
 }

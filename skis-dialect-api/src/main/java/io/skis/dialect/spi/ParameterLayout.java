@@ -28,6 +28,7 @@ import io.skis.sql.ast.KeysetSeek;
 import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeAction;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullPredicate;
@@ -37,6 +38,7 @@ import io.skis.sql.ast.ParameterRelationSource;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
@@ -120,7 +122,13 @@ public final class ParameterLayout {
 
     private void statement(StatementAst statement) {
       switch (statement) {
-        case ReturningStatement returning -> statement(returning.mutation());
+        case ReturningStatement returning -> {
+          if (returning.form() != ReturningStatement.Form.NATIVE)
+            returning.selections().forEach(this::expression);
+          statement(returning.mutation());
+          if (returning.form() == ReturningStatement.Form.NATIVE)
+            returning.selections().forEach(this::expression);
+        }
         case SelectStatement select -> select(select);
         case CountAst count -> count(count);
         case ConflictInsertStatement conflict -> {
@@ -129,22 +137,37 @@ public final class ParameterLayout {
           expression(conflict.updateWhere());
         }
         case MergeStatement merge -> {
-          if (merge.source() != null) merge.source().parameters().forEach(this::expression);
-          if (!merge.keyForm()) {
-            expression(merge.on());
-            expression(merge.matchedWhere());
-            merge.assignments().forEach(value -> expression(value.value()));
+          if (merge.source() != null) relation(merge.source());
+          expression(merge.on());
+          for (MergeAction action : merge.actions()) {
+            expression(action.condition());
+            for (var item : action.assignments()) {
+              if (item instanceof UpdateAssignment<?> assignment) expression(assignment.value());
+              else if (item instanceof RowAssignment row) select(row.query());
+            }
+            action.values().forEach(this::expression);
           }
           merge.insertValues().forEach(this::expression);
         }
-        case InsertStatement insert -> insert.values().forEach(this::expression);
-        case UpdateStatement update -> {
-          for (UpdateAssignment<?> assignment : update.assignments()) {
-            expression(assignment.value());
+        case InsertStatement insert -> {
+          if (insert.query() != null) select(insert.query());
+          else {
+            insert.values().forEach(this::expression);
+            for (var row : insert.additionalRows()) row.forEach(this::expression);
           }
+        }
+        case UpdateStatement update -> {
+          for (var item : update.assignments()) {
+            if (item instanceof UpdateAssignment<?> assignment) expression(assignment.value());
+            else if (item instanceof RowAssignment row) select(row.query());
+          }
+          if (update.from() != null) from(update.from());
           expression(update.where());
         }
-        case DeleteStatement delete -> expression(delete.where());
+        case DeleteStatement delete -> {
+          if (delete.using() != null) from(delete.using());
+          expression(delete.where());
+        }
         default ->
             throw new IllegalArgumentException(
                 "parameter layout does not support statement node "

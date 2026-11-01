@@ -19,6 +19,9 @@ public final class H2Dialect implements Dialect {
 
   private static final DialectCapabilities CAPABILITIES =
       DialectCapabilities.of(
+          DialectFeature.INSERT_SELECT,
+          DialectFeature.ROW_SUBQUERY_ASSIGNMENT,
+          DialectFeature.MULTI_ROW_VALUES,
           DialectFeature.MERGE_USING,
           DialectFeature.MERGE_KEY,
           DialectFeature.SCHEMA_QUALIFIED_TABLES,

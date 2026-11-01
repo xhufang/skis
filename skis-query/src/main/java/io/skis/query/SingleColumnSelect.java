@@ -3,7 +3,8 @@ package io.skis.query;
 import org.jspecify.annotations.Nullable;
 
 /** Reusable SELECT description whose final visible SQL shape contains exactly one value. */
-public interface SingleColumnSelect<R extends @Nullable Object> extends SelectDescription<R> {
+public interface SingleColumnSelect<R extends @Nullable Object>
+    extends SelectQuery<R>, SingleColumnQuery<R> {
 
   SingleColumnSelect<R> where(QueryCondition condition);
 

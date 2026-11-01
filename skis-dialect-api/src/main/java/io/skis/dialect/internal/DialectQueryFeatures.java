@@ -6,16 +6,29 @@ import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.DeleteStatement;
+import io.skis.sql.ast.DerivedRelationSource;
+import io.skis.sql.ast.ExistsPredicate;
+import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.InsertStatement;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.QueryBlockAnalysis;
 import io.skis.sql.ast.QueryClause;
+import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ResolvedStructureKey;
+import io.skis.sql.ast.ResolvedStructureKey.Node;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
+import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SemanticValidator;
+import io.skis.sql.ast.SetAssignment;
+import io.skis.sql.ast.SqlAstTraversal;
+import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlType;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.UpdateStatement;
 import java.util.List;
 import java.util.Objects;
 
@@ -26,13 +39,20 @@ public final class DialectQueryFeatures {
 
   public static void validate(
       String dialectId, DialectCapabilities capabilities, StatementAst statement) {
+    validateStatementFeatures(dialectId, capabilities, statement);
+    if (!(statement instanceof SelectStatement) && !(statement instanceof CountAst))
+      validateMutationQueries(dialectId, capabilities, statement);
+  }
+
+  private static void validateStatementFeatures(
+      String dialectId, DialectCapabilities capabilities, StatementAst statement) {
     Objects.requireNonNull(dialectId, "dialectId");
     Objects.requireNonNull(capabilities, "capabilities");
     Objects.requireNonNull(statement, "statement");
     switch (statement) {
       case ReturningStatement returning -> {
         require(dialectId, capabilities, DialectFeature.MUTATION_RETURNING, "RETURNING", "root");
-        validate(dialectId, capabilities, returning.mutation());
+        validateStatementFeatures(dialectId, capabilities, returning.mutation());
       }
       case SelectStatement select ->
           validateBlock(dialectId, capabilities, select, SemanticValidator.analyzeComplete(select));
@@ -40,16 +60,25 @@ public final class DialectQueryFeatures {
           validateCount(dialectId, capabilities, count, SemanticValidator.analyzeComplete(count));
       case ConflictInsertStatement conflict -> {
         require(dialectId, capabilities, DialectFeature.INSERT_ON_CONFLICT, "ON CONFLICT", "root");
-        validate(dialectId, capabilities, conflict.insert());
+        validateStatementFeatures(dialectId, capabilities, conflict.insert());
       }
-      case MergeStatement merge ->
-          require(
-              dialectId,
-              capabilities,
-              merge.keyForm() ? DialectFeature.MERGE_KEY : DialectFeature.MERGE_USING,
-              "MERGE",
-              "root");
+      case MergeStatement merge -> {
+        require(
+            dialectId,
+            capabilities,
+            merge.keyForm() ? DialectFeature.MERGE_KEY : DialectFeature.MERGE_USING,
+            "MERGE",
+            "root");
+        for (var action : merge.actions()) {
+          validateRowAssignments(dialectId, capabilities, action.assignments());
+        }
+      }
       case InsertStatement insert -> {
+        if (insert.query() != null)
+          require(dialectId, capabilities, DialectFeature.INSERT_SELECT, "INSERT SELECT", "root");
+        if (!insert.additionalRows().isEmpty())
+          require(
+              dialectId, capabilities, DialectFeature.MULTI_ROW_VALUES, "multi-row VALUES", "root");
         DialectJoinFeatures.validate(dialectId, capabilities, insert);
         if (insert.columns().isEmpty()) {
           require(
@@ -60,7 +89,35 @@ public final class DialectQueryFeatures {
               "root");
         }
       }
+      case UpdateStatement update -> {
+        if (update.from() != null)
+          require(dialectId, capabilities, DialectFeature.UPDATE_FROM, "UPDATE FROM", "root");
+        validateRowAssignments(dialectId, capabilities, update.assignments());
+        DialectJoinFeatures.validate(dialectId, capabilities, statement);
+      }
+      case DeleteStatement delete -> {
+        if (delete.using() != null)
+          require(dialectId, capabilities, DialectFeature.DELETE_USING, "DELETE USING", "root");
+        DialectJoinFeatures.validate(dialectId, capabilities, statement);
+      }
       default -> DialectJoinFeatures.validate(dialectId, capabilities, statement);
+    }
+  }
+
+  private static void validateRowAssignments(
+      String dialectId,
+      DialectCapabilities capabilities,
+      List<? extends SetAssignment> assignments) {
+    for (SetAssignment assignment : assignments) {
+      if (assignment instanceof RowAssignment) {
+        require(
+            dialectId,
+            capabilities,
+            DialectFeature.ROW_SUBQUERY_ASSIGNMENT,
+            "SET (columns) = (SELECT ...)",
+            "root");
+        return;
+      }
     }
   }
 
@@ -85,6 +142,98 @@ public final class DialectQueryFeatures {
               "resolved query analysis cannot validate statement node "
                   + statement.getClass().getName());
     }
+  }
+
+  private static void validateMutationQueries(
+      String dialectId, DialectCapabilities capabilities, StatementAst statement) {
+    StatementAst mutation =
+        statement instanceof ReturningStatement returning ? returning.mutation() : statement;
+    FromClause outer =
+        switch (mutation) {
+          case UpdateStatement update -> update.scope();
+          case DeleteStatement delete -> delete.scope();
+          case MergeStatement merge -> merge.scope();
+          case InsertStatement insert -> FromClause.of(insert.target());
+          case ConflictInsertStatement conflict -> FromClause.of(conflict.target());
+          default -> throw new IllegalArgumentException("unknown mutation scope");
+        };
+    class Queries {
+      final java.util.IdentityHashMap<SelectStatement, Boolean> checked =
+          new java.util.IdentityHashMap<>();
+
+      void mark(SelectStatement query, QueryBlockAnalysis analysis) {
+        checked.put(query, Boolean.TRUE);
+        for (var nested : analysis.nestedBlocks()) mark(nested.statement(), nested.analysis());
+      }
+
+      void check(SelectStatement query, boolean independent) {
+        if (checked.containsKey(query)) return;
+        QueryBlockAnalysis analysis =
+            independent
+                ? SemanticValidator.analyzeNestedQuery(query)
+                : SemanticValidator.analyzeMutationQuery(query, outer);
+        if (analysis.correlated())
+          require(
+              dialectId,
+              capabilities,
+              DialectFeature.CORRELATED_SUBQUERY,
+              "correlated subquery",
+              analysis.path().toString());
+        validateBlock(dialectId, capabilities, query, analysis);
+        mark(query, analysis);
+      }
+
+      void expression(SqlExpression<?> expression) {
+        SelectStatement query;
+        DialectFeature feature;
+        switch (expression) {
+          case ExistsPredicate exists -> {
+            query = exists.subquery();
+            feature = DialectFeature.EXISTS_SUBQUERY;
+          }
+          case InSubqueryPredicate<?> in -> {
+            query = in.subquery();
+            feature = DialectFeature.IN_SUBQUERY;
+          }
+          case ScalarSubqueryExpression<?> scalar -> {
+            query = scalar.subquery();
+            feature = DialectFeature.SCALAR_SUBQUERY;
+          }
+          default -> {
+            return;
+          }
+        }
+        require(dialectId, capabilities, feature, "mutation subquery", "root");
+        check(query, false);
+      }
+
+      void relation(RelationSource source) {
+        if (source instanceof DerivedRelationSource derived) {
+          require(
+              dialectId,
+              capabilities,
+              DialectFeature.DERIVED_TABLE,
+              "derived mutation source",
+              "root");
+          check(derived.statement(), true);
+        }
+      }
+    }
+    Queries queries = new Queries();
+    InsertStatement insert =
+        mutation instanceof InsertStatement direct
+            ? direct
+            : mutation instanceof ConflictInsertStatement conflict ? conflict.insert() : null;
+    if (insert != null && insert.query() != null) queries.check(insert.query(), true);
+    java.util.List<? extends SetAssignment> assignments =
+        mutation instanceof UpdateStatement update ? update.assignments() : java.util.List.of();
+    for (var assignment : assignments)
+      if (assignment instanceof RowAssignment row) queries.check(row.query(), false);
+    if (mutation instanceof MergeStatement merge)
+      for (var action : merge.actions())
+        for (var assignment : action.assignments())
+          if (assignment instanceof RowAssignment row) queries.check(row.query(), false);
+    SqlAstTraversal.visit(statement, queries::expression, queries::relation);
   }
 
   private static void validateCount(
@@ -159,10 +308,7 @@ public final class DialectQueryFeatures {
       QueryClause clause) {
     if (!(key
             instanceof
-            ResolvedStructureKey.Node(
-                String kind1,
-                List<String> attributes,
-                List<ResolvedStructureKey> children))
+            Node(String kind1, List<String> attributes, List<ResolvedStructureKey> children))
         || kind1.equals("SELECT_BLOCK")) {
       return;
     }

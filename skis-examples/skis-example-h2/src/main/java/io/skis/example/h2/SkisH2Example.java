@@ -29,7 +29,7 @@ public final class SkisH2Example {
     AtomicInteger committedChanges = new AtomicInteger();
     executor.inTransaction(
         session -> {
-          session.updateById(pet, new Pet(stored.id(), "Momo", stored.version()));
+          session.updateById(pet).value(new Pet(stored.id(), "Momo", stored.version())).write();
           session.afterCommit(committedChanges::incrementAndGet);
           return null;
         });

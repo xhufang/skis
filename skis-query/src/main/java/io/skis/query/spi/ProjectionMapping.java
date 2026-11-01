@@ -6,6 +6,8 @@ import io.skis.mapping.spi.RowDecoder;
 import io.skis.mapping.spi.RowReadContext;
 import io.skis.metadata.GeneratedModelAbi;
 import io.skis.query.ProjectionSelection;
+import io.skis.query.Row2;
+import io.skis.query.Row3;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.Nullability;
 import java.lang.reflect.Modifier;
@@ -136,8 +138,93 @@ public final class ProjectionMapping<R> {
     return statefulDecoderToken;
   }
 
+  /** Creates the built-in fixed-row mapping without reflection or a row-time value array. */
+  @SuppressWarnings({"unchecked", "Convert2Diamond"})
+  public static <A extends @Nullable Object, B extends @Nullable Object>
+      ProjectionMapping<Row2<A, B>> row2(
+          Selectable<?> first, Selectable<?> second, int nullableMask) {
+    Class<Row2<A, B>> type = (Class<Row2<A, B>>) (Class<?>) Row2.class;
+    return new ProjectionMapping<Row2<A, B>>(
+        type,
+        "skis:row2",
+        List.of(
+            new Parameter(
+                0,
+                "first",
+                first.javaType(),
+                (nullableMask & 1) != 0 ? Nullability.NULLABLE : Nullability.NON_NULL,
+                0),
+            new Parameter(
+                1,
+                "second",
+                second.javaType(),
+                (nullableMask & 2) != 0 ? Nullability.NULLABLE : Nullability.NON_NULL,
+                1)),
+        new Row2Factory<A, B>(first.javaType(), second.javaType()));
+  }
+
+  private record Row2Factory<A extends @Nullable Object, B extends @Nullable Object>(
+      Class<?> first, Class<?> second) implements DecoderFactory<Row2<A, B>> {
+    @Override
+    public RowDecoder<Row2<A, B>> create(Readers readers) {
+      ValueReader<A> firstReader = readers.reader(0, first);
+      ValueReader<B> secondReader = readers.reader(1, second);
+      return (resultSet, context) ->
+          new Row2<>(firstReader.read(resultSet, context), secondReader.read(resultSet, context));
+    }
+  }
+
+  /** Creates the built-in fixed-row mapping without reflection or a row-time value array. */
+  @SuppressWarnings({"unchecked", "Convert2Diamond"})
+  public static <A extends @Nullable Object, B extends @Nullable Object, C extends @Nullable Object>
+      ProjectionMapping<Row3<A, B, C>> row3(
+          Selectable<?> first, Selectable<?> second, Selectable<?> third, int nullableMask) {
+    Class<Row3<A, B, C>> type = (Class<Row3<A, B, C>>) (Class<?>) Row3.class;
+    return new ProjectionMapping<Row3<A, B, C>>(
+        type,
+        "skis:row3",
+        List.of(
+            new Parameter(
+                0,
+                "first",
+                first.javaType(),
+                (nullableMask & 1) != 0 ? Nullability.NULLABLE : Nullability.NON_NULL,
+                0),
+            new Parameter(
+                1,
+                "second",
+                second.javaType(),
+                (nullableMask & 2) != 0 ? Nullability.NULLABLE : Nullability.NON_NULL,
+                1),
+            new Parameter(
+                2,
+                "third",
+                third.javaType(),
+                (nullableMask & 4) != 0 ? Nullability.NULLABLE : Nullability.NON_NULL,
+                2)),
+        new Row3Factory<A, B, C>(first.javaType(), second.javaType(), third.javaType()));
+  }
+
+  private record Row3Factory<
+          A extends @Nullable Object, B extends @Nullable Object, C extends @Nullable Object>(
+      Class<?> first, Class<?> second, Class<?> third) implements DecoderFactory<Row3<A, B, C>> {
+    @Override
+    public RowDecoder<Row3<A, B, C>> create(Readers readers) {
+      ValueReader<A> firstReader = readers.reader(0, first);
+      ValueReader<B> secondReader = readers.reader(1, second);
+      ValueReader<C> thirdReader = readers.reader(2, third);
+      return (resultSet, context) ->
+          new Row3<>(
+              firstReader.read(resultSet, context),
+              secondReader.read(resultSet, context),
+              thirdReader.read(resultSet, context));
+    }
+  }
+
   private static long statefulDecoderToken(DecoderFactory<?> decoderFactory) {
-    if (!hasInstanceState(decoderFactory.getClass())) {
+    if (decoderFactory instanceof Row2Factory<?, ?>
+        || decoderFactory instanceof Row3Factory<?, ?, ?>
+        || !hasInstanceState(decoderFactory.getClass())) {
       return 0;
     }
     long token = NEXT_STATEFUL_DECODER_TOKEN.incrementAndGet();

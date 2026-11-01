@@ -63,6 +63,15 @@ import org.junit.jupiter.api.Test;
 
 /** T07 controlled-stage, target-binding, and final-layout contracts. */
 class CompilationPipelineTest {
+  @Test
+  void templatesRejectBlankOrMismatchedSqlAndIgnoreQuotedQuestionMarks() {
+    var pet = new PetTable(PET);
+    ParameterLayout empty = ParameterLayout.collect(new SelectStatement(List.of(pet.id()), pet));
+    assertThrows(IllegalArgumentException.class, () -> new SqlTemplate(" \n", empty));
+    assertThrows(IllegalArgumentException.class, () -> new SqlTemplate("SELECT ?", empty));
+    assertEquals(0, new SqlTemplate("SELECT 'it''s ?' AS \"quoted\"\"?\"", empty).parameterCount());
+  }
+
 
   private static final PropertyMeta<Pet, Long> ID =
       new PropertyMeta<>(0, "id", Long.class, ColumnMeta.of("id", false));

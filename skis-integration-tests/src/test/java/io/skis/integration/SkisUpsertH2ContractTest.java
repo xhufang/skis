@@ -53,8 +53,8 @@ public class SkisUpsertH2ContractTest extends AbstractSkisUpsertContractTest {
             .returning();
         var inserted = request.write();
         assertEquals(1, inserted.affectedRows());
-        assertEquals(expected, inserted.get().getFirst().id());
-        assertTrue(request.write().isEmpty());
+        assertEquals(expected, inserted.rows().getFirst().id());
+      assertTrue(request.write().rows().isEmpty());
         assertTrue(fixture.executor.findById(PLAIN, expected).isPresent());
       }
       assertTrue(fixture.executor.findById(PLAIN, 3L).isEmpty());

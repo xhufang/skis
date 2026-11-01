@@ -1,33 +1,104 @@
 package io.skis.mutation.internal;
 
-import io.skis.core.*;
+import io.skis.core.ExecutionOptions;
+import io.skis.core.MutationException;
+import io.skis.core.SkisErrorCode;
 import io.skis.dialect.spi.ResolvedStatement;
 import io.skis.mapping.spi.ParameterBinder;
-import io.skis.metadata.*;
-import io.skis.mutation.*;
-import io.skis.query.*;
+import io.skis.metadata.IdGeneration;
+import io.skis.metadata.PropertyMeta;
+import io.skis.mutation.ConflictAction;
+import io.skis.mutation.ConflictFiltered;
+import io.skis.mutation.ConflictSet;
+import io.skis.mutation.ConflictUpdate;
+import io.skis.mutation.ExpressionRow;
+import io.skis.mutation.InsertInto;
+import io.skis.mutation.InsertSelect;
+import io.skis.mutation.InsertWrite;
+import io.skis.mutation.KeyWrite;
+import io.skis.mutation.MergeInto;
+import io.skis.mutation.MergeNotMatched;
+import io.skis.mutation.MergeOn;
+import io.skis.mutation.MergeWrite;
+import io.skis.mutation.ReturningWrite;
+import io.skis.mutation.SingleWrite;
+import io.skis.mutation.ValueRow;
+import io.skis.mutation.Written;
+import io.skis.query.DerivedRelation;
+import io.skis.query.NonNullSelectable;
+import io.skis.query.QueryCondition;
+import io.skis.query.QueryTable;
+import io.skis.query.Selectable;
+import io.skis.query.SingleColumnQuery;
+import io.skis.query.Sql;
+import io.skis.query.ValuesSource;
 import io.skis.query.internal.MutationQuerySupport;
 import io.skis.query.internal.WriteInputCompiler;
-import io.skis.sql.ast.*;
-import java.util.*;
+import io.skis.sql.ast.BooleanPredicate;
+import io.skis.sql.ast.ColumnExpression;
+import io.skis.sql.ast.ComparisonOperator;
+import io.skis.sql.ast.ComparisonPredicate;
+import io.skis.sql.ast.ConflictInsertStatement;
+import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedRelationReference;
+import io.skis.sql.ast.InsertStatement;
+import io.skis.sql.ast.LiteralExpression;
+import io.skis.sql.ast.MergeStatement;
+import io.skis.sql.ast.ParameterRelationSource;
+import io.skis.sql.ast.ParameterSlot;
+import io.skis.sql.ast.SqlExpression;
+import io.skis.sql.ast.SqlPredicate;
+import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.UpdateAssignment;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
 /** Immutable invocation stages. Shared caches receive only detached structure and compiled code. */
 public final class StructuredWrites {
+
   private StructuredWrites() {}
 
-  static <E> MergeInto<E> merge(DefaultMutationOperations operations, QueryTable<E> table) {
+  public static <E> InsertSelect<E> selectColumns(
+      InsertInto<E> stage, Selectable<?> first, Selectable<?>... remaining) {
+    return InsertSelects.columns(stage, first, remaining);
+  }
+
+  static <E, R extends @Nullable Object> ReturningWrite<R> entityReturning(
+      DefaultMutationOperations operations,
+      QueryTable<E> table,
+      E entity,
+      MutationQuerySupport.Result<R> result) {
     Spec<E> spec = new Spec<>(operations, table);
-    spec.merge = true;
-    return new Merge<>(spec);
+    spec.entity = entity;
+    return new Single<>(spec).outputs(result);
+  }
+
+  static <E> MergeInto<E> merge(DefaultMutationOperations operations, QueryTable<E> table) {
+    return new MergeChoice<>(operations, table);
   }
 
   public static <E> InsertWrite<E> insert(InsertInto<E> stage, Consumer<ValueRow> values) {
     var owner = MutationRequests.insertOwner(stage);
     Spec<E> spec = new Spec<>(owner.operations(), owner.table());
     collectValues(spec, values);
+    return new Single<>(spec);
+  }
+
+  static <E> ConflictAction<E> batchConflict(
+      BatchWrites.Input<E> batch, Selectable<?> first, Selectable<?>[] remaining) {
+    Spec<E> spec = new Spec<>(batch.operations, batch.table);
+    spec.batch = batch;
+    spec.conflict = true;
+    spec.keys = keys(first, remaining);
+    validateKeys(spec, spec.keys);
     return new Single<>(spec);
   }
 
@@ -67,20 +138,7 @@ public final class StructuredWrites {
 
   public static <E> MergeWrite<E> mergeInsert(
       MergeNotMatched<E> stage, Consumer<ExpressionRow> values) {
-    if (!(stage instanceof Merge<E> merge)) throw invalid("MERGE stage was not created by SKIS");
-    Spec<E> spec = new Spec<>(merge.spec);
-    if (!spec.insertStarted || !spec.insertColumns.isEmpty())
-      throw invalid("duplicate MERGE insertion");
-    ExpressionCollector row = new ExpressionCollector(spec);
-    try {
-      Objects.requireNonNull(values, "values").accept(row);
-      row.requireNonEmpty();
-      spec.insertColumns = List.copyOf(row.columns);
-      spec.insertExpressions = List.copyOf(row.expressions);
-    } finally {
-      row.open = false;
-    }
-    return new Merge<>(spec);
+    return NativeMerges.insert(stage, values);
   }
 
   private static List<Selectable<?>> keys(Selectable<?> first, Selectable<?>[] remaining) {
@@ -165,31 +223,6 @@ public final class StructuredWrites {
     }
   }
 
-  private static final class ExpressionCollector extends ColumnCollector implements ExpressionRow {
-    final List<Selectable<?>> expressions = new ArrayList<>();
-
-    ExpressionCollector(Spec<?> spec) {
-      super(spec);
-    }
-
-    @Override
-    public <V> ExpressionRow value(NonNullSelectable<V> column, NonNullSelectable<V> value) {
-      return value((Selectable<V>) column, value);
-    }
-
-    @Override
-    public <V> ExpressionRow value(Selectable<V> column, Selectable<V> value) {
-      requireOpen();
-      Objects.requireNonNull(value, "expression");
-      if (!column.javaType().equals(value.javaType())
-          || !column.nullability().isNullable() && value.nullability().isNullable())
-        throw invalid("INSERT expression violates its declared type or nullability");
-      add(column);
-      expressions.add(value);
-      return this;
-    }
-  }
-
   private static PropertyMeta<?, ?> property(Spec<?> spec, Selectable<?> column) {
     return MutationQuerySupport.column(spec.table, column).property();
   }
@@ -208,7 +241,7 @@ public final class StructuredWrites {
       Selectable<?> column,
       @Nullable Object value,
       @Nullable Selectable<?> expression) {
-    if (current.nothing || current.key || !current.merge && !current.conflict)
+    if (current.nothing || !current.conflict)
       throw invalid("SET requires a conflict or MERGE update action");
     var property = property(current, column);
     if (!property.column().updatable()
@@ -228,8 +261,8 @@ public final class StructuredWrites {
       Spec<E> current,
       @Nullable Number value,
       @Nullable NonNullSelectable<? extends Number> expression) {
-    if (current.nothing || current.key || !current.merge && !current.conflict)
-      throw invalid("expected version requires an updating conflict or MERGE branch");
+    if (current.nothing || !current.conflict)
+      throw invalid("expected version requires an updating conflict branch");
     if (current.expected != null || current.expectedExpression != null)
       throw invalid("expected version is already set");
     var version =
@@ -249,25 +282,34 @@ public final class StructuredWrites {
     return spec;
   }
 
+  /** Shared precondition for attributing a skipped conflict update to its expected version. */
+  static @Nullable String strictConflictViolation(Spec<?> spec) {
+    if (spec.filter != null || spec.nothing || spec.assignments.isEmpty())
+      return "strict optimistic writes cannot contain business filters or skip actions";
+    var id = spec.table.entity().primaryKey().orElseThrow().properties().getFirst();
+    if (spec.keys.size() != 1 || property(spec, spec.keys.getFirst()) != id)
+      return "strict conflict update requires the single primary-key conflict target";
+    return null;
+  }
+
   static MutationException invalid(String detail) {
     return MutationException.of(SkisErrorCode.MUTATION_PARAMETER_SHAPE, detail);
   }
 
   static final class Spec<E> {
+
     final DefaultMutationOperations operations;
     final QueryTable<E> table;
     @Nullable E entity;
-    List<Selectable<?>> columns = List.of(),
-        keys = List.of(),
-        insertColumns = List.of(),
-        insertExpressions = List.of();
+    BatchWrites.@Nullable Input<E> batch;
+    private volatile ValuesBatches.@Nullable Planner<E, Object> batchCountPlanner;
+    List<Selectable<?>> columns = List.of(), keys = List.of();
     @Nullable Object[] values = new @Nullable Object[0];
-    @Nullable ValuesSource source;
-    @Nullable QueryCondition on, matched, filter;
+    @Nullable QueryCondition filter;
     List<MutationQuerySupport.Assignment> assignments = List.of();
     @Nullable Number expected;
     @Nullable NonNullSelectable<? extends Number> expectedExpression;
-    boolean merge, key, conflict, nothing, matchedStarted, insertStarted;
+    boolean key, conflict, nothing;
 
     Spec(DefaultMutationOperations operations, QueryTable<E> table) {
       this.operations = operations;
@@ -277,34 +319,55 @@ public final class StructuredWrites {
     Spec(Spec<E> other) {
       this(other.operations, other.table);
       entity = other.entity;
+      batch = other.batch;
+      // The planner retains its owning Spec and compiled clauses; derivatives must rebuild it.
+      batchCountPlanner = null;
       columns = other.columns;
       keys = other.keys;
-      insertColumns = other.insertColumns;
-      insertExpressions = other.insertExpressions;
       values = other.values;
-      source = other.source;
-      on = other.on;
-      matched = other.matched;
       filter = other.filter;
       assignments = other.assignments;
       expected = other.expected;
       expectedExpression = other.expectedExpression;
-      merge = other.merge;
       key = other.key;
       conflict = other.conflict;
       nothing = other.nothing;
-      matchedStarted = other.matchedStarted;
-      insertStarted = other.insertStarted;
+    }
+
+    ValuesBatches.Planner<E, Object> batchCountPlanner(BatchWrites.Input<E> input) {
+      var planner = batchCountPlanner;
+      if (planner != null) return planner;
+      synchronized (this) {
+        planner = batchCountPlanner;
+        if (planner == null) {
+          planner = new ValuesBatches.Planner<>(input, this, null);
+          batchCountPlanner = planner;
+        }
+        return planner;
+      }
     }
   }
 
-  static final class Choices<R> {
+  static final class Choices<R extends @Nullable Object> {
+    private volatile @Nullable Prepared checkedInputs, uncheckedInputs;
+
+    Prepared prepare(Request<?> request, boolean check, MutationQuerySupport.Result<R> result) {
+      Prepared known = check ? checkedInputs : uncheckedInputs;
+      if (known != null) return known;
+      synchronized (this) {
+        known = check ? checkedInputs : uncheckedInputs;
+        if (known == null) {
+          known = compileChecked(request.spec, check, result);
+          if (check) checkedInputs = known;
+          else uncheckedInputs = known;
+        }
+      }
+      return known;
+    }
+
     private volatile DynamicMutationPlans.@Nullable Request<DynamicMutationPlans.StructuredPlan<R>>
         checked,
         unchecked;
-    private volatile DynamicMutationPlans.@Nullable Request<DynamicMutationPlans.ConditionalPlan<R>>
-        manyChecked,
-        manyUnchecked;
 
     DynamicMutationPlans.Request<DynamicMutationPlans.StructuredPlan<R>> one(boolean check) {
       var value = check ? checked : unchecked;
@@ -315,20 +378,6 @@ public final class StructuredWrites {
           value = new DynamicMutationPlans.Request<>();
           if (check) checked = value;
           else unchecked = value;
-        }
-      }
-      return value;
-    }
-
-    DynamicMutationPlans.Request<DynamicMutationPlans.ConditionalPlan<R>> many(boolean check) {
-      var value = check ? manyChecked : manyUnchecked;
-      if (value != null) return value;
-      synchronized (this) {
-        value = check ? manyChecked : manyUnchecked;
-        if (value == null) {
-          value = new DynamicMutationPlans.Request<>();
-          if (check) manyChecked = value;
-          else manyUnchecked = value;
         }
       }
       return value;
@@ -363,7 +412,8 @@ public final class StructuredWrites {
 
     @SuppressWarnings("unchecked")
     @Nullable Object expectedValue() {
-      if (spec.nothing) return null;
+      // A plain entity INSERT has no matched row, so its version is an initial value, not a check.
+      if (spec.nothing || !spec.conflict && !spec.key) return null;
       if (spec.expected != null) return spec.expected;
       if (spec.expectedExpression != null) return Boolean.TRUE;
       E entity = spec.entity;
@@ -387,14 +437,7 @@ public final class StructuredWrites {
       synchronized (this) {
         existing = check ? checked : unchecked;
         if (existing == null) {
-          try {
-            existing = compile(spec, check);
-          } catch (IllegalArgumentException failure) {
-            throw MutationException.of(
-                SkisErrorCode.MUTATION_PARAMETER_SHAPE,
-                "structured write has invalid clauses or parameters",
-                failure);
-          }
+          existing = compileChecked(spec, check, null);
           if (check) checked = existing;
           else unchecked = existing;
         }
@@ -422,14 +465,27 @@ public final class StructuredWrites {
       Object prefixIdentity,
       @Nullable EntityMutationPlanSet<?> entityPlans,
       ColumnExpression<?, ?> idColumn,
-      boolean merge,
-      boolean single,
       boolean checked,
       int expectedIndex,
-      Arguments fixedArguments) {}
+      Arguments fixedArguments,
+      String operation,
+      int parameterBudget) {}
+
+  private static Prepared compileChecked(
+      Spec<?> spec, boolean checked, MutationQuerySupport.@Nullable Result<?> returning) {
+    try {
+      return compile(spec, checked, returning);
+    } catch (IllegalArgumentException failure) {
+      throw MutationException.of(
+          SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+          "structured write has invalid clauses or parameters",
+          failure);
+    }
+  }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
-  private static Prepared compile(Spec<?> spec, boolean checked) {
+  private static Prepared compile(
+      Spec<?> spec, boolean checked, MutationQuerySupport.@Nullable Result<?> returning) {
     EntityMutationPlanSet<?> targetPlans = spec.operations.plans(spec.table);
     EntityMutationPlanSet<?> plans = spec.entity == null ? null : targetPlans;
     var target = MutationQuerySupport.table(spec.table);
@@ -446,16 +502,7 @@ public final class StructuredWrites {
     ColumnExpression<?, ?> idColumn = compiler.column(idProperty);
     List<ColumnExpression<?, ?>> insertColumns;
     List<SqlExpression<?>> insertValues;
-    ParameterRelationSource source = null;
-    SqlPredicate on = new BooleanPredicate(true);
-    if (spec.merge && !spec.key) {
-      source = compiler.source(Objects.requireNonNull(spec.source));
-      on = compiler.condition(Objects.requireNonNull(spec.on));
-      insertColumns = new ArrayList<>(compiler.columns(spec.insertColumns));
-      insertValues = new ArrayList<>();
-      for (Selectable<?> value : spec.insertExpressions)
-        insertValues.add(compiler.expression(value));
-    } else if (plans != null) {
+    if (plans != null) {
       insertColumns = new ArrayList<>();
       for (var column : plans.insertStatement().columns())
         insertColumns.add(compiler.column(column.property()));
@@ -464,7 +511,7 @@ public final class StructuredWrites {
       insertColumns = new ArrayList<>(compiler.columns(spec.columns));
       insertValues = new ArrayList<>(compiler.values(spec.columns, spec.values));
     }
-    if (plans == null && (!spec.merge || spec.key || !insertColumns.isEmpty())) {
+    if (plans == null) {
       boolean suppliedId = insertColumns.stream().anyMatch(c -> c.property() == idProperty);
       IdGeneration generation = spec.table.entity().primaryKey().orElseThrow().generation();
       if (generation == IdGeneration.IDENTITY && suppliedId)
@@ -481,7 +528,7 @@ public final class StructuredWrites {
     }
     List<UpdateAssignment<?>> assignments =
         compiler.assignments(spec.assignments, !spec.assignments.isEmpty());
-    SqlPredicate condition = compiler.condition(spec.merge ? spec.matched : spec.filter);
+    SqlPredicate condition = compiler.condition(spec.filter);
     int expectedIndex = -1;
     if (checked) {
       var version =
@@ -489,31 +536,8 @@ public final class StructuredWrites {
               .entity()
               .version()
               .orElseThrow(() -> invalid("target has no version metadata"));
-      if (spec.filter != null || spec.matched != null || assignments.isEmpty())
-        throw invalid("strict optimistic writes cannot contain business filters or skip actions");
-      if (spec.merge) {
-        if (!(on
-                instanceof
-                ComparisonPredicate<?>(
-                    ColumnExpression<?, ?> left,
-                    ComparisonOperator operator,
-                    DerivedColumnExpression<?> right))
-            || operator != ComparisonOperator.EQUAL
-            || left.property() != idProperty
-            || left.table() != target
-            || right.relation() != Objects.requireNonNull(source).reference()
-            || right.nullable()
-            || insertColumns.stream().noneMatch(c -> c.property() == idProperty))
-          throw invalid(
-              "strict MERGE requires primary-key equality to a non-null source and an INSERT branch");
-        int idIndex = -1;
-        for (int i = 0; i < insertColumns.size(); i++)
-          if (insertColumns.get(i).property() == idProperty) idIndex = i;
-        if (idIndex < 0 || !insertValues.get(idIndex).equals(right))
-          throw invalid("strict MERGE insertion must use the matched source primary key");
-      } else if (spec.keys.size() != 1 || property(spec, spec.keys.getFirst()) != idProperty) {
-        throw invalid("strict conflict update requires the single primary-key conflict target");
-      }
+      String violation = strictConflictViolation(spec);
+      if (violation != null) throw invalid(violation);
       ColumnExpression versionColumn = compiler.column(version.property());
       SqlExpression expected;
       if (spec.expectedExpression != null) expected = compiler.expression(spec.expectedExpression);
@@ -529,17 +553,16 @@ public final class StructuredWrites {
       condition = new ComparisonPredicate(versionColumn, ComparisonOperator.EQUAL, expected);
     }
     StatementAst statement;
-    if (spec.merge) {
+    if (spec.key) {
       statement =
           new MergeStatement(
               target,
-              source,
-              on,
-              condition,
-              assignments,
+              null,
+              new BooleanPredicate(true),
+              List.of(),
               insertColumns,
               insertValues,
-              spec.key ? compiler.columns(spec.keys) : List.of());
+              compiler.columns(spec.keys));
     } else {
       var insert = new InsertStatement(target, insertColumns, insertValues);
       statement =
@@ -550,8 +573,9 @@ public final class StructuredWrites {
     }
     // Validate this occurrence before any shared lookup; structure equality cannot prove scope.
     ResolvedStatement resolved = ResolvedStatement.analyze(statement);
+    compiler.returning(returning);
     MutationQuerySupport.Inputs inputs = compiler.finish();
-    if (plans == null) validateInsertId(targetPlans, insertColumns, insertValues, source, inputs);
+    if (plans == null) validateInsertId(targetPlans, insertColumns, insertValues, null, inputs);
     inputs =
         new MutationQuerySupport.Inputs(
             inputs.assignments(),
@@ -565,7 +589,9 @@ public final class StructuredWrites {
                       shape.add(checked);
                       return List.copyOf(shape);
                     }),
-            inputs.values());
+            inputs.values(),
+            inputs.sources(),
+            inputs.returningExpressions());
     return new Prepared(
         resolved,
         inputs,
@@ -574,14 +600,14 @@ public final class StructuredWrites {
         plans == null ? Boolean.FALSE : plans.structuredIdentity(),
         plans,
         idColumn,
-        spec.merge,
-        !spec.merge || spec.key,
         checked,
         expectedIndex,
-        new Arguments(spec.entity, inputs.values()));
+        new Arguments(spec.entity, inputs.values()),
+        spec.key ? "merge" : "insert",
+        0);
   }
 
-  private static void validateInsertId(
+  static void validateInsertId(
       EntityMutationPlanSet<?> plans,
       List<ColumnExpression<?, ?>> columns,
       List<SqlExpression<?>> values,
@@ -610,7 +636,7 @@ public final class StructuredWrites {
     }
   }
 
-  private static final class Returning<R> implements ReturningWrite<R> {
+  private static final class Returning<R extends @Nullable Object> implements ReturningWrite<R> {
     private final Function<ExecutionOptions, Written<R>> write;
 
     Returning(Function<ExecutionOptions, Written<R>> write) {
@@ -633,11 +659,12 @@ public final class StructuredWrites {
     }
   }
 
-  private abstract static class Stage<E> {
+  private abstract static class Stage<E> extends WriteSelections<E> {
     final Spec<E> spec;
     private volatile @Nullable Request<E> request;
 
     Stage(Spec<E> spec) {
+      super(spec.operations, spec.table);
       this.spec = spec;
     }
 
@@ -663,7 +690,7 @@ public final class StructuredWrites {
 
     @Override
     public ConflictAction<E> onConflict(Selectable<?> first, Selectable<?>... remaining) {
-      if (spec.conflict || spec.merge) throw invalid("duplicate conflict clause");
+      if (spec.conflict || spec.key) throw invalid("duplicate conflict clause");
       Spec<E> next = new Spec<>(spec);
       next.conflict = true;
       next.keys = keys(first, remaining);
@@ -694,14 +721,31 @@ public final class StructuredWrites {
     }
 
     @Override
-    public <V> ConflictUpdate<E> setExpression(
-        NonNullSelectable<V> column, NonNullSelectable<V> value) {
-      return setExpression((Selectable<V>) column, value);
+    public <V> ConflictUpdate<E> set(NonNullSelectable<V> column, NonNullSelectable<V> value) {
+      return set((Selectable<V>) column, value);
     }
 
     @Override
-    public <V> ConflictUpdate<E> setExpression(Selectable<V> column, Selectable<V> value) {
+    public <V> ConflictUpdate<E> set(Selectable<V> column, Selectable<V> value) {
       return new Single<>(assignment(spec, column, null, Objects.requireNonNull(value)));
+    }
+
+    @Override
+    public <V> ConflictUpdate<E> set(
+        Selectable<V> column, SingleColumnQuery<? extends @Nullable V> query) {
+      return set(column, Sql.scalar(query));
+    }
+
+    @Override
+    public <V> ConflictUpdate<E> setNull(Selectable<V> column) {
+      MutationQuerySupport.Assignment input = MutationQuerySupport.setNull(column);
+      return new Single<>(assignment(spec, column, null, input.expression()));
+    }
+
+    @Override
+    public <V> ConflictUpdate<E> setDefault(Selectable<V> column) {
+      MutationQuerySupport.Assignment input = MutationQuerySupport.setDefault(column);
+      return new Single<>(assignment(spec, column, null, input.expression()));
     }
 
     @Override
@@ -743,28 +787,18 @@ public final class StructuredWrites {
 
     @Override
     public int write(ExecutionOptions options) {
-      return spec.operations.writeStructuredCount(request(), Objects.requireNonNull(options));
+      return spec.batch != null
+          ? BatchWrites.count(spec.batch, spec, Objects.requireNonNull(options))
+          : spec.operations.writeStructuredCount(request(), Objects.requireNonNull(options));
     }
 
     @Override
-    public ReturningWrite<E> returning() {
-      return returning(MutationQuerySupport.result(spec.table));
-    }
-
-    @Override
-    public <R> ReturningWrite<R> returning(ProjectionSelection<R> projection) {
-      return returning(MutationQuerySupport.result(spec.table, projection));
-    }
-
-    @Override
-    public <R> ReturningWrite<R> returning(ProjectionType<R> projection) {
-      return returning(MutationQuerySupport.result(spec.table, projection));
-    }
-
-    private <R> ReturningWrite<R> returning(MutationQuerySupport.Result<R> result) {
+    @SuppressWarnings("Convert2Diamond")
+    <R extends @Nullable Object> ReturningWrite<R> outputs(MutationQuerySupport.Result<R> result) {
+      if (spec.batch != null) return BatchWrites.outputsFor(spec.batch, spec, result);
       Choices<R> choices = new Choices<>();
       Request<E> operation = request();
-      return new Returning<>(
+      return new Returning<R>(
           options -> spec.operations.writeStructuredOne(operation, result, choices, options));
     }
 
@@ -774,136 +808,30 @@ public final class StructuredWrites {
     }
   }
 
-  private static final class Merge<E> extends Stage<E>
-      implements MergeInto<E>,
-          MergeOn<E>,
-          MergeActions<E>,
-          MergeMatched<E>,
-          MergeUpdate<E>,
-          MergeNotMatched<E> {
-    Merge(Spec<E> spec) {
-      super(spec);
+  private record MergeChoice<E>(DefaultMutationOperations operations, QueryTable<E> table)
+      implements MergeInto<E> {
+    @Override
+    public MergeOn<E> using(ValuesSource source) {
+      return NativeMerges.using(operations, table, source);
+    }
+
+    @Override
+    public MergeOn<E> using(QueryTable<?> source) {
+      return NativeMerges.using(operations, table, source);
+    }
+
+    @Override
+    public MergeOn<E> using(DerivedRelation source) {
+      return NativeMerges.using(operations, table, source);
     }
 
     @Override
     public KeyWrite<E> key(Selectable<?> first, Selectable<?>... remaining) {
-      Spec<E> next = new Spec<>(spec);
-      next.key = true;
-      next.keys = keys(first, remaining);
-      validateKeys(next, next.keys);
-      return values -> StructuredWrites.key(next, values);
-    }
-
-    @Override
-    public MergeOn<E> using(ValuesSource source) {
-      Spec<E> next = new Spec<>(spec);
-      next.source = Objects.requireNonNull(source);
-      return new Merge<>(next);
-    }
-
-    @Override
-    public MergeActions<E> on(QueryCondition condition) {
-      Spec<E> next = new Spec<>(spec);
-      next.on = Objects.requireNonNull(condition);
-      return new Merge<>(next);
-    }
-
-    @Override
-    public MergeMatched<E> whenMatched() {
-      if (spec.matchedStarted || spec.insertStarted)
-        throw invalid("duplicate or out-of-order MATCHED branch");
-      Spec<E> next = new Spec<>(spec);
-      next.matchedStarted = true;
-      return new Merge<>(next);
-    }
-
-    @Override
-    public MergeNotMatched<E> whenNotMatched() {
-      if (spec.insertStarted) throw invalid("duplicate NOT MATCHED branch");
-      Spec<E> next = new Spec<>(spec);
-      next.insertStarted = true;
-      return new Merge<>(next);
-    }
-
-    @Override
-    public MergeMatched<E> and(QueryCondition condition) {
-      Spec<E> next = new Spec<>(spec);
-      next.matched =
-          spec.matched == null ? Objects.requireNonNull(condition) : spec.matched.and(condition);
-      return new Merge<>(next);
-    }
-
-    @Override
-    public MergeUpdateSet<E> thenUpdate() {
-      return this;
-    }
-
-    @Override
-    public <V> MergeUpdate<E> set(NonNullSelectable<V> column, V value) {
-      return set((Selectable<V>) column, Objects.requireNonNull(value));
-    }
-
-    @Override
-    public <V> MergeUpdate<E> set(Selectable<V> column, @Nullable V value) {
-      return new Merge<>(assignment(spec, column, value, null));
-    }
-
-    @Override
-    public <V> MergeUpdate<E> setExpression(
-        NonNullSelectable<V> column, NonNullSelectable<V> value) {
-      return setExpression((Selectable<V>) column, value);
-    }
-
-    @Override
-    public <V> MergeUpdate<E> setExpression(Selectable<V> column, Selectable<V> value) {
-      return new Merge<>(assignment(spec, column, null, Objects.requireNonNull(value)));
-    }
-
-    @Override
-    public MergeUpdate<E> expectedVersion(Number value) {
-      return new Merge<>(expected(spec, Objects.requireNonNull(value), null));
-    }
-
-    @Override
-    public MergeUpdate<E> expectedVersionExpression(NonNullSelectable<? extends Number> value) {
-      return new Merge<>(expected(spec, null, Objects.requireNonNull(value)));
-    }
-
-    @Override
-    public int write() {
-      return write(ExecutionOptions.NONE);
-    }
-
-    @Override
-    public int write(ExecutionOptions options) {
-      return spec.operations.writeStructuredCount(request(), Objects.requireNonNull(options));
-    }
-
-    @Override
-    public ReturningWrite<List<E>> returning() {
-      return returning(MutationQuerySupport.result(spec.table));
-    }
-
-    @Override
-    public <R> ReturningWrite<List<R>> returning(ProjectionSelection<R> projection) {
-      return returning(MutationQuerySupport.result(spec.table, projection));
-    }
-
-    @Override
-    public <R> ReturningWrite<List<R>> returning(ProjectionType<R> projection) {
-      return returning(MutationQuerySupport.result(spec.table, projection));
-    }
-
-    private <R> ReturningWrite<List<R>> returning(MutationQuerySupport.Result<R> result) {
-      Choices<R> choices = new Choices<>();
-      Request<E> operation = request();
-      return new Returning<>(
-          options -> spec.operations.writeStructuredMany(operation, result, choices, options));
-    }
-
-    @Override
-    public String toString() {
-      return "MergeWrite[values redacted]";
+      Spec<E> spec = new Spec<>(operations, table);
+      spec.key = true;
+      spec.keys = keys(first, remaining);
+      validateKeys(spec, spec.keys);
+      return values -> StructuredWrites.key(spec, values);
     }
   }
 }

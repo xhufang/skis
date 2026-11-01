@@ -40,7 +40,7 @@ public class DepartmentServiceImpl implements DepartmentService {
   public int updateDepartment(Department department) {
     Objects.requireNonNull(department, "department");
     department.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(DEPARTMENT, department);
+    return skisExecutor.updateById(DEPARTMENT).value(department).write();
   }
 
   @Override

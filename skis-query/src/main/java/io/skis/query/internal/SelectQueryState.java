@@ -4,7 +4,7 @@ import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.metadata.PrimaryKeyMeta;
 import io.skis.metadata.PropertyMeta;
-import io.skis.query.DerivedRelation;
+import io.skis.query.DerivedOutput;
 import io.skis.query.NullPlacement;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryTable;
@@ -34,15 +34,26 @@ final class SelectQueryState<R extends @Nullable Object> {
   private volatile @Nullable CompiledQueryStructure structure;
   private volatile @Nullable CompiledQueryStructure countStructure;
   private volatile @Nullable SelectedResult<R> resolvedSelected;
+  private volatile @Nullable List<DerivedOutput<?>> inferredOutputs;
 
-  static <R extends @Nullable Object> SelectQueryState<R> create(
-      SelectedResult<R> selected, QueryTable<?> root) {
-    return create(selected, QueryRelations.of(root));
+  /** Creates one query object from its value-free entry state and captured entry values. */
+  @FunctionalInterface
+  interface EntryFactory<R extends @Nullable Object, Q> {
+    Q create(SelectQueryState<R> state, QueryParameters parameters);
   }
 
-  static <R extends @Nullable Object> SelectQueryState<R> create(
-      SelectedResult<R> selected, DerivedRelation root) {
-    return create(selected, QueryRelations.of(root));
+  /**
+   * The single SELECT/FROM capture boundary shared by every model and executable entry shape.
+   *
+   * <p>Captured values of the root relation and the selection move into the returned query's
+   * parameter environment; the immutable state only retains the detached, value-free structure.
+   */
+  static <R extends @Nullable Object, Q> Q entry(
+      SelectedResult<R> selected, QueryRelation root, EntryFactory<R, Q> factory) {
+    ExpressionCapture capture = new ExpressionCapture();
+    capture.include(QueryRelations.parameters(root));
+    SelectedResult<R> structure = selected.capturesValues() ? selected.capture(capture) : selected;
+    return factory.create(create(structure, QueryRelations.structure(root)), capture.parameters());
   }
 
   static <R extends @Nullable Object> SelectQueryState<R> create(
@@ -322,6 +333,25 @@ final class SelectQueryState<R extends @Nullable Object> {
       if (existing == null) {
         existing = QueryStructureCompiler.compileCount(this);
         countStructure = existing;
+      }
+      return existing;
+    }
+  }
+
+  /**
+   * Output handles inferred once from this value-free structure; every derived occurrence still
+   * creates its own relation reference and columns, exactly like {@code DerivedRelation.as}.
+   */
+  List<DerivedOutput<?>> inferredOutputs() {
+    List<DerivedOutput<?>> existing = inferredOutputs;
+    if (existing != null) {
+      return existing;
+    }
+    synchronized (this) {
+      existing = inferredOutputs;
+      if (existing == null) {
+        existing = DefaultDerivedRelation.inferOutputs(this);
+        inferredOutputs = existing;
       }
       return existing;
     }

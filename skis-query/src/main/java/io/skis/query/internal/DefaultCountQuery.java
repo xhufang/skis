@@ -9,27 +9,35 @@ import org.jspecify.annotations.Nullable;
 /** Built-in count plan derived from an immutable query. */
 final class DefaultCountQuery implements CountQuery {
 
-  private final DefaultQueryOperations operations;
-  private final DefaultSelectQuery<?> source;
+  private final @Nullable DefaultQueryOperations operations;
+  private final AbstractSelectQuery<?, ?> source;
 
-  DefaultCountQuery(DefaultQueryOperations operations, DefaultSelectQuery<?> source) {
+  DefaultCountQuery(DefaultQueryOperations operations, DefaultExecutableSelectQuery<?> source) {
     this.operations = Objects.requireNonNull(operations, "operations");
     this.source = Objects.requireNonNull(source, "source");
   }
 
-  DefaultQueryOperations operations() {
+  DefaultCountQuery(DefaultSelectQuery<?> source) {
+    this.operations = null;
+    this.source = Objects.requireNonNull(source, "source");
+  }
+
+  @Nullable DefaultQueryOperations operations() {
     return operations;
   }
 
   ExecutionContext executionContext() {
-    return source.executionContext();
+    return source instanceof DefaultExecutableSelectQuery<?> executable
+        ? executable.executionContext()
+        : ExecutionContext.EMPTY;
   }
 
-  QueryCompilation<Long> compilation() {
-    return source.countCompilation();
-  }
-
-  QueryCompilation<Long> compilation(@Nullable OperationObservation observation) {
-    return source.countCompilation(observation);
+  QueryCompilation<Long> compilation(
+      DefaultQueryOperations current,
+      ExecutionContext context,
+      @Nullable OperationObservation observation) {
+    if (source instanceof DefaultExecutableSelectQuery<?> executable)
+      return executable.countCompilation(observation);
+    return current.executable(source, context.executionOptions()).countCompilation(observation);
   }
 }

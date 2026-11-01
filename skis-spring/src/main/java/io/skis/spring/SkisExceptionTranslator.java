@@ -7,6 +7,7 @@ import io.skis.core.SkisErrorCode;
 import io.skis.core.SkisException;
 import io.skis.jdbc.SkisPersistenceException;
 import io.skis.mutation.OptimisticLockException;
+import io.skis.mutation.BatchWriteException;
 import java.io.Serial;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
@@ -48,6 +49,12 @@ public final class SkisExceptionTranslator implements PersistenceExceptionTransl
       return null;
     }
     switch (exception) {
+      case BatchWriteException batch -> {
+        if (batch.code() == SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT) {
+          return new OptimisticLockingFailureException(safeMessage(batch), batch);
+        }
+        return translatePersistence(batch);
+      }
       case OptimisticLockException ignored -> {
         return new OptimisticLockingFailureException(safeMessage(exception), exception);
       }

@@ -15,9 +15,9 @@ import io.skis.query.ProjectionSelection;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectDescription;
-import io.skis.query.SelectFromStep;
 import io.skis.query.SelectQuery;
+import io.skis.query.SelectFromStep;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.Selectable;
 import io.skis.query.SingleColumnSelect;
 import io.skis.query.SingleRow;
@@ -49,9 +49,9 @@ class QueryTypeSafetyCompilationTest {
     String description =
         """
         package samples;
-        import io.skis.query.SelectDescription;
+        import io.skis.query.SelectQuery;
         final class DescriptionStateLeak {
-          static Object leak(SelectDescription<?> value) { return value.state(); }
+          static Object leak(SelectQuery<?> value) { return value.state(); }
         }
         """;
     String continuation =
@@ -101,11 +101,11 @@ class QueryTypeSafetyCompilationTest {
           static <V> SortSpecification order(Selectable<V> selectable) {
             return selectable.asc();
           }
-          static <V> SelectFromStep<SelectQuery<@Nullable V>> select(
+          static <V> SelectFromStep<? extends ExecutableSelectQuery<@Nullable V>> select(
               QueryOperations operations, Selectable<V> selectable) {
             return operations.select(selectable);
           }
-          static <V> SelectFromStep<SelectQuery<V>> selectNonNull(
+          static <V> SelectFromStep<? extends ExecutableSelectQuery<V>> selectNonNull(
               QueryOperations operations, NonNullSelectable<V> selectable) {
             return operations.select(selectable);
           }
@@ -117,14 +117,14 @@ class QueryTypeSafetyCompilationTest {
             NonNullSelectable<String> nonNull = concrete;
             Selectable<String> selectable = concrete;
             Selectable<String> nullable = nullableConcrete;
-            SelectFromStep<SelectQuery<String>> concreteStep = operations.select(concrete);
-            SelectFromStep<SelectQuery<String>> interfaceStep = operations.select(nonNull);
-            SelectFromStep<SelectQuery<@Nullable String>> generalStep =
+            SelectFromStep<? extends ExecutableSelectQuery<String>> concreteStep = operations.select(concrete);
+            SelectFromStep<? extends ExecutableSelectQuery<String>> interfaceStep = operations.select(nonNull);
+            SelectFromStep<? extends ExecutableSelectQuery<@Nullable String>> generalStep =
                 operations.select(selectable);
-            SelectFromStep<SelectQuery<@Nullable String>> nullableStep =
+            SelectFromStep<? extends ExecutableSelectQuery<@Nullable String>> nullableStep =
                 select(operations, nullable);
-            SelectFromStep<SelectQuery<String>> helperStep = selectNonNull(operations, nonNull);
-            Function<NonNullSelectable<String>, SelectFromStep<SelectQuery<String>>> selector =
+            SelectFromStep<? extends ExecutableSelectQuery<String>> helperStep = selectNonNull(operations, nonNull);
+            Function<NonNullSelectable<String>, SelectFromStep<? extends ExecutableSelectQuery<String>>> selector =
                 operations::select;
             Function<String, QueryCondition> equality = concrete::eq;
             Function<Selectable<String>, QueryCondition> expressionEquality = concrete::eq;
@@ -156,12 +156,12 @@ class QueryTypeSafetyCompilationTest {
               QueryTable<Pet> pet,
               QueryTable<Owner> owner,
               QueryCondition on) {
-            SelectQuery<String> query = operations.select(ownerName).from(pet);
-            SelectQuery<@Nullable String> nullable =
+            ExecutableSelectQuery<String> query = operations.select(ownerName).from(pet);
+            ExecutableSelectQuery<@Nullable String> nullable =
                 operations.select(ownerNickname).from(pet).leftJoin(owner).on(on);
-            SelectQuery<@Nullable String> explicitNullable =
+            ExecutableSelectQuery<@Nullable String> explicitNullable =
                 operations.selectNullable(ownerName).from(pet).leftJoin(owner).on(on);
-            SelectQuery<@Nullable Owner> nullableEntity =
+            ExecutableSelectQuery<@Nullable Owner> nullableEntity =
                 operations.selectNullable(owner).from(pet).leftJoin(owner).on(on);
             query.join(owner).on(on);
             nullable.where(ownerNickname.isNull());
@@ -193,7 +193,7 @@ class QueryTypeSafetyCompilationTest {
         import org.jspecify.annotations.Nullable;
         final class AnnotationOnlyNullableAssignment {
           static void query(QueryOperations operations, Selectable<String> selectable) {
-            SelectFromStep<SelectQuery<String>> step = operations.select(selectable);
+            SelectFromStep<? extends ExecutableSelectQuery<String>> step = operations.select(selectable);
           }
         }
         """;
@@ -361,7 +361,7 @@ class QueryTypeSafetyCompilationTest {
         import org.jspecify.annotations.Nullable;
         final class ValidChain {
           static <E> void query(
-              SelectQuery<E> query,
+              ExecutableSelectQuery<E> query,
               QueryCondition first,
               QueryCondition second) {
             query.where(first).and(second).or(first);
@@ -377,7 +377,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet> query,
+              ExecutableSelectQuery<Pet> query,
               QueryCondition pet,
               QueryCondition owner) {
             query.where(pet).and(owner);
@@ -442,7 +442,7 @@ class QueryTypeSafetyCompilationTest {
               NonNullSelectable<Long> id,
               QueryTable<E> table,
               ProjectionSelection<Long> projection) {
-            SelectDescription<Long> description = Sql.select(projection).from(table);
+            SelectQuery<Long> description = Sql.select(projection).from(table);
             id.in(description);
           }
         }
@@ -476,7 +476,7 @@ class QueryTypeSafetyCompilationTest {
               QueryTable<E> table) {
             SingleColumnSelect<Long> ids = Sql.select(id).from(table);
             Selectable<Long> scalar = Sql.scalar(ids);
-            SelectFromStep<SelectQuery<@Nullable Long>> selected = operations.select(scalar);
+            SelectFromStep<? extends ExecutableSelectQuery<@Nullable Long>> selected = operations.select(scalar);
             QueryCondition comparison = scalar.eq(id);
             QueryCondition nullCheck = scalar.isNull();
             SortSpecification ordering = scalar.asc().nullsLast();
@@ -541,7 +541,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet> query,
+              ExecutableSelectQuery<Pet> query,
               QueryTable<Owner> owner,
               QueryCondition condition) {
             query.join(owner).on(condition).fetchList();
@@ -556,7 +556,7 @@ class QueryTypeSafetyCompilationTest {
         final class IncompleteJoin {
           static final class Pet {}
           static final class Owner {}
-          static void query(SelectQuery<Pet> query, QueryTable<Owner> owner) {
+          static void query(ExecutableSelectQuery<Pet> query, QueryTable<Owner> owner) {
             query.join(owner).fetchList();
           }
         }
@@ -609,7 +609,7 @@ class QueryTypeSafetyCompilationTest {
         final class CompletedCrossJoin {
           static final class Pet {}
           static final class Owner {}
-          static void query(SelectQuery<Pet> query, QueryTable<Owner> owner) {
+          static void query(ExecutableSelectQuery<Pet> query, QueryTable<Owner> owner) {
             query.crossJoin(owner).fetchList();
           }
         }
@@ -622,7 +622,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet> query,
+              ExecutableSelectQuery<Pet> query,
               QueryTable<Owner> owner,
               QueryCondition condition) {
             query.crossJoin(owner).on(condition);
@@ -651,12 +651,12 @@ class QueryTypeSafetyCompilationTest {
           static final class Owner {}
           static final class Department {}
           static void query(
-              SelectQuery<Pet> query,
+              ExecutableSelectQuery<Pet> query,
               QueryTable<Owner> owner,
               QueryTable<Department> department,
               QueryCondition ownerOn,
               QueryCondition departmentOn) {
-            SelectQuery<Pet> completed =
+            ExecutableSelectQuery<Pet> completed =
                 query.join(owner).on(ownerOn).join(department).on(departmentOn);
             completed.fetchList();
           }
@@ -671,7 +671,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Owner {}
           static final class Department {}
           static void query(
-              SelectQuery<Pet> query,
+              ExecutableSelectQuery<Pet> query,
               QueryTable<Owner> owner,
               QueryTable<Department> department,
               QueryCondition ownerOn) {
@@ -702,48 +702,48 @@ class QueryTypeSafetyCompilationTest {
           static final class Joined {}
 
           static void queries(
-              SelectQuery<String> query,
-              SelectQuery<@Nullable String> nullableQuery,
+              ExecutableSelectQuery<String> query,
+              ExecutableSelectQuery<@Nullable String> nullableQuery,
               QueryTable<Joined> table,
               DerivedRelation derived,
               QueryCondition condition) {
-            JoinOnStep<SelectQuery<String>> tableStep = query.join(table);
-            JoinOnStep<SelectQuery<String>> derivedStep = query.join(derived);
-            SelectQuery<String> tableQuery = tableStep.on(condition);
-            SelectQuery<String> derivedQuery = derivedStep.on(condition);
+            JoinOnStep<? extends ExecutableSelectQuery<String>> tableStep = query.join(table);
+            JoinOnStep<? extends ExecutableSelectQuery<String>> derivedStep = query.join(derived);
+            ExecutableSelectQuery<String> tableQuery = tableStep.on(condition);
+            ExecutableSelectQuery<String> derivedQuery = derivedStep.on(condition);
 
-            JoinOnStep<SelectQuery<@Nullable String>> nullableTableStep =
+            JoinOnStep<? extends ExecutableSelectQuery<@Nullable String>> nullableTableStep =
                 nullableQuery.join(table);
-            JoinOnStep<SelectQuery<@Nullable String>> nullableDerivedStep =
+            JoinOnStep<? extends ExecutableSelectQuery<@Nullable String>> nullableDerivedStep =
                 nullableQuery.join(derived);
-            SelectQuery<@Nullable String> nullableTableQuery =
+            ExecutableSelectQuery<@Nullable String> nullableTableQuery =
                 nullableTableStep.on(condition);
-            SelectQuery<@Nullable String> nullableDerivedQuery =
+            ExecutableSelectQuery<@Nullable String> nullableDerivedQuery =
                 nullableDerivedStep.on(condition);
           }
 
           static void descriptions(
-              SelectDescription<String> description,
-              SelectDescription<String> nonNullDescription,
+              SelectQuery<String> description,
+              SelectQuery<String> nonNullDescription,
               SingleColumnSelect<String> singleColumn,
               SingleColumnSelect<String> nonNullSingleColumn,
               QueryTable<Joined> table,
               DerivedRelation derived,
               QueryCondition condition) {
-            JoinOnStep<? extends SelectDescription<String>> descriptionTableStep =
+            JoinOnStep<? extends SelectQuery<String>> descriptionTableStep =
                 description.join(table);
-            JoinOnStep<? extends SelectDescription<String>> descriptionDerivedStep =
+            JoinOnStep<? extends SelectQuery<String>> descriptionDerivedStep =
                 description.join(derived);
-            SelectDescription<String> tableDescription = descriptionTableStep.on(condition);
-            SelectDescription<String> derivedDescription = descriptionDerivedStep.on(condition);
+            SelectQuery<String> tableDescription = descriptionTableStep.on(condition);
+            SelectQuery<String> derivedDescription = descriptionDerivedStep.on(condition);
 
-            JoinOnStep<? extends SelectDescription<String>> nonNullTableStep =
+            JoinOnStep<? extends SelectQuery<String>> nonNullTableStep =
                 nonNullDescription.join(table);
-            JoinOnStep<? extends SelectDescription<String>> nonNullDerivedStep =
+            JoinOnStep<? extends SelectQuery<String>> nonNullDerivedStep =
                 nonNullDescription.join(derived);
-            SelectDescription<String> nonNullTableDescription =
+            SelectQuery<String> nonNullTableDescription =
                 nonNullTableStep.on(condition);
-            SelectDescription<String> nonNullDerivedDescription =
+            SelectQuery<String> nonNullDerivedDescription =
                 nonNullDerivedStep.on(condition);
 
             JoinOnStep<SingleColumnSelect<String>> singleTableStep = singleColumn.join(table);
@@ -781,7 +781,7 @@ class QueryTypeSafetyCompilationTest {
           static final class Pet {}
           static final class Owner {}
           static void query(
-              SelectQuery<Pet> query,
+              ExecutableSelectQuery<Pet> query,
               QueryTable<Owner> owner,
               NonNullSelectable<Long> petId,
               NonNullSelectable<Long> ownerId,
@@ -853,8 +853,8 @@ class QueryTypeSafetyCompilationTest {
               NonNullSelectable<Long> id,
               Selectable<String> nickname,
               QueryTable<E> table) {
-            SelectQuery<Long> ids = operations.select(id).from(table);
-            SelectQuery<@Nullable String> names = operations.select(nickname).from(table);
+            ExecutableSelectQuery<Long> ids = operations.select(id).from(table);
+            ExecutableSelectQuery<@Nullable String> names = operations.select(nickname).from(table);
             SingleRow<@Nullable String> row = names.fetchOne();
             names.orderBy(nickname.asc().nullsLast(), id.asc());
           }
@@ -870,7 +870,7 @@ class QueryTypeSafetyCompilationTest {
               QueryOperations operations,
               Selectable<String> nickname,
               QueryTable<E> table) {
-            SelectQuery<String> names = operations.select(nickname).from(table);
+            ExecutableSelectQuery<String> names = operations.select(nickname).from(table);
           }
         }
         """;
@@ -896,7 +896,7 @@ class QueryTypeSafetyCompilationTest {
         import org.jspecify.annotations.Nullable;
         final class ValidExplicitCount {
           static <E, R> Page<R> query(
-              SelectQuery<R> content, SelectQuery<E> equivalentCountSource) {
+              ExecutableSelectQuery<R> content, ExecutableSelectQuery<E> equivalentCountSource) {
             CountQuery count = equivalentCountSource.countQuery();
             return content.fetchPage(PageRequest.page(0, 20), count);
           }
@@ -930,13 +930,13 @@ class QueryTypeSafetyCompilationTest {
             DerivedRelation derived =
                 Sql.derived(Sql.select(id).from(pet), "visible_pet", idOutput);
             NonNullSelectable<Long> derivedId = derived.column(idOutput);
-            SelectQuery<Long> neutralRoot = operations.select(derivedId).from(derived);
-            SelectQuery<Long> entityRoot =
+            ExecutableSelectQuery<Long> neutralRoot = operations.select(derivedId).from(derived);
+            ExecutableSelectQuery<Long> entityRoot =
                 operations.select(derivedId).from(pet).join(derived).on(on);
             DerivedRelation nullableRelation =
                 Sql.derived(Sql.select(name).from(pet), "named_pet", nameOutput);
             Selectable<String> derivedName = nullableRelation.column(nameOutput);
-            SelectQuery<@Nullable String> nullableRoot =
+            ExecutableSelectQuery<@Nullable String> nullableRoot =
                 operations.select(derivedName).from(nullableRelation);
             neutralRoot.crossJoin(derived.as("other_pet"));
             entityRoot.leftJoin(nullableRelation).on(on);
@@ -975,7 +975,7 @@ class QueryTypeSafetyCompilationTest {
             NonNullDerivedOutput<Long> output = Sql.output(id, "pet_id");
             DerivedRelation derived =
                 Sql.derived(Sql.select(id).from(pet), "visible_pet", output);
-            SelectQuery<String> invalid =
+            ExecutableSelectQuery<String> invalid =
                 operations.select(derived.column(output)).from(derived);
           }
         }
@@ -1064,13 +1064,13 @@ class QueryTypeSafetyCompilationTest {
 
         import io.skis.query.QueryOperations;
         import io.skis.query.QueryTable;
-        import io.skis.query.SelectQuery;
+        import io.skis.query.ExecutableSelectQuery;
         import java.util.Optional;
 
         final class ValidEntityFastPath {
           static final class Pet {}
 
-          static SelectQuery<Pet> select(QueryOperations operations, QueryTable<Pet> pet) {
+          static ExecutableSelectQuery<Pet> select(QueryOperations operations, QueryTable<Pet> pet) {
             return operations.selectFrom(pet);
           }
 
@@ -1123,11 +1123,11 @@ class QueryTypeSafetyCompilationTest {
             return Sql.add(left, Sql.multiply(left, right));
           }
           static void calls(Selectable<Integer> value, NonNullSelectable<Integer> required,
-              Selectable<String> text, QueryCondition condition, QueryParameter<Integer> parameter) {
+              Selectable<String> text, QueryCondition condition, Integer valueInput) {
             Function<Selectable<Integer>, Selectable<Long>> sum = Sql::sumAsLong;
             Function<Selectable<Integer>, NonNullSelectable<Long>> count = Sql::count;
             Function<Integer, NonNullSelectable<Integer>> literal = Sql::value;
-            Function<QueryParameter<Integer>, Selectable<Integer>> view = Sql::value;
+            Function<Integer, NonNullSelectable<Integer>> view = Sql::value;
             BiFunction<Selectable<Integer>, Selectable<Integer>, Selectable<Integer>> add = Sql::add;
             BiFunction<NonNullSelectable<Integer>, NonNullSelectable<Integer>, NonNullSelectable<Integer>> plus = Sql::add;
             NonNullSelectable<Integer> result = Sql.caseWhen(condition, required, required);
@@ -1135,16 +1135,16 @@ class QueryTypeSafetyCompilationTest {
             NonNullSelectable<String> combined = Sql.concat(Sql.value("a"), Sql.value("b"));
             NonNullSelectable<BigDecimal> cast = Sql.cast(required, BigDecimal.class, SqlType.DECIMAL);
             Selectable<Integer> nullable = Sql.value(Integer.class, null);
-            Selectable<Integer> parameterView = Sql.value(parameter);
+            Selectable<Integer> parameterView = Sql.value(valueInput);
             Selectable<? extends Number> numericInput = nullable;
             Selectable<Long> nullableInput = Sql.sumAsLong(numericInput);
           }
-          static <R extends @Nullable Object> void chains(SelectQuery<R> query,
-              SingleColumnSelect<Integer> scalar, SelectDescription<R> description,
+          static <R extends @Nullable Object> void chains(ExecutableSelectQuery<R> query,
+              SingleColumnSelect<Integer> scalar, SelectQuery<R> description,
               QueryCondition condition, Selectable<Integer> key) {
-            SelectQuery<R> grouped = query.having(condition).where(condition)
+            ExecutableSelectQuery<R> grouped = query.having(condition).where(condition)
                 .groupBy(key).andHaving(condition).orHaving(condition);
-            SelectDescription<R> reusable = description.groupBy(key).having(condition);
+            SelectQuery<R> reusable = description.groupBy(key).having(condition);
             SingleColumnSelect<Integer> single = scalar.groupBy(key).having(condition)
                 .andHaving(condition).orHaving(condition);
             key.in(single);
@@ -1158,19 +1158,19 @@ class QueryTypeSafetyCompilationTest {
         import io.skis.query.*;
         final class RejectedAggregate {
           static void calls(Selectable<String> text, Selectable<Integer> number,
-              SelectQuery<Integer> query, QueryTable<?> table) {
+              ExecutableSelectQuery<Integer> query, QueryTable<?> table) {
         """;
     for (var invalid : java.util.Map.of(
         "text-sum", "Sql.sumAsLong(text);",
         "nonnull-sum", "NonNullSelectable<Long> value = Sql.sumAsLong(number);",
-        "nonnull-parameter", "NonNullSelectable<Integer> value = Sql.value(Sql.parameter(Integer.class));",
+        "nonnull-nullable-value", "NonNullSelectable<Integer> value = Sql.value(Integer.class, null);",
         "mixed-arithmetic", "Sql.add(number, Sql.value(1L));",
         "count-distinct-arity", "Sql.countDistinct(number, number);",
         "count-class", "Sql.count(number, Long.class);",
         "sum-distinct", "Sql.sumAsLong(number, true);",
         "group-before-from", "Sql.select(number).groupBy(number);",
         "group-before-on", "query.join(table).groupBy(number);",
-        "description-execute", "Sql.select(number).from(table).fetchList();").entrySet()) {
+        "request-is-not-a-list", "java.util.List<Integer> rows = Sql.select(number).from(table).fetchList();").entrySet()) {
       assertFalse(compile("samples.RejectedAggregate", prefix + invalid.getValue() + "}}",
           temporaryDirectory.resolve(invalid.getKey())));
     }

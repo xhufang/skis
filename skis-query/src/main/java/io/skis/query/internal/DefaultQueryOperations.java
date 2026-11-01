@@ -16,20 +16,23 @@ import io.skis.jdbc.internal.JdbcPageResult;
 import io.skis.jdbc.internal.JdbcRow;
 import io.skis.metadata.EntityMeta;
 import io.skis.metadata.PropertyMeta;
-import io.skis.query.DerivedRelation;
+import io.skis.query.ExecutableSelectQuery;
+import io.skis.query.ExecutableSingleColumnSelect;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;
 import io.skis.query.QueryCursor;
 import io.skis.query.QueryOperations;
+import io.skis.query.QueryRequest;
 import io.skis.query.QueryTable;
-import io.skis.query.SelectDescription;
+import io.skis.query.Row2;
+import io.skis.query.Row3;
 import io.skis.query.SelectFromStep;
-import io.skis.query.SelectQuery;
 import io.skis.query.Selectable;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import org.jspecify.annotations.Nullable;
 
 /** Default immutable query facade; package-private so users depend on the stable interface. */
@@ -81,97 +84,132 @@ final class DefaultQueryOperations implements QueryOperations {
   }
 
   @Override
-  public <E> SelectQuery<E> selectFrom(QueryTable<E> table) {
+  public <E> ExecutableSelectQuery<E> selectFrom(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
-    EntityPlanSet<E> plans = requirePlanSet(table.entity());
-    return DefaultSelectQuery.create(this, plans, table, SelectedResult.entity(table));
+    return selectFrom(SelectedResult.entity(table), QueryRelations.of(table));
   }
 
   @Override
-  public <E> SelectFromStep<SelectQuery<E>> select(QueryTable<E> table) {
-    Objects.requireNonNull(table, "table");
-    requirePlanSet(table.entity());
-    return new DefaultSelectFromStep<>(this, SelectedResult.entity(table));
-  }
-
-  @Override
-  public <E> SelectFromStep<SelectQuery<@Nullable E>> selectNullable(QueryTable<E> table) {
+  public <E> SelectFromStep<ExecutableSelectQuery<E>> select(QueryTable<E> table) {
     Objects.requireNonNull(table, "table");
     requirePlanSet(table.entity());
-    return new DefaultSelectFromStep<@Nullable E>(this, SelectedResult.nullableEntity(table));
+    return selectFrom(SelectedResult.entity(table));
   }
 
   @Override
-  public <V> SelectFromStep<SelectQuery<V>> select(NonNullSelectable<V> selectable) {
-    return new DefaultSelectFromStep<>(
-        this, SelectedResult.requiredScalar(Objects.requireNonNull(selectable, "selectable")));
+  public <E> SelectFromStep<ExecutableSelectQuery<@Nullable E>> selectNullable(
+      QueryTable<E> table) {
+    Objects.requireNonNull(table, "table");
+    requirePlanSet(table.entity());
+    return this.<@Nullable E>selectFrom(SelectedResult.nullableEntity(table));
   }
 
   @Override
-  public <V> SelectFromStep<SelectQuery<@Nullable V>> select(Selectable<V> selectable) {
-    return new DefaultSelectFromStep<@Nullable V>(
-        this, SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable")));
-  }
-
-  @Override
-  public <V> SelectFromStep<SelectQuery<@Nullable V>> selectNullable(
+  public <V> SelectFromStep<ExecutableSingleColumnSelect<V>> select(
       NonNullSelectable<V> selectable) {
-    return new DefaultSelectFromStep<@Nullable V>(
-        this, SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable")));
+    return scalarFrom(
+        SelectedResult.requiredScalar(Objects.requireNonNull(selectable, "selectable")));
   }
 
   @Override
-  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
-    return new DefaultSelectFromStep<>(
-        this, SelectedResult.projection(Objects.requireNonNull(projection, "projection")));
+  public <V> SelectFromStep<ExecutableSingleColumnSelect<@Nullable V>> select(
+      Selectable<V> selectable) {
+    SelectedResult<@Nullable V> selected =
+        SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable"));
+    return this.<@Nullable V>scalarFrom(selected);
   }
 
   @Override
-  public <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection) {
-    return new DefaultSelectFromStep<>(
-        this, SelectedResult.specialProjection(Objects.requireNonNull(projection, "projection")));
+  public <V> SelectFromStep<ExecutableSingleColumnSelect<@Nullable V>> selectNullable(
+      NonNullSelectable<V> selectable) {
+    SelectedResult<@Nullable V> selected =
+        SelectedResult.nullableScalar(Objects.requireNonNull(selectable, "selectable"));
+    return this.<@Nullable V>scalarFrom(selected);
   }
 
   @Override
-  public <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description) {
-    return executable(
-        QueryModels.description(Objects.requireNonNull(description, "description")).state(),
-        QueryParameters.empty());
+  public <R> SelectFromStep<ExecutableSelectQuery<R>> select(ProjectionSelection<R> projection) {
+    return selectFrom(SelectedResult.projection(Objects.requireNonNull(projection, "projection")));
   }
 
-  <R extends @Nullable Object> DefaultSelectQuery<R> selectFrom(
-      SelectedResult<R> selected, QueryTable<?> table) {
-    Objects.requireNonNull(selected, "selected");
-    Objects.requireNonNull(table, "table");
-    EntityPlanSet<?> plans = requirePlanSet(table.entity());
-    return DefaultSelectQuery.create(this, plans, table, selected);
+  @Override
+  public <R> SelectFromStep<ExecutableSelectQuery<R>> select(ProjectionType<R> projection) {
+    return selectFrom(
+        SelectedResult.specialProjection(Objects.requireNonNull(projection, "projection")));
   }
 
-  <R extends @Nullable Object> DefaultSelectQuery<R> selectFrom(
-      SelectedResult<R> selected, DerivedRelation relation) {
-    Objects.requireNonNull(selected, "selected");
-    Objects.requireNonNull(relation, "relation");
-    SelectedResult<R> structure = selected;
-    QueryParameters selectedParameters = QueryParameters.empty();
-    if (selected.capturesValues()) {
-      ExpressionCapture capture = new ExpressionCapture();
-      structure = selected.capture(capture);
-      selectedParameters = capture.parameters();
+  @Override
+  public <T extends @Nullable Object> T run(QueryRequest<T> request) {
+    Objects.requireNonNull(request, "request");
+    if (!(request instanceof DefaultQueryRequest<?, ?> builtIn)) {
+      throw QueryValidationException.of(
+          SkisErrorCode.QUERY_UNSUPPORTED_STRUCTURE, "execution request was not created by SKIS");
     }
-    return DefaultSelectQuery.create(
+    @SuppressWarnings("unchecked")
+    DefaultQueryRequest<?, T> typed = (DefaultQueryRequest<?, T>) builtIn;
+    return typed.run(this);
+  }
+
+  @SuppressWarnings("Convert2Diamond")
+  private <R extends @Nullable Object> SelectFromStep<ExecutableSingleColumnSelect<R>> scalarFrom(
+      SelectedResult<R> selected) {
+    return QueryDsl.fromStep(
+        root -> {
+          EntityPlanSet<?> plans = fastPlans(root);
+          return SelectQueryState.entry(
+              selected,
+              root,
+              (state, values) ->
+                  new DefaultExecutableSingleColumnSelect<R>(
+                      this,
+                      planCatalog.compiler(),
+                      plans,
+                      state,
+                      values,
+                      ExecutionContext.EMPTY,
+                      Set.of()));
+        });
+  }
+
+  private <R extends @Nullable Object> SelectFromStep<ExecutableSelectQuery<R>> selectFrom(
+      SelectedResult<R> selected) {
+    return QueryDsl.fromStep(root -> selectFrom(selected, root));
+  }
+
+  @SuppressWarnings("Convert2Diamond")
+  private <R extends @Nullable Object> DefaultExecutableSelectQuery<R> selectFrom(
+      SelectedResult<R> selected, QueryRelation root) {
+    EntityPlanSet<?> plans = fastPlans(root);
+    return SelectQueryState.entry(
+        selected,
+        root,
+        (state, values) ->
+            new DefaultExecutableSelectQuery<R>(
+                this, planCatalog.compiler(), plans, state, values, ExecutionContext.EMPTY));
+  }
+
+  private @Nullable EntityPlanSet<?> fastPlans(QueryRelation root) {
+    QueryTable<?> table = root.entityTable();
+    return table == null ? null : requirePlanSet(table.entity());
+  }
+
+  /**
+   * Adapts one model for a single execution. Option-independent analyses and plans live on the
+   * model itself, so repeated requests reuse them while options remain per execution.
+   */
+  <R extends @Nullable Object> DefaultExecutableSelectQuery<R> executable(
+      AbstractSelectQuery<R, ?> query, ExecutionOptions options) {
+    QueryPlanCompiler compiler = planCatalog.compiler();
+    QueryTable<?> root = query.state.entityRootOrNull();
+    return new DefaultExecutableSelectQuery<>(
         this,
-        planCatalog.compiler(),
-        SelectQueryState.create(structure, relation),
-        selectedParameters);
-  }
-
-  private <R extends @Nullable Object> DefaultSelectQuery<R> executable(
-      SelectQueryState<R> state, QueryParameters parameters) {
-    QueryTable<?> entityRoot = state.entityRootOrNull();
-    if (entityRoot == null) {
-      return DefaultSelectQuery.create(this, planCatalog.compiler(), state, parameters);
-    }
-    return DefaultSelectQuery.create(this, requirePlanSet(entityRoot.entity()), state, parameters);
+        compiler,
+        root == null ? null : requirePlanSet(root.entity()),
+        query.state,
+        query.parameters,
+        ExecutionContext.of(options),
+        query.orderingOnlyParameters,
+        query.compiled(compiler));
   }
 
   <R extends @Nullable Object> List<R> fetchList(
@@ -273,5 +311,78 @@ final class DefaultQueryOperations implements QueryOperations {
               + " but received "
               + receivedType);
     }
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<@Nullable A, @Nullable B>>> select(
+      Selectable<A> first, Selectable<B> second) {
+    return select(QueryDsl.<@Nullable A, @Nullable B>row2(first, second, 3));
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<A, @Nullable B>>> select(
+      NonNullSelectable<A> first, Selectable<B> second) {
+    return select(QueryDsl.<A, @Nullable B>row2(first, second, 2));
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<@Nullable A, B>>> select(
+      Selectable<A> first, NonNullSelectable<B> second) {
+    return select(QueryDsl.<@Nullable A, B>row2(first, second, 1));
+  }
+
+  @Override
+  public <A, B> SelectFromStep<ExecutableSelectQuery<Row2<A, B>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second) {
+    return select(QueryDsl.row2(first, second, 0));
+  }
+
+  @Override
+  public <A, B, C>
+      SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, @Nullable B, @Nullable C>>> select(
+          Selectable<A> first, Selectable<B> second, Selectable<C> third) {
+    return select(QueryDsl.<@Nullable A, @Nullable B, @Nullable C>row3(first, second, third, 7));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, @Nullable B, @Nullable C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, Selectable<C> third) {
+    return select(QueryDsl.<A, @Nullable B, @Nullable C>row3(first, second, third, 6));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, B, @Nullable C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, Selectable<C> third) {
+    return select(QueryDsl.<@Nullable A, B, @Nullable C>row3(first, second, third, 5));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, B, @Nullable C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, Selectable<C> third) {
+    return select(QueryDsl.<A, B, @Nullable C>row3(first, second, third, 4));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, @Nullable B, C>>> select(
+      Selectable<A> first, Selectable<B> second, NonNullSelectable<C> third) {
+    return select(QueryDsl.<@Nullable A, @Nullable B, C>row3(first, second, third, 3));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, @Nullable B, C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, NonNullSelectable<C> third) {
+    return select(QueryDsl.<A, @Nullable B, C>row3(first, second, third, 2));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, B, C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third) {
+    return select(QueryDsl.<@Nullable A, B, C>row3(first, second, third, 1));
+  }
+
+  @Override
+  public <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, B, C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third) {
+    return select(QueryDsl.row3(first, second, third, 0));
   }
 }

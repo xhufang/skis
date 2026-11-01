@@ -4,9 +4,8 @@ import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.query.NullPlacement;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
-import io.skis.query.SingleColumnSelect;
+import io.skis.query.SingleColumnQuery;
 import io.skis.query.SortDirection;
 import io.skis.query.SortSpecification;
 import io.skis.sql.ast.ComparisonOperator;
@@ -60,14 +59,6 @@ public final class SelectableSupport {
         source, operator, requireValue(source, operator.name(), value));
   }
 
-  public static <V> QueryCondition parameterComparison(
-      Selectable<V> selectable, ComparisonOperator operator, QueryParameter<V> parameter) {
-    Selectable<V> source = requireFramework(selectable);
-    requireComparison(source, operator);
-    requireParameterType(source, parameter);
-    return FrameworkQueryCondition.parameterComparison(source, operator, parameter);
-  }
-
   public static <V> QueryCondition expressionComparison(
       Selectable<V> left, ComparisonOperator operator, Selectable<V> right) {
     Selectable<V> checkedLeft = requireFramework(left);
@@ -91,27 +82,10 @@ public final class SelectableSupport {
         requireValue(source, "between upper bound", upper));
   }
 
-  public static <V> QueryCondition betweenParameters(
-      Selectable<V> selectable, QueryParameter<V> lower, QueryParameter<V> upper) {
-    Selectable<V> source = requireFramework(selectable);
-    requireOrdering(source, "between");
-    requireParameterType(source, lower);
-    requireParameterType(source, upper);
-    return FrameworkQueryCondition.betweenParameters(source, lower, upper);
-  }
-
   public static QueryCondition like(Selectable<?> selectable, String pattern) {
     Selectable<?> source = requireFramework(selectable);
     requireLike(source);
     return likeString(source, Objects.requireNonNull(pattern, "pattern"));
-  }
-
-  public static <V> QueryCondition likeParameter(
-      Selectable<V> selectable, QueryParameter<V> pattern) {
-    Selectable<V> source = requireFramework(selectable);
-    requireLike(source);
-    requireParameterType(source, pattern);
-    return FrameworkQueryCondition.likeParameter(source, pattern);
   }
 
   @SuppressWarnings("unchecked")
@@ -126,29 +100,18 @@ public final class SelectableSupport {
     return FrameworkQueryCondition.membership(source, copy, negated);
   }
 
-  public static <V> QueryCondition parameterMembership(
+  public static <V> QueryCondition subqueryMembership(
       Selectable<V> selectable,
-      Collection<? extends QueryParameter<V>> parameters,
+      SingleColumnQuery<? extends @Nullable V> subquery,
       boolean negated) {
     Selectable<V> source = requireFramework(selectable);
-    Objects.requireNonNull(parameters, "parameters");
-    if (source.sqlType() == SqlType.OTHER) {
-      throw unsupported(source, negated ? "notInParameters" : "inParameters");
-    }
-    List<QueryParameter<V>> references = new ArrayList<>(parameters.size());
-    for (QueryParameter<V> parameter : parameters) {
-      requireParameterType(source, parameter);
-      references.add(parameter);
-    }
-    return FrameworkQueryCondition.membershipParameters(source, references, negated);
-  }
-
-  public static <V> QueryCondition subqueryMembership(
-      Selectable<V> selectable, SingleColumnSelect<V> subquery, boolean negated) {
-    Selectable<V> source = requireFramework(selectable);
-    SingleColumnSelect<V> child = Objects.requireNonNull(subquery, "subquery");
+    SingleColumnQuery<? extends @Nullable V> child = Objects.requireNonNull(subquery, "subquery");
     Class<?> leftJavaType = boxedJavaType(source.javaType());
-    Class<?> outputJavaType = boxedJavaType(QueryModels.single(child).valueExpression().javaType());
+    Class<?> outputJavaType =
+        boxedJavaType(
+            SelectableSupport.expression(
+                    QueryModels.description(child).state.selected().singleSelectable())
+                .javaType());
     if (!leftJavaType.equals(outputJavaType)) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_TYPE_MISMATCH,
@@ -161,17 +124,22 @@ public final class SelectableSupport {
     }
     if (!source
         .sqlType()
-        .equalityCompatibleWith(QueryModels.single(child).valueExpression().sqlType())) {
+        .equalityCompatibleWith(
+            SelectableSupport.expression(
+                    QueryModels.description(child).state.selected().singleSelectable())
+                .sqlType())) {
       throw QueryValidationException.of(
           SkisErrorCode.QUERY_TYPE_MISMATCH,
           (negated ? "notIn" : "in")
               + " subquery does not support SQL types "
               + source.sqlType()
               + " and "
-              + QueryModels.single(child).valueExpression().sqlType());
+              + SelectableSupport.expression(
+                      QueryModels.description(child).state.selected().singleSelectable())
+                  .sqlType());
     }
     return FrameworkQueryCondition.subqueryMembership(
-        source, QueryModels.description(child).state(), negated);
+        source, QueryModels.description(child), negated);
   }
 
   public static SortSpecification order(Selectable<?> selectable, SortDirection direction) {
@@ -207,7 +175,9 @@ public final class SelectableSupport {
           expressionIdentity(leftScalar).equals(expressionIdentity(rightScalar));
       case ExpressionSelectable<?> leftExpression
           when right instanceof ExpressionSelectable<?> rightExpression ->
-          expressionIdentity(leftExpression).equals(expressionIdentity(rightExpression));
+          leftExpression.outputAlias() != null || rightExpression.outputAlias() != null
+              ? leftExpression.compilationIdentity() == rightExpression.compilationIdentity()
+              : expressionIdentity(leftExpression).equals(expressionIdentity(rightExpression));
       default -> left == right;
     };
   }
@@ -314,25 +284,6 @@ public final class SelectableSupport {
               + value.getClass().getTypeName());
     }
     return selectable.javaType().cast(value);
-  }
-
-  private static <V> void requireParameterType(
-      Selectable<V> selectable, QueryParameter<V> parameter) {
-    Objects.requireNonNull(parameter, "parameter");
-    if (!(parameter instanceof DefaultQueryParameter<?>)) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PARAMETER_DECLARATION, "query parameter was not created by SKIS");
-    }
-    if (!selectable.javaType().equals(parameter.javaType())) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PARAMETER_VALUE,
-          "expression '"
-              + summary(selectable)
-              + "' requires query parameter type "
-              + selectable.javaType().getTypeName()
-              + " but received "
-              + parameter.javaType().getTypeName());
-    }
   }
 
   private static QueryValidationException unsupported(Selectable<?> selectable, String operation) {

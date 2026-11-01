@@ -5,14 +5,16 @@ import io.skis.dialect.SqlRenderException;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.sql.ast.CountAst;
+import io.skis.sql.ast.DeleteStatement;
 import io.skis.sql.ast.FromClause;
 import io.skis.sql.ast.JoinClause;
 import io.skis.sql.ast.JoinType;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.StatementAst;
+import io.skis.sql.ast.UpdateStatement;
 import java.util.Objects;
 
-/** Single internal mapping between portable join kinds, dialect features, and SQL keywords. */
+/** Single internal mapping between portable join kinds and dialect features. */
 public final class DialectJoinFeatures {
 
   private DialectJoinFeatures() {}
@@ -27,16 +29,6 @@ public final class DialectJoinFeatures {
     };
   }
 
-  public static String keyword(JoinType type) {
-    return switch (type) {
-      case INNER -> "INNER JOIN";
-      case LEFT -> "LEFT JOIN";
-      case RIGHT -> "RIGHT JOIN";
-      case FULL -> "FULL JOIN";
-      case CROSS -> "CROSS JOIN";
-    };
-  }
-
   static void validate(String dialectId, DialectCapabilities capabilities, StatementAst statement) {
     Objects.requireNonNull(dialectId, "dialectId");
     Objects.requireNonNull(capabilities, "capabilities");
@@ -45,9 +37,13 @@ public final class DialectJoinFeatures {
       case SelectStatement select ->
           validate(dialectId, capabilities, select.fromClause(), "SELECT");
       case CountAst count -> validate(dialectId, capabilities, count.fromClause(), "COUNT");
-      default -> {
-        // The current portable mutation AST has no Join-bearing source.
+      case UpdateStatement update -> {
+        if (update.from() != null) validate(dialectId, capabilities, update.from(), "UPDATE");
       }
+      case DeleteStatement delete -> {
+        if (delete.using() != null) validate(dialectId, capabilities, delete.using(), "DELETE");
+      }
+      default -> {}
     }
   }
 

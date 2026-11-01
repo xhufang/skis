@@ -63,7 +63,7 @@ final class QueryTestSupport {
       QueryTable<?> root,
       List<QueryJoin> joins,
       @Nullable QueryCondition condition) {
-    SelectQueryState<R> state = SelectQueryState.create(selected, root);
+    SelectQueryState<R> state = SelectQueryState.create(selected, QueryRelations.of(root));
     for (QueryJoin join : joins) {
       state = state.appendJoin(join.type(), join.right(), join.on());
     }

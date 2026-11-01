@@ -26,9 +26,12 @@ class VerifyQueryApiBudget {
   private static final Set<String> GENERATED_CONTRACTS =
       Set.of("io.skis.query.spi.ProjectionMapping", "io.skis.query.spi.ProjectionSource");
 
-  // These two public contracts belong to MERGE input construction, not ordinary SELECT queries.
+  // Exact write-only contracts: MERGE VALUES inputs and UPDATE row-assignment targets.
   private static final Set<String> WRITE_SOURCE_CONTRACTS =
-      Set.of("io.skis.query.ValuesRow", "io.skis.query.ValuesSource");
+      Set.of("io.skis.query.ValuesRow", "io.skis.query.ValuesSource", "io.skis.query.RowColumns");
+
+  // T05 adds five ordinary roles; the reviewed inventory is in task0.2.10-public-surface §18.
+  private static final int ORDINARY_TYPE_BUDGET = 35;
 
   public static void main(String[] arguments) throws IOException {
     if (arguments.length != 1) {
@@ -49,11 +52,11 @@ class VerifyQueryApiBudget {
           publicTypes(compiler, files, files.getJavaFileObjectsFromPaths(sources));
       // The moved validation exception remains conservatively charged to the query budget.
       int count = ordinaryTypes.size() + 1;
-      if (count > 30) {
+      if (count > ORDINARY_TYPE_BUDGET) {
         throw new IllegalStateException(
-            "Ordinary query API budget exceeded: " + count + " > 30; " + ordinaryTypes);
+            "Ordinary query API budget exceeded: " + count + " > " + ORDINARY_TYPE_BUDGET + "; " + ordinaryTypes);
       }
-      System.out.println("Current query API budget: " + count + "/30");
+      System.out.println("Current query API budget: " + count + "/" + ORDINARY_TYPE_BUDGET);
       System.out.println("Separate write source contracts: " + WRITE_SOURCE_CONTRACTS);
     }
   }
@@ -152,6 +155,12 @@ class VerifyQueryApiBudget {
                     public interface ValuesSource { interface NewlyExposed {} }
                     """),
                 source("ValuesRow", "package io.skis.query; public interface ValuesRow {}"),
+                source(
+                    "RowColumns",
+                    """
+                    package io.skis.query;
+                    public interface RowColumns { interface NewlyExposed {} }
+                    """),
                 source("ValuesSourceLike", "package io.skis.query; public interface ValuesSourceLike {}"),
                 source(
                     "QueryRuntime",
@@ -171,6 +180,7 @@ class VerifyQueryApiBudget {
             "io.skis.query.fixture.Surface.Implicit.Value",
             "io.skis.query.spi.AdditionalSpi",
             "io.skis.query.ValuesSource.NewlyExposed",
+            "io.skis.query.RowColumns.NewlyExposed",
             "io.skis.query.ValuesSourceLike",
             "io.skis.query.QueryRuntime",
             "io.skis.query.QueryRuntime.NewlyExposed");

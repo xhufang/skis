@@ -2,9 +2,9 @@ package io.skis.query.internal;
 
 import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.AggregateExpression;
+import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.Nullability;
 import io.skis.sql.ast.ParameterSlot;
@@ -24,12 +24,16 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
   private final SqlExpression<V> descriptor;
   private final @Nullable Recipe<V> recipe;
   private final boolean forwardsMapping;
+  private final @Nullable Identifier outputAlias;
+  private final @Nullable Object outputIdentity;
   private volatile @Nullable Preview<V> preview;
 
   ExpressionSelectable(SqlExpression<V> expression) {
     this.descriptor = Objects.requireNonNull(expression, "expression");
     this.recipe = null;
     this.forwardsMapping = false;
+    this.outputAlias = null;
+    this.outputIdentity = null;
     this.preview = new Preview<>(expression, List.of());
   }
 
@@ -37,6 +41,25 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
     this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
     this.recipe = Objects.requireNonNull(recipe, "recipe");
     this.forwardsMapping = false;
+    this.outputAlias = null;
+    this.outputIdentity = null;
+  }
+
+  ExpressionSelectable(SqlExpression<V> descriptor, Recipe<V> recipe, Identifier alias) {
+    this(descriptor, recipe, alias, new Object());
+  }
+
+  ExpressionSelectable(
+      SqlExpression<V> descriptor, Recipe<V> recipe, Identifier alias, Object identity) {
+    this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
+    this.recipe = Objects.requireNonNull(recipe, "recipe");
+    this.forwardsMapping = false;
+    this.outputAlias = Objects.requireNonNull(alias, "alias");
+    this.outputIdentity = Objects.requireNonNull(identity, "identity");
+  }
+
+  final @Nullable Identifier outputAlias() {
+    return outputAlias;
   }
 
   /** A scope leaf forwards Codec provenance, without compiling its shape template as SQL input. */
@@ -53,6 +76,8 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
             null,
             QueryParameters.empty());
     this.forwardsMapping = true;
+    this.outputAlias = null;
+    this.outputIdentity = null;
     this.preview = new Preview<>(descriptor, List.of());
   }
 
@@ -140,7 +165,7 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
   final Object compilationIdentity() {
     // Every composed expression owns its descriptor, and capture preserves that exact object.
     // Value-bearing previews keep their own identity so memo hits cannot skip binding fragments.
-    return capturesValues() ? this : descriptor;
+    return outputIdentity != null ? outputIdentity : capturesValues() ? this : descriptor;
   }
 
   final boolean containsSubquery() {
@@ -171,6 +196,13 @@ sealed class ExpressionSelectable<V> implements Selectable<V> permits NonNullExp
         current.condition() == null ? null : capture.condition(current.condition());
     Recipe<V> replacement =
         new Recipe<>(current.factory(), operands, condition, QueryParameters.empty());
+    if (outputAlias != null) {
+      return this instanceof NonNullExpressionSelectable<?>
+          ? new NonNullExpressionSelectable<>(
+              descriptor, replacement, outputAlias, Objects.requireNonNull(outputIdentity))
+          : new ExpressionSelectable<>(
+              descriptor, replacement, outputAlias, Objects.requireNonNull(outputIdentity));
+    }
     return this instanceof NonNullExpressionSelectable<?>
         ? new NonNullExpressionSelectable<>(descriptor, replacement)
         : new ExpressionSelectable<>(descriptor, replacement);
@@ -257,6 +289,19 @@ final class NonNullExpressionSelectable<V> extends ExpressionSelectable<V>
     if (descriptor.nullable()) {
       throw new IllegalArgumentException("non-null selectable uses a nullable SQL expression");
     }
+  }
+
+  NonNullExpressionSelectable(SqlExpression<V> descriptor, Recipe<V> recipe, Identifier alias) {
+    super(descriptor, recipe, alias);
+    if (descriptor.nullable())
+      throw new IllegalArgumentException("non-null alias uses nullable SQL");
+  }
+
+  NonNullExpressionSelectable(
+      SqlExpression<V> descriptor, Recipe<V> recipe, Identifier alias, Object identity) {
+    super(descriptor, recipe, alias, identity);
+    if (descriptor.nullable())
+      throw new IllegalArgumentException("non-null alias uses nullable SQL");
   }
 
   NonNullExpressionSelectable(SqlExpression<V> descriptor, Selectable<V> source) {

@@ -82,6 +82,6 @@ class ValuesSourceTest {
 
   private static <V> NonNullSelectable<V> template(Class<V> javaType) {
     return StandardExpressions.nonNull(
-        Sql.value(new DefaultQueryParameter<>(javaType, Nullability.NON_NULL, null)));
+        TestParameters.value(new DefaultQueryParameter<>(javaType, Nullability.NON_NULL)));
   }
 }

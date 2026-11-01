@@ -22,6 +22,7 @@ import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.DerivedRelationSource;
 import io.skis.sql.ast.ExistsPredicate;
 import io.skis.sql.ast.FromClause;
+import io.skis.sql.ast.Identifier;
 import io.skis.sql.ast.InPredicate;
 import io.skis.sql.ast.InSubqueryPredicate;
 import io.skis.sql.ast.IncrementExpression;
@@ -38,7 +39,9 @@ import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
 import io.skis.sql.ast.SqlExpression;
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
@@ -49,10 +52,19 @@ final class QueryInputMappings {
 
   private final EntityRuntimeRegistry registry;
   private final @Nullable ResolvedStatement resolved;
+  private final @Nullable List<JdbcTypeCodec<?>> parameterCodecs;
 
   private QueryInputMappings(EntityRuntimeRegistry registry, @Nullable ResolvedStatement resolved) {
+    this(registry, resolved, null);
+  }
+
+  private QueryInputMappings(
+      EntityRuntimeRegistry registry,
+      @Nullable ResolvedStatement resolved,
+      @Nullable List<JdbcTypeCodec<?>> parameterCodecs) {
     this.registry = registry;
     this.resolved = resolved;
+    this.parameterCodecs = parameterCodecs;
   }
 
   static void validate(ResolvedStatement resolved, EntityRuntimeRegistry registry) {
@@ -76,6 +88,22 @@ final class QueryInputMappings {
     new QueryInputMappings(registry, null).new Block(null, null).requireBuiltin(expression);
   }
 
+  /** Resolves SQL value provenance without creating result readers or decoding source rows. */
+  static List<JdbcTypeCodec<?>> outputCodecs(
+      EntityRuntimeRegistry registry,
+      SelectStatement query,
+      @Nullable FromClause outerSources,
+      List<JdbcTypeCodec<?>> parameterCodecs) {
+    QueryInputMappings mappings = new QueryInputMappings(registry, null, parameterCodecs);
+    Block outer = outerSources == null ? null : mappings.new Block(null, outerSources);
+    Block block = mappings.new Block(outer, query.fromClause());
+    block.scan(query);
+    List<JdbcTypeCodec<?>> codecs = new ArrayList<>(query.selections().size());
+    for (SqlExpression<?> expression : query.selections())
+      codecs.add(block.outputCodec(expression));
+    return List.copyOf(codecs);
+  }
+
   private <E, V> JdbcTypeCodec<V> propertyCodec(ColumnExpression<E, V> column) {
     return registry.require(column.table().entity()).property(column.property()).codec();
   }
@@ -85,7 +113,10 @@ final class QueryInputMappings {
         switch (expression) {
           case ColumnExpression<?, ?> column ->
               "property '"
-                  + column.table().alias().map(alias -> alias.value())
+                  + column
+                      .table()
+                      .alias()
+                      .map(Identifier::value)
                       .orElse(column.table().entity().table().name())
                   + '.'
                   + column.property().name()
@@ -331,7 +362,10 @@ final class QueryInputMappings {
         case CastExpression<?> cast -> requireBuiltin(cast.operand());
         case IncrementExpression<?> increment -> requireBuiltin(increment.operand());
         case LiteralExpression<?> ignored -> {}
-        case ParameterSlot<?> ignored -> {}
+        case ParameterSlot<?> parameter -> {
+          if (parameterCodecs != null && parameterCodecs.get(parameter.ordinal()) != expected)
+            throw mismatch(parameter);
+        }
         case BooleanPredicate ignored -> {}
         default -> throw mismatch(expression);
       }
@@ -354,6 +388,39 @@ final class QueryInputMappings {
             requireBuiltin(parameters.parameters().get(column.outputOrdinal()));
         default -> throw mismatch(column);
       }
+    }
+
+    private JdbcTypeCodec<?> outputCodec(SqlExpression<?> expression) {
+      switch (expression) {
+        case ColumnExpression<?, ?> column -> {
+          return propertyCodec(column);
+        }
+        case ParameterSlot<?> parameter when parameterCodecs != null -> {
+          return parameterCodecs.get(parameter.ordinal());
+        }
+        case DerivedColumnExpression<?> column -> {
+          RelationSource source = sources == null ? null : sources.get(column.relation());
+          return switch (source) {
+            case null -> {
+              if (parent == null)
+                throw mismatch(column);
+              yield parent.outputCodec(column);
+            }
+            case DerivedRelationSource derived -> child(derived.statement())
+                .outputCodec(derived.statement().selections().get(column.outputOrdinal()));
+            case ParameterRelationSource parameters ->
+                outputCodec(parameters.parameters().get(column.outputOrdinal()));
+            default -> throw mismatch(column);
+          };
+        }
+        case ScalarSubqueryExpression<?>(SelectStatement subquery) -> {
+          return child(subquery).outputCodec(subquery.selections().getFirst());
+        }
+        default -> {
+        }
+      }
+      requireBuiltin(expression);
+      return ResolvedValueMapping.requireBuiltinCodec(expression.javaType(), expression.sqlType());
     }
   }
 }

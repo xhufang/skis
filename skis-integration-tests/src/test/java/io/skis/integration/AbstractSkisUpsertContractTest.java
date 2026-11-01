@@ -60,19 +60,19 @@ abstract class AbstractSkisUpsertContractTest {
           .value(ROW.id(), id)
           .value(ROW.name(), name)
           .value(ROW.note(), null)).onConflict(ROW.id()).doUpdate()
-          .setExpression(ROW.name(), Sql.excluded(ROW.name())).set(ROW.note(), (String) null);
+          .set(ROW.name(), Sql.excluded(ROW.name())).set(ROW.note(), (String) null);
       if (expected != null) update = update.expectedVersion(expected.longValue());
-      return update.returning().write().get();
+      return update.returning().write().one().get();
     }
     var key = Sql.output(ROW.id(), "id");
     var text = Sql.output(ROW.name(), "name");
     var source = Sql.values(row -> row.value(key, id).value(text, name)).as("incoming");
     var update = operations.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(key)))
-        .whenMatched().thenUpdate().setExpression(ROW.name(), source.column(text)).set(ROW.note(), (String) null);
+        .whenMatched().thenUpdate().set(ROW.name(), source.column(text)).set(ROW.note(), (String) null);
     if (expected != null) update = update.expectedVersion(expected.longValue());
     return update.whenNotMatched().thenInsert(row -> row
         .value(ROW.id(), source.column(key))
-        .value(ROW.name(), source.column(text))).returning().write().get().getFirst();
+        .value(ROW.name(), source.column(text))).returning().write().rows().getFirst();
   }
 
   @Test void supportsIgnoreAndKeepsNoResultDetached() throws Exception {
@@ -81,10 +81,10 @@ abstract class AbstractSkisUpsertContractTest {
         var request = f.executor.insertInto(ROW).values(row -> row
             .value(ROW.id(), 1L)
             .value(ROW.name(), "one")).onConflict(ROW.id()).doNothing().returning(WriteReceiptPro.all());
-        assertEquals(new WriteReceipt(1L, "one"), request.write().get());
-        var skipped = request.write(); assertEquals(0, skipped.affectedRows()); assertTrue(skipped.isEmpty());
+        assertEquals(new WriteReceipt(1L, "one"), request.write().one().get());
+        var skipped = request.write(); assertEquals(0, skipped.affectedRows()); assertTrue(skipped.one().isEmpty());
         int compiled = f.compilations.get(); f.executor.clearMutationPlanCache();
-        assertTrue(request.write().isEmpty()); assertEquals(compiled + 1, f.compilations.get());
+      assertTrue(request.write().rows().isEmpty()); assertEquals(compiled + 1, f.compilations.get());
       } else {
         var id = Sql.output(ROW.id(), "id"); var name = Sql.output(ROW.name(), "name");
         var source = Sql.values(row -> row.value(id, 1L).value(name, "one")).as("incoming");
@@ -93,10 +93,10 @@ abstract class AbstractSkisUpsertContractTest {
                 .value(ROW.id(), source.column(id))
                 .value(ROW.name(), source.column(name)))
             .returning(WriteReceiptPro.all());
-        assertEquals(List.of(new WriteReceipt(1L, "one")), request.write().get());
-        var skipped = request.write(); assertEquals(0, skipped.affectedRows()); assertTrue(skipped.isEmpty());
+        assertEquals(new WriteReceipt(1L, "one"), request.write().one().get());
+        var skipped = request.write(); assertEquals(0, skipped.affectedRows()); assertTrue(skipped.one().isEmpty());
         int compiled = f.compilations.get(); f.executor.clearMutationPlanCache();
-        assertTrue(request.write().isEmpty()); assertEquals(compiled + 1, f.compilations.get());
+      assertTrue(request.write().rows().isEmpty()); assertEquals(compiled + 1, f.compilations.get());
       }
       assertEquals(0L, f.executor.findById(ROW, 1L).orElseThrow().version());
     }
@@ -117,7 +117,7 @@ abstract class AbstractSkisUpsertContractTest {
             .value(PLAIN.id(), 4L)
             .value(PLAIN.name(), "changed")
             .value(PLAIN.note(), "unique")).onConflict(PLAIN.note()).doUpdate()
-            .setExpression(PLAIN.name(), Sql.excluded(PLAIN.name())).returning().write().get().id());
+            .set(PLAIN.name(), Sql.excluded(PLAIN.name())).returning().write().one().get().id());
       } else {
         var id = Sql.output(PLAIN.id(), "id"); var note = Sql.output(PLAIN.note(), "note");
         for (long candidate : new long[] {1L, 2L}) {
@@ -168,7 +168,7 @@ abstract class AbstractSkisUpsertContractTest {
           .value(table.v3(), 13L).value(table.v4(), 14L).value(table.v5(), 15L)
           .value(table.v6(), 16L).value(table.v7(), 17L).value(table.v8(), null));
       var initial = new WideWriteRow(1L, 11L, 12L, 13L, 14L, 15L, 16L, 17L, null);
-      assertEquals(initial, request.returning().write().get());
+      assertEquals(initial, request.returning().write().one().get());
       if (pg()) {
         assertEquals(0, request.onConflict(table.id()).doNothing().write());
       } else {
@@ -176,7 +176,7 @@ abstract class AbstractSkisUpsertContractTest {
             .value(table.id(), 1L).value(table.v1(), 11L).value(table.v2(), 12L)
             .value(table.v3(), 13L).value(table.v4(), 14L).value(table.v5(), 15L)
             .value(table.v6(), 16L).value(table.v7(), 17L).value(table.v8(), null))
-            .returning().write().get());
+            .returning().write().one().get());
       }
       assertEquals(initial, f.executor.findById(table, 1L).orElseThrow());
     }
@@ -230,7 +230,7 @@ abstract class AbstractSkisUpsertContractTest {
       if (pg()) {
         var ignore = input.onConflict(PLAIN.id()).doNothing();
         assertEquals(0, ignore.write());
-        assertTrue(ignore.returning().write().isEmpty());
+      assertTrue(ignore.returning().write().rows().isEmpty());
       } else {
         assertEquals(1, merge.write());
         assertEquals("two", f.executor.findById(PLAIN, 2L).orElseThrow().name());
@@ -245,15 +245,15 @@ abstract class AbstractSkisUpsertContractTest {
         var valid = f.executor.insertInto(PLAIN).values(row -> row
             .value(PLAIN.id(), 1L)
             .value(PLAIN.name(), "one")).onConflict(PLAIN.id()).doUpdate()
-            .setExpression(PLAIN.name(), Sql.excluded(PLAIN.name()))
+            .set(PLAIN.name(), Sql.excluded(PLAIN.name()))
             .where(PLAIN.id().eq(Sql.excluded(PLAIN.id())));
         assertEquals(1, valid.write());
         var returning = valid.returning();
-        assertEquals("one", returning.write().get().name());
+        assertEquals("one", returning.write().one().get().name());
         int compiled = f.compilations.get();
         long hits = f.executor.mutationPlanCacheStatistics().hitCount();
         assertEquals(1, valid.write());
-        assertEquals("one", returning.write().get().name());
+        assertEquals("one", returning.write().one().get().name());
         assertEquals(compiled, f.compilations.get(), "reused requests do not recompile");
         assertEquals(hits + 2, f.executor.mutationPlanCacheStatistics().hitCount());
         int acquisitions = f.acquisitions.get();
@@ -263,7 +263,7 @@ abstract class AbstractSkisUpsertContractTest {
           var invalid = f.executor.insertInto(PLAIN).values(row -> row
               .value(PLAIN.id(), 1L)
               .value(PLAIN.name(), "poisoned")).onConflict(PLAIN.id()).doUpdate()
-              .setExpression(PLAIN.name(), Sql.excluded(clause == 0 ? foreign.name() : PLAIN.name()))
+              .set(PLAIN.name(), Sql.excluded(clause == 0 ? foreign.name() : PLAIN.name()))
               .where(PLAIN.id().eq(Sql.excluded(clause == 1 ? foreign.id() : PLAIN.id())));
           assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE,
               assertThrows(MutationException.class, invalid::write).code());
@@ -281,17 +281,17 @@ abstract class AbstractSkisUpsertContractTest {
         var valid = f.executor.mergeInto(PLAIN).using(source)
             .on(PLAIN.id().eq(source.column(id)))
             .whenMatched().and(PLAIN.name().eq(source.column(name))).thenUpdate()
-            .setExpression(PLAIN.note(), source.column(name))
+            .set(PLAIN.note(), source.column(name))
             .whenNotMatched().thenInsert(row -> row
                 .value(PLAIN.id(), source.column(id))
                 .value(PLAIN.name(), source.column(name)));
         assertEquals(1, valid.write());
         var returning = valid.returning();
-        assertEquals("one", returning.write().get().getFirst().name());
+        assertEquals("one", returning.write().rows().getFirst().name());
         int compiled = f.compilations.get();
         long hits = f.executor.mutationPlanCacheStatistics().hitCount();
         assertEquals(1, valid.write());
-        assertEquals("one", returning.write().get().getFirst().name());
+        assertEquals("one", returning.write().rows().getFirst().name());
         assertEquals(compiled, f.compilations.get(), "reused requests do not recompile");
         assertEquals(hits + 2, f.executor.mutationPlanCacheStatistics().hitCount());
         int acquisitions = f.acquisitions.get();
@@ -301,7 +301,7 @@ abstract class AbstractSkisUpsertContractTest {
           var invalid = f.executor.mergeInto(PLAIN).using(source)
               .on(PLAIN.id().eq((clause == 0 ? foreign : source).column(id)))
               .whenMatched().and(PLAIN.name().eq((clause == 1 ? foreign : source).column(name)))
-              .thenUpdate().setExpression(PLAIN.note(), (clause == 2 ? foreign : source).column(name))
+              .thenUpdate().set(PLAIN.note(), (clause == 2 ? foreign : source).column(name))
               .whenNotMatched().thenInsert(row -> row
                   .value(PLAIN.id(), (clause == 3 ? foreign : source).column(id))
                   .value(PLAIN.name(), source.column(name)));
@@ -319,6 +319,97 @@ abstract class AbstractSkisUpsertContractTest {
     }
   }
 
+  @Test void strictConflictBatchesAcceptNumericExpressionAndMetadataVersions() throws Exception {
+    if (!pg()) return;
+    for (BatchMode mode : BatchMode.values()) {
+      for (int expected = 0; expected < 3; expected++) {
+        try (var f = new Fixture()) {
+          f.executor.insertInto(ROW).value(new WriteRow(1L, "seed", null, null)).write();
+          var update = f.executor.insertInto(ROW).values(List.of(
+              new WriteRow(1L, "changed", null, expected == 2 ? 0L : null),
+              new WriteRow(2L, "added", null, expected == 2 ? 0L : null)))
+              .batchMode(mode).onConflict(ROW.id()).doUpdate().set(ROW.name(), Sql.excluded(ROW.name()));
+          var request = expected == 0 ? update.expectedVersion(0L)
+              : expected == 1 ? update.expectedVersionExpression(Sql.value(0L)) : update;
+          assertEquals(2, request.write());
+          assertEquals(1L, f.executor.findById(ROW, 1L).orElseThrow().version());
+          assertEquals(0L, f.executor.findById(ROW, 2L).orElseThrow().version());
+          var failure = assertThrows(BatchWriteException.class, request::write);
+          assertEquals(SkisErrorCode.MUTATION_OPTIMISTIC_LOCK_CONFLICT, failure.code());
+          assertEquals("changed", f.executor.findById(ROW, 1L).orElseThrow().name());
+        }
+      }
+    }
+  }
+
+  @Test void conflictBatchesKeepDoNothingAndReturningRowCountsExact() throws Exception {
+    if (!pg()) return;
+    for (BatchMode mode : BatchMode.values()) {
+      try (var f = new Fixture()) {
+        var ignore = f.executor.insertInto(ROW).values(List.of(
+            new WriteRow(1L, "one", null, null), new WriteRow(2L, "two", null, null)))
+            .batchMode(mode).onConflict(ROW.id()).doNothing();
+        assertEquals(2, ignore.write());
+        assertEquals(0, ignore.write());
+        if (mode == BatchMode.VALUES) {
+          assertTrue(ignore.returning(ROW.id()).write().rows().isEmpty());
+          var updated = f.executor.insertInto(ROW).values(List.of(
+              new WriteRow(1L, "one", null, null), new WriteRow(2L, "two", null, null)))
+              .batchMode(mode).onConflict(ROW.id()).doUpdate().set(ROW.note(), "checked")
+              .expectedVersionExpression(Sql.value(0L)).returning(ROW.id(), ROW.version()).write();
+          assertEquals(2, updated.affectedRows());
+          assertEquals(2, updated.rows().size());
+          assertTrue(updated.rows().stream().allMatch(row -> row.second() == 1L));
+        }
+      }
+    }
+  }
+
+  @Test void strictConflictBatchesRejectAmbiguousShapesBeforeAnyChunkExecutes() throws Exception {
+    if (!pg()) return;
+    try (var f = new Fixture()) {
+      for (BatchMode mode : BatchMode.values()) {
+        var options = new BatchOptions(mode, 1, 1024, 8192);
+        var rows = List.of(new WriteRow(1L, "unchecked", null, null),
+            new WriteRow(2L, "checked", null, 0L));
+        var filtered = f.executor.insertInto(ROW).values(rows).batchOptions(options)
+            .onConflict(ROW.id()).doUpdate().set(ROW.name(), Sql.excluded(ROW.name()))
+            .where(ROW.note().isNotNull());
+        var businessKey = f.executor.insertInto(ROW).values(rows).batchOptions(options)
+            .onConflict(ROW.name()).doUpdate().set(ROW.note(), "changed");
+        var explicit = f.executor.insertInto(ROW)
+            .values(List.of(new WriteRow(3L, "explicit", null, null))).batchOptions(options)
+            .onConflict(ROW.id()).doUpdate().set(ROW.name(), "changed")
+            .expectedVersion(0L).where(ROW.note().isNotNull());
+        for (var request : List.<SingleWrite<WriteRow>>of(filtered, businessKey, explicit)) {
+          assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+              assertThrows(BatchWriteException.class, request::write).code());
+          if (mode == BatchMode.VALUES)
+            assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+                assertThrows(BatchWriteException.class, () -> request.returning(ROW.id()).write()).code());
+        }
+      }
+      assertEquals(0, f.acquisitions.get());
+      assertEquals(0, f.statements.get());
+    }
+  }
+
+  @Test void uncheckedConflictBatchesKeepTheirExplicitBusinessFilters() throws Exception {
+    if (!pg()) return;
+    try (var f = new Fixture()) {
+      long id = 1L;
+      for (BatchMode mode : BatchMode.values()) {
+        var request = f.executor.insertInto(ROW)
+            .values(List.of(new WriteRow(id++, "first-" + mode, null, null),
+                new WriteRow(id++, "second-" + mode, null, null)))
+            .batchMode(mode).onConflict(ROW.id()).doUpdate()
+            .set(ROW.name(), Sql.excluded(ROW.name())).where(ROW.note().isNotNull());
+        assertEquals(2, request.write());
+        assertEquals(0, request.write());
+      }
+    }
+  }
+
   @Test void validatesDialectOccurrenceKeyAndAmbiguousOptimisticRequestsBeforeJdbc() throws Exception {
     try (var f = new Fixture()) {
       if (pg()) {
@@ -332,7 +423,7 @@ abstract class AbstractSkisUpsertContractTest {
         assertThrows(RuntimeException.class, () -> f.executor.insertInto(ROW).values(row -> row
             .value(ROW.id(), 1L)
             .value(ROW.name(), "one")).onConflict(ROW.id()).doUpdate()
-            .setExpression(ROW.name(), Sql.excluded(ROW.as("other").name())).write());
+            .set(ROW.name(), Sql.excluded(ROW.as("other").name())).write());
       } else {
         assertThrows(RuntimeException.class, () -> f.executor.insertInto(PLAIN).values(row -> row
             .value(PLAIN.id(), 1L)
@@ -351,7 +442,7 @@ abstract class AbstractSkisUpsertContractTest {
                 .value(ROW.name(), Sql.value("one"))).write());
       }
       assertThrows(RuntimeException.class, () -> f.executor.update(ROW)
-          .setExpression(ROW.name(), Sql.excluded(ROW.name())).allowAllRows().write());
+          .set(ROW.name(), Sql.excluded(ROW.name())).allowAllRows().write());
       assertEquals(0, f.acquisitions.get());
     }
   }
@@ -367,13 +458,13 @@ abstract class AbstractSkisUpsertContractTest {
             .values(row -> row
                 .value(PLAIN.id(), 1L)
                 .value(PLAIN.name(), "changed")).onConflict(PLAIN.id()).doUpdate()
-            .setExpression(PLAIN.name(), Sql.excluded(PLAIN.name())).returning().write().get());
+            .set(PLAIN.name(), Sql.excluded(PLAIN.name())).returning().write().one().get());
       } else {
         var key = f.executor.mergeInto(PLAIN).key(PLAIN.id()).values(row -> row
             .value(PLAIN.id(), 1L)
             .value(PLAIN.name(), "one")
             .value(PLAIN.note(), "keep")).returning();
-        assertEquals(new MergeRow(1L, "one", "keep"), key.write().get());
+        assertEquals(new MergeRow(1L, "one", "keep"), key.write().one().get());
         assertEquals(1, f.executor.mergeInto(PLAIN).key(PLAIN.id()).values(row -> row
             .value(PLAIN.id(), 1L)
             .value(PLAIN.name(), "changed")).write());
@@ -383,9 +474,37 @@ abstract class AbstractSkisUpsertContractTest {
             .value(name, "changed")).as("incoming");
         var rows = f.executor.mergeInto(PLAIN).using(source).on(PLAIN.name().eq(source.column(name)))
             .whenMatched().thenUpdate().set(PLAIN.note(), "updated").returning().write();
-        assertEquals(2, rows.affectedRows()); assertEquals(2, rows.get().size());
-        assertThrows(UnsupportedOperationException.class, () -> rows.get().clear());
+        assertEquals(2, rows.affectedRows()); assertEquals(2, rows.rows().size());
+        assertThrows(UnsupportedOperationException.class, () -> rows.rows().clear());
       }
+    }
+  }
+
+  @Test void explicitUuidSourcesValidateTheCapturedKeyBeforeJdbc() throws Exception {
+    try (var f = new Fixture()) {
+      var table = UuidStringIdBeanTable.uuidStringIdBeanTable;
+      java.util.function.IntSupplier count;
+      ReturningWrite<UuidStringIdBean> returning;
+      if (pg()) {
+        var request = f.executor.insertInto(table).values(row -> row
+            .value(table.id(), "invalid-uuid").value(table.name(), "invalid"));
+        count = request::write;
+        returning = request.returning();
+      } else {
+        var key = Sql.output(table.id(), "key");
+        var source = Sql.values(row -> row.value(key, "invalid-uuid")).as("incoming");
+        var request = f.executor.mergeInto(table).using(source).on(table.id().eq(source.column(key)))
+            .whenNotMatched().thenInsert(row -> row
+                .value(table.id(), source.column(key)).value(table.name(), Sql.value("invalid")));
+        count = request::write;
+        returning = request.returning();
+      }
+      int acquired = f.acquisitions.get();
+      assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+          assertThrows(MutationException.class, count::getAsInt).code());
+      assertEquals(SkisErrorCode.MUTATION_ID_VALUE_INVALID,
+          assertThrows(MutationException.class, returning::write).code());
+      assertEquals(acquired, f.acquisitions.get());
     }
   }
 
@@ -401,9 +520,9 @@ abstract class AbstractSkisUpsertContractTest {
         assertNull(ignored.getId()); assertEquals(0, ignored.writes);
         var updated = new UuidStringIdBean();
         var result = f.executor.insertInto(table).value(updated).onConflict(table.name()).doUpdate()
-            .setExpression(table.name(), Sql.excluded(table.name()))
+            .set(table.name(), Sql.excluded(table.name()))
             .returning(WriteViewPro.of(table.name(), table.name())).write();
-        assertEquals(new WriteView("new", "new"), result.get());
+        assertEquals(new WriteView("new", "new"), result.one().get());
         assertEquals(actual, updated.getId()); assertEquals(1, updated.writes);
       } else {
         var id = Sql.output(ROW.id(), "id"); var expected = Sql.output(ROW.version(), "expected");
@@ -453,7 +572,7 @@ abstract class AbstractSkisUpsertContractTest {
               if (pg()) return executor.insertInto(PLAIN).values(row -> row
                   .value(PLAIN.id(), candidate)
                   .value(PLAIN.name(), "shared")).onConflict(PLAIN.name()).doUpdate()
-                  .setExpression(PLAIN.name(), Sql.excluded(PLAIN.name())).returning().write().get();
+                  .set(PLAIN.name(), Sql.excluded(PLAIN.name())).returning().write().one().get();
               var key = Sql.output(PLAIN.id(), "id"); var name = Sql.output(PLAIN.name(), "name");
               var incoming = Sql.values(row -> row.value(key, candidate).value(name, "shared")).as("incoming");
               return executor.mergeInto(PLAIN).using(incoming).on(PLAIN.name().eq(incoming.column(name)))
@@ -461,7 +580,7 @@ abstract class AbstractSkisUpsertContractTest {
                   .whenNotMatched().thenInsert(row -> row
                       .value(PLAIN.id(), incoming.column(key))
                       .value(PLAIN.name(), incoming.column(name)))
-                  .returning().write().get().getFirst();
+                  .returning().write().rows().getFirst();
             }));
           }
           List<MergeRow> returned = new ArrayList<>();
@@ -503,10 +622,10 @@ abstract class AbstractSkisUpsertContractTest {
         f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
         var source = new WriteRow(1L, "two", null, 0L);
         var update = f.executor.insertInto(ROW).value(source).onConflict(ROW.id()).doUpdate()
-            .setExpression(ROW.name(), Sql.excluded(ROW.name()));
-        assertEquals(1L, update.returning().write().get().version());
+            .set(ROW.name(), Sql.excluded(ROW.name()));
+        assertEquals(1L, update.returning().write().one().get().version());
         assertThrows(OptimisticLockException.class, update::write);
-        assertEquals(2L, update.expectedVersion(1L).returning().write().get().version());
+        assertEquals(2L, update.expectedVersion(1L).returning().write().one().get().version());
         assertEquals(0L, source.version());
         var table = UuidStringIdBeanTable.uuidStringIdBeanTable;
         var bean = new UuidStringIdBean(); f.failRelease = true;
@@ -548,14 +667,13 @@ abstract class AbstractSkisUpsertContractTest {
             .onConflict(PLAIN.id()).doUpdate().set(PLAIN.name(), "changed").expectedVersion(0L));
         assertEquals(0, f.acquisitions.get());
         assertEquals(1, f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write());
-        assertEquals("valid", update.returning().write().get().name(), "invalid forks cannot alter the valid request");
+        assertEquals("valid", update.returning().write().one().get().name(), "invalid forks cannot alter the valid request");
       } else {
         var id = Sql.output(ROW.id(), "id");
         var source = Sql.values(row -> row.value(id, 1L));
         var set = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
             .whenMatched().thenUpdate();
         assertThrows(MutationException.class, () -> set.set(ROW.id(), 2L));
-        assertThrows(MutationException.class, () -> set.set(ROW.version(), 2L));
         assertThrows(MutationException.class, () -> set.set(ROW.as("foreign").name(), "other"));
         var update = set.set(ROW.name(), "valid");
         assertThrows(MutationException.class, () -> update.set(ROW.name(), "duplicate"));
@@ -564,13 +682,12 @@ abstract class AbstractSkisUpsertContractTest {
         assertThrows(MutationException.class, () -> update.expectedVersion(0L).expectedVersion(1L));
         assertThrows(MutationException.class,
             () -> update.expectedVersionExpression(Sql.value(0L)).expectedVersion(1L));
-        assertThrows(MutationException.class, update::whenMatched);
         assertThrows(MutationException.class, () -> f.executor.mergeInto(PLAIN).using(source)
             .on(PLAIN.id().eq(source.column(id))).whenMatched().thenUpdate()
             .set(PLAIN.name(), "changed").expectedVersion(0L));
         assertEquals(0, f.acquisitions.get());
         f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null)).write();
-        assertEquals("valid", update.returning().write().get().getFirst().name());
+        assertEquals("valid", update.returning().write().rows().getFirst().name());
       }
     }
   }
@@ -578,11 +695,15 @@ abstract class AbstractSkisUpsertContractTest {
   @Test void strictVersionChecksRejectUnprovableConflictOrMergeShapesBeforeJdbc() throws Exception {
     try (var f = new Fixture()) {
       if (pg()) {
-        for (var update : List.of(
-            f.executor.insertInto(ROW).values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
-                .onConflict(ROW.name()).doUpdate().set(ROW.name(), "changed"),
-            f.executor.insertInto(ROW).values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
-                .onConflict(ROW.id(), ROW.name()).doUpdate().set(ROW.name(), "changed"))) {
+        ConflictUpdate<WriteRow> nameConflict =
+            f.executor.<WriteRow>insertInto(ROW)
+                .values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
+                .onConflict(ROW.name()).doUpdate().set(ROW.name(), "changed");
+        ConflictUpdate<WriteRow> idAndNameConflict =
+            f.executor.<WriteRow>insertInto(ROW)
+                .values(row -> row.value(ROW.id(), 1L).value(ROW.name(), "one"))
+                .onConflict(ROW.id(), ROW.name()).doUpdate().set(ROW.name(), "changed");
+        for (var update : List.of(nameConflict, idAndNameConflict)) {
           assertThrows(MutationException.class, () -> update.expectedVersion(0L).write());
         }
       } else {
@@ -591,15 +712,13 @@ abstract class AbstractSkisUpsertContractTest {
         var source = Sql.values(row -> row.value(id, 1L).value(nullableId, 1L));
         var update = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
             .whenMatched().thenUpdate().set(ROW.name(), "changed").expectedVersion(0L);
-        assertThrows(MutationException.class, update::write, "strict matching also requires an insertion branch");
+        assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+            assertThrows(MutationException.class, update::write,
+                "strict matching also requires an insertion branch").code());
         assertThrows(MutationException.class, () -> update.whenNotMatched().thenInsert(row -> row
             .value(ROW.id(), Sql.value(2L)).value(ROW.name(), Sql.value("insert"))).write());
         assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
             .on(ROW.id().ne(source.column(id))).whenMatched().thenUpdate().set(ROW.name(), "changed")
-            .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
-                .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
-        assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
-            .on(source.column(id).eq(ROW.id())).whenMatched().thenUpdate().set(ROW.name(), "changed")
             .expectedVersion(0L).whenNotMatched().thenInsert(row -> row
                 .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value("insert"))).write());
         assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
@@ -637,7 +756,7 @@ abstract class AbstractSkisUpsertContractTest {
       var source = Sql.values(row -> row.value(id, 1L));
       assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
           .on(ROW.id().eq(source.column(id))).whenNotMatched().thenInsert(row -> row
-              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value(String.class, null))));
+              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value(String.class, null))).write());
       assertEquals(0, f.acquisitions.get());
     }
   }
@@ -648,8 +767,8 @@ abstract class AbstractSkisUpsertContractTest {
         var update = f.executor.insertInto(ROW).values(row -> row
             .value(ROW.name(), "initial").value(ROW.version(), 7L).value(ROW.id(), 1L))
             .onConflict(ROW.id()).doUpdate().set(ROW.name(), "updated");
-        assertEquals(7L, update.expectedVersion(99L).returning().write().get().version());
-        assertEquals(8L, update.expectedVersion(7L).returning().write().get().version());
+        assertEquals(7L, update.expectedVersion(99L).returning().write().one().get().version());
+        assertEquals(8L, update.expectedVersion(7L).returning().write().one().get().version());
       } else {
         var id = Sql.output(ROW.id(), "id");
         var source = Sql.values(row -> row.value(id, 1L));
@@ -658,11 +777,11 @@ abstract class AbstractSkisUpsertContractTest {
         var first = update.expectedVersion(99L).whenNotMatched().thenInsert(row -> row
             .value(ROW.name(), Sql.value("initial")).value(ROW.version(), Sql.value(7L))
             .value(ROW.id(), source.column(id))).returning().write();
-        assertEquals(7L, first.get().getFirst().version());
+        assertEquals(7L, first.rows().getFirst().version());
         var second = update.expectedVersion(7L).whenNotMatched().thenInsert(row -> row
             .value(ROW.name(), Sql.value("initial")).value(ROW.version(), Sql.value(7L))
             .value(ROW.id(), source.column(id))).returning().write();
-        assertEquals(8L, second.get().getFirst().version());
+        assertEquals(8L, second.rows().getFirst().version());
       }
       assertEquals(new WriteRow(1L, "updated", null, 8L), f.executor.findById(ROW, 1L).orElseThrow());
     }
@@ -672,6 +791,7 @@ abstract class AbstractSkisUpsertContractTest {
     final Connection connection;
     final SkisExecutor executor;
     final AtomicInteger acquisitions = new AtomicInteger(), compilations = new AtomicInteger();
+    final AtomicInteger statements = new AtomicInteger();
     boolean failRelease;
     Fixture() throws Exception {
       DataSource source = createDataSource(); connection = source.getConnection();
@@ -690,6 +810,7 @@ abstract class AbstractSkisUpsertContractTest {
               if (failRelease) throw new SQLException("release failed", "08006");
             }
           }).listener(new ExecutionListener() {
+            @Override public void statementStarted(StatementStartedEvent event) { statements.incrementAndGet(); }
             @Override public void compilationCompleted(CompilationCompletedEvent event) { compilations.incrementAndGet(); }
           }).build();
     }

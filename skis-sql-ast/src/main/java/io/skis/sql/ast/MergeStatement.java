@@ -4,36 +4,56 @@ import java.util.List;
 import java.util.Objects;
 import org.jspecify.annotations.Nullable;
 
-/** H2 single-row MERGE USING, or its distinct KEY grammar. */
+/** Native ordered MERGE USING actions, or the independent single-row KEY grammar. */
 public record MergeStatement(
     TableExpression<?> target,
-    @Nullable ParameterRelationSource source,
+    @Nullable RelationSource source,
     SqlPredicate on,
-    SqlPredicate matchedWhere,
-    List<UpdateAssignment<?>> assignments,
+    List<MergeAction> actions,
     List<ColumnExpression<?, ?>> insertColumns,
     List<SqlExpression<?>> insertValues,
     List<ColumnExpression<?, ?>> keys)
     implements StatementAst {
 
+  public MergeStatement(
+      TableExpression<?> target,
+      RelationSource source,
+      SqlPredicate on,
+      List<MergeAction> actions) {
+    this(target, source, on, actions, List.of(), List.of(), List.of());
+  }
+
   public MergeStatement {
     Objects.requireNonNull(target, "target");
     Objects.requireNonNull(on, "on");
-    Objects.requireNonNull(matchedWhere, "matchedWhere");
-    assignments = List.copyOf(assignments);
+    actions = List.copyOf(actions);
     insertColumns = List.copyOf(insertColumns);
     insertValues = List.copyOf(insertValues);
     keys = List.copyOf(keys);
-    if (insertColumns.size() != insertValues.size()
-        || (source == null) == keys.isEmpty()
-        || assignments.isEmpty() && insertColumns.isEmpty()) {
+    if (source == null
+        ? keys.isEmpty()
+            || !actions.isEmpty()
+            || insertColumns.isEmpty()
+            || insertColumns.size() != insertValues.size()
+        : !keys.isEmpty()
+            || !insertColumns.isEmpty()
+            || !insertValues.isEmpty()
+            || actions.isEmpty())
       throw new IllegalArgumentException(
-          "MERGE requires a source and complete actions, or KEY values");
-    }
+          "MERGE requires a source and complete actions, or independent KEY values");
   }
 
   public boolean keyForm() {
     return source == null;
+  }
+
+  public boolean hasDelete() {
+    return actions.stream().anyMatch(action -> action.kind() == MergeAction.Kind.DELETE);
+  }
+
+  public boolean onlyDelete() {
+    return !actions.isEmpty()
+        && actions.stream().allMatch(action -> action.kind() == MergeAction.Kind.DELETE);
   }
 
   public FromClause scope() {

@@ -49,7 +49,7 @@ class ReturningExecutionTest {
     assertEquals(List.of("acquire", "prepare", "bind", "configure", "execute", "metadata",
         "next", "decode", "read", "next", "close-rows", "close-statement", "release"), s.events);
     var single = new Scenario();
-    String value = new JdbcExecutor(single.provider()).executeReturningOne(single.plan(),
+    String value = new JdbcExecutor(single.provider()).executeReturningOptional(single.plan(),
         (rs, context) -> { single.step("decode"); return rs.getString(1); },
         1, "input", ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY);
     assertEquals("returned", value);
@@ -61,8 +61,7 @@ class ReturningExecutionTest {
     var empty = new Scenario();
     empty.rows = List.of();
     assertTrue(execute(empty, false).isEmpty());
-    assertEquals(SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
-        assertThrows(MutationException.class, () -> execute(new Scenario(List.of()), true)).code());
+    assertTrue(execute(new Scenario(List.of()), true).isEmpty());
     var many = new Scenario(List.of("a", "b"));
     assertEquals(2, execute(many, false).size());
     assertEquals(SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
@@ -76,8 +75,13 @@ class ReturningExecutionTest {
         assertEquals("release", wrong.events.getLast());
       }
       var nullRow = new Scenario(Collections.singletonList(null));
-      assertEquals(SkisErrorCode.MUTATION_RETURNING_SHAPE,
-          assertThrows(MutationException.class, () -> execute(nullRow, single)).code());
+      if (single) {
+        // The zero-or-one path reserves null for "no row"; decoders must wrap legal NULL values.
+        assertEquals(SkisErrorCode.MUTATION_RETURNING_SHAPE,
+            assertThrows(MutationException.class, () -> execute(nullRow, true)).code());
+      } else {
+        assertEquals(Collections.singletonList(null), execute(nullRow, false));
+      }
       var metadata = new Scenario();
       metadata.nullMetadata = true;
       assertThrows(MutationException.class, () -> execute(metadata, single));
@@ -88,7 +92,7 @@ class ReturningExecutionTest {
   void preservesEveryFailurePhaseAndClosesOnlyAcquiredResourcesInOrder() {
     var phases = Map.ofEntries(
         Map.entry("acquire", JdbcPhase.ACQUIRE), Map.entry("prepare", JdbcPhase.EXECUTE),
-        Map.entry("configure", JdbcPhase.CONFIGURE), Map.entry("bind", JdbcPhase.EXECUTE),
+        Map.entry("configure", JdbcPhase.CONFIGURE), Map.entry("bind", JdbcPhase.BIND),
         Map.entry("execute", JdbcPhase.EXECUTE), Map.entry("metadata", JdbcPhase.EXECUTE),
         Map.entry("next", JdbcPhase.EXECUTE), Map.entry("decode", JdbcPhase.EXECUTE),
         Map.entry("read", JdbcPhase.EXECUTE), Map.entry("close-rows", JdbcPhase.RESULT_SET_CLOSE),
@@ -119,7 +123,7 @@ class ReturningExecutionTest {
     }));
     var observation = dispatcher.startOperation(ExecutionOperationKind.INSERT, "returning-test");
     var thrown = assertThrows(JdbcExecutionException.class, () -> new JdbcExecutor(s.provider())
-        .executeReturningOne(s.plan(), (rs, context) -> { s.step("decode"); return rs.getString(1); },
+        .executeReturningOptional(s.plan(), (rs, context) -> { s.step("decode"); return rs.getString(1); },
             1, "input", ExecutionContext.EMPTY, observation, StatementPurpose.PRIMARY));
     assertSame(s.failure, thrown.getCause());
     assertEquals(2, s.failure.getSuppressed().length);
@@ -136,7 +140,7 @@ class ReturningExecutionTest {
     assertThrows(MutationException.class, () -> executor.executeReturning(s.plan(),
         (rs, context) -> "unused", 1, "input",
         ExecutionContext.of(ExecutionOptions.builder().maxRows(1).build()), null, StatementPurpose.PRIMARY));
-    assertThrows(MutationException.class, () -> executor.executeReturningOne(s.plan(),
+    assertThrows(MutationException.class, () -> executor.executeReturningOptional(s.plan(),
         (rs, context) -> "unused", 1, "input",
         ExecutionContext.of(ExecutionOptions.builder().maxRows(1).build()), null, StatementPurpose.PRIMARY));
     assertTrue(s.events.isEmpty());
@@ -147,7 +151,7 @@ class ReturningExecutionTest {
     var single = new Scenario();
     assertEquals("returned", new JdbcExecutor(single.provider())
         .withDefaultExecutionOptions(ExecutionOptions.builder().maxRows(1).build())
-        .executeReturningOne(single.plan(), (rs, context) -> rs.getString(1), 1, "input",
+        .executeReturningOptional(single.plan(), (rs, context) -> rs.getString(1), 1, "input",
             ExecutionContext.of(ExecutionOptions.builder().maxRows(0).build()), null, StatementPurpose.PRIMARY));
   }
 
@@ -158,7 +162,7 @@ class ReturningExecutionTest {
         new RenderedSql("INSERT INTO item DEFAULT VALUES RETURNING name", List.of()),
         (statement, firstIndex, value, context) -> firstIndex + 1);
     var failure = assertThrows(JdbcExecutionException.class,
-        () -> new JdbcExecutor(s.provider()).executeReturningOne(malformed,
+        () -> new JdbcExecutor(s.provider()).executeReturningOptional(malformed,
             (rs, context) -> "unused", 1, "input", ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY));
     assertEquals(JdbcPhase.BIND, failure.phase());
     assertFalse(s.events.contains("execute"));
@@ -170,11 +174,13 @@ class ReturningExecutionTest {
       s.step("decode"); return rs.getString(1);
     };
     var executor = new JdbcExecutor(s.provider());
-    return single
-        ? List.of(executor.executeReturningOne(s.plan(), decoder, 1, "input",
-            ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY))
-        : executor.executeReturning(s.plan(), decoder, 1, "input",
-            ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY);
+    if (!single) {
+      return executor.executeReturning(s.plan(), decoder, 1, "input",
+          ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY);
+    }
+    String value = executor.executeReturningOptional(s.plan(), decoder, 1, "input",
+        ExecutionContext.EMPTY, null, StatementPurpose.PRIMARY);
+    return value == null ? List.of() : List.of(value);
   }
 
   private static final class Scenario {

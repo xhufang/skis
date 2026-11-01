@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 /** Immutable root relation and ordered, left-deep joins for one query block. */
 public final class FromClause {
@@ -102,6 +103,15 @@ public final class FromClause {
     return nullable;
   }
 
+  /** Returns whether an outer join null-extends this derived source occurrence. */
+  public boolean isNullExtended(DerivedRelationReference relation) {
+    Boolean nullable =
+        nullExtendedDerivedRelations.get(Objects.requireNonNull(relation, "relation"));
+    if (nullable == null)
+      throw new IllegalArgumentException("derived source is not visible in this FROM clause");
+    return nullable;
+  }
+
   /** Resolves an expression's effective nullability after every join in this FROM clause. */
   public Nullability effectiveNullability(SqlExpression<?> expression) {
     return EffectiveNullabilityResolver.resolve(
@@ -109,7 +119,7 @@ public final class FromClause {
   }
 
   @Override
-  public boolean equals(@org.jspecify.annotations.Nullable Object other) {
+  public boolean equals(@Nullable Object other) {
     return this == other
         || other instanceof FromClause clause
             && root.equals(clause.root)

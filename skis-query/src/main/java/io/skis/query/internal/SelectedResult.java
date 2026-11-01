@@ -243,6 +243,22 @@ final class SelectedResult<R extends @Nullable Object> {
     };
   }
 
+  List<Selectable<?>> outputSelectables() {
+    return switch (kind) {
+      case REQUIRED_ENTITY, NULLABLE_ENTITY -> entityOutputs(requireTable());
+      case REQUIRED_SCALAR, NULLABLE_SCALAR -> List.of(requireScalar());
+      case GENERATED_PROJECTION -> requireProjection().selections();
+      case SPECIAL_PROJECTION -> throw unresolvedSpecialProjection();
+    };
+  }
+
+  private static <E> List<Selectable<?>> entityOutputs(QueryTable<E> table) {
+    List<Selectable<?>> outputs = new ArrayList<>(table.entity().properties().size());
+    for (var property : table.entity().properties())
+      outputs.add(QueryTableModel.of(table).internalColumn(property));
+    return List.copyOf(outputs);
+  }
+
   boolean matchesOutput(int ordinal, Selectable<?> candidate) {
     Objects.requireNonNull(candidate, "candidate");
     return switch (kind) {

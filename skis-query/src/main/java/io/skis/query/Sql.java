@@ -29,6 +29,13 @@ public final class Sql {
 
   private Sql() {}
 
+  /**
+   * Allows a selected value to be read as SQL NULL, for example on an outer join's nullable side.
+   */
+  public static <V> Selectable<V> nullable(Selectable<V> expression) {
+    return StandardExpressions.nullable(expression);
+  }
+
   /** Counts all input rows, including join duplicates; empty input produces zero. */
   public static NonNullSelectable<Long> countAll() {
     return StandardExpressions.countAll();
@@ -107,11 +114,6 @@ public final class Sql {
    */
   public static <V> Selectable<V> value(Class<V> javaType, @Nullable V value) {
     return StandardExpressions.value(javaType, value);
-  }
-
-  /** Views an existing logical parameter as an expression without binding a value. */
-  public static <V> Selectable<V> value(QueryParameter<V> parameter) {
-    return StandardExpressions.value(parameter);
   }
 
   /** Applies SQL ADD with identical numeric types and no implicit widening. */
@@ -214,7 +216,7 @@ public final class Sql {
   }
 
   /** Selects a complete entity before an independent of root is chosen. */
-  public static <E> SelectFromStep<SelectDescription<E>> select(QueryTable<E> table) {
+  public static <E> SelectFromStep<SelectQuery<E>> select(QueryTable<E> table) {
     return QueryDsl.select(table);
   }
 
@@ -230,13 +232,12 @@ public final class Sql {
   }
 
   /** Selects one generated, fixed-arity result-row shape. */
-  public static <R> SelectFromStep<SelectDescription<R>> select(ProjectionSelection<R> projection) {
+  public static <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection) {
     return QueryDsl.select(projection);
   }
 
   /** Explicitly permits a complete entity selection to become nullable after outer joins. */
-  public static <E> SelectFromStep<SelectDescription<@Nullable E>> selectNullable(
-      QueryTable<E> table) {
+  public static <E> SelectFromStep<SelectQuery<@Nullable E>> selectNullable(QueryTable<E> table) {
     return QueryDsl.selectNullable(table);
   }
 
@@ -247,8 +248,12 @@ public final class Sql {
   }
 
   /** Creates the complete-entity SELECT/FROM convenience description. */
-  public static <E> SelectDescription<E> selectFrom(QueryTable<E> table) {
+  public static <E> SelectQuery<E> selectFrom(QueryTable<E> table) {
     return QueryDsl.selectFrom(table);
+  }
+
+  public static <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection) {
+    return QueryDsl.select(projection);
   }
 
   public static <V> NonNullDerivedOutput<V> output(NonNullSelectable<V> selectable, String alias) {
@@ -264,27 +269,119 @@ public final class Sql {
   }
 
   public static DerivedRelation derived(
-      SelectDescription<?> description, String alias, DerivedOutput<?>... outputs) {
+      SelectQuery<?> description, String alias, DerivedOutput<?>... outputs) {
     return QueryDsl.derived(description, alias, outputs);
   }
 
-  public static QueryCondition exists(SelectDescription<?> description) {
+  public static QueryCondition exists(SelectSource<?> description) {
     return QueryDsl.exists(description);
   }
 
-  public static QueryCondition notExists(SelectDescription<?> description) {
+  public static QueryCondition notExists(SelectSource<?> description) {
     return QueryDsl.notExists(description);
   }
 
-  public static <V> Selectable<V> scalar(SingleColumnSelect<V> subquery) {
+  public static <V> Selectable<V> scalar(SingleColumnQuery<? extends @Nullable V> subquery) {
     return QueryDsl.scalar(subquery);
   }
 
-  public static <V> QueryParameter<V> parameter(Class<V> javaType) {
-    return QueryDsl.parameter(javaType);
+  public static <A, B> SelectFromStep<SelectQuery<Row2<@Nullable A, @Nullable B>>> select(
+      Selectable<A> first, Selectable<B> second) {
+    return QueryDsl.select(first, second);
   }
 
-  public static <V> QueryParameter<V> parameter(Class<V> javaType, String diagnosticName) {
-    return QueryDsl.parameter(javaType, diagnosticName);
+  public static <A, B> SelectFromStep<SelectQuery<Row2<A, @Nullable B>>> select(
+      NonNullSelectable<A> first, Selectable<B> second) {
+    return QueryDsl.select(first, second);
+  }
+
+  public static <A, B> SelectFromStep<SelectQuery<Row2<@Nullable A, B>>> select(
+      Selectable<A> first, NonNullSelectable<B> second) {
+    return QueryDsl.select(first, second);
+  }
+
+  public static <A, B> SelectFromStep<SelectQuery<Row2<A, B>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second) {
+    return QueryDsl.select(first, second);
+  }
+
+  public static <A, B, C>
+      SelectFromStep<SelectQuery<Row3<@Nullable A, @Nullable B, @Nullable C>>> select(
+          Selectable<A> first, Selectable<B> second, Selectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<A, @Nullable B, @Nullable C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, Selectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<@Nullable A, B, @Nullable C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, Selectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<A, B, @Nullable C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, Selectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<@Nullable A, @Nullable B, C>>> select(
+      Selectable<A> first, Selectable<B> second, NonNullSelectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<A, @Nullable B, C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, NonNullSelectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<@Nullable A, B, C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <A, B, C> SelectFromStep<SelectQuery<Row3<A, B, C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third) {
+    return QueryDsl.select(first, second, third);
+  }
+
+  public static <N extends Number> Selectable<N> add(Selectable<N> left, N right) {
+    return add(left, value(right));
+  }
+
+  public static <N extends Number> NonNullSelectable<N> add(NonNullSelectable<N> left, N right) {
+    return add(left, value(right));
+  }
+
+  public static <N extends Number> Selectable<N> subtract(Selectable<N> left, N right) {
+    return subtract(left, value(right));
+  }
+
+  public static <N extends Number> NonNullSelectable<N> subtract(
+      NonNullSelectable<N> left, N right) {
+    return subtract(left, value(right));
+  }
+
+  public static <N extends Number> Selectable<N> multiply(Selectable<N> left, N right) {
+    return multiply(left, value(right));
+  }
+
+  public static <N extends Number> NonNullSelectable<N> multiply(
+      NonNullSelectable<N> left, N right) {
+    return multiply(left, value(right));
+  }
+
+  public static <N extends Number> Selectable<N> divide(Selectable<N> left, N right) {
+    return divide(left, value(right));
+  }
+
+  public static <N extends Number> NonNullSelectable<N> divide(NonNullSelectable<N> left, N right) {
+    return divide(left, value(right));
+  }
+
+  public static RowColumns row(
+      Selectable<?> first, Selectable<?> second, Selectable<?>... remaining) {
+    return QueryDsl.row(first, second, remaining);
   }
 }

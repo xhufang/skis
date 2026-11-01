@@ -1,20 +1,15 @@
 package io.skis.mutation;
 
-import io.skis.core.ExecutionOptions;
-import io.skis.query.ProjectionSelection;
-import io.skis.query.ProjectionType;
-import java.util.List;
+import io.skis.query.Selectable;
 
-/** Ordered snapshot of collection inputs; unsupported nonempty batches fail before JDBC. */
-public interface BatchInsertWrite<E> {
+/** Ordered entity INSERT inputs; result rows do not imply input-order key correspondence. */
+public interface BatchInsertWrite<E> extends BatchWrite<E> {
 
-  int write();
+  @Override
+  BatchInsertWrite<E> batchMode(BatchMode mode);
 
-  int write(ExecutionOptions options);
+  @Override
+  BatchInsertWrite<E> batchOptions(BatchOptions options);
 
-  ReturningWrite<List<E>> returning();
-
-  <R> ReturningWrite<List<R>> returning(ProjectionSelection<R> projection);
-
-  <R> ReturningWrite<List<R>> returning(ProjectionType<R> projection);
+  ConflictAction<E> onConflict(Selectable<?> first, Selectable<?>... remaining);
 }

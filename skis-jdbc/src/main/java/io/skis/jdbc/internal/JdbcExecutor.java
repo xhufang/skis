@@ -30,12 +30,14 @@ import io.skis.mapping.spi.ParameterBinder;
 import io.skis.mapping.spi.RowDecoder;
 import io.skis.mapping.spi.RowReadContext;
 import java.lang.ref.Cleaner;
+import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -596,46 +598,57 @@ public final class JdbcExecutor {
                 plan.sql(),
                 failure,
                 classify(failure)),
-        connection -> {
-          StatementObservation statementObservation = startStatement(observation, purpose, plan);
-          long affectedRows = unknownRowCount();
-          try {
-            int affected;
-            try (PreparedStatement statement =
-                prepare(
-                    connection,
-                    plan.sql(),
-                    plan.parameterCount(),
-                    plan.parameterBinder(),
-                    parameters,
-                    executionContext,
-                    NO_MINIMUM_MAX_ROWS,
-                    statementObservation)) {
-              affected = executeUpdate(statement, statementObservation);
-              affectedRows = affected;
-            }
-            completeStatementSucceeded(statementObservation, unknownRowCount(), affected);
-            return affected;
-          } catch (PhasedSqlFailure failure) {
-            RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
-            completeStatementFailed(
-                statementObservation, translated, unknownRowCount(), affectedRows);
-            throw translated;
-          } catch (SQLException failure) {
-            RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
-            completeStatementFailed(
-                statementObservation, translated, unknownRowCount(), affectedRows);
-            throw translated;
-          } catch (RuntimeException | Error failure) {
-            completeStatementFailed(statementObservation, failure, unknownRowCount(), affectedRows);
-            throw failure;
-          }
-        });
+        connection ->
+            executeUpdateOnConnection(
+                connection, plan, parameters, executionContext, observation, purpose, null));
+  }
+
+  private <P> int executeUpdateOnConnection(
+      Connection connection,
+      CompiledMutationPlan<P> plan,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose,
+      @Nullable BatchConnection batch)
+      throws SQLException {
+    StatementObservation statementObservation = startStatement(observation, purpose, plan);
+    long affectedRows = unknownRowCount();
+    try {
+      int affected;
+      PreparedStatement statement =
+          prepareMutation(
+              connection, plan, parameters, executionContext, statementObservation, batch);
+      Throwable statementFailure = null;
+      try {
+        if (batch != null) batch.executionStarted = true;
+        affected = executeUpdate(statement, statementObservation);
+        affectedRows = affected;
+      } catch (SQLException | RuntimeException | Error failure) {
+        statementFailure = failure;
+        throw failure;
+      } finally {
+        releaseMutationStatement(batch, statement, statementFailure, false);
+      }
+      completeStatementSucceeded(statementObservation, unknownRowCount(), affected);
+      return affected;
+    } catch (PhasedSqlFailure failure) {
+      RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+      completeStatementFailed(statementObservation, translated, unknownRowCount(), affectedRows);
+      throw translated;
+    } catch (SQLException failure) {
+      RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+      completeStatementFailed(statementObservation, translated, unknownRowCount(), affectedRows);
+      throw translated;
+    } catch (RuntimeException | Error failure) {
+      completeStatementFailed(statementObservation, failure, unknownRowCount(), affectedRows);
+      throw failure;
+    }
   }
 
   /** Executes a mutation and returns its detached, immutable rows with an exact row count. */
   @SuppressWarnings("unchecked")
-  public <R, P> List<R> executeReturning(
+  public <R extends @Nullable Object, P> List<R> executeReturning(
       CompiledMutationPlan<P> plan,
       RowDecoder<R> decoder,
       int columnCount,
@@ -650,38 +663,17 @@ public final class JdbcExecutor {
                 decoder,
                 columnCount,
                 false,
-                false,
                 parameters,
                 executionContext,
                 observation,
                 purpose));
   }
 
-  /** Executes an INSERT and returns exactly one detached row without a collection buffer. */
-  @SuppressWarnings("unchecked")
-  public <R, P> R executeReturningOne(
-      CompiledMutationPlan<P> plan,
-      RowDecoder<R> decoder,
-      int columnCount,
-      P parameters,
-      ExecutionContext executionContext,
-      @Nullable OperationObservation observation,
-      StatementPurpose purpose) {
-    return (R)
-        Objects.requireNonNull(
-            executeReturningResult(
-                plan,
-                decoder,
-                columnCount,
-                true,
-                false,
-                parameters,
-                executionContext,
-                observation,
-                purpose));
-  }
-
-  /** Executes a zero-or-one-row conflict/KEY result without allocating a list. */
+  /**
+   * Executes a zero-or-one-row result without allocating a list.
+   *
+   * <p>{@code null} means no row, so the decoder must wrap legal NULL values and never return null.
+   */
   @SuppressWarnings("unchecked")
   public <R, P> @Nullable R executeReturningOptional(
       CompiledMutationPlan<P> plan,
@@ -693,16 +685,15 @@ public final class JdbcExecutor {
       StatementPurpose purpose) {
     return (R)
         executeReturningResult(
-            plan, decoder, columnCount, true, true, parameters, context, observation, purpose);
+            plan, decoder, columnCount, true, parameters, context, observation, purpose);
   }
 
   // The typed entrypoints fix the result shape; both share resource and observation ownership.
-  private <R, P> @Nullable Object executeReturningResult(
+  private <R extends @Nullable Object, P> @Nullable Object executeReturningResult(
       CompiledMutationPlan<P> plan,
       RowDecoder<R> decoder,
       int columnCount,
-      boolean requireSingleRow,
-      boolean allowEmpty,
+      boolean optionalRow,
       P parameters,
       ExecutionContext executionContext,
       @Nullable OperationObservation observation,
@@ -710,6 +701,112 @@ public final class JdbcExecutor {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(decoder, "decoder");
     Objects.requireNonNull(executionContext, "executionContext");
+    validateReturningOptions(executionContext);
+    return withConnection(
+        executionContext,
+        (phase, failure) -> translate(plan, phase, failure),
+        connection ->
+            executeReturningOnConnection(
+                connection,
+                plan,
+                decoder,
+                columnCount,
+                optionalRow,
+                parameters,
+                executionContext,
+                observation,
+                purpose,
+                null));
+  }
+
+  private <R extends @Nullable Object, P> @Nullable Object executeReturningOnConnection(
+      Connection connection,
+      CompiledMutationPlan<P> plan,
+      RowDecoder<R> decoder,
+      int columnCount,
+      boolean optionalRow,
+      P parameters,
+      ExecutionContext executionContext,
+      @Nullable OperationObservation observation,
+      StatementPurpose purpose,
+      @Nullable BatchConnection batch)
+      throws SQLException {
+    StatementObservation statementObservation = startStatement(observation, purpose, plan);
+    long read = 0L;
+    try {
+      R singleResult = null;
+      List<R> results = optionalRow ? null : new ArrayList<>();
+      PreparedStatement statement =
+          prepareMutation(
+              connection, plan, parameters, executionContext, statementObservation, batch);
+      Throwable statementFailure = null;
+      try {
+        if (batch != null) batch.executionStarted = true;
+        ResultSet resultSet = executeReturningQuery(statement, statementObservation);
+        Throwable resultFailure = null;
+        try {
+          var metadata = resultSet.getMetaData();
+          if (metadata == null || metadata.getColumnCount() != columnCount) {
+            throw MutationException.of(
+                SkisErrorCode.MUTATION_RETURNING_SHAPE,
+                "RETURNING column count differs from its compiled layout");
+          }
+          while (resultSet.next()) {
+            read++;
+            if (optionalRow && read > 1) {
+              throw MutationException.of(
+                  SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
+                  "single-row RETURNING returned multiple rows");
+            }
+            R value = decoder.decode(resultSet, rowReadContext);
+            if (results == null) {
+              if (value == null) {
+                throw MutationException.of(
+                    SkisErrorCode.MUTATION_RETURNING_SHAPE,
+                    "single-row RETURNING decoder returned null");
+              }
+              singleResult = value;
+            } else {
+              results.add(value);
+            }
+          }
+        } catch (SQLException | RuntimeException | Error failure) {
+          resultFailure = failure;
+          throw failure;
+        } finally {
+          try {
+            resultSet.close();
+          } catch (SQLException | RuntimeException | Error failure) {
+            generatedCloseFailure(JdbcPhase.RESULT_SET_CLOSE, failure, resultFailure);
+          }
+        }
+      } catch (SQLException | RuntimeException | Error failure) {
+        statementFailure = failure;
+        throw failure;
+      } finally {
+        releaseMutationStatement(batch, statement, statementFailure, false);
+      }
+      Object completed =
+          optionalRow
+              ? singleResult
+              : Collections.unmodifiableList(Objects.requireNonNull(results));
+      completeStatementSucceeded(statementObservation, read, read);
+      return completed;
+    } catch (PhasedSqlFailure failure) {
+      RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+      completeStatementFailed(statementObservation, translated, read, unknownRowCount());
+      throw translated;
+    } catch (SQLException failure) {
+      RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+      completeStatementFailed(statementObservation, translated, read, unknownRowCount());
+      throw translated;
+    } catch (RuntimeException | Error failure) {
+      completeStatementFailed(statementObservation, failure, read, unknownRowCount());
+      throw failure;
+    }
+  }
+
+  public void validateReturningOptions(ExecutionContext executionContext) {
     ExecutionOptions overrides = executionContext.executionOptions();
     int maxRows =
         overrides.hasMaxRows()
@@ -720,99 +817,6 @@ public final class JdbcExecutor {
           SkisErrorCode.MUTATION_UNSUPPORTED,
           "mutation RETURNING requires unlimited maxRows for exact affected-row counts");
     }
-    return withConnection(
-        executionContext,
-        (phase, failure) -> translate(plan, phase, failure),
-        connection -> {
-          StatementObservation statementObservation = startStatement(observation, purpose, plan);
-          long read = 0L;
-          try {
-            R singleResult = null;
-            List<R> results = requireSingleRow ? null : new ArrayList<>();
-            PreparedStatement statement =
-                prepare(
-                    connection,
-                    plan.sql(),
-                    plan.parameterCount(),
-                    plan.parameterBinder(),
-                    parameters,
-                    executionContext,
-                    NO_MINIMUM_MAX_ROWS,
-                    statementObservation);
-            Throwable statementFailure = null;
-            try {
-              ResultSet resultSet = executeReturningQuery(statement, statementObservation);
-              Throwable resultFailure = null;
-              try {
-                var metadata = resultSet.getMetaData();
-                if (metadata == null || metadata.getColumnCount() != columnCount) {
-                  throw MutationException.of(
-                      SkisErrorCode.MUTATION_RETURNING_SHAPE,
-                      "RETURNING column count differs from its compiled layout");
-                }
-                while (resultSet.next()) {
-                  read++;
-                  if (requireSingleRow && read > 1) {
-                    throw MutationException.of(
-                        SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
-                        "single-row INSERT RETURNING returned multiple rows");
-                  }
-                  R value = decoder.decode(resultSet, rowReadContext);
-                  if (value == null) {
-                    throw MutationException.of(
-                        SkisErrorCode.MUTATION_RETURNING_SHAPE,
-                        "mutation RETURNING decoder returned null");
-                  }
-                  if (results == null) {
-                    singleResult = value;
-                  } else {
-                    results.add(value);
-                  }
-                }
-                if (requireSingleRow && !allowEmpty && read != 1) {
-                  throw MutationException.of(
-                      SkisErrorCode.MUTATION_UNEXPECTED_ROW_COUNT,
-                      "single-row INSERT RETURNING must return exactly one row");
-                }
-              } catch (SQLException | RuntimeException | Error failure) {
-                resultFailure = failure;
-                throw failure;
-              } finally {
-                try {
-                  resultSet.close();
-                } catch (SQLException | RuntimeException | Error failure) {
-                  generatedCloseFailure(JdbcPhase.RESULT_SET_CLOSE, failure, resultFailure);
-                }
-              }
-            } catch (SQLException | RuntimeException | Error failure) {
-              statementFailure = failure;
-              throw failure;
-            } finally {
-              try {
-                statement.close();
-              } catch (SQLException | RuntimeException | Error failure) {
-                generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, statementFailure);
-              }
-            }
-            Object completed =
-                requireSingleRow
-                    ? allowEmpty ? singleResult : Objects.requireNonNull(singleResult)
-                    : List.copyOf(Objects.requireNonNull(results));
-            completeStatementSucceeded(statementObservation, read, read);
-            return completed;
-          } catch (PhasedSqlFailure failure) {
-            RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
-            completeStatementFailed(statementObservation, translated, read, unknownRowCount());
-            throw translated;
-          } catch (SQLException failure) {
-            RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
-            completeStatementFailed(statementObservation, translated, read, unknownRowCount());
-            throw translated;
-          } catch (RuntimeException | Error failure) {
-            completeStatementFailed(statementObservation, failure, read, unknownRowCount());
-            throw failure;
-          }
-        });
   }
 
   private static ResultSet executeReturningQuery(
@@ -1117,6 +1121,35 @@ public final class JdbcExecutor {
             ? connection.prepareStatement(actualSql)
             : connection.prepareStatement(actualSql, new String[] {physicalIdColumn});
     try {
+      bindParameters(statement, sql, parameterCount, parameterBinder, parameters, observation);
+      try {
+        int queryTimeoutSeconds =
+            optionsConfigured
+                ? applyExecutionOptions(statement, statementOptions, minimumMaxRows)
+                : UNCONFIGURED_QUERY_TIMEOUT;
+        connectionProvider.configureStatement(statement, executionContext, queryTimeoutSeconds);
+      } catch (SQLException failure) {
+        throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
+      }
+      return statement;
+    } catch (PhasedSqlFailure failure) {
+      closeAfterPrepareFailure(statement, failure.sqlException());
+      throw failure;
+    } catch (SQLException | RuntimeException | Error failure) {
+      closeAfterPrepareFailure(statement, failure);
+      throw failure;
+    }
+  }
+
+  private <P> void bindParameters(
+      PreparedStatement statement,
+      String sql,
+      int parameterCount,
+      ParameterBinder<P> parameterBinder,
+      P parameters,
+      @Nullable StatementObservation observation)
+      throws SQLException {
+    try {
       int expectedNextIndex = parameterCount + 1;
       int nextIndex;
       if (loggingOptions.parameters() && SafeLog.debugEnabled(PARAMETERS)) {
@@ -1145,21 +1178,318 @@ public final class JdbcExecutor {
             JdbcPhase.BIND,
             new SQLException("compiled parameter binder returned an unexpected next index"));
       }
+    } catch (SQLException failure) {
+      throw new PhasedSqlFailure(JdbcPhase.BIND, failure);
+    }
+  }
+
+  private <P> PreparedStatement prepareMutation(
+      Connection connection,
+      CompiledMutationPlan<P> plan,
+      P parameters,
+      ExecutionContext context,
+      @Nullable StatementObservation observation,
+      @Nullable BatchConnection batch)
+      throws SQLException {
+    // Observed attempts to retain their per-attempt physical close and close-failure attribution.
+    if (batch == null || batch.observation != null)
+      return prepare(
+          connection,
+          plan.sql(),
+          plan.parameterCount(),
+          plan.parameterBinder(),
+          parameters,
+          context,
+          NO_MINIMUM_MAX_ROWS,
+          observation);
+    PreparedStatement statement = batch.reusableStatement;
+    CompiledMutationPlan<?> previous = batch.reusablePlan;
+    if (statement != null
+        && previous != plan
+        && !Objects.requireNonNull(previous).sql().equals(plan.sql())) {
+      batch.closeReusable(null);
+      statement = null;
+    }
+    if (statement == null) {
+      statement =
+          prepare(
+              connection,
+              plan.sql(),
+              plan.parameterCount(),
+              plan.parameterBinder(),
+              parameters,
+              context,
+              NO_MINIMUM_MAX_ROWS,
+              null);
+      batch.reusableStatement = statement;
+      batch.reusablePlan = plan;
+      return statement;
+    }
+    try {
+      bindParameters(
+          statement, plan.sql(), plan.parameterCount(), plan.parameterBinder(), parameters, null);
       try {
-        int queryTimeoutSeconds =
-            optionsConfigured
-                ? applyExecutionOptions(statement, statementOptions, minimumMaxRows)
-                : UNCONFIGURED_QUERY_TIMEOUT;
-        connectionProvider.configureStatement(statement, executionContext, queryTimeoutSeconds);
+        // Provider configuration can depend on a transaction deadline even though SQL options
+        // are immutable. Recheck it for every execution of a reused statement.
+        connectionProvider.configureStatement(statement, context, batch.queryTimeoutSeconds);
       } catch (SQLException failure) {
         throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
       }
+      batch.reusablePlan = plan;
       return statement;
-    } catch (PhasedSqlFailure failure) {
-      closeAfterPrepareFailure(statement, failure.sqlException());
-      throw failure;
     } catch (SQLException | RuntimeException | Error failure) {
-      closeAfterPrepareFailure(statement, failure);
+      batch.closeReusable(failure);
+      throw failure;
+    }
+  }
+
+  /** Clears retained invocation values; failed statements are closed and never reused. */
+  private static void releaseMutationStatement(
+      @Nullable BatchConnection batch,
+      PreparedStatement statement,
+      @Nullable Throwable primary,
+      boolean batchCommand) {
+    if (batch != null && batch.reusableStatement == statement) {
+      if (primary == null) {
+        try {
+          if (batchCommand) statement.clearBatch();
+          statement.clearParameters();
+          return;
+        } catch (SQLException | RuntimeException | Error failure) {
+          batch.closeReusable(failure);
+          generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, null);
+          return;
+        }
+      }
+      batch.closeReusable(primary);
+      return;
+    }
+    try {
+      statement.close();
+    } catch (SQLException | RuntimeException | Error failure) {
+      generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, primary);
+    }
+  }
+
+  /** Returns a non-null batch result; nullable decoded rows stay inside their result container. */
+  @FunctionalInterface
+  public interface BatchWork<R> {
+    R execute(BatchConnection connection);
+  }
+
+  /** Holds one provider-owned connection across ordered chunks without changing its transaction. */
+  public <R> R executeBatchWork(
+      CompiledMutationPlan<?> firstPlan,
+      ExecutionContext context,
+      @Nullable OperationObservation observation,
+      BatchWork<R> work) {
+    BatchOwner owner = new BatchOwner(firstPlan);
+    return withConnection(
+        context,
+        (phase, failure) -> translate(owner.current, phase, failure),
+        connection -> {
+          BatchConnection batch = new BatchConnection(connection, context, observation, owner);
+          Throwable pending = null;
+          try {
+            return work.execute(batch);
+          } catch (RuntimeException | Error failure) {
+            pending = failure;
+            throw failure;
+          } finally {
+            batch.active = false;
+            batch.closeReusable(pending);
+          }
+        });
+  }
+
+  private static final class BatchOwner {
+    CompiledMutationPlan<?> current;
+
+    BatchOwner(CompiledMutationPlan<?> current) {
+      this.current = current;
+    }
+  }
+
+  /** Invocation-scoped execution access; never stored by a plan or exposed as a JDBC Connection. */
+  public final class BatchConnection {
+    private final Connection connection;
+    private final ExecutionContext context;
+    private final @Nullable OperationObservation observation;
+    private final BatchOwner owner;
+    private final int queryTimeoutSeconds;
+    private boolean active = true;
+    private boolean executionStarted;
+    private @Nullable PreparedStatement reusableStatement;
+    private @Nullable CompiledMutationPlan<?> reusablePlan;
+
+    private BatchConnection(
+        Connection connection,
+        ExecutionContext context,
+        @Nullable OperationObservation observation,
+        BatchOwner owner) {
+      this.connection = connection;
+      this.context = context;
+      this.observation = observation;
+      this.owner = owner;
+      ExecutionOptions options = context.executionOptions();
+      this.queryTimeoutSeconds =
+          options.hasStatementTimeout()
+              ? options.queryTimeoutSeconds()
+              : defaultExecutionOptions.hasStatementTimeout()
+                  ? defaultExecutionOptions.queryTimeoutSeconds()
+                  : UNCONFIGURED_QUERY_TIMEOUT;
+    }
+
+    private void closeReusable(@Nullable Throwable primary) {
+      PreparedStatement statement = reusableStatement;
+      CompiledMutationPlan<?> plan = reusablePlan;
+      reusableStatement = null;
+      reusablePlan = null;
+      if (statement == null) return;
+      try {
+        statement.close();
+      } catch (SQLException failure) {
+        if (primary == null)
+          throw translate(Objects.requireNonNull(plan), JdbcPhase.STATEMENT_CLOSE, failure);
+        generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, primary);
+      } catch (RuntimeException | Error failure) {
+        generatedCloseFailure(JdbcPhase.STATEMENT_CLOSE, failure, primary);
+      }
+    }
+
+    /** Whether the most recent update/returning call reached JDBC execution after preparation. */
+    public boolean executionStarted() {
+      return executionStarted;
+    }
+
+    public <P> int update(CompiledMutationPlan<P> plan, P parameters) {
+      if (!active) throw new IllegalStateException("batch execution scope has ended");
+      owner.current = plan;
+      executionStarted = false;
+      try {
+        return executeUpdateOnConnection(
+            connection, plan, parameters, context, observation, StatementPurpose.PRIMARY, this);
+      } catch (PhasedSqlFailure failure) {
+        throw translate(plan, failure.phase(), failure.sqlException());
+      } catch (SQLException failure) {
+        throw translate(plan, JdbcPhase.EXECUTE, failure);
+      }
+    }
+
+    @SuppressWarnings("unchecked")
+    public <R extends @Nullable Object, P> List<R> returning(
+        CompiledMutationPlan<P> plan, RowDecoder<R> decoder, int columnCount, P parameters) {
+      if (!active) throw new IllegalStateException("batch execution scope has ended");
+      owner.current = plan;
+      executionStarted = false;
+      validateReturningOptions(context);
+      try {
+        return (List<R>)
+            Objects.requireNonNull(
+                executeReturningOnConnection(
+                    connection,
+                    plan,
+                    decoder,
+                    columnCount,
+                    false,
+                    parameters,
+                    context,
+                    observation,
+                    StatementPurpose.PRIMARY,
+                    this));
+      } catch (PhasedSqlFailure failure) {
+        throw translate(plan, failure.phase(), failure.sqlException());
+      } catch (SQLException failure) {
+        throw translate(plan, JdbcPhase.EXECUTE, failure);
+      }
+    }
+
+    public <P> JdbcBatchOutcome addBatch(CompiledMutationPlan<P> plan, List<P> parameters) {
+      if (!active) throw new IllegalStateException("batch execution scope has ended");
+      if (parameters.isEmpty())
+        throw new IllegalArgumentException("an executing chunk must not be empty");
+      owner.current = plan;
+      return executeBatchChunk(connection, plan, parameters, context, observation, this);
+    }
+  }
+
+  private <P> JdbcBatchOutcome executeBatchChunk(
+      Connection connection,
+      CompiledMutationPlan<P> plan,
+      List<P> parameters,
+      ExecutionContext context,
+      @Nullable OperationObservation operation,
+      BatchConnection batch) {
+    StatementObservation observation = startStatement(operation, StatementPurpose.PRIMARY, plan);
+    int submitted = 0, current = -1;
+    boolean executed = false;
+    int[] counts = new int[0];
+    try {
+      current = 0;
+      PreparedStatement statement =
+          prepareMutation(connection, plan, parameters.getFirst(), context, observation, batch);
+      Throwable pending = null;
+      try {
+        for (int index = 0; index < parameters.size(); index++) {
+          current = index;
+          if (index > 0)
+            bindParameters(
+                statement,
+                plan.sql(),
+                plan.parameterCount(),
+                plan.parameterBinder(),
+                parameters.get(index),
+                observation);
+          try {
+            statement.addBatch();
+          } catch (SQLException failure) {
+            throw new PhasedSqlFailure(JdbcPhase.BIND, failure);
+          }
+          submitted++;
+        }
+        executed = true;
+        if (observation != null) observation.executeStarted();
+        try {
+          counts = Objects.requireNonNull(statement.executeBatch(), "driver batch counts");
+        } catch (BatchUpdateException failure) {
+          int[] failedCounts = failure.getUpdateCounts();
+          if (failedCounts != null) counts = failedCounts;
+          throw failure;
+        } finally {
+          if (observation != null) observation.executeCompleted();
+        }
+      } catch (SQLException | RuntimeException | Error failure) {
+        pending = failure;
+        throw failure;
+      } finally {
+        releaseMutationStatement(batch, statement, pending, true);
+      }
+      long known = 0;
+      boolean exact = counts.length == submitted;
+      for (int count : counts) {
+        if (count < 0) exact = false;
+        else known += count;
+      }
+      completeStatementSucceeded(observation, unknownRowCount(), exact ? known : unknownRowCount());
+      return new JdbcBatchOutcome(counts, submitted, true, -1, null);
+    } catch (PhasedSqlFailure failure) {
+      RuntimeException translated = translate(plan, failure.phase(), failure.sqlException());
+      completeStatementFailed(observation, translated, unknownRowCount(), unknownRowCount());
+      return new JdbcBatchOutcome(
+          counts,
+          submitted,
+          executed,
+          !executed && failure.phase() == JdbcPhase.BIND ? current : -1,
+          translated);
+    } catch (SQLException failure) {
+      RuntimeException translated = translate(plan, JdbcPhase.EXECUTE, failure);
+      completeStatementFailed(observation, translated, unknownRowCount(), unknownRowCount());
+      return new JdbcBatchOutcome(counts, submitted, executed, -1, translated);
+    } catch (RuntimeException failure) {
+      completeStatementFailed(observation, failure, unknownRowCount(), unknownRowCount());
+      return new JdbcBatchOutcome(counts, submitted, executed, executed ? -1 : current, failure);
+    } catch (Error failure) {
+      completeStatementFailed(observation, failure, unknownRowCount(), unknownRowCount());
       throw failure;
     }
   }

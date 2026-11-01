@@ -1,5 +1,6 @@
 package io.skis.query;
 
+import io.skis.query.internal.QueryDsl;
 import io.skis.query.internal.SelectableSupport;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.NullOperator;
@@ -26,69 +27,44 @@ public interface Selectable<V> {
   /** Returns the expression's declared nullability before query-local Join propagation. */
   Nullability nullability();
 
+  /** Names this selected expression once for use as a derived output. */
+  default Selectable<V> as(String alias) {
+    return QueryDsl.alias(this, alias);
+  }
+
   /** Compares this expression with one captured non-null value. */
   default QueryCondition eq(@Nullable V value) {
     return SelectableSupport.valueComparison(this, ComparisonOperator.EQUAL, value);
   }
 
-  /** Compares this expression with a separately bound reusable query parameter. */
-  default QueryCondition eq(QueryParameter<V> parameter) {
-    return SelectableSupport.parameterComparison(
-        this, ComparisonOperator.EQUAL, parameter);
-  }
-
   /** Compares two expressions with the same Java value type. */
   default QueryCondition eq(Selectable<V> other) {
-    return SelectableSupport.expressionComparison(
-        this, ComparisonOperator.EQUAL, other);
+    return SelectableSupport.expressionComparison(this, ComparisonOperator.EQUAL, other);
   }
 
   /** Compares this expression with one captured non-null value. */
   default QueryCondition ne(@Nullable V value) {
-    return SelectableSupport.valueComparison(
-        this, ComparisonOperator.NOT_EQUAL, value);
-  }
-
-  /** Compares this expression with a separately bound reusable query parameter. */
-  default QueryCondition ne(QueryParameter<V> parameter) {
-    return SelectableSupport.parameterComparison(
-        this, ComparisonOperator.NOT_EQUAL, parameter);
+    return SelectableSupport.valueComparison(this, ComparisonOperator.NOT_EQUAL, value);
   }
 
   /** Compares two expressions with the same Java value type. */
   default QueryCondition ne(Selectable<V> other) {
-    return SelectableSupport.expressionComparison(
-        this, ComparisonOperator.NOT_EQUAL, other);
+    return SelectableSupport.expressionComparison(this, ComparisonOperator.NOT_EQUAL, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition gt(@Nullable V value) {
-    return SelectableSupport.valueComparison(
-        this, ComparisonOperator.GREATER_THAN, value);
-  }
-
-  /** Applies an ordered comparison to a separately bound reusable query parameter. */
-  default QueryCondition gt(QueryParameter<V> parameter) {
-    return SelectableSupport.parameterComparison(
-        this, ComparisonOperator.GREATER_THAN, parameter);
+    return SelectableSupport.valueComparison(this, ComparisonOperator.GREATER_THAN, value);
   }
 
   /** Applies a portable ordered comparison to another expression. */
   default QueryCondition gt(Selectable<V> other) {
-    return SelectableSupport.expressionComparison(
-        this, ComparisonOperator.GREATER_THAN, other);
+    return SelectableSupport.expressionComparison(this, ComparisonOperator.GREATER_THAN, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition ge(@Nullable V value) {
-    return SelectableSupport.valueComparison(
-        this, ComparisonOperator.GREATER_THAN_OR_EQUAL, value);
-  }
-
-  /** Applies an ordered comparison to a separately bound reusable query parameter. */
-  default QueryCondition ge(QueryParameter<V> parameter) {
-    return SelectableSupport.parameterComparison(
-        this, ComparisonOperator.GREATER_THAN_OR_EQUAL, parameter);
+    return SelectableSupport.valueComparison(this, ComparisonOperator.GREATER_THAN_OR_EQUAL, value);
   }
 
   /** Applies a portable ordered comparison to another expression. */
@@ -99,32 +75,17 @@ public interface Selectable<V> {
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition lt(@Nullable V value) {
-    return SelectableSupport.valueComparison(
-        this, ComparisonOperator.LESS_THAN, value);
-  }
-
-  /** Applies an ordered comparison to a separately bound reusable query parameter. */
-  default QueryCondition lt(QueryParameter<V> parameter) {
-    return SelectableSupport.parameterComparison(
-        this, ComparisonOperator.LESS_THAN, parameter);
+    return SelectableSupport.valueComparison(this, ComparisonOperator.LESS_THAN, value);
   }
 
   /** Applies a portable ordered comparison to another expression. */
   default QueryCondition lt(Selectable<V> other) {
-    return SelectableSupport.expressionComparison(
-        this, ComparisonOperator.LESS_THAN, other);
+    return SelectableSupport.expressionComparison(this, ComparisonOperator.LESS_THAN, other);
   }
 
   /** Applies a portable ordered comparison to one captured non-null value. */
   default QueryCondition le(@Nullable V value) {
-    return SelectableSupport.valueComparison(
-        this, ComparisonOperator.LESS_THAN_OR_EQUAL, value);
-  }
-
-  /** Applies an ordered comparison to a separately bound reusable query parameter. */
-  default QueryCondition le(QueryParameter<V> parameter) {
-    return SelectableSupport.parameterComparison(
-        this, ComparisonOperator.LESS_THAN_OR_EQUAL, parameter);
+    return SelectableSupport.valueComparison(this, ComparisonOperator.LESS_THAN_OR_EQUAL, value);
   }
 
   /** Applies a portable ordered comparison to another expression. */
@@ -148,19 +109,9 @@ public interface Selectable<V> {
     return SelectableSupport.between(this, lower, upper);
   }
 
-  /** Applies an inclusive range whose bounds are supplied by a parameter environment. */
-  default QueryCondition between(QueryParameter<V> lower, QueryParameter<V> upper) {
-    return SelectableSupport.betweenParameters(this, lower, upper);
-  }
-
   /** Applies portable SQL {@code LIKE}; only character expressions are accepted. */
   default QueryCondition like(String pattern) {
     return SelectableSupport.like(this, pattern);
-  }
-
-  /** Applies SQL {@code LIKE} with a separately bound reusable query parameter. */
-  default QueryCondition like(QueryParameter<V> pattern) {
-    return SelectableSupport.likeParameter(this, pattern);
   }
 
   /** Applies SQL set membership to captured non-null values. */
@@ -174,13 +125,8 @@ public interface Selectable<V> {
    * <p>The type parameter is deliberately invariant. The child is evaluated as part of the final
    * SQL statement and is never materialized as a Java collection.
    */
-  default QueryCondition in(SingleColumnSelect<V> subquery) {
+  default QueryCondition in(SingleColumnQuery<? extends @Nullable V> subquery) {
     return SelectableSupport.subqueryMembership(this, subquery, false);
-  }
-
-  /** Applies SQL set membership to separately bound reusable query parameters. */
-  default QueryCondition inParameters(Collection<? extends QueryParameter<V>> parameters) {
-    return SelectableSupport.parameterMembership(this, parameters, false);
   }
 
   /** Applies negated SQL set membership to captured non-null values. */
@@ -194,13 +140,8 @@ public interface Selectable<V> {
    * <p>SQL three-valued logic is preserved: a nullable left value or a {@code NULL} produced by the
    * child can make the predicate unknown. This operation is not rewritten to {@code NOT EXISTS}.
    */
-  default QueryCondition notIn(SingleColumnSelect<V> subquery) {
+  default QueryCondition notIn(SingleColumnQuery<? extends @Nullable V> subquery) {
     return SelectableSupport.subqueryMembership(this, subquery, true);
-  }
-
-  /** Applies negated SQL set membership to separately bound reusable query parameters. */
-  default QueryCondition notInParameters(Collection<? extends QueryParameter<V>> parameters) {
-    return SelectableSupport.parameterMembership(this, parameters, true);
   }
 
   /** Creates ascending ordering using the database default null placement. */
@@ -211,5 +152,41 @@ public interface Selectable<V> {
   /** Creates descending ordering using the database default null placement. */
   default SortSpecification desc() {
     return SelectableSupport.order(this, SortDirection.DESC);
+  }
+
+  /** Compares directly with one scalar SELECT, retaining its zero-row NULL semantics. */
+  default QueryCondition eq(SingleColumnQuery<? extends @Nullable V> query) {
+    return SelectableSupport.expressionComparison(
+        this, ComparisonOperator.EQUAL, QueryDsl.scalar(query));
+  }
+
+  /** Compares directly with one scalar SELECT, retaining its zero-row NULL semantics. */
+  default QueryCondition ne(SingleColumnQuery<? extends @Nullable V> query) {
+    return SelectableSupport.expressionComparison(
+        this, ComparisonOperator.NOT_EQUAL, QueryDsl.scalar(query));
+  }
+
+  /** Compares directly with one scalar SELECT, retaining its zero-row NULL semantics. */
+  default QueryCondition gt(SingleColumnQuery<? extends @Nullable V> query) {
+    return SelectableSupport.expressionComparison(
+        this, ComparisonOperator.GREATER_THAN, QueryDsl.scalar(query));
+  }
+
+  /** Compares directly with one scalar SELECT, retaining its zero-row NULL semantics. */
+  default QueryCondition ge(SingleColumnQuery<? extends @Nullable V> query) {
+    return SelectableSupport.expressionComparison(
+        this, ComparisonOperator.GREATER_THAN_OR_EQUAL, QueryDsl.scalar(query));
+  }
+
+  /** Compares directly with one scalar SELECT, retaining its zero-row NULL semantics. */
+  default QueryCondition lt(SingleColumnQuery<? extends @Nullable V> query) {
+    return SelectableSupport.expressionComparison(
+        this, ComparisonOperator.LESS_THAN, QueryDsl.scalar(query));
+  }
+
+  /** Compares directly with one scalar SELECT, retaining its zero-row NULL semantics. */
+  default QueryCondition le(SingleColumnQuery<? extends @Nullable V> query) {
+    return SelectableSupport.expressionComparison(
+        this, ComparisonOperator.LESS_THAN_OR_EQUAL, QueryDsl.scalar(query));
   }
 }

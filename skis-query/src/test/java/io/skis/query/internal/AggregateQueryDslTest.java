@@ -22,7 +22,6 @@ import io.skis.metadata.PropertyMeta;
 import io.skis.metadata.TableMeta;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
 import io.skis.query.SingleColumnSelect;
@@ -59,8 +58,8 @@ class AggregateQueryDslTest {
 
   @Test
   void emptyMembershipPruningKeepsLocalAggregatesAndDropsTheirParameters() {
-    var unused = Sql.parameter(Integer.class);
-    var aggregate = Sql.sumAsLong(Sql.value(unused));
+    var unused = TestParameters.parameter(Integer.class);
+    var aggregate = Sql.sumAsLong(TestParameters.value(unused));
     var nestedAggregate = Sql.caseWhen(Sql.countAll().gt(0L), Sql.value(1L), Sql.value(2L));
     for (Selectable<Long> value : List.of(aggregate, nestedAggregate)) {
       var result = Sql.caseWhen(value.in(List.of()), Sql.value(1), Sql.value(0));
@@ -165,7 +164,7 @@ class AggregateQueryDslTest {
       assertTypeFailure(() -> Sql.value(value));
       assertTypeFailure(() -> assertValueOverloads(value.getClass(), value));
     }
-    assertTypeFailure(() -> Sql.value(Sql.parameter(Number.class)));
+    assertTypeFailure(() -> TestParameters.value(TestParameters.parameter(Number.class)));
     assertTypeFailure(() -> Sql.value(Number.class, 1));
     assertThrows(NullPointerException.class, () -> Sql.value((Object) null));
     assertThrows(NullPointerException.class, () -> Sql.value((QueryParameter<String>) null));
@@ -293,9 +292,9 @@ class AggregateQueryDslTest {
   @Test
   void capturesOfASharedSubqueryCompositeKeepTheirOwnOccurrences() {
     SampleTable childTable = TABLE.as("capture_child");
-    QueryParameter<Integer> parameter = Sql.parameter(Integer.class, "nested");
+    QueryParameter<Integer> parameter = TestParameters.parameter(Integer.class);
     SingleColumnSelect<Integer> child = Sql.select(childTable.id()).from(childTable)
-        .where(childTable.id().eq(parameter));
+        .where(TestParameters.eq(childTable.id(), parameter));
     Selectable<Integer> expression = Sql.add(Sql.scalar(child), Sql.value(1));
     ExpressionCapture selection = new ExpressionCapture();
     ExpressionCapture ordering = new ExpressionCapture();
@@ -309,15 +308,15 @@ class AggregateQueryDslTest {
     assertSame(parameter, structure.parameterReferences().get(2));
     assertTrue(structure.parameters().isEmpty());
     assertEquals(List.of(7, 1, 7), structure.arguments(
-        selection.parameters().merge(ordering.parameters()).bind(parameter, 7)));
+        selection.parameters().merge(ordering.parameters()).merge(QueryParameters.of(parameter, 7))));
     analyze(structure);
   }
 
   @Test
   void sharedCompositesKeepEmbeddedQueryOccurrencesAndSlotsIndependent() {
-    QueryParameter<Integer> parameter = Sql.parameter(Integer.class, "nested");
+    QueryParameter<Integer> parameter = TestParameters.parameter(Integer.class);
     SingleColumnSelect<Integer> child = Sql.select(TABLE.id()).from(TABLE)
-        .where(TABLE.id().eq(parameter));
+        .where(TestParameters.eq(TABLE.id(), parameter));
     Selectable<Integer> expression = Sql.add(Sql.scalar(child), Sql.value(1));
     CompiledExpression compiled = compile(Sql.add(expression, expression));
     assertEquals(3, compiled.references().size());
@@ -334,16 +333,16 @@ class AggregateQueryDslTest {
 
   @Test
   void parameterViewsRetainIdentityAndIndependentValuesDoNotMerge() {
-    QueryParameter<Integer> parameter = Sql.parameter(Integer.class, "same");
-    Selectable<Integer> first = Sql.value(parameter);
-    Selectable<Integer> second = Sql.value(parameter);
+    QueryParameter<Integer> parameter = TestParameters.parameter(Integer.class);
+    Selectable<Integer> first = TestParameters.value(parameter);
+    Selectable<Integer> second = TestParameters.value(parameter);
     assertEquals(SelectableSupport.expressionIdentity(first), SelectableSupport.expressionIdentity(second));
     CompiledExpression reused = compile(Sql.add(first, second));
     assertEquals(List.of(parameter), reused.references());
     ArithmeticExpression<?> sum = assertInstanceOf(ArithmeticExpression.class, reused.expression());
     assertSame(sum.left(), sum.right());
     assertNotEquals(SelectableSupport.expressionIdentity(first),
-        SelectableSupport.expressionIdentity(Sql.value(Sql.parameter(Integer.class, "same"))));
+        SelectableSupport.expressionIdentity(TestParameters.value(TestParameters.parameter(Integer.class))));
     assertEquals(2, compile(Sql.add(Sql.value(1), Sql.value(1))).references().size());
     NonNullSelectable<Integer> captured = Sql.value(1);
     assertEquals(1, compile(Sql.add(captured, captured)).references().size());
@@ -351,9 +350,9 @@ class AggregateQueryDslTest {
 
   @Test
   void parameterViewsShareMappedSlotsInEitherEncounterOrderWithoutBridgingOtherSources() {
-    QueryParameter<Integer> parameter = Sql.parameter(Integer.class, "id");
-    Selectable<Integer> view = Sql.value(parameter);
-    QueryCondition column = TABLE.id().eq(parameter);
+    QueryParameter<Integer> parameter = TestParameters.parameter(Integer.class);
+    Selectable<Integer> view = TestParameters.value(parameter);
+    QueryCondition column = TestParameters.eq(TABLE.id(), parameter);
     for (QueryCondition condition : List.of(
         view.isNotNull().and(column), column.and(view.isNotNull()))) {
       CompiledQueryStructure structure = QueryModels.description(
@@ -372,7 +371,7 @@ class AggregateQueryDslTest {
     analyze(selectedView);
 
     SampleTable other = TABLE.as("other");
-    QueryCondition conflicting = column.and(view.isNotNull()).and(other.id().eq(parameter));
+    QueryCondition conflicting = column.and(view.isNotNull()).and(TestParameters.eq(other.id(), parameter));
     QueryValidationException failure = assertThrows(QueryValidationException.class,
         () -> QueryModels.description(Sql.select(TABLE.id()).from(TABLE).where(conflicting))
             .state().structure());
@@ -383,10 +382,10 @@ class AggregateQueryDslTest {
   @Test
   void distinctCompositesReuseSelectedSubqueriesAfterValidatingEachOriginalOccurrence() {
     SampleTable childTable = TABLE.as("child");
-    QueryParameter<Integer> parameter = Sql.parameter(Integer.class, "childId");
+    QueryParameter<Integer> parameter = TestParameters.parameter(Integer.class);
     Selectable<Integer> scalar = Sql.scalar(Sql.select(childTable.id()).from(childTable)
-        .where(childTable.id().eq(parameter)));
-    Selectable<Integer> offset = Sql.value(Sql.parameter(Integer.class, "offset"));
+        .where(TestParameters.eq(childTable.id(), parameter)));
+    Selectable<Integer> offset = TestParameters.value(TestParameters.parameter(Integer.class));
     for (Selectable<Integer> expression : List.of(
         Sql.cast(scalar, Integer.class, SqlType.INTEGER), Sql.add(scalar, offset))) {
       CompiledQueryStructure structure = QueryModels.description(
@@ -402,20 +401,26 @@ class AggregateQueryDslTest {
   }
 
   @Test
-  void pureDescriptionsRejectValuesAtEveryCaptureBoundary() {
+  void independentQueriesCaptureValuesAtEveryConstructionBoundary() {
     NonNullSelectable<String> value = Sql.value("sensitive-sentinel");
-    assertCaptured(() -> Sql.select(value));
-    assertCaptured(() -> Sql.selectNullable(value));
-    assertCaptured(() -> Sql.output(value, "value"));
-    assertCaptured(() -> Sql.outputNullable(value, "value"));
     SingleColumnSelect<Integer> base = Sql.select(TABLE.id()).from(TABLE);
-    assertCaptured(() -> base.groupBy(value));
-    assertCaptured(() -> base.where(value.eq(TABLE.label())));
-    assertCaptured(() -> base.having(value.isNotNull()));
-    assertCaptured(() -> base.orderBy(value.asc()));
-    assertCaptured(() -> Sql.select(Sql.caseWhen(TABLE.id().eq(1),
-        Sql.value(Sql.parameter(String.class)), Sql.value(Sql.parameter(String.class)))));
-    assertCaptured(() -> Sql.select(Sql.value(String.class, null)));
+    List<io.skis.query.SelectQuery<?>> queries = List.of(
+        Sql.select(value).from(TABLE),
+        Sql.selectNullable(value).from(TABLE),
+        Sql.select(value).from(TABLE).groupBy(value),
+        base.where(value.eq(TABLE.label())),
+        Sql.select(Sql.count(TABLE.id())).from(TABLE).having(value.isNotNull()),
+        base.orderBy(value.asc()),
+        Sql.select(Sql.caseWhen(TABLE.id().eq(1), Sql.value("left"), Sql.value("right"))).from(TABLE),
+        Sql.select(Sql.value(String.class, null)).from(TABLE));
+    for (var query : queries) {
+      var model = QueryModels.description(query);
+      var parameters = model.state.structure().validationStructure().parameterReferences();
+      assertFalse(parameters.isEmpty());
+      assertEquals(parameters.size(), model.parameters.valuesFor(parameters).size());
+    }
+    assertFalse(ExpressionCapture.capturesValues(QueryModels.output(Sql.output(value, "value")).selectable()));
+    assertFalse(ExpressionCapture.capturesValues(QueryModels.output(Sql.outputNullable(value, "value")).selectable()));
     assertTrue(QueryModels.description(base).state().structure().parameters().isEmpty());
   }
 
@@ -497,12 +502,12 @@ class AggregateQueryDslTest {
   @Test
   void groupingAndHavingAreImmutableIndependentAndLeftAssociative() {
     NonNullSelectable<Long> count = Sql.countAll();
-    QueryParameter<Long> threshold = Sql.parameter(Long.class, "threshold");
-    QueryParameter<Integer> id = Sql.parameter(Integer.class, "id");
+    QueryParameter<Long> threshold = TestParameters.parameter(Long.class);
+    QueryParameter<Integer> id = TestParameters.parameter(Integer.class);
     SingleColumnSelect<Long> base = Sql.select(count).from(TABLE);
-    SingleColumnSelect<Long> grouped = base.having(count.ge(threshold))
-        .orHaving(count.isNotNull()).andHaving(count.gt(threshold))
-        .where(TABLE.id().eq(id)).and(TABLE.id().isNotNull()).groupBy(TABLE.id());
+    SingleColumnSelect<Long> grouped = base.having(TestParameters.ge(count, threshold))
+        .orHaving(count.isNotNull()).andHaving(TestParameters.gt(count, threshold))
+        .where(TestParameters.eq(TABLE.id(), id)).and(TABLE.id().isNotNull()).groupBy(TABLE.id());
     CompiledQueryStructure structure = QueryModels.description(grouped).state().structure();
     assertEquals(1, structure.groupBy().size());
     assertEquals(List.of(id, threshold), structure.parameterReferences());
@@ -549,7 +554,7 @@ class AggregateQueryDslTest {
   private static void assertValueOverloads(Class type, Object value) {
     assertResult(Sql.value(type, value), type, SqlType.fromJavaType(type), false);
     assertResult(Sql.value(type, null), type, SqlType.fromJavaType(type), true);
-    assertResult(Sql.value(Sql.parameter(type)), type, SqlType.fromJavaType(type), true);
+    assertResult(TestParameters.value(TestParameters.parameter(type)), type, SqlType.fromJavaType(type), true);
   }
 
   @SuppressWarnings({"rawtypes", "unchecked"})
@@ -580,12 +585,6 @@ class AggregateQueryDslTest {
 
   private static void assertTypeFailure(Runnable action) {
     assertEquals(SkisErrorCode.QUERY_TYPE_MISMATCH, assertThrows(QueryValidationException.class, action::run).code());
-  }
-
-  private static void assertCaptured(Runnable action) {
-    QueryValidationException failure = assertThrows(QueryValidationException.class, action::run);
-    assertEquals(SkisErrorCode.QUERY_CAPTURED_VALUE, failure.code());
-    assertFalse(failure.getMessage().contains("sensitive-sentinel"));
   }
 
   private static void assertConstructionCode(SkisErrorCode code, Runnable action) {

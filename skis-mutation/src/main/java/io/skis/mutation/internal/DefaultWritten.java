@@ -1,27 +1,40 @@
 package io.skis.mutation.internal;
 
+import io.skis.core.NonUniqueResultException;
 import io.skis.mutation.Written;
-import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
+import io.skis.query.SingleRow;
+import java.util.Collections;
+import java.util.List;
 import org.jspecify.annotations.Nullable;
 
-/** Detached immutable write result, containing neither execution state nor JDBC resources. */
-final class DefaultWritten<R> implements Written<R> {
+/** Detached row result with compact empty/single storage and no execution resources. */
+final class DefaultWritten<R extends @Nullable Object> implements Written<R> {
   private final int affectedRows;
+  private final int size;
   private final @Nullable R value;
+  private final @Nullable List<R> many;
 
   DefaultWritten(int affectedRows, @Nullable R value) {
-    if (affectedRows < 0) {
-      throw new IllegalArgumentException("affected rows must be known and non-negative");
-    }
+    if (affectedRows < 0 || affectedRows > 1)
+      throw new IllegalArgumentException("single-row result requires count zero or one");
     this.affectedRows = affectedRows;
+    this.size = affectedRows;
     this.value = value;
+    this.many = null;
+  }
+
+  private DefaultWritten(List<R> rows, int affectedRows) {
+    if (affectedRows < 0)
+      throw new IllegalArgumentException("affected rows must be exact and non-negative");
+    this.affectedRows = affectedRows;
+    this.size = rows.size();
+    this.value = size == 1 ? rows.getFirst() : null;
+    this.many = size > 1 ? rows : null;
+  }
+
+  /** The JDBC row buffer has already been detached and exposed as an immutable list. */
+  static <R extends @Nullable Object> DefaultWritten<R> ownedRows(int affectedRows, List<R> rows) {
+    return new DefaultWritten<>(rows, affectedRows);
   }
 
   @Override
@@ -30,112 +43,24 @@ final class DefaultWritten<R> implements Written<R> {
   }
 
   @Override
-  public boolean hasRow() {
-    return value != null;
+  public List<R> rows() {
+    if (many != null) return many;
+    return size == 0 ? List.of() : Collections.singletonList(singleValue());
   }
 
   @Override
-  public R get() {
-    R result = value;
-    if (result == null) {
-      throw new NoSuchElementException("write returned no row");
-    }
-    return result;
+  public SingleRow<R> one() {
+    if (size > 1) throw NonUniqueResultException.of("write returned multiple rows");
+    return size == 0 ? SingleRow.noRow() : SingleRow.present(singleValue());
   }
 
-  @Override
-  public <X extends Throwable> R orElseThrow(Supplier<? extends X> supplier) throws X {
-    R result = value;
-    if (result == null) {
-      throw supplier.get();
-    }
-    return result;
-  }
-
-  @Override
-  public @Nullable R orElse(@Nullable R other) {
-    return value == null ? other : value;
-  }
-
-  @Override
-  public @Nullable R orElseGet(Supplier<? extends @Nullable R> supplier) {
-    return value == null ? supplier.get() : value;
-  }
-
-  @Override
-  public void ifPresent(Consumer<? super R> action) {
-    R result = value;
-    if (result != null) {
-      action.accept(result);
-    }
-  }
-
-  @Override
-  public void ifPresentOrElse(Consumer<? super R> action, Runnable emptyAction) {
-    R result = value;
-    if (result == null) {
-      emptyAction.run();
-    } else {
-      action.accept(result);
-    }
-  }
-
-  @Override
-  public Optional<R> toOptional() {
-    return Optional.ofNullable(value);
-  }
-
-  @Override
-  public Optional<R> filter(Predicate<? super R> predicate) {
-    Objects.requireNonNull(predicate, "predicate");
-    R result = value;
-    return result == null || !predicate.test(result) ? Optional.empty() : Optional.of(result);
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public Optional<R> or(Supplier<? extends Optional<? extends R>> supplier) {
-    Objects.requireNonNull(supplier, "supplier");
-    R result = value;
-    return result == null
-        ? (Optional<R>) Objects.requireNonNull(supplier.get())
-        : Optional.of(result);
-  }
-
-  @Override
-  public <U> Optional<U> map(Function<? super R, ? extends @Nullable U> mapper) {
-    Objects.requireNonNull(mapper, "mapper");
-    R result = value;
-    return result == null ? Optional.empty() : Optional.ofNullable(mapper.apply(result));
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public <U> Optional<U> flatMap(Function<? super R, ? extends Optional<? extends U>> mapper) {
-    Objects.requireNonNull(mapper, "mapper");
-    R result = value;
-    return result == null
-        ? Optional.empty()
-        : (Optional<U>) Objects.requireNonNull(mapper.apply(result));
-  }
-
-  @Override
-  public Stream<R> stream() {
-    R result = value;
-    return result == null ? Stream.empty() : Stream.of(result);
-  }
-
-  @Override
-  public boolean equals(@Nullable Object other) {
-    return this == other
-        || other instanceof DefaultWritten<?> result
-            && affectedRows == result.affectedRows
-            && Objects.equals(value, result.value);
-  }
-
-  @Override
-  public int hashCode() {
-    return 31 * affectedRows + Objects.hashCode(value);
+  /**
+   * Called only for size one. The decoder's row type R already includes legal SQL NULL; the field's
+   * extra Nullable annotation also accommodates the absent-row sentinel.
+   */
+  @SuppressWarnings("NullAway")
+  private R singleValue() {
+    return value;
   }
 
   @Override

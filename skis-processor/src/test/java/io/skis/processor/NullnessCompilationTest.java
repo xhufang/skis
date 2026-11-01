@@ -59,7 +59,7 @@ class NullnessCompilationTest {
   @Test
   void nullableQueryResultsStayNullableInEveryTerminalAndCallback() throws Exception {
     check("query-terminals-valid", """
-        static int read(SelectQuery<@Nullable String> nullable, SelectQuery<String> required) {
+        static int read(ExecutableSelectQuery<@Nullable String> nullable, ExecutableSelectQuery<String> required) {
           String safe = required.fetchOne().get();
           int[] callbackLength = {0};
           nullable.fetchOne().ifPresent(value -> callbackLength[0] += value.length());
@@ -79,10 +79,10 @@ class NullnessCompilationTest {
           return safe.length() + rows.size() + page.size() + slice.size() + keyset.size()
               + callbackLength[0] + mappedLength;
         }
-        static <R extends @Nullable Object> SingleRow<R> one(SelectQuery<R> query) {
+        static <R extends @Nullable Object> SingleRow<R> one(ExecutableSelectQuery<R> query) {
           return query.fetchOne();
         }
-        static <R extends @Nullable Object> SingleRow<R> first(SelectQuery<R> query) {
+        static <R extends @Nullable Object> SingleRow<R> first(ExecutableSelectQuery<R> query) {
           return query.fetchFirst();
         }
         """).assertPass();
@@ -96,13 +96,13 @@ class NullnessCompilationTest {
         "stream-callback", "try (var stream = query.stream()) { return stream.mapToInt(String::length).sum(); }");
     for (var mistake : mistakes.entrySet()) {
       reject("query-" + mistake.getKey(),
-          "static int invalid(SelectQuery<@Nullable String> query) { " + mistake.getValue() + " }");
+          "static int invalid(ExecutableSelectQuery<@Nullable String> query) { " + mistake.getValue() + " }");
     }
     reject("query-result-generic", """
-        static SelectQuery<String> invalid(SelectQuery<@Nullable String> query) { return query; }
+        static ExecutableSelectQuery<String> invalid(ExecutableSelectQuery<@Nullable String> query) { return query; }
         """);
     reject("query-list-generic", """
-        static List<String> invalid(SelectQuery<@Nullable String> query) { return query.fetchList(); }
+        static List<String> invalid(ExecutableSelectQuery<@Nullable String> query) { return query.fetchList(); }
         """);
   }
 
@@ -373,8 +373,8 @@ class NullnessCompilationTest {
           NonNullSelectable<Integer> fallback = Sql.coalesce(number, required);
           NonNullSelectable<String> concat = Sql.concat(Sql.value("a"), Sql.value("b"));
           NonNullSelectable<Long> cast = Sql.cast(required, Long.class, SqlType.BIGINT);
-          SelectQuery<@Nullable Long> aggregate = operations.select(Sql.sumAsLong(number)).from(table);
-          SelectQuery<Long> count = operations.select(Sql.count(number)).from(table);
+          ExecutableSelectQuery<@Nullable Long> aggregate = operations.select(Sql.sumAsLong(number)).from(table);
+          ExecutableSelectQuery<Long> count = operations.select(Sql.count(number)).from(table);
           List<@Nullable Long> rows = aggregate.groupBy(number).having(condition).fetchList();
           Long value = count.fetchOne().get();
         }
@@ -397,24 +397,24 @@ class NullnessCompilationTest {
   @Test
   void writtenAndStagedMutationNullnessRemainPrecise() throws Exception {
     check("written-valid", """
-        static <R> R required(Written<R> result) { return result.get(); }
+        static <R> R required(Written<R> result) { return result.one().get(); }
         static <R> @Nullable R fallback(Written<R> result) {
-          return result.orElse(null);
+          return result.one().orElse(null);
         }
         static void stages(MutationOperations op, QueryTable<String> table, String value) {
           Written<String> result = op.insertInto(table).value(value).returning().write();
-          String required = result.orElseThrow();
-          Optional<Integer> length = result.map(String::length);
+          String required = result.one().orElseThrow();
+          Optional<Integer> length = result.one().map(String::length);
         }
         """).assertPass();
     reject("written-nullable-default", """
         static int invalid(Written<String> result) {
-          return result.orElse(null).length();
+          return result.one().orElse(null).length();
         }
         """);
     reject("written-nullable-supplier", """
         static int invalid(Written<String> result) {
-          return result.orElseGet(() -> null).length();
+          return result.one().orElseGet(() -> null).length();
         }
         """);
     reject("write-null-options", """

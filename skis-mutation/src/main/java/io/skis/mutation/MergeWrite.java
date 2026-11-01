@@ -3,17 +3,16 @@ package io.skis.mutation;
 import io.skis.core.ExecutionOptions;
 import io.skis.query.ProjectionSelection;
 import io.skis.query.ProjectionType;
-import java.util.List;
 
-public interface MergeWrite<E> {
+public interface MergeWrite<E> extends ReturningSelection<E>, MergeActions<E> {
 
   int write();
 
   int write(ExecutionOptions options);
 
-  ReturningWrite<List<E>> returning();
+  ReturningWrite<E> returning();
 
-  <R> ReturningWrite<List<R>> returning(ProjectionSelection<R> projection);
+  <R> ReturningWrite<R> returning(ProjectionSelection<R> projection);
 
-  <R> ReturningWrite<List<R>> returning(ProjectionType<R> projection);
+  <R> ReturningWrite<R> returning(ProjectionType<R> projection);
 }

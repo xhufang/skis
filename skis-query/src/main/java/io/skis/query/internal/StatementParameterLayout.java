@@ -2,7 +2,6 @@ package io.skis.query.internal;
 
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
-import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.SqlType;

@@ -37,7 +37,7 @@ import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.SliceContinuation;
 import io.skis.query.SliceRequest;
 import io.skis.query.SortSpecification;
@@ -327,7 +327,7 @@ class QueryPaginationCompilationTest {
         operations.selectFrom(TABLE).where(TABLE.name().eq("Mimi")).countQuery();
 
     assertTrue(explicitCount instanceof DefaultCountQuery);
-    QueryCompilation<Long> compilation = ((DefaultCountQuery) explicitCount).compilation();
+    QueryCompilation<Long> compilation = TestParameters.countCompilation(explicitCount);
     assertEquals(
         "SELECT COUNT(*) FROM \"shelter\".\"pet\" WHERE \"pet\".\"pet_name\" = ?",
         compilation.plan().sql());
@@ -353,39 +353,38 @@ class QueryPaginationCompilationTest {
     var operations = bind(QueryRuntime.compile(
         EntityRuntimeRegistry.of(List.of(model(composite))), TestDialect.INSTANCE));
     var joined = operations.selectFrom(left).crossJoin(right).distinct();
-    assertTrue(((DefaultCountQuery) joined.countQuery()).compilation().plan().sql()
+    assertTrue(TestParameters.countCompilation(joined.countQuery()).plan().sql()
         .startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
     var simple = operations.selectFrom(left).distinct();
     assertEquals("SELECT COUNT(*) FROM \"shelter\".\"composite_pet\" AS \"left_pet\"",
-        ((DefaultCountQuery) simple.countQuery()).compilation().plan().sql());
+        TestParameters.countCompilation(simple.countQuery()).plan().sql());
 
     EntityMeta<Pet> keyless = EntityMeta.simple(Pet.class,
         new TableMeta("", "shelter", "pet_view"), List.of(ID, NAME, NICKNAME), null, true);
     var view = new CountTable(keyless, "view_pet");
     var viewOperations = bind(QueryRuntime.compile(
         EntityRuntimeRegistry.of(List.of(model(keyless))), TestDialect.INSTANCE));
-    assertTrue(((DefaultCountQuery) viewOperations.selectFrom(view).distinct().countQuery())
-        .compilation().plan().sql().startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
+    assertTrue(TestParameters.countCompilation(viewOperations.selectFrom(view).distinct().countQuery()).plan().sql().startsWith("SELECT COUNT(*) FROM (SELECT DISTINCT "));
   }
 
   @Test
   void oneImmutableQueryReusesPlansWhileKeepingPageValuesOutsideThem() {
     QueryOperations operations = operations();
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>)
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>)
             operations.selectFrom(TABLE).where(TABLE.name().eq("Mimi")).orderBy(TABLE.id().asc());
 
-    QueryCompilation<Pet> first = query.compilation(new QueryPagination.Offset(20, 0));
-    QueryCompilation<Pet> third = query.compilation(new QueryPagination.Offset(20, 40));
+    QueryCompilation<Pet> first = TestParameters.compilation(query, new QueryPagination.Offset(20, 0));
+    QueryCompilation<Pet> third = TestParameters.compilation(query, new QueryPagination.Offset(20, 40));
     QueryCompilation<Pet> keysetNine =
-        query.compilation(new QueryPagination.Keyset(21, List.of(9L)));
+        TestParameters.compilation(query, new QueryPagination.Keyset(21, List.of(9L)));
     QueryCompilation<Pet> keysetThree =
-        query.compilation(new QueryPagination.Keyset(21, List.of(3L)));
-    QueryCompilation<Pet> unpagedFirst = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Pet> unpagedSecond = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Long> countFirst = query.countCompilation();
-    QueryCompilation<Long> countSecond = query.countCompilation();
+        TestParameters.compilation(query, new QueryPagination.Keyset(21, List.of(3L)));
+    QueryCompilation<Pet> unpagedFirst = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> unpagedSecond = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Long> countFirst = TestParameters.countCompilation(query);
+    QueryCompilation<Long> countSecond = TestParameters.countCompilation(query);
 
     assertSame(first.plan(), third.plan());
     assertSame(first.ast(), third.ast());
@@ -408,24 +407,24 @@ class QueryPaginationCompilationTest {
   void validatesStableDistinctNullableKeysetAndContinuationContractsBeforeJdbc() {
     QueryOperations operations = operations();
 
-    SelectQuery<Pet> unstable = operations.selectFrom(TABLE).orderBy(TABLE.name().asc());
+    ExecutableSelectQuery<Pet> unstable = operations.selectFrom(TABLE).orderBy(TABLE.name().asc());
     assertThrows(
         QueryValidationException.class, () -> unstable.fetchSlice(SliceRequest.offset(0, 10)));
 
-    SelectQuery<Pet> nullableDefault =
+    ExecutableSelectQuery<Pet> nullableDefault =
         operations.selectFrom(TABLE).orderBy(TABLE.nickname().asc(), TABLE.id().asc());
     assertThrows(
         QueryValidationException.class,
         () -> nullableDefault.fetchSlice(SliceRequest.keysetFirst(10)));
 
-    SelectQuery<String> stableDistinct =
+    ExecutableSelectQuery<String> stableDistinct =
         operations.select(TABLE.name()).from(TABLE).distinct().orderBy(TABLE.name().asc());
     AssertionError reachedJdbc =
         assertThrows(
             AssertionError.class, () -> stableDistinct.fetchSlice(SliceRequest.keysetFirst(10)));
     assertEquals("plan execution must not occur in this test", reachedJdbc.getMessage());
 
-    SelectQuery<Pet> ordered = operations.selectFrom(TABLE).orderBy(TABLE.id().asc());
+    ExecutableSelectQuery<Pet> ordered = operations.selectFrom(TABLE).orderBy(TABLE.id().asc());
     SliceContinuation foreign =
         DefaultSliceContinuation.offset("foreign-query", "foreign-order", 10, "foreign-parameters");
     assertThrows(
@@ -439,15 +438,15 @@ class QueryPaginationCompilationTest {
     QueryOperations operations = bind(catalog);
     QueryCondition predicate = TABLE.id().eq(7L);
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet> query =
-        (DefaultSelectQuery<Pet>) operations.selectFrom(TABLE).where(predicate);
+    DefaultExecutableSelectQuery<Pet> query =
+        (DefaultExecutableSelectQuery<Pet>) operations.selectFrom(TABLE).where(predicate);
 
-    QueryCompilation<Pet> compilation = query.compilation(QueryPagination.None.INSTANCE);
-    QueryCompilation<Pet> repeated = query.compilation(QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> compilation = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
+    QueryCompilation<Pet> repeated = TestParameters.compilation(query, QueryPagination.None.INSTANCE);
     @SuppressWarnings("unchecked")
-    DefaultSelectQuery<Pet> unfiltered = (DefaultSelectQuery<Pet>) operations.selectFrom(TABLE);
+    DefaultExecutableSelectQuery<Pet> unfiltered = (DefaultExecutableSelectQuery<Pet>) operations.selectFrom(TABLE);
     QueryCompilation<Pet> unfilteredCompilation =
-        unfiltered.compilation(QueryPagination.None.INSTANCE);
+        TestParameters.compilation(unfiltered, QueryPagination.None.INSTANCE);
 
     assertSame(
         compilation.plan(), QueryTestSupport.selectPlan(catalog.require(PET), TABLE, predicate));

@@ -80,7 +80,7 @@ public enum DialectFeature {
   /** INSERT supports the explicit DEFAULT VALUES form with no bound columns. */
   INSERT_DEFAULT_VALUES,
 
-  /** INSERT, UPDATE and DELETE can return explicitly selected target columns. */
+  /** Mutations can return explicitly selected target columns and supported expressions. */
   MUTATION_RETURNING,
 
   /** Mutation results use FINAL TABLE / OLD TABLE instead of native RETURNING. */
@@ -89,9 +89,24 @@ public enum DialectFeature {
   /** Explicit-column PostgreSQL conflict actions. */
   INSERT_ON_CONFLICT,
 
-  /** Single-row VALUES source with MERGE branches. */
+  /** Native MERGE USING supports ordered UPDATE, DELETE and INSERT branches. */
   MERGE_USING,
 
   /** H2 KEY grammar, independently validated from USING. */
-  MERGE_KEY
+  MERGE_KEY,
+
+  /** Native UPDATE with a table-expression FROM source. */
+  UPDATE_FROM,
+
+  /** Native DELETE with a table-expression USING source. */
+  DELETE_USING,
+
+  /** SET supports assigning an ordered target-column group from one SELECT. */
+  ROW_SUBQUERY_ASSIGNMENT,
+
+  /** INSERT accepts a SELECT as its row source. */
+  INSERT_SELECT,
+
+  /** INSERT supports multiple rows in a single VALUES clause. */
+  MULTI_ROW_VALUES
 }

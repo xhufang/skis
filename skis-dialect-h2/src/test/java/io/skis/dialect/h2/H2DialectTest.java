@@ -444,7 +444,7 @@ class H2DialectTest {
                 LogicalPredicate.and(List.of(pet.id().eq(id), pet.version().eq(version)))));
 
     assertEquals(
-        "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",
+        "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = (\"version\" + 1) WHERE \"id\" = ? AND \"version\" = ?",
         rendered.sql());
     assertEquals(List.of(name, id, version), rendered.parameters());
   }

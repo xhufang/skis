@@ -4,7 +4,6 @@ import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.query.NonNullSelectable;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.ArithmeticExpression;
@@ -40,6 +39,11 @@ public final class StandardExpressions {
     return COUNT_ALL;
   }
 
+  /** Validates the framework-owned expression and exposes its conservative nullable read view. */
+  public static <V> Selectable<V> nullable(Selectable<V> expression) {
+    return SelectableSupport.requireFramework(expression);
+  }
+
   public static <V> NonNullSelectable<V> nonNull(Selectable<V> expression) {
     if (expression instanceof NonNullSelectable<V> nonNull) {
       return nonNull;
@@ -56,21 +60,12 @@ public final class StandardExpressions {
   public static <V> Selectable<V> value(Class<V> javaType, @Nullable V value) {
     QueryParameter<V> parameter =
         new DefaultQueryParameter<>(
-            javaType, value == null ? Nullability.NULLABLE : Nullability.NON_NULL, null);
+            javaType, value == null ? Nullability.NULLABLE : Nullability.NON_NULL);
     SqlType sqlType = builtinType(parameter.javaType());
     if (value != null && value.getClass() != parameter.javaType()) {
       throw mismatch("value must have the exact declared boxed Java type");
     }
     return parameterValue(parameter, sqlType, QueryParameters.of(parameter, value));
-  }
-
-  public static <V> Selectable<V> value(QueryParameter<V> parameter) {
-    Objects.requireNonNull(parameter, "parameter");
-    if (!(parameter instanceof DefaultQueryParameter<?>)) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_PARAMETER_DECLARATION, "query parameter was not created by SKIS");
-    }
-    return parameterValue(parameter, builtinType(parameter.javaType()), QueryParameters.empty());
   }
 
   private static <V> Selectable<V> parameterValue(
@@ -148,7 +143,7 @@ public final class StandardExpressions {
 
   public static <V> Selectable<V> cast(
       Selectable<?> expression, Class<V> javaType, SqlType sqlType) {
-    Class<V> boxed = new DefaultQueryParameter<>(javaType, Nullability.NULLABLE, null).javaType();
+    Class<V> boxed = new DefaultQueryParameter<>(javaType, Nullability.NULLABLE).javaType();
     Objects.requireNonNull(sqlType, "sqlType");
     if (builtinType(boxed) != sqlType) {
       throw mismatch("CAST target must match the exact built-in Java/SQL type mapping");

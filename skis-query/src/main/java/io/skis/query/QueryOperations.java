@@ -14,29 +14,67 @@ public interface QueryOperations {
   <E> Optional<E> findById(QueryTable<E> table, Object id, ExecutionOptions executionOptions);
 
   /** Starts an immutable full-entity query rooted at the supplied table. */
-  <E> SelectQuery<E> selectFrom(QueryTable<E> table);
+  <E> ExecutableSelectQuery<E> selectFrom(QueryTable<E> table);
 
   /** Selects one complete entity before choosing an independent root. */
-  <E> SelectFromStep<SelectQuery<E>> select(QueryTable<E> table);
+  <E> SelectFromStep<ExecutableSelectQuery<E>> select(QueryTable<E> table);
 
   /** Selects an entity that may be absent on a null-extended outer-join side. */
-  <E> SelectFromStep<SelectQuery<@Nullable E>> selectNullable(QueryTable<E> table);
+  <E> SelectFromStep<ExecutableSelectQuery<@Nullable E>> selectNullable(QueryTable<E> table);
 
   /** Starts a declared non-null scalar selection. */
-  <V> SelectFromStep<SelectQuery<V>> select(NonNullSelectable<V> selectable);
+  <V> SelectFromStep<ExecutableSingleColumnSelect<V>> select(NonNullSelectable<V> selectable);
 
   /** Starts a conservatively nullable scalar selection. */
-  <V> SelectFromStep<SelectQuery<@Nullable V>> select(Selectable<V> selectable);
+  <V> SelectFromStep<ExecutableSingleColumnSelect<@Nullable V>> select(Selectable<V> selectable);
 
   /** Explicitly permits a declared non-null expression to produce a nullable query result. */
-  <V> SelectFromStep<SelectQuery<@Nullable V>> selectNullable(NonNullSelectable<V> selectable);
+  <V> SelectFromStep<ExecutableSingleColumnSelect<@Nullable V>> selectNullable(
+      NonNullSelectable<V> selectable);
 
   /** Selects one APT-generated result-row shape before choosing an independent root. */
-  <R> SelectFromStep<SelectQuery<R>> select(ProjectionSelection<R> projection);
+  <R> SelectFromStep<ExecutableSelectQuery<R>> select(ProjectionSelection<R> projection);
 
   /** Selects one APT-generated special result whose sources bind in the final query block. */
-  <R> SelectFromStep<SelectQuery<R>> select(ProjectionType<R> projection);
+  <R> SelectFromStep<ExecutableSelectQuery<R>> select(ProjectionType<R> projection);
 
-  /** Adapts one reusable query structure; call {@link SelectQuery#bind} for its values. */
-  <R extends @Nullable Object> SelectQuery<R> query(SelectDescription<R> description);
+  /** Executes a resource-free, strongly typed terminal request. */
+  <T extends @Nullable Object> T run(QueryRequest<T> request);
+
+  <A, B> SelectFromStep<ExecutableSelectQuery<Row2<@Nullable A, @Nullable B>>> select(
+      Selectable<A> first, Selectable<B> second);
+
+  <A, B> SelectFromStep<ExecutableSelectQuery<Row2<A, @Nullable B>>> select(
+      NonNullSelectable<A> first, Selectable<B> second);
+
+  <A, B> SelectFromStep<ExecutableSelectQuery<Row2<@Nullable A, B>>> select(
+      Selectable<A> first, NonNullSelectable<B> second);
+
+  <A, B> SelectFromStep<ExecutableSelectQuery<Row2<A, B>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second);
+
+  <A, B, C>
+      SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, @Nullable B, @Nullable C>>> select(
+          Selectable<A> first, Selectable<B> second, Selectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, @Nullable B, @Nullable C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, Selectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, B, @Nullable C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, Selectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, B, @Nullable C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, Selectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, @Nullable B, C>>> select(
+      Selectable<A> first, Selectable<B> second, NonNullSelectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, @Nullable B, C>>> select(
+      NonNullSelectable<A> first, Selectable<B> second, NonNullSelectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<@Nullable A, B, C>>> select(
+      Selectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third);
+
+  <A, B, C> SelectFromStep<ExecutableSelectQuery<Row3<A, B, C>>> select(
+      NonNullSelectable<A> first, NonNullSelectable<B> second, NonNullSelectable<C> third);
 }

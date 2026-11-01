@@ -332,7 +332,8 @@ final class QueryPlanCompiler {
     if (structure.validationSource() != null) {
       TableRuntimeScope sourceScope =
           TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-      keyContext = validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
+      keyContext =
+          validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
       runtimeScope = sourceScope.forFromClause(structure.fromClause());
     } else {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());
@@ -497,7 +498,8 @@ final class QueryPlanCompiler {
     if (structure.validationSource() != null) {
       TableRuntimeScope sourceScope =
           TableRuntimeScope.resolve(runtimeRegistry, structure.validationStructure().fromClause());
-      keyContext = validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
+      keyContext =
+          validateSelectionSource(selected, structure, distinct, sourceScope, resolvedSource);
       runtimeScope = sourceScope.forFromClause(structure.fromClause());
     } else {
       runtimeScope = TableRuntimeScope.resolve(runtimeRegistry, structure.fromClause());

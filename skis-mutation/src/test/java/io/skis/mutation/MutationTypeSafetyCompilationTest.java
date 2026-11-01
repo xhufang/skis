@@ -43,11 +43,14 @@ final class MutationTypeSafetyCompilationTest {
         Written<String> full = single.returning().write();
         Written<Integer> one = single.returning(reusable).write();
         Written<Integer> two = single.returning(special).write();
-        Written<List<String>> many = target.values(List.of(entity)).returning().write();
-        Written<List<Integer>> projected = target.values(List.of(entity)).returning(special).write();
+        ReturningWrite<String> scalar = single.returning(column);
+        Written<String> scalarRow = scalar.write();
+        Written<Row2<String, Integer>> pair = single.returning(column, Sql.value(1)).write();
+        Written<String> many = target.values(List.of(entity)).returning().write();
+        Written<Integer> projected = target.values(List.of(entity)).returning(special).write();
         UpdateWrite<String> update = op.update(table).set(column, entity);
-        Written<List<Integer>> changed = update.where(column.eq(entity)).returning(reusable).write();
-        Written<List<String>> deleted = op.deleteFrom(table).allowAllRows().returning().write();
+        Written<Integer> changed = update.where(column.eq(entity)).returning(reusable).write();
+        Written<String> deleted = op.deleteFrom(table).allowAllRows().returning().write();
         """;
     assertTrue(compile("samples.Contract", prefix + valid + "}}", temporaryDirectory.resolve("stages")));
     int index = 0;
@@ -58,12 +61,13 @@ final class MutationTypeSafetyCompilationTest {
         "op.insertInto(table).returning();", "op.insertInto(table).value(entity).values(List.of(entity));",
         "op.insertInto(table).value(entity).value(entity);",
         "op.insertInto(table).value(entity).returning().returning();",
-        "op.insertInto(table).value(entity).returning(column);",
+        "Written<Integer> bad = op.insertInto(table).value(entity).returning(column).write();",
+        "Written<Row2<Integer, String>> bad = op.insertInto(table).value(entity).returning(column, Sql.value(1)).write();",
         "op.insertInto(table).value(entity).returning(String.class);",
         "op.insertInto(table).value(entity).returning((RowDecoder<String>) null);",
         "Written<String> bad = op.insertInto(table).value(entity).write();",
         "int bad = op.insertInto(table).value(entity).returning().write();",
-        "Written<String> bad = op.insertInto(table).values(List.of(entity)).returning().write();",
+        "Written<List<String>> bad = op.insertInto(table).values(List.of(entity)).returning().write();",
         "op.update(table).write();", "op.update(table).set(column, 1);")) {
       assertFalse(compile("samples.Contract", prefix + illegal + "}}",
           temporaryDirectory.resolve("illegal-" + index++)), illegal);
@@ -84,7 +88,7 @@ final class MutationTypeSafetyCompilationTest {
 
           static int mutate(MutationOperations operations, QueryTable<Pet> pet, Pet value) {
             int affected = operations.insertInto(pet).value(value).write();
-            affected += operations.updateById(pet, value);
+            affected += operations.updateById(pet).value(value).write();
             affected += operations.deleteById(pet, 1L);
             return affected;
           }
@@ -93,7 +97,7 @@ final class MutationTypeSafetyCompilationTest {
     String invalidInsertTarget =
         invalidDerivedTargetSource("InvalidDerivedInsert", "operations.insertInto(derived).value(value).write()");
     String invalidUpdateTarget =
-        invalidDerivedTargetSource("InvalidDerivedUpdate", "operations.updateById(derived, value)");
+        invalidDerivedTargetSource("InvalidDerivedUpdate", "operations.updateById(derived).value(value).write()");
     String invalidDeleteTarget =
         invalidDerivedTargetSource("InvalidDerivedDelete", "operations.deleteById(derived, 1L)");
 
@@ -132,11 +136,11 @@ final class MutationTypeSafetyCompilationTest {
         """;
     String valid = """
         int count = op.insertInto(table).values(row -> row.value(id, 1L).value(name, "one"))
-            .onConflict(id).doUpdate().setExpression(name, Sql.excluded(name)).write();
+            .onConflict(id).doUpdate().set(name, Sql.excluded(name)).write();
         var key = Sql.output(id, "id"); var text = Sql.output(name, "name");
         var source = Sql.values(row -> row.value(key, 1L).value(text, "one")).as("incoming");
-        Written<List<String>> rows = op.mergeInto(table).using(source).on(id.eq(source.column(key)))
-            .whenMatched().thenUpdate().setExpression(name, source.column(text))
+        Written<String> rows = op.mergeInto(table).using(source).on(id.eq(source.column(key)))
+            .whenMatched().thenUpdate().set(name, source.column(text))
             .whenNotMatched().thenInsert(row -> row.value(id, source.column(key)).value(name, source.column(text)))
             .returning().write();
         Written<String> single = op.mergeInto(table).key(id)

@@ -7,4 +7,6 @@ public interface MergeMatched<E> {
   MergeMatched<E> and(QueryCondition condition);
 
   MergeUpdateSet<E> thenUpdate();
+
+  MergeWrite<E> thenDelete();
 }

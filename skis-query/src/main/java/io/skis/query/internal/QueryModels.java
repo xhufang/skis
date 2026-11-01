@@ -5,9 +5,8 @@ import io.skis.core.SkisErrorCode;
 import io.skis.query.DerivedOutput;
 import io.skis.query.DerivedRelation;
 import io.skis.query.ProjectionSelection;
-import io.skis.query.SelectDescription;
+import io.skis.query.SelectSource;
 import io.skis.query.Selectable;
-import io.skis.query.SingleColumnSelect;
 import io.skis.query.SliceContinuation;
 import io.skis.query.SliceRequest;
 import io.skis.query.SortSpecification;
@@ -24,19 +23,9 @@ final class QueryModels {
   }
 
   @SuppressWarnings("unchecked")
-  static <R extends @Nullable Object> DefaultSelectDescription<R> description(
-      SelectDescription<R> value) {
-    if (value instanceof DefaultSelectDescription<?> result) {
-      return (DefaultSelectDescription<R>) result;
-    }
-    throw foreign();
-  }
-
-  @SuppressWarnings("unchecked")
-  static <R extends @Nullable Object> DefaultSingleColumnSelect<R> single(
-      SingleColumnSelect<R> value) {
-    if (value instanceof DefaultSingleColumnSelect<?> result) {
-      return (DefaultSingleColumnSelect<R>) result;
+  static <R extends @Nullable Object> AbstractSelectQuery<R, ?> description(SelectSource<R> value) {
+    if (value instanceof AbstractSelectQuery<?, ?> result) {
+      return (AbstractSelectQuery<R, ?>) result;
     }
     throw foreign();
   }

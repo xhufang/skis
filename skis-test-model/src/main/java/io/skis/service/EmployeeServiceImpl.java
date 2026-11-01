@@ -68,7 +68,7 @@ public class EmployeeServiceImpl implements EmployeeService {
   public int updateEmployee(Employee employee) {
     Objects.requireNonNull(employee, "employee");
     employee.setModifyStamp(Instant.now());
-    return skisExecutor.updateById(EMPLOYEE, employee);
+    return skisExecutor.updateById(EMPLOYEE).value(employee).write();
   }
 
   @Override

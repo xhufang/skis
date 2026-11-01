@@ -3,8 +3,7 @@ package io.skis.query.internal;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
-import io.skis.query.SelectDescription;
+import io.skis.query.SelectSource;
 import io.skis.query.Selectable;
 import io.skis.sql.ast.AggregateExpression;
 import io.skis.sql.ast.BetweenPredicate;
@@ -48,14 +47,16 @@ final class FrameworkQueryCondition implements QueryCondition {
   static <V> FrameworkQueryCondition valueComparison(
       Selectable<V> left, ComparisonOperator operator, V value) {
     QueryParameter<V> parameter = DefaultQueryParameter.anonymousNonNull(left.javaType());
-    return new FrameworkQueryCondition(
-        new ValueComparisonNode<>(left, operator, parameter), QueryParameters.of(parameter, value));
+    return parameterComparison(left, operator, parameter, QueryParameters.of(parameter, value));
   }
 
   static <V> FrameworkQueryCondition parameterComparison(
-      Selectable<V> left, ComparisonOperator operator, QueryParameter<V> parameter) {
+      Selectable<V> left,
+      ComparisonOperator operator,
+      QueryParameter<V> parameter,
+      QueryParameters parameters) {
     return new FrameworkQueryCondition(
-        new ValueComparisonNode<>(left, operator, parameter), QueryParameters.empty());
+        new ValueComparisonNode<>(left, operator, parameter), parameters);
   }
 
   static <V> FrameworkQueryCondition expressionComparison(
@@ -71,25 +72,29 @@ final class FrameworkQueryCondition implements QueryCondition {
   static <V> FrameworkQueryCondition between(Selectable<V> value, V lower, V upper) {
     QueryParameter<V> lowerParameter = DefaultQueryParameter.anonymousNonNull(value.javaType());
     QueryParameter<V> upperParameter = DefaultQueryParameter.anonymousNonNull(value.javaType());
-    return new FrameworkQueryCondition(
-        new BetweenNode<>(value, lowerParameter, upperParameter),
+    return betweenParameters(
+        value,
+        lowerParameter,
+        upperParameter,
         QueryParameters.builder().bind(lowerParameter, lower).bind(upperParameter, upper).build());
   }
 
   static <V> FrameworkQueryCondition betweenParameters(
-      Selectable<V> value, QueryParameter<V> lower, QueryParameter<V> upper) {
-    return new FrameworkQueryCondition(
-        new BetweenNode<>(value, lower, upper), QueryParameters.empty());
+      Selectable<V> value,
+      QueryParameter<V> lower,
+      QueryParameter<V> upper,
+      QueryParameters parameters) {
+    return new FrameworkQueryCondition(new BetweenNode<>(value, lower, upper), parameters);
   }
 
   static <V> FrameworkQueryCondition like(Selectable<V> value, V pattern) {
     QueryParameter<V> parameter = DefaultQueryParameter.anonymousNonNull(value.javaType());
-    return new FrameworkQueryCondition(
-        new LikeNode<>(value, parameter), QueryParameters.of(parameter, pattern));
+    return likeParameter(value, parameter, QueryParameters.of(parameter, pattern));
   }
 
-  static <V> FrameworkQueryCondition likeParameter(Selectable<V> value, QueryParameter<V> pattern) {
-    return new FrameworkQueryCondition(new LikeNode<>(value, pattern), QueryParameters.empty());
+  static <V> FrameworkQueryCondition likeParameter(
+      Selectable<V> value, QueryParameter<V> pattern, QueryParameters parameters) {
+    return new FrameworkQueryCondition(new LikeNode<>(value, pattern), parameters);
   }
 
   static <V> FrameworkQueryCondition membership(
@@ -101,28 +106,29 @@ final class FrameworkQueryCondition implements QueryCondition {
       references.add(parameter);
       parameters.bind(parameter, candidate);
     }
-    return new FrameworkQueryCondition(
-        new InNode<>(value, references, negated), parameters.build());
+    return membershipParameters(value, references, negated, parameters.build());
   }
 
   static <V> FrameworkQueryCondition membershipParameters(
-      Selectable<V> value, List<QueryParameter<V>> candidates, boolean negated) {
-    return new FrameworkQueryCondition(
-        new InNode<>(value, candidates, negated), QueryParameters.empty());
+      Selectable<V> value,
+      List<QueryParameter<V>> candidates,
+      boolean negated,
+      QueryParameters parameters) {
+    return new FrameworkQueryCondition(new InNode<>(value, candidates, negated), parameters);
   }
 
   static <V> FrameworkQueryCondition subqueryMembership(
-      Selectable<V> value, SelectQueryState<V> subquery, boolean negated) {
+      Selectable<V> value, AbstractSelectQuery<?, ?> subquery, boolean negated) {
     return new FrameworkQueryCondition(
-        new InSubqueryNode<>(value, subquery, negated), QueryParameters.empty());
+        new InSubqueryNode<>(value, subquery.state, negated), subquery.parameters);
   }
 
-  static FrameworkQueryCondition exists(SelectDescription<?> description, boolean negated) {
+  static FrameworkQueryCondition exists(SelectSource<?> description, boolean negated) {
     return new FrameworkQueryCondition(
         new ExistsNode(
             QueryModels.description(Objects.requireNonNull(description, "description")).state(),
             negated),
-        QueryParameters.empty());
+        QueryModels.description(description).parameters);
   }
 
   static QueryCondition logical(
@@ -158,10 +164,6 @@ final class FrameworkQueryCondition implements QueryCondition {
     QueryConditionCompiler target = Objects.requireNonNull(compiler, "compiler");
     target.include(parameters);
     return root.compile(target);
-  }
-
-  FrameworkQueryCondition structureOnly() {
-    return (FrameworkQueryCondition) new ExpressionCapture().condition(this);
   }
 
   boolean capturesValues() {
@@ -415,7 +417,7 @@ final class FrameworkQueryCondition implements QueryCondition {
   }
 
   private record InSubqueryNode<V>(
-      Selectable<V> value, SelectQueryState<V> subquery, boolean negated) implements Node {
+      Selectable<V> value, SelectQueryState<?> subquery, boolean negated) implements Node {
 
     private InSubqueryNode {
       Objects.requireNonNull(value, "value");
@@ -502,18 +504,6 @@ final class QueryConditions {
   static SqlPredicate compile(QueryCondition condition, QueryConditionCompiler compiler) {
     Objects.requireNonNull(condition, "condition");
     return framework(condition).compile(Objects.requireNonNull(compiler, "compiler"));
-  }
-
-  static QueryCondition reusableStructure(QueryCondition condition) {
-    FrameworkQueryCondition framework = framework(condition);
-    if (framework.capturesValues()) {
-      throw QueryValidationException.of(
-          SkisErrorCode.QUERY_CAPTURED_VALUE,
-          "a reusable SELECT description cannot capture ordinary values; use Sql.parameter(...) "
-              + "in the condition and bind it through "
-              + "executor.query(description).bind(parameter, value)");
-    }
-    return framework.structureOnly();
   }
 
   static FrameworkQueryCondition framework(QueryCondition condition) {

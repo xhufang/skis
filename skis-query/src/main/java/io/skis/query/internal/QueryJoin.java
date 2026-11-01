@@ -3,7 +3,6 @@ package io.skis.query.internal;
 import io.skis.core.QueryValidationException;
 import io.skis.core.SkisErrorCode;
 import io.skis.query.QueryCondition;
-import io.skis.query.QueryParameter;
 import io.skis.query.Selectable;
 import io.skis.query.SortSpecification;
 import io.skis.sql.ast.FromClause;

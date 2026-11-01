@@ -2,11 +2,23 @@
 
 `.github/architecture/decisions.json` 是可提交的最小决策清单，首次登记 ADR-0001—0020。
 本地 `docs/adr` 正文和索引继续由 Git 忽略；公开清单只包含必要状态、版本、未完成范围、任务、实现锚点、合同归属及处置理由。
-当前机器清单覆盖 ADR-0001—0025。T02 已按 1899270 的 CI 40468581570 / Compliance 40468581572 及下载的原始报告验收，ADR-0023 升级 Implemented。
+当前机器清单覆盖 ADR-0001—0030。T02 已按 1899270 的 CI 40468581570 / Compliance 40468581572 及下载的原始报告验收，ADR-0023 升级 Implemented。
 T03 按 ADR-0025 删除 InsertResult，清单 change 绑定可信基线 `1899270ba880601d276ed324bcbab40cb9e359fd`，逐项列出被移除锚点和唯一插入入口替代理由；首次登记及其他原合同保持。
 ADR-0024/0025 已登记当前 RETURNING/阶段源码和测试锚点，仍为 Accepted，待当前变更验证；ADR-0006/0007 追加适用管线/缓存合同，原历史状态保持。
+2026-10-30：ADR-0026—0030 的查询、写入和批量源码及合同已接线，清单追加实际 anchors/contracts，状态仍为 Accepted、落地版本为空，待本次 CI/真实驱动与消费者验收。普通查询类型预算及支持矩阵见 task0.2.10-public-surface §18、composition-contracts §10。
+以下保留 2026-10-29 的设计登记历史，当时 anchors/contracts 为空，不代表当前源码状态。
+2026-10-29 新增 ADR-0026（Accepted），目标为 T05 原生删除与直接值子查询；该轮未实现，anchors/contracts 为空。
+用户明确不保留独立显式参数模板目标，不新增 mutation.bind；ADR-0024 的未完成范围同步，原锚点和历史状态保持。
+同日进一步新增 ADR-0027（Accepted），T05 全面升级现有 SQL DSL 可组合性及参数使用模型；
+该轮将 Sql.parameter/先声明再 bind 和描述/执行分工纳入重审；SELECT 模型与参数删除已由后续 ADR-0029 确认，来源/结果等继续定稿，anchors/contracts 为空。
+同日新增 ADR-0028（Accepted），T05 补齐 UPDATE 组合与原生来源；显式 update 不默加版本/审计，实体 byId 保留元数据版本规则。
+行为边界已确认，具体公共 API 待定稿；局部替代 T03 相反的条件更新目标，原历史锚点/证据保持，anchors/contracts 为空。
+同日新增 ADR-0029（Accepted），保留 Sql/executor/session.select，确认 run(Sql.select(...).fetch...)、类型命名与旧参数/描述/转换 API 删除。
+该轮公共使用模型已确认，来源/结果已由后续 ADR-0030 接续定稿；未实现，不预填源码/测试锚点，ADR-0027 的未完成范围同步，原历史状态与锚点保持。
+同日新增 ADR-0030（Accepted），剩余来源/行结果、联合赋值/INSERT SELECT 与实体批量方案已确认，T05 设计就绪、可开工、实现未开始。
+`Written<R>` 改为行类型，混合删除 MERGE 拒绝 returning；完整声明由开发者补齐，不再等待用户逐项决策。ADR-0027 未完成范围同步，旧锚点/状态与 T03/T04 验证债务保持，新增 anchors/contracts 为空。
 本地正文、索引及清单仅静态同步；本次锚点和状态修改仍需新提交的 Compliance，历史结果不证明它们已经执行。
-当前责任见本版任务 §13—§14；未运行本地项目检查器。
+当前责任见本版任务 §13—§21；未运行本地项目检查器。
 
 以下为 0.2.9 历史收口证据：PR #91 合入提交 980ad24 的
 [Compliance 作业](https://github.com/xhufang/skis/actions/runs/40284163852/job/121443826257)

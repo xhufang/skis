@@ -3,7 +3,8 @@ package io.skis.sql.ast;
 import java.util.Objects;
 
 /** Immutable assignment in an UPDATE SET clause. */
-public record UpdateAssignment<T>(ColumnExpression<?, T> column, SqlExpression<T> value) {
+public record UpdateAssignment<T>(ColumnExpression<?, T> column, SqlExpression<T> value)
+    implements SetAssignment {
 
   /** Validates the assignment through the centralized semantic rules. */
   public UpdateAssignment {

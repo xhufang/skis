@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryPlanCacheStatistics;
-import io.skis.query.SelectQuery;
+import io.skis.query.ExecutableSelectQuery;
 import io.skis.query.SingleRow;
 import io.skis.query.SliceRequest;
 import io.skis.runtime.Skis;
@@ -103,7 +103,7 @@ class SkisProjectionIntegrationTest {
     }
     for (long threshold : List.of(7L, 8L)) {
       boolean warmed = threshold == 8L;
-      Supplier<SelectQuery<Long>> query =
+      Supplier<ExecutableSelectQuery<Long>> query =
           () -> {
             PetTable table = PetTable.petTable.as("p");
             return executor

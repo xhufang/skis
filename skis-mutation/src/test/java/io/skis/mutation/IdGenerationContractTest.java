@@ -42,7 +42,7 @@ class IdGenerationContractTest {
     var operations = fixture.operations();
     var bean = new Bean(id);
     assertEquals(1, operations.insertInto(fixture.table).value(bean).write());
-    assertEquals(bean.id, operations.insertInto(fixture.table).value(bean).returning().write().get().id);
+    assertEquals(bean.id, operations.insertInto(fixture.table).value(bean).returning().write().one().get().id);
     assertEquals(1, operations.deleteById(fixture.table, id));
     assertEquals(List.of(id, id, id), fixture.bound);
     assertEquals(0, bean.writes);
@@ -63,7 +63,7 @@ class IdGenerationContractTest {
     for (IdGeneration generation : List.of(IdGeneration.ASSIGNED, IdGeneration.SNOWFLAKE)) {
       var fixture = new Fixture<>(Long.class, JdbcCodecs.LONG, generation);
       var bean = new Bean(generation == IdGeneration.ASSIGNED ? 0L : 7L);
-      assertEquals(bean.id, fixture.operations().insertInto(fixture.table).value(bean).returning().write().get().id);
+      assertEquals(bean.id, fixture.operations().insertInto(fixture.table).value(bean).returning().write().one().get().id);
       assertEquals(bean.id, fixture.bound.getFirst());
       assertEquals(1, bean.reads);
       assertEquals(0, bean.writes);
@@ -280,7 +280,7 @@ class IdGenerationContractTest {
       selected.returnedKey = generation == IdGeneration.UUID ? UUID.randomUUID() : 8L;
       var result = operations.insertInto(selected.table).value(bean).returning().write();
       assertEquals(selected.returnedKey, bean.id);
-      assertEquals(bean.id, result.get().id);
+      assertEquals(bean.id, result.one().get().id);
       assertEquals(1, bean.writes);
       assertEquals("apply", selected.events.getLast());
     }

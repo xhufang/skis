@@ -33,6 +33,32 @@ import org.springframework.dao.UncategorizedDataAccessException;
 class SkisExceptionTranslatorTest {
 
   @Test
+  void retainsTheBatchLedgerAndItsAuthoritativeClassification() {
+    var result = io.skis.mutation.BatchResult.fromReports(1, java.util.List.of());
+    var jdbc = JdbcExecutionException.from(JdbcPhase.EXECUTE,
+        io.skis.core.SkisStatementKind.INSERT, "test", "INSERT INTO pet VALUES (?)",
+        new SQLException("duplicate", "23505", 24), SqlExceptionCategory.DUPLICATE_KEY);
+    var batch = new io.skis.mutation.BatchWriteException(result, jdbc);
+    var translated = new SkisExceptionTranslator().translateExceptionIfPossible(batch);
+    assertInstanceOf(DuplicateKeyException.class, translated);
+    assertSame(batch, translated.getCause());
+    assertSame(result, batch.result());
+    assertSame(jdbc, batch.getCause());
+    assertEquals(SkisErrorCode.DB_DUPLICATE_KEY, batch.code());
+  }
+
+  @Test
+  void retainsTheBatchLedgerWhenTranslatingAnOptimisticConflict() {
+    var result = io.skis.mutation.BatchResult.fromReports(1, java.util.List.of());
+    var batch = new io.skis.mutation.BatchWriteException(result,
+        io.skis.mutation.OptimisticLockException.of("optimistic batch conflict"));
+    var translated = new SkisExceptionTranslator().translateExceptionIfPossible(batch);
+    assertInstanceOf(OptimisticLockingFailureException.class, translated);
+    assertSame(batch, translated.getCause());
+    assertSame(result, batch.result());
+  }
+
+  @Test
   void translatesClassifiedQueryFailuresAndRetainsTheSkisCause() {
     SQLException sqlFailure = new SQLException("duplicate sensitive value", "23505", 17);
     QueryExecutionException skisFailure =

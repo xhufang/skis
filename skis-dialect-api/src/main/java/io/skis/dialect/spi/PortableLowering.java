@@ -30,6 +30,7 @@ import io.skis.sql.ast.LikePredicate;
 import io.skis.sql.ast.Limit;
 import io.skis.sql.ast.LiteralExpression;
 import io.skis.sql.ast.LogicalPredicate;
+import io.skis.sql.ast.MergeAction;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.NotPredicate;
 import io.skis.sql.ast.NullOperator;
@@ -42,10 +43,12 @@ import io.skis.sql.ast.OrderDirection;
 import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.ReturningStatement;
+import io.skis.sql.ast.RowAssignment;
 import io.skis.sql.ast.ScalarSubqueryExpression;
 import io.skis.sql.ast.SelectPagination;
 import io.skis.sql.ast.SelectStatement;
 import io.skis.sql.ast.SelectedOutputReference;
+import io.skis.sql.ast.SetAssignment;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
 import io.skis.sql.ast.SqlType;
@@ -118,9 +121,10 @@ public final class PortableLowering {
       return switch (statement) {
         case ReturningStatement returning -> {
           StatementAst mutation = statement(returning.mutation());
-          yield mutation == returning.mutation()
+          List<SqlExpression<?>> outputs = mapIfChanged(returning.selections(), this::expression);
+          yield mutation == returning.mutation() && outputs == returning.selections()
               ? returning
-              : new ReturningStatement(mutation, returning.selections(), returning.form());
+              : new ReturningStatement(mutation, outputs, returning.form());
         }
         case SelectStatement select -> select(select);
         case CountAst count -> count(count);
@@ -334,23 +338,47 @@ public final class PortableLowering {
     }
 
     private MergeStatement merge(MergeStatement original) {
-      SqlPredicate on = predicate(original.on()), where = predicate(original.matchedWhere());
-      var assignments = mapIfChanged(original.assignments(), this::updateAssignment);
+      RelationSource source = original.source() == null ? null : relation(original.source());
+      SqlPredicate on = predicate(original.on());
+      List<MergeAction> actions = new ArrayList<>(original.actions().size());
+      boolean changed = source != original.source() || on != original.on();
+      for (var action : original.actions()) {
+        var condition = predicate(action.condition());
+        List<SetAssignment> assignments = new ArrayList<>(action.assignments().size());
+        boolean assignmentsChanged = false;
+        for (var item : action.assignments()) {
+          SetAssignment normalized;
+          if (item instanceof UpdateAssignment<?> assignment)
+            normalized = updateAssignment(assignment);
+          else {
+            var row = (RowAssignment) item;
+            var query = select(row.query());
+            normalized = query == row.query() ? row : new RowAssignment(row.columns(), query);
+          }
+          assignmentsChanged |= normalized != item;
+          assignments.add(normalized);
+        }
+        var values = mapIfChanged(action.values(), this::expression);
+        boolean rewritten =
+            condition != action.condition() || assignmentsChanged || values != action.values();
+        changed |= rewritten;
+        actions.add(
+            rewritten
+                ? new MergeAction(action.kind(), condition, assignments, action.columns(), values)
+                : action);
+      }
       var values = mapIfChanged(original.insertValues(), this::expression);
-      return on == original.on()
-              && where == original.matchedWhere()
-              && assignments == original.assignments()
-              && values == original.insertValues()
-          ? original
-          : new MergeStatement(
+      changed |= values != original.insertValues();
+      return changed
+          ? new MergeStatement(
               original.target(),
-              original.source(),
+              source,
               on,
-              where,
-              assignments,
+              actions,
               original.insertColumns(),
               values,
-              original.keys());
+              original.keys())
+          : original;
     }
 
     private InsertStatement insert(InsertStatement insert) {
@@ -361,25 +389,42 @@ public final class PortableLowering {
         changed |= normalized != value;
         values.add(normalized);
       }
-      return changed ? new InsertStatement(insert.target(), insert.columns(), values) : insert;
+      List<List<SqlExpression<?>>> additional =
+          mapIfChanged(insert.additionalRows(), row -> mapIfChanged(row, this::expression));
+      SelectStatement query = insert.query() == null ? null : select(insert.query());
+      changed |= additional != insert.additionalRows() || query != insert.query();
+      return changed
+          ? new InsertStatement(insert.target(), insert.columns(), values, additional, query)
+          : insert;
     }
 
     private UpdateStatement update(UpdateStatement update) {
       boolean changed = false;
-      List<UpdateAssignment<?>> assignments = new ArrayList<>(update.assignments().size());
-      for (UpdateAssignment<?> assignment : update.assignments()) {
-        UpdateAssignment<?> normalized = updateAssignment(assignment);
+      List<SetAssignment> assignments = new ArrayList<>(update.assignments().size());
+      for (var assignment : update.assignments()) {
+        SetAssignment normalized;
+        if (assignment instanceof UpdateAssignment<?> scalar) normalized = updateAssignment(scalar);
+        else {
+          var row = (RowAssignment) assignment;
+          SelectStatement query = select(row.query());
+          normalized = query == row.query() ? row : new RowAssignment(row.columns(), query);
+        }
         changed |= normalized != assignment;
         assignments.add(normalized);
       }
       SqlPredicate where = predicate(update.where());
       changed |= where != update.where();
-      return changed ? new UpdateStatement(update.target(), assignments, where) : update;
+      FromClause from = update.from() == null ? null : fromClause(update.from());
+      changed |= from != update.from();
+      return changed ? new UpdateStatement(update.target(), assignments, where, from) : update;
     }
 
     private DeleteStatement delete(DeleteStatement delete) {
       SqlPredicate where = predicate(delete.where());
-      return where == delete.where() ? delete : new DeleteStatement(delete.target(), where);
+      FromClause using = delete.using() == null ? null : fromClause(delete.using());
+      return where == delete.where() && using == delete.using()
+          ? delete
+          : new DeleteStatement(delete.target(), where, using);
     }
 
     private <T> UpdateAssignment<T> updateAssignment(UpdateAssignment<T> assignment) {
@@ -601,7 +646,8 @@ public final class PortableLowering {
       };
     }
 
-    private static <T> List<T> mapIfChanged(List<T> source, UnaryOperator<T> mapper) {
+    @SuppressWarnings("unchecked")
+    private static <T> List<T> mapIfChanged(List<? extends T> source, UnaryOperator<T> mapper) {
       List<T> result = null;
       int index = 0;
       for (T item : source) {
@@ -615,7 +661,9 @@ public final class PortableLowering {
         }
         index++;
       }
-      return result == null ? source : result;
+      // Unchanged input returns the exact (immutable AST) instance, so callers detect "unchanged"
+      // by identity; List.copyOf would allocate for lists such as Stream.toList() results.
+      return result == null ? (List<T>) source : result;
     }
 
     private SqlPredicate predicate(SqlPredicate predicate) {
