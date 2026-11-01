@@ -114,6 +114,10 @@ class MutationAstContractTest {
     assertThrows(IllegalArgumentException.class, () -> new RowAssignment(List.of(table.name), pair));
     assertThrows(IllegalArgumentException.class, () -> new RowAssignment(List.of(table.name, table.other),
         new SelectStatement(List.of(source.name), source)));
+    var hidden = new SelectStatement(false, List.of(source.name, source.other),
+        List.of(new HiddenSelection(source.id, Identifier.of("hidden_id"))), source, null, List.of(), null);
+    assertThrows(IllegalArgumentException.class,
+        () -> new RowAssignment(List.of(table.name, table.other), hidden));
     var columns = new ArrayList<ColumnExpression<?, ?>>(List.of(table.name, table.other));
     var assignment = new RowAssignment(columns, pair);
     columns.clear();
@@ -129,6 +133,41 @@ class MutationAstContractTest {
     assertThrows(IllegalArgumentException.class,
         () -> new InsertStatement(table, List.of(table.name), List.of()));
     assertSame(query, InsertStatement.select(table, List.of(table.name), query).query());
+  }
+
+  @Test void updateFromRejectsNullExtendedValuesForRequiredTargets() {
+    var target = new Table("target");
+    var source = new Table("source");
+    var optional = new Table("optional");
+    var from = new FromClause(source, List.of(new JoinClause(JoinType.LEFT, optional, TRUE)));
+    assertThrows(IllegalArgumentException.class, () -> new UpdateStatement(target,
+        List.of(new UpdateAssignment<>(target.id, optional.id)), TRUE, from));
+    assertDoesNotThrow(() -> new UpdateStatement(target,
+        List.of(new UpdateAssignment<>(target.id, source.id)), TRUE, from));
+    assertDoesNotThrow(() -> new UpdateStatement(target,
+        List.of(new UpdateAssignment<>(target.name, optional.name)), TRUE, from));
+  }
+
+  @Test void requiredRowTargetsNeedAnAggregateQueryThatCannotLoseItsOnlyRow() {
+    var target = new Table("target");
+    var source = new Table("source");
+    List<ColumnExpression<?, ?>> columns = List.of(target.id, target.name);
+    List<SqlExpression<?>> outputs = List.of(AggregateExpression.countAll(), NULL_TEXT);
+    var guaranteed = new SelectStatement(outputs, source);
+    assertDoesNotThrow(() -> new UpdateStatement(target,
+        List.of(new RowAssignment(columns, guaranteed)), TRUE));
+
+    var grouped = new SelectStatement(false, outputs, List.of(), source, null,
+        List.of(source.name), null, List.of(), null);
+    var filtered = new SelectStatement(false, outputs, List.of(), source, null,
+        List.of(), new BooleanPredicate(false), List.of(), null);
+    var paged = new SelectStatement(false, outputs, List.of(), source, null, List.of(), null,
+        List.of(), new OffsetLimit(new ParameterSlot<>(0, Integer.class, false),
+            new ParameterSlot<>(1, Long.class, false)));
+    var ordinary = new SelectStatement(List.of(source.id, source.name), source);
+    for (var query : List.of(grouped, filtered, paged, ordinary))
+      assertThrows(IllegalArgumentException.class, () -> new UpdateStatement(target,
+          List.of(new RowAssignment(columns, query)), TRUE));
   }
 
   private static final class Table extends TableExpression<Object> {
