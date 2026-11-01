@@ -93,7 +93,7 @@ abstract class AbstractSkisUpsertContractTest {
                 .value(ROW.id(), source.column(id))
                 .value(ROW.name(), source.column(name)))
             .returning(WriteReceiptPro.all());
-        assertEquals(List.of(new WriteReceipt(1L, "one")), request.write().one().get());
+        assertEquals(new WriteReceipt(1L, "one"), request.write().one().get());
         var skipped = request.write(); assertEquals(0, skipped.affectedRows()); assertTrue(skipped.one().isEmpty());
         int compiled = f.compilations.get(); f.executor.clearMutationPlanCache();
       assertTrue(request.write().rows().isEmpty()); assertEquals(compiled + 1, f.compilations.get());
@@ -743,6 +743,7 @@ abstract class AbstractSkisUpsertContractTest {
     final Connection connection;
     final SkisExecutor executor;
     final AtomicInteger acquisitions = new AtomicInteger(), compilations = new AtomicInteger();
+    final AtomicInteger statements = new AtomicInteger();
     boolean failRelease;
     Fixture() throws Exception {
       DataSource source = createDataSource(); connection = source.getConnection();
@@ -761,6 +762,7 @@ abstract class AbstractSkisUpsertContractTest {
               if (failRelease) throw new SQLException("release failed", "08006");
             }
           }).listener(new ExecutionListener() {
+            @Override public void statementStarted(StatementStartedEvent event) { statements.incrementAndGet(); }
             @Override public void compilationCompleted(CompilationCompletedEvent event) { compilations.incrementAndGet(); }
           }).build();
     }
