@@ -398,7 +398,7 @@ class GroupedPaginationTest {
     var first = (DefaultExecutableSelectQuery<?>) TestParameters.bind(operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyA.asc()), a, "!");
     var rebound = (DefaultExecutableSelectQuery<?>) TestParameters.bind(operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyA.asc()), a, "?");
     assertEquals(first.orderSignature(), rebound.orderSignature());
-    assertEquals(first.queryFingerprint(), rebound.queryFingerprint());
+    assertEquals(TestParameters.queryFingerprint(first), TestParameters.queryFingerprint(rebound));
     var wrong = TestParameters.bind(TestParameters.bind(operations.select(keyA).from(TABLE).groupBy(keyA).orderBy(keyB.asc()), a, "!"), b, "!");
     assertEquals(SkisErrorCode.QUERY_GROUPING_CONTRACT,
         assertThrows(QueryValidationException.class,

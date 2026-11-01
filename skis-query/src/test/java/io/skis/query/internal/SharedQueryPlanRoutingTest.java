@@ -68,6 +68,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -520,14 +521,13 @@ class SharedQueryPlanRoutingTest {
     for (int shape = 0; shape < 4; shape++) {
       Fixture fixture = fixture(16, true);
       PetTable table = new PetTable().as("p");
-      DefaultExecutableSelectQuery<Long> query =
+      ExecutableSelectQuery<Long> query =
           switch (shape) {
             case 0 -> scalar(fixture, table, 7L);
             case 1 -> scalar(fixture, table, 7L).distinct();
             case 2 -> nested(fixture, 3, 7L);
             case 3 ->
-                (DefaultExecutableSelectQuery<Long>)
-                    fixture.operations().select(table.id).from(table).where(table.id.in(List.of()));
+                fixture.operations().select(table.id).from(table).where(table.id.in(List.of()));
             default -> throw new AssertionError(shape);
           };
 
@@ -1394,8 +1394,8 @@ class SharedQueryPlanRoutingTest {
     PetTable table = new PetTable();
     byte[] first = {1, 2};
     byte[] second = {3, 4};
-    var a = fixture.operations().select(TestParameters.value(first)).from(table);
-    var b = fixture.operations().select(TestParameters.value(second)).from(table);
+    var a = fixture.operations().select(Sql.value(first)).from(table);
+    var b = fixture.operations().select(Sql.value(second)).from(table);
     first[0] = 99;
     second[0] = 88;
     var compiledA = compile(a);

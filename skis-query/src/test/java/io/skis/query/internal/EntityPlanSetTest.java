@@ -298,7 +298,7 @@ class EntityPlanSetTest {
     assertEquals(SkisErrorCode.QUERY_AGGREGATE_CONTRACT, failure.code());
     assertEquals(
         QuerySemanticReason.AGGREGATE_IN_CLAUSE, failure.diagnostics().querySemantics().reason());
-    assertEquals("WHERE", TestParameters.query(failure.diagnostics()).clause());
+    assertEquals("WHERE", failure.diagnostics().query().clause());
     assertNull(failure.getCause());
   }
 

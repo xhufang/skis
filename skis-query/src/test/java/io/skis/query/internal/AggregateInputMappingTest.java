@@ -365,7 +365,7 @@ class AggregateInputMappingTest {
           QueryValidationException failure = assertThrows(QueryValidationException.class, action);
           assertMappingLocation(failure, block, "SELECT", "selected_inner.number");
           assertEquals("SELECT[0]",
-              Objects.requireNonNull(TestParameters.query(failure.diagnostics())).expressionPath());
+              Objects.requireNonNull(failure.diagnostics().query()).expressionPath());
           assertFalse(failure.diagnostics().safeText().contains("987654321"));
         }
       }
@@ -410,7 +410,7 @@ class AggregateInputMappingTest {
   private static void assertMappingLocation(
       QueryValidationException failure, String block, String clause, String input) {
     assertEquals(SkisErrorCode.QUERY_TYPE_MISMATCH, failure.code());
-    var location = Objects.requireNonNull(TestParameters.query(failure.diagnostics()));
+    var location = Objects.requireNonNull(failure.diagnostics().query());
     assertEquals(block, location.blockPath());
     assertEquals(clause, location.clause());
     assertTrue(Objects.requireNonNull(location.expressionPath()).startsWith(clause + '['));

@@ -7,15 +7,17 @@ import org.jspecify.annotations.Nullable;
 
 /** Test-owned access to logical parameter identity; none of this template API is public production DSL. */
 final class TestParameters {
-  private static final java.lang.reflect.Method COMPILATION = compilationMethod();
+  private static final java.lang.reflect.Method COMPILATION = method(
+      "compilation", QueryPagination.class, io.skis.core.internal.OperationObservation.class,
+      io.skis.core.spi.StatementPurpose.class);
+  private static final java.lang.reflect.Method QUERY_FINGERPRINT = method(
+      "queryFingerprint", io.skis.core.internal.OperationObservation.class);
 
   private TestParameters() {}
 
-  private static java.lang.reflect.Method compilationMethod() {
+  private static java.lang.reflect.Method method(String name, Class<?>... parameterTypes) {
     try {
-      var method = DefaultExecutableSelectQuery.class.getDeclaredMethod(
-          "compilation", QueryPagination.class, io.skis.core.internal.OperationObservation.class,
-          io.skis.core.spi.StatementPurpose.class);
+      var method = DefaultExecutableSelectQuery.class.getDeclaredMethod(name, parameterTypes);
       method.setAccessible(true);
       return method;
     } catch (NoSuchMethodException failure) {
@@ -27,9 +29,18 @@ final class TestParameters {
   @SuppressWarnings("unchecked")
   static <R extends @Nullable Object> QueryCompilation<R> compilation(
       ExecutableSelectQuery<R> query, QueryPagination pagination) {
+    return (QueryCompilation<R>) invoke(
+        COMPILATION, query, pagination, null, io.skis.core.spi.StatementPurpose.PRIMARY);
+  }
+
+  static String queryFingerprint(ExecutableSelectQuery<?> query) {
+    return (String) invoke(QUERY_FINGERPRINT, query, (Object) null);
+  }
+
+  private static Object invoke(
+      java.lang.reflect.Method method, ExecutableSelectQuery<?> query, @Nullable Object... arguments) {
     try {
-      return (QueryCompilation<R>) Objects.requireNonNull(COMPILATION.invoke(
-          query, pagination, null, io.skis.core.spi.StatementPurpose.PRIMARY));
+      return Objects.requireNonNull(method.invoke(query, arguments));
     } catch (java.lang.reflect.InvocationTargetException failure) {
       Throwable cause = Objects.requireNonNull(failure.getCause());
       if (cause instanceof RuntimeException runtime) throw runtime;
@@ -54,16 +65,15 @@ final class TestParameters {
     return parameter.nullability().isNullable() ? new ExpressionSelectable<>(descriptor, recipe) : new NonNullExpressionSelectable<>(descriptor, recipe);
   }
   @SuppressWarnings("unchecked")
-  static <V, Q extends SelectSource<?>> Q bind(Q source, QueryParameter<V> parameter, @Nullable V value) {
-    return (Q) bindModel(QueryModels.description(source), parameter, value);
-  }
-  private static <R extends @Nullable Object, S extends SelectSource<R>, V> S bindModel(AbstractSelectQuery<R, S> query, QueryParameter<V> parameter, @Nullable V value) {
+  static <R extends @Nullable Object, V, Q extends SelectSource<R>> Q bind(
+      Q source, QueryParameter<V> parameter, @Nullable V value) {
+    var query = QueryModels.<R>description(source);
     boolean declared = query.state.structure().validationStructure().parameterReferences().stream().anyMatch(reference -> reference == parameter);
     if (!declared) throw io.skis.core.QueryValidationException.of(io.skis.core.SkisErrorCode.QUERY_PARAMETER_DECLARATION, "logical parameter is absent from the query");
     var captured = QueryParameters.builder();
     captured.include(query.parameters);
     captured.bind(parameter, value);
-    return query.recreate(query.state, captured.build(), query.orderingOnlyParameters);
+    return (Q) query.recreate(query.state, captured.build(), query.orderingOnlyParameters);
   }
   static <R extends @Nullable Object> DefaultExecutableSelectQuery<R> query(QueryOperations operations, SelectSource<R> model) {
     return ((DefaultQueryOperations) operations).executable(QueryModels.description(model), io.skis.core.ExecutionOptions.NONE);

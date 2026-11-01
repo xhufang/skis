@@ -255,7 +255,7 @@ class JoinQueryDslTest {
     var captured = QueryModels.description(
         Sql.select(PET_TABLE.id()).from(PET_TABLE).where(PET_TABLE.name().eq("Mimi")));
     assertEquals(List.of("Mimi"), captured.parameters.valuesFor(
-        captured.state.structure().validationStructure().parameters()));
+        captured.state.structure().validationStructure().parameterReferences()));
 
     QueryParameter<String> used = TestParameters.parameter(String.class);
     QueryParameter<String> extra = TestParameters.parameter(String.class);
@@ -637,8 +637,8 @@ class JoinQueryDslTest {
                 .on(primary.id().eq(secondary.id()))
                 .orderBy(primary.id().asc());
 
-    assertEquals(ada.queryFingerprint(), grace.queryFingerprint());
-    assertNotEquals(ada.queryFingerprint(), left.queryFingerprint());
+    assertEquals(TestParameters.queryFingerprint(ada), TestParameters.queryFingerprint(grace));
+    assertNotEquals(TestParameters.queryFingerprint(ada), TestParameters.queryFingerprint(left));
     assertNotEquals(firstOccurrence.orderSignature(), secondOccurrence.orderSignature());
   }
 
@@ -956,7 +956,7 @@ class JoinQueryDslTest {
     Selectable ownerId = PET_TABLE.ownerId();
     Selectable ownerName = OWNER_TABLE.name();
 
-    assertThrows(QueryValidationException.class, () -> TestParameters.eq(ownerId, ownerName));
+    assertThrows(QueryValidationException.class, () -> ownerId.eq(ownerName));
   }
 
   @Test

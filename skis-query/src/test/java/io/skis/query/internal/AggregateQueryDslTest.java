@@ -308,7 +308,7 @@ class AggregateQueryDslTest {
     assertSame(parameter, structure.parameterReferences().get(2));
     assertTrue(structure.parameters().isEmpty());
     assertEquals(List.of(7, 1, 7), structure.arguments(
-        TestParameters.bind(selection.parameters().merge(ordering.parameters()), parameter, 7)));
+        selection.parameters().merge(ordering.parameters()).merge(QueryParameters.of(parameter, 7))));
     analyze(structure);
   }
 
@@ -415,7 +415,7 @@ class AggregateQueryDslTest {
         Sql.select(Sql.value(String.class, null)).from(TABLE));
     for (var query : queries) {
       var model = QueryModels.description(query);
-      var parameters = model.state.structure().validationStructure().parameters();
+      var parameters = model.state.structure().validationStructure().parameterReferences();
       assertFalse(parameters.isEmpty());
       assertEquals(parameters.size(), model.parameters.valuesFor(parameters).size());
     }
