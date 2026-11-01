@@ -30,11 +30,13 @@ import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonOperator;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.DerivedColumnExpression;
+import io.skis.sql.ast.DerivedRelationReference;
 import io.skis.sql.ast.LogicalOperator;
 import io.skis.sql.ast.LogicalPredicate;
 import io.skis.sql.ast.MergeAction;
 import io.skis.sql.ast.MergeStatement;
 import io.skis.sql.ast.ParameterRelationSource;
+import io.skis.sql.ast.ParameterSlot;
 import io.skis.sql.ast.RelationSource;
 import io.skis.sql.ast.SqlExpression;
 import io.skis.sql.ast.SqlPredicate;
@@ -473,8 +475,17 @@ final class NativeMerges {
 
     private void validateExpectedSource(
         RelationSource source, SqlPredicate on, List<MergeAction> actions) {
-      if (!(source instanceof ParameterRelationSource(var parameters, var reference))
-          || !(on instanceof ComparisonPredicate<?>(var left, var operator, var right))
+      if (!(source
+              instanceof
+              ParameterRelationSource(
+                  List<ParameterSlot<?>> parameters,
+                  DerivedRelationReference reference))
+          || !(on
+              instanceof
+              ComparisonPredicate<?>(
+                  SqlExpression<?> left,
+                  ComparisonOperator operator,
+                  SqlExpression<?> right))
           || operator != ComparisonOperator.EQUAL)
         throw StructuredWrites.invalid(
             "expectedVersion requires a single VALUES row matched by primary-key equality");
@@ -484,13 +495,17 @@ final class NativeMerges {
       if (left instanceof ColumnExpression<?, ?> column
           && column.table() == target
           && column.property() == id
-          && right instanceof DerivedColumnExpression<?>(var relation, var ordinal)
-          && relation == reference) sourceOrdinal = ordinal;
+          && right
+              instanceof
+              DerivedColumnExpression<?>(DerivedRelationReference relation, int outputOrdinal)
+          && relation == reference) sourceOrdinal = outputOrdinal;
       else if (right instanceof ColumnExpression<?, ?> column
           && column.table() == target
           && column.property() == id
-          && left instanceof DerivedColumnExpression<?>(var relation, var ordinal)
-          && relation == reference) sourceOrdinal = ordinal;
+          && left
+              instanceof
+              DerivedColumnExpression<?>(DerivedRelationReference relation, int outputOrdinal)
+          && relation == reference) sourceOrdinal = outputOrdinal;
       else
         throw StructuredWrites.invalid(
             "expectedVersion requires its target primary key and the same VALUES source occurrence");
@@ -506,9 +521,10 @@ final class NativeMerges {
             }
           if (position < 0
               || !(action.values().get(position)
-                  instanceof DerivedColumnExpression<?>(var relation, var ordinal))
+                  instanceof
+                  DerivedColumnExpression<?>(DerivedRelationReference relation, int outputOrdinal))
               || relation != reference
-              || ordinal != sourceOrdinal)
+              || outputOrdinal != sourceOrdinal)
             throw StructuredWrites.invalid(
                 "strict MERGE INSERT must preserve the matched source primary key");
         }

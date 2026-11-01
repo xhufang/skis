@@ -5,6 +5,7 @@ import io.skis.sql.ast.ArithmeticExpression;
 import io.skis.sql.ast.BooleanPredicate;
 import io.skis.sql.ast.CaseExpression;
 import io.skis.sql.ast.CastExpression;
+import io.skis.sql.ast.ColumnExpression;
 import io.skis.sql.ast.ComparisonPredicate;
 import io.skis.sql.ast.ConflictInsertStatement;
 import io.skis.sql.ast.CountAst;
@@ -140,14 +141,22 @@ final class LoweringCorrespondence {
         for (int index = 0; index < first.assignments().size(); index++) {
           var before = first.assignments().get(index);
           var after = second.assignments().get(index);
-          if (before instanceof UpdateAssignment<?>(var column, var value)
-              && after instanceof UpdateAssignment<?>(var loweredColumn, var loweredValue)) {
-            require(column.equals(loweredColumn), "UPDATE target column changed");
-            check.expression(value, loweredValue);
-          } else if (before instanceof RowAssignment(var columns, var query)
-              && after instanceof RowAssignment(var loweredColumns, var loweredQuery)) {
-            require(columns.equals(loweredColumns), "UPDATE row columns changed");
-            check.select(query, loweredQuery, true);
+          if (before
+                  instanceof
+                  UpdateAssignment<?>(ColumnExpression<?, ?> column, SqlExpression<?> value)
+              && after
+                  instanceof
+                  UpdateAssignment<?>(ColumnExpression<?, ?> col, SqlExpression<?> val)) {
+            require(column.equals(col), "UPDATE target column changed");
+            check.expression(value, val);
+          } else if (before
+                  instanceof
+                  RowAssignment(List<ColumnExpression<?, ?>> columns, SelectStatement query)
+              && after
+                  instanceof
+                  RowAssignment(List<ColumnExpression<?, ?>> cols, SelectStatement que)) {
+            require(columns.equals(cols), "UPDATE row columns changed");
+            check.select(query, que, true);
           } else {
             throw mismatch("UPDATE assignment kind changed");
           }
@@ -186,14 +195,18 @@ final class LoweringCorrespondence {
     for (int index = 0; index < before.size(); index++) {
       var first = before.get(index);
       var second = after.get(index);
-      if (first instanceof UpdateAssignment<?>(var column, var value)
-          && second instanceof UpdateAssignment<?>(var replacementColumn, var replacementValue)) {
-        require(column.equals(replacementColumn), "assignment target changed");
-        expression(value, replacementValue);
-      } else if (first instanceof RowAssignment(var columns, var query)
-          && second instanceof RowAssignment(var replacementColumns, var replacementQuery)) {
-        require(columns.equals(replacementColumns), "row assignment targets changed");
-        select(query, replacementQuery, true);
+      if (first
+              instanceof UpdateAssignment<?>(ColumnExpression<?, ?> column, SqlExpression<?> value)
+          && second
+              instanceof UpdateAssignment<?>(ColumnExpression<?, ?> col, SqlExpression<?> val)) {
+        require(column.equals(col), "assignment target changed");
+        expression(value, val);
+      } else if (first
+              instanceof RowAssignment(List<ColumnExpression<?, ?>> cols, SelectStatement query)
+          && second
+              instanceof RowAssignment(List<ColumnExpression<?, ?>> columns, SelectStatement que)) {
+        require(cols.equals(columns), "row assignment targets changed");
+        select(query, que, true);
       } else {
         throw mismatch("assignment kind changed");
       }

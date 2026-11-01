@@ -21,9 +21,14 @@ class StructuredWritePipelineTest {
       ColumnExpression<Object, String> name() { return column(name); }
       ColumnExpression<Object, Long> amount() { return column(amount); }
     };
+    var source = new TableExpression<Object>(entity, Identifier.of("source")) {
+      @Override public TableExpression<Object> as(Identifier alias) { throw new UnsupportedOperationException(); }
+      ColumnExpression<Object, String> name() { return column(name); }
+      ColumnExpression<Object, Long> amount() { return column(amount); }
+    };
     var text = table.name();
     var number = table.amount();
-    var assignment = new RowAssignment(List.of(text, number), new SelectStatement(List.of(text, number), table));
+    var assignment = new RowAssignment(List.of(text, number), new SelectStatement(List.of(source.name(), source.amount()), source));
     var update = new UpdateStatement(table, List.of(assignment), new BooleanPredicate(true));
     assertEquals(io.skis.core.SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
         assertThrows(SqlRenderException.class, () -> SqlCompiler.compile(update, dialect(true, null))).code());
@@ -91,7 +96,7 @@ class StructuredWritePipelineTest {
         MergeAction.insert(new BooleanPredicate(true), List.of(table.id(), table.name()), List.of(sourceId, sourceName))));
     var compiled = SqlCompiler.compile(new ReturningStatement(merge, List.of(table.id())), dialect(false, null));
     assertTrue(compiled.sql().startsWith("SELECT \"id\" FROM FINAL TABLE (MERGE INTO \"item\" USING "));
-    assertTrue(compiled.sql().contains(" ON \"item\".\"id\" = \"s\".\"id\" WHEN MATCHED AND TRUE THEN UPDATE SET \"name\" = \"s\".\"name\" WHEN NOT MATCHED THEN INSERT (\"id\", \"name\") VALUES (\"s\".\"id\", \"s\".\"name\")"));
+    assertTrue(compiled.sql().contains(" ON \"item\".\"id\" = \"s\".\"id\" WHEN MATCHED THEN UPDATE SET \"name\" = \"s\".\"name\" WHEN NOT MATCHED THEN INSERT (\"id\", \"name\") VALUES (\"s\".\"id\", \"s\".\"name\")"));
     assertEquals(List.of(id, name), compiled.parameterLayout().slots());
     var key = new MergeStatement(table, null, new BooleanPredicate(true), List.of(),
         List.of(table.id(), table.name()), List.of(id, name), List.of(table.id()));
@@ -217,8 +222,12 @@ class StructuredWritePipelineTest {
     var sourceId = new DerivedColumnExpression<Long>(reference, 0);
     var statement = new MergeStatement(table, source, table.id().eq(sourceId), List.of(
         MergeAction.insert(new BooleanPredicate(true), List.of(table.id(), table.amount()), List.of(sourceId, sourceId))));
+    var equivalent = new MergeStatement(table, new ParameterRelationSource(List.of(id), reference),
+        statement.on(), statement.actions());
+    assertEquals(SqlCompiler.compile(statement, dialect(false, null)).sql(),
+        SqlCompiler.compile(statement, dialect(false, input -> equivalent)).sql());
     for (var changed : List.of(
-        new MergeStatement(table, new ParameterRelationSource(List.of(id), reference), statement.on(), statement.actions()),
+        new MergeStatement(table, new ParameterRelationSource(List.of(new ParameterSlot<>(1, Long.class, false)), reference), statement.on(), statement.actions()),
         new MergeStatement(table, source, statement.on(), List.of(MergeAction.insert(new BooleanPredicate(true),
             List.of(table.amount(), table.id()), statement.actions().getFirst().values()))))) {
       assertThrows(SqlRenderException.class,

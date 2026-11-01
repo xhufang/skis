@@ -46,6 +46,19 @@ class JdbcBatchExecutionTest {
     assertEquals(1, scenario.failure.getSuppressed().length);
     assertEquals(1, scenario.released); assertEquals(1, scenario.closed);
   }
+  @Test void missingDriverFailureCountsKeepSubmittedRowsUnknownAndPreserveTheCause() {
+    Scenario scenario = new Scenario();
+    scenario.failure = new BatchUpdateException("unsafe driver detail", "23505", 42, (int[]) null);
+    var executor = new JdbcExecutor(scenario.provider());
+    var outcome = executor.executeBatchWork(PLAN, ExecutionContext.EMPTY, null,
+        connection -> connection.addBatch(PLAN, List.of(11L, 12L, 13L)));
+    assertTrue(outcome.executed()); assertEquals(3, outcome.submitted());
+    assertEquals(-1, outcome.failedInput()); assertArrayEquals(new int[0], outcome.counts());
+    var failure = assertInstanceOf(JdbcExecutionException.class, outcome.failure());
+    assertEquals(JdbcPhase.EXECUTE, failure.phase());
+    assertSame(scenario.failure, failure.getCause());
+    assertEquals(1, scenario.executed); assertEquals(1, scenario.closed); assertEquals(1, scenario.released);
+  }
   @Test void bindingFailureNeverExecutesQueuedRowsAndRetainsItsPhase() {
     Scenario scenario = new Scenario(); scenario.failValue = 12L;
     var executor = new JdbcExecutor(scenario.provider());

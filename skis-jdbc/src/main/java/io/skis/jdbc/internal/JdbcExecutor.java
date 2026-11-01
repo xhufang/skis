@@ -1452,7 +1452,8 @@ public final class JdbcExecutor {
         try {
           counts = Objects.requireNonNull(statement.executeBatch(), "driver batch counts");
         } catch (BatchUpdateException failure) {
-          counts = failure.getUpdateCounts();
+          int[] failedCounts = failure.getUpdateCounts();
+          if (failedCounts != null) counts = failedCounts;
           throw failure;
         } finally {
           if (observation != null) observation.executeCompleted();

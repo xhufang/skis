@@ -713,7 +713,7 @@ class StandardSqlRendererTest {
                     List.of(pet.id().eq(updateId), pet.version().eq(expectedVersion)))));
 
     assertEquals(
-        "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = \"version\" + 1 WHERE \"id\" = ? AND \"version\" = ?",
+        "UPDATE \"shelter\".\"pet\" SET \"pet_name\" = ?, \"version\" = (\"version\" + 1) WHERE \"id\" = ? AND \"version\" = ?",
         update.sql());
     assertEquals(List.of(updateName, updateId, expectedVersion), update.parameters());
 
