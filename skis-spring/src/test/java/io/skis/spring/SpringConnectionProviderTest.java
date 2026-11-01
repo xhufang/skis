@@ -202,6 +202,50 @@ class SpringConnectionProviderTest {
   }
 
   @Test
+  void repeatedSavepointCleanupPreservesEveryFailureAndStillClosesOuterCursors() throws Exception {
+    JdbcDataSource dataSource = database();
+    SpringConnectionProvider provider = new SpringConnectionProvider(dataSource);
+    TransactionTemplate transactions = new TransactionTemplate(new JdbcTransactionManager(dataSource));
+    SQLException first = new SQLException("first cursor close failed", "HY000");
+    SQLException second = new SQLException("second cursor close failed", "HY000");
+    SQLException repeated = new SQLException("later rollback cursor close failed", "HY000");
+    SQLException outer = new SQLException("outer cursor close failed", "HY000");
+    AtomicInteger closes = new AtomicInteger();
+    IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+        transactions.executeWithoutResult(status -> {
+          Connection connection = acquire(provider);
+          provider.registerCursor(connection, () -> {
+            closes.incrementAndGet();
+            throw outer;
+          }, ExecutionContext.EMPTY);
+          Object savepoint = status.createSavepoint();
+          provider.registerCursor(connection, () -> {
+            closes.incrementAndGet();
+            throw second;
+          }, ExecutionContext.EMPTY);
+          provider.registerCursor(connection, () -> {
+            closes.incrementAndGet();
+            throw first;
+          }, ExecutionContext.EMPTY);
+          status.rollbackToSavepoint(savepoint);
+          assertEquals(2, closes.get());
+          provider.registerCursor(connection, () -> {
+            closes.incrementAndGet();
+            throw repeated;
+          }, ExecutionContext.EMPTY);
+          status.rollbackToSavepoint(savepoint);
+          assertEquals(3, closes.get());
+          status.releaseSavepoint(savepoint);
+          release(provider, connection);
+        }));
+    assertSame(first, failure.getCause());
+    assertEquals(List.of(second), List.of(first.getSuppressed()));
+    assertEquals(List.of(repeated, outer), List.of(failure.getSuppressed()));
+    assertEquals(4, closes.get());
+    assertTrue(TransactionSynchronizationManager.getResourceMap().isEmpty());
+  }
+
+  @Test
   void deregistrationUsesIdentityAndPreservesReverseOrderAfterArbitraryEarlyCloses()
       throws Exception {
     JdbcDataSource dataSource = database();

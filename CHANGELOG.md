@@ -17,6 +17,7 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 
 ### T08 source implementation (verification pending)
 
+- Pin PgJDBC 42.7.14 for the dialect, repository contracts and independent PostgreSQL consumer, replacing the vulnerable 42.7.11 baseline; verification on the security update is pending CI. See [GHSA-j92g-9f8w-j867](https://github.com/advisories/GHSA-j92g-9f8w-j867).
 - PostgreSQL cursor/stream uses a cursor-only default fetch size of 256, forward-only/read-only statements and close-at-commit holdability. Explicit statement/Session/executor options retain priority; zero, auto-commit, simple protocol and unconfirmed single SQL are rejected before execution.
 - H2 explicitly rejects cursor/stream while retaining materialized queries. Existing H2 resource fixtures are covered by JDBC fakes and PostgreSQL driver contracts; H2 consumers now verify rejection.
 - Local and Spring transactions close open cursors before completion and pool return. Early closure deregisters resources; Spring scopes support suspension/resumption and retain only active cursors.

@@ -11,7 +11,7 @@ are pending. This section describes the source contract, not a completed driver 
 
 | Dialect / driver | cursor / stream | Conditions |
 | --- | --- | --- |
-| PostgreSQL / PgJDBC 42.7.11 baseline | Incremental server-portal reading | `autoCommit=false`, positive effective fetch size, a single SQL statement, extended protocol, forward-only/read-only, close at commit |
+| PostgreSQL / PgJDBC 42.7.14 baseline | Incremental server-portal reading | `autoCommit=false`, positive effective fetch size, a single SQL statement, extended protocol, forward-only/read-only, close at commit |
 | H2 | Rejected with `SKISQ035` | Use `fetchList` or another materialized terminal |
 | External dialect | Unsupported by default | Supply an immutable `CursorReadSupport` policy and independently verify the driver contract |
 
@@ -23,6 +23,9 @@ their existing JDBC defaults, including explicit zero.
 PgJDBC simple protocol and wrappers that cannot expose the supported driver connection are rejected.
 The PostgreSQL dialect has a provided PgJDBC dependency for direct driver-mode inspection; applications
 still supply their own runtime driver. No runtime reflection or hidden validation SQL is used.
+The repository parent pins the dialect's provided driver and contract-test driver to 42.7.14;
+the independent consumer explicitly selects the same version. Verification on this security update
+is pending CI; earlier driver evidence does not establish acceptance of the new version.
 The lexical single-statement check runs once when a compiled plan is assembled, never per row or
 on an execution cache hit. Ambiguous backslash string syntax is conservatively rejected by resource
 terminals; ordinary DSL values are bound parameters.
