@@ -361,6 +361,26 @@ public final class JdbcExecutor {
       StatementPurpose purpose) {
     Objects.requireNonNull(plan, "plan");
     Objects.requireNonNull(executionContext, "executionContext");
+    if (plan.cursorReadSupport().defaultFetchSize() <= 0) {
+      throw streamingFailure(
+          plan,
+          SkisErrorCode.QUERY_STREAMING_UNSUPPORTED,
+          "dialect does not support incremental cursor reads");
+    }
+    ExecutionOptions cursorOptions =
+        Objects.requireNonNull(executionContext.executionOptions(), "executionContext options");
+    int cursorFetchSize =
+        cursorOptions.hasFetchSize()
+            ? cursorOptions.fetchSize()
+            : defaultExecutionOptions.hasFetchSize()
+                ? defaultExecutionOptions.fetchSize()
+                : plan.cursorReadSupport().defaultFetchSize();
+    if (cursorFetchSize <= 0 || !plan.singleStatement()) {
+      throw streamingFailure(
+          plan,
+          SkisErrorCode.QUERY_STREAMING_PRECONDITION,
+          "cursor requires a positive fetch size and one confirmed SQL statement");
+    }
     Connection connection;
     try {
       connection = connectionProvider.acquire(executionContext);
@@ -368,39 +388,87 @@ public final class JdbcExecutor {
       throw translate(plan, JdbcPhase.ACQUIRE, failure);
     }
     PreparedStatement statement = null;
+    ResultSet resultSet = null;
+    DefaultJdbcCursor<R> cursor = null;
     StatementObservation statementObservation = null;
     try {
       statementObservation = startStatement(observation, purpose, plan);
+      try {
+        if (connection.getAutoCommit()
+            || !plan.cursorReadSupport().supportsConnection(connection)) {
+          throw streamingFailure(
+              plan,
+              SkisErrorCode.QUERY_STREAMING_PRECONDITION,
+              "cursor requires autoCommit=false and a supported driver mode");
+        }
+      } catch (SQLException failure) {
+        throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
+      }
       statement =
           prepare(
               connection,
-              plan,
+              plan.sql(),
+              plan.parameterCount(),
+              plan.parameterBinder(),
               parameters,
               executionContext,
               NO_MINIMUM_MAX_ROWS,
+              statementObservation,
+              null,
+              cursorFetchSize);
+      try {
+        if (statement.getResultSetType() != ResultSet.TYPE_FORWARD_ONLY
+            || statement.getResultSetConcurrency() != ResultSet.CONCUR_READ_ONLY
+            || statement.getResultSetHoldability() != ResultSet.CLOSE_CURSORS_AT_COMMIT
+            || statement.getFetchSize() != cursorFetchSize
+            || connection.getAutoCommit()) {
+          throw streamingFailure(
+              plan,
+              SkisErrorCode.QUERY_STREAMING_PRECONDITION,
+              "driver/provider did not preserve the required cursor settings");
+        }
+      } catch (SQLException failure) {
+        throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
+      }
+      resultSet = executeQuery(statement, statementObservation);
+      cursor =
+          new DefaultJdbcCursor<>(
+              plan,
+              executionContext,
+              connection,
+              statement,
+              resultSet,
+              observation,
               statementObservation);
-      ResultSet resultSet = executeQuery(statement, statementObservation);
-      return new DefaultJdbcCursor<>(
-          plan,
-          executionContext,
-          connection,
-          statement,
-          resultSet,
-          observation,
-          statementObservation);
+      cursor.deregister = connectionProvider.registerCursor(connection, cursor, executionContext);
+      return cursor;
     } catch (PhasedSqlFailure failure) {
       RuntimeException primary = translate(plan, failure.phase(), failure.sqlException());
       closeOpenFailure(
-          plan, connection, statement, executionContext, statementObservation, primary);
+          plan, connection, statement, null, executionContext, statementObservation, primary);
       throw primary;
     } catch (SQLException failure) {
       RuntimeException primary = translate(plan, JdbcPhase.EXECUTE, failure);
-      closeOpenFailure(
-          plan, connection, statement, executionContext, statementObservation, primary);
+      if (cursor != null) {
+        cursor.fail(primary);
+      } else {
+        closeOpenFailure(
+            plan, connection, statement, null, executionContext, statementObservation, primary);
+      }
       throw primary;
     } catch (RuntimeException | Error failure) {
-      closeOpenFailure(
-          plan, connection, statement, executionContext, statementObservation, failure);
+      if (cursor != null) {
+        cursor.fail(failure);
+      } else {
+        closeOpenFailure(
+            plan,
+            connection,
+            statement,
+            resultSet,
+            executionContext,
+            statementObservation,
+            failure);
+      }
       throw failure;
     }
   }
@@ -1107,6 +1175,31 @@ public final class JdbcExecutor {
       @Nullable StatementObservation observation,
       @Nullable String physicalIdColumn)
       throws SQLException {
+    return prepare(
+        connection,
+        sql,
+        parameterCount,
+        parameterBinder,
+        parameters,
+        executionContext,
+        minimumMaxRows,
+        observation,
+        physicalIdColumn,
+        0);
+  }
+
+  private <P> PreparedStatement prepare(
+      Connection connection,
+      String sql,
+      int parameterCount,
+      ParameterBinder<P> parameterBinder,
+      P parameters,
+      ExecutionContext executionContext,
+      int minimumMaxRows,
+      @Nullable StatementObservation observation,
+      @Nullable String physicalIdColumn,
+      int cursorFetchSize)
+      throws SQLException {
     ExecutionOptions statementOptions =
         executionContext == ExecutionContext.EMPTY
             ? ExecutionOptions.NONE
@@ -1117,9 +1210,15 @@ public final class JdbcExecutor {
             || (statementOptions != ExecutionOptions.NONE && !statementOptions.isEmpty());
     String actualSql = optionsConfigured ? taggedSql(sql, statementOptions) : sql;
     PreparedStatement statement =
-        physicalIdColumn == null
-            ? connection.prepareStatement(actualSql)
-            : connection.prepareStatement(actualSql, new String[] {physicalIdColumn});
+        cursorFetchSize > 0
+            ? connection.prepareStatement(
+                actualSql,
+                ResultSet.TYPE_FORWARD_ONLY,
+                ResultSet.CONCUR_READ_ONLY,
+                ResultSet.CLOSE_CURSORS_AT_COMMIT)
+            : physicalIdColumn == null
+                ? connection.prepareStatement(actualSql)
+                : connection.prepareStatement(actualSql, new String[] {physicalIdColumn});
     try {
       bindParameters(statement, sql, parameterCount, parameterBinder, parameters, observation);
       try {
@@ -1127,6 +1226,11 @@ public final class JdbcExecutor {
             optionsConfigured
                 ? applyExecutionOptions(statement, statementOptions, minimumMaxRows)
                 : UNCONFIGURED_QUERY_TIMEOUT;
+        if (cursorFetchSize > 0
+            && !statementOptions.hasFetchSize()
+            && !defaultExecutionOptions.hasFetchSize()) {
+          statement.setFetchSize(cursorFetchSize);
+        }
         connectionProvider.configureStatement(statement, executionContext, queryTimeoutSeconds);
       } catch (SQLException failure) {
         throw new PhasedSqlFailure(JdbcPhase.CONFIGURE, failure);
@@ -1622,6 +1726,20 @@ public final class JdbcExecutor {
         phase, plan.dialectId(), plan.sql(), failure, classify(failure));
   }
 
+  private static QueryValidationException streamingFailure(
+      CompiledQueryPlan<?, ?> plan, SkisErrorCode code, String detail) {
+    return QueryValidationException.of(
+        code,
+        SkisDiagnostics.builder(SkisDiagnosticStage.EXECUTION)
+            .operation(SkisOperation.QUERY)
+            .phase(JdbcPhase.CONFIGURE.label())
+            .statementKind(SkisStatementKind.SELECT)
+            .dialectId(plan.dialectId())
+            .sqlFingerprint(JdbcFingerprint.of(plan.sql()))
+            .detail(detail)
+            .build());
+  }
+
   private JdbcExecutionException translate(
       CompiledMutationPlan<?> plan, JdbcPhase phase, SQLException failure) {
     return JdbcExecutionException.from(
@@ -1637,9 +1755,19 @@ public final class JdbcExecutor {
       CompiledQueryPlan<?, ?> plan,
       Connection connection,
       @Nullable PreparedStatement statement,
+      @Nullable ResultSet resultSet,
       ExecutionContext executionContext,
       @Nullable StatementObservation statementObservation,
       Throwable primary) {
+    if (resultSet != null) {
+      try {
+        resultSet.close();
+      } catch (SQLException failure) {
+        primary.addSuppressed(translate(plan, JdbcPhase.RESULT_SET_CLOSE, failure));
+      } catch (RuntimeException | Error failure) {
+        primary.addSuppressed(failure);
+      }
+    }
     if (statement != null) {
       try {
         statement.close();
@@ -1673,6 +1801,7 @@ public final class JdbcExecutor {
     private final CompiledQueryPlan<R, ?> plan;
     private final CursorResources<R> resources;
     private final Cleaner.Cleanable cleanable;
+    private @Nullable Runnable deregister;
     private R current = unpositionedCursorValue();
 
     private DefaultJdbcCursor(
@@ -1693,7 +1822,7 @@ public final class JdbcExecutor {
               resultSet,
               observation,
               statementObservation);
-      this.cleanable = CursorCleanerHolder.INSTANCE.register(this, resources);
+      this.cleanable = CursorCleanerHolder.INSTANCE.register(this, resources.leakState);
     }
 
     @Override
@@ -1769,9 +1898,16 @@ public final class JdbcExecutor {
     private @Nullable Throwable closeResources(
         @Nullable Throwable primary, ExecutionTermination termination) {
       current = unpositionedCursorValue();
-      Throwable result = resources.closeResources(primary, termination);
-      cleanable.clean();
-      return result;
+      try {
+        return resources.closeResources(primary, termination);
+      } finally {
+        Runnable removal = deregister;
+        deregister = null;
+        if (removal != null) {
+          removal.run();
+        }
+        cleanable.clean();
+      }
     }
 
     private RuntimeException runtimeFailure(@Nullable Throwable failure) {
@@ -1792,7 +1928,7 @@ public final class JdbcExecutor {
     return (R) CURSOR_NOT_POSITIONED;
   }
 
-  private final class CursorResources<R extends @Nullable Object> implements Runnable {
+  private final class CursorResources<R extends @Nullable Object> {
 
     private final CompiledQueryPlan<R, ?> plan;
     private final ExecutionContext executionContext;
@@ -1801,8 +1937,8 @@ public final class JdbcExecutor {
     private final ResultSet resultSet;
     private final @Nullable OperationObservation observation;
     private final @Nullable StatementObservation statementObservation;
-    private boolean closed;
-    // Only the resource-owning cursor thread accesses this counter; the Cleaner never reads it.
+    private final CursorLeakState leakState;
+    // Resource state is confined to the owning thread; only leakState is shared with the Cleaner.
     private long readRows;
 
     private CursorResources(
@@ -1820,18 +1956,19 @@ public final class JdbcExecutor {
       this.resultSet = resultSet;
       this.observation = observation;
       this.statementObservation = statementObservation;
+      this.leakState = new CursorLeakState(plan.dialectId(), plan.sql());
     }
 
-    private synchronized boolean isClosed() {
-      return closed;
+    private boolean isClosed() {
+      return leakState.closed;
     }
 
-    private synchronized @Nullable Throwable closeResources(
+    private @Nullable Throwable closeResources(
         @Nullable Throwable primary, ExecutionTermination termination) {
-      if (closed) {
+      if (leakState.closed) {
         return primary;
       }
-      closed = true;
+      leakState.closed = true;
       Throwable result = primary;
       result = closeResultSet(result);
       result = closeStatement(result);
@@ -1839,25 +1976,6 @@ public final class JdbcExecutor {
       result = releaseConnection(result);
       result = completeOperation(result, termination);
       return result;
-    }
-
-    @Override
-    public synchronized void run() {
-      if (closed) {
-        return;
-      }
-      if (SafeLog.warnEnabled(LOGGER)) {
-        String fingerprint = JdbcFingerprint.of(plan.sql());
-        SafeLog.warn(
-            LOGGER,
-            "JDBC cursor was abandoned without close [dialect="
-                + SafeLog.text(plan.dialectId(), 128)
-                + ", sqlFingerprint="
-                + fingerprint
-                + "]");
-      }
-      // JDBC cleanup is intentionally not attempted from the Cleaner thread. Providers backed by
-      // external transaction managers may require release on the acquiring thread.
     }
 
     private @Nullable Throwable closeResultSet(@Nullable Throwable primary) {
@@ -1947,6 +2065,32 @@ public final class JdbcExecutor {
       }
       primary.addSuppressed(next);
       return primary;
+    }
+  }
+
+  /** The Cleaner must not retain an executor, provider, transaction, plan or JDBC resource. */
+  private static final class CursorLeakState implements Runnable {
+    private final String dialectId;
+    private final String sql;
+    private volatile boolean closed;
+
+    private CursorLeakState(String dialectId, String sql) {
+      this.dialectId = dialectId;
+      this.sql = sql;
+    }
+
+    @Override
+    public void run() {
+      if (!closed && SafeLog.warnEnabled(LOGGER)) {
+        SafeLog.warn(
+            LOGGER,
+            "JDBC cursor was abandoned without close [dialect="
+                + SafeLog.text(dialectId, 128)
+                + ", sqlFingerprint="
+                + JdbcFingerprint.of(sql)
+                + "]");
+      }
+      // Cleanup stays on the acquiring thread; this action only diagnoses abandoned resources.
     }
   }
 

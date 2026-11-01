@@ -10,11 +10,9 @@ import java.sql.SQLException;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.h2.api.Trigger;
 import org.h2.jdbcx.JdbcDataSource;
@@ -29,7 +27,7 @@ public class SkisUpsertH2ContractTest extends AbstractSkisUpsertContractTest {
 
   @Override protected AutoCloseable synchronizeConcurrentInserts(Connection connection) throws SQLException {
     String schema = connection.getSchema();
-    InsertBarrier.GATES.put(schema, new CyclicBarrier(2));
+    InsertBarrier.GATES.put(schema, new CountDownLatch(2));
     try (var sql = connection.createStatement()) {
       sql.execute("CREATE TRIGGER \"synchronize_insert\" BEFORE INSERT ON \"merge_row\" FOR EACH ROW CALL '"
           + InsertBarrier.class.getName() + "'");
@@ -62,10 +60,10 @@ public class SkisUpsertH2ContractTest extends AbstractSkisUpsertContractTest {
     }
   }
 
-  /** Test-only gate after both MERGEs have selected their NOT MATCHED branch. */
+  /** One-shot test gate: H2 may fire the INSERT trigger again during an internal command retry. */
   public static final class InsertBarrier implements Trigger {
-    private static final Map<String, CyclicBarrier> GATES = new ConcurrentHashMap<>();
-    private @Nullable CyclicBarrier gate;
+    private static final Map<String, CountDownLatch> GATES = new ConcurrentHashMap<>();
+    private @Nullable CountDownLatch gate;
 
     @Override public void init(Connection connection, String schemaName, String triggerName,
         String tableName, boolean before, int type) {
@@ -75,12 +73,14 @@ public class SkisUpsertH2ContractTest extends AbstractSkisUpsertContractTest {
     @Override public void fire(Connection connection, @Nullable Object @Nullable [] oldRow,
         @Nullable Object @Nullable [] newRow) throws SQLException {
       try {
-        Objects.requireNonNull(gate).await(15, TimeUnit.SECONDS);
+        CountDownLatch inserts = Objects.requireNonNull(gate);
+        inserts.countDown();
+        if (!inserts.await(15, TimeUnit.SECONDS)) {
+          throw new SQLException("concurrent INSERT gate did not receive both writers", "HYT00");
+        }
       } catch (InterruptedException failure) {
         Thread.currentThread().interrupt();
         throw new SQLException("concurrent INSERT gate interrupted", "HYT00", failure);
-      } catch (BrokenBarrierException | TimeoutException failure) {
-        throw new SQLException("concurrent INSERT gate did not receive both writers", "HYT00", failure);
       }
     }
   }

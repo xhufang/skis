@@ -34,6 +34,7 @@ public final class JdbcTransaction implements AutoCloseable {
   private final boolean originalAutoCommit;
   private final JdbcExecutor jdbcExecutor;
   private State state = State.ACTIVE;
+  private @Nullable CursorRegistration cursors;
 
   private JdbcTransaction(
       ConnectionProvider owner,
@@ -113,6 +114,7 @@ public final class JdbcTransaction implements AutoCloseable {
   /** Commits the connection exactly once. */
   public void commit() {
     requireActive();
+    closeCursors();
     try {
       connection.commit();
       state = State.COMMITTED;
@@ -131,19 +133,52 @@ public final class JdbcTransaction implements AutoCloseable {
   /** Rolls back the connection exactly once. */
   public void rollback() {
     requireActive();
+    Throwable cleanupFailure = null;
+    try {
+      closeCursors();
+    } catch (RuntimeException | Error failure) {
+      cleanupFailure = failure;
+    }
     try {
       connection.rollback();
       state = State.ROLLED_BACK;
     } catch (SQLException | RuntimeException failure) {
       state = State.ROLLBACK_OUTCOME_UNKNOWN;
+      if (cleanupFailure != null) {
+        failure.addSuppressed(cleanupFailure);
+      }
       throw TransactionException.of(
           SkisErrorCode.TRANSACTION_ROLLBACK_OUTCOME_UNKNOWN,
           "JDBC rollback failed; transaction outcome may be unknown",
           failure);
     } catch (Error failure) {
       state = State.ROLLBACK_OUTCOME_UNKNOWN;
+      if (cleanupFailure != null) {
+        failure.addSuppressed(cleanupFailure);
+      }
       throw failure;
     }
+    rethrow(cleanupFailure);
+  }
+
+  private void closeCursors() {
+    Throwable failure = null;
+    CursorRegistration registration;
+    while ((registration = cursors) != null) {
+      AutoCloseable cursor = Objects.requireNonNull(registration.cursor);
+      registration.run();
+      try {
+        cursor.close();
+      } catch (Exception | Error closeFailure) {
+        failure =
+            combine(
+                failure,
+                closeFailure instanceof Error
+                    ? closeFailure
+                    : closeFailure("cannot close transaction cursor", closeFailure));
+      }
+    }
+    rethrow(failure);
   }
 
   /**
@@ -268,6 +303,42 @@ public final class JdbcTransaction implements AutoCloseable {
     return existing;
   }
 
+  /** One allocation per registration; unlinking never scans other active cursors. */
+  private final class CursorRegistration implements Runnable {
+    private @Nullable AutoCloseable cursor;
+    private @Nullable CursorRegistration previous;
+    private @Nullable CursorRegistration next;
+
+    private CursorRegistration(AutoCloseable cursor) {
+      this.cursor = cursor;
+      this.next = cursors;
+      if (next != null) {
+        next.previous = this;
+      }
+      cursors = this;
+    }
+
+    @Override
+    public void run() {
+      if (cursor == null) {
+        return;
+      }
+      CursorRegistration before = previous;
+      CursorRegistration after = next;
+      if (before == null) {
+        cursors = after;
+      } else {
+        before.next = after;
+      }
+      if (after != null) {
+        after.previous = before;
+      }
+      cursor = null;
+      previous = null;
+      next = null;
+    }
+  }
+
   private final class TransactionConnectionProvider implements ConnectionProvider {
 
     @Override
@@ -289,6 +360,16 @@ public final class JdbcTransaction implements AutoCloseable {
         PreparedStatement statement, ExecutionContext context, int queryTimeoutSeconds)
         throws SQLException {
       owner.configureStatement(statement, context, queryTimeoutSeconds);
+    }
+
+    @Override
+    public Runnable registerCursor(
+        Connection acquired, AutoCloseable cursor, ExecutionContext context) throws SQLException {
+      requireActive();
+      if (acquired != connection) {
+        throw new SQLException("foreign transaction connection");
+      }
+      return new CursorRegistration(Objects.requireNonNull(cursor, "cursor"));
     }
 
     @Override

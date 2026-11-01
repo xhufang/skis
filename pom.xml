@@ -82,6 +82,7 @@
     <maven.deploy.skip>false</maven.deploy.skip>
 
     <spring-boot.version>4.1.0</spring-boot.version>
+    <postgresql.version>42.7.14</postgresql.version>
     <jspecify.version>1.0.0</jspecify.version>
     <slf4j.version>2.0.20</slf4j.version>
     <error-prone.version>2.50.0</error-prone.version>
@@ -108,6 +109,11 @@
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <version>${postgresql.version}</version>
+      </dependency>
       <dependency>
         <groupId>org.slf4j</groupId>
         <artifactId>slf4j-api</artifactId>

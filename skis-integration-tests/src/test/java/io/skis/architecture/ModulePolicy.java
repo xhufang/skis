@@ -143,6 +143,10 @@ final class ModulePolicy {
 
   private Set<String> runtimeIncludes(Module module) {
     Set<String> includes = new HashSet<>(Set.of("org.jspecify:jspecify", "*:*:*:*:test"));
+    if (module.artifact().equals("skis-dialect-postgresql")) {
+      includes.add("org.postgresql:postgresql:*:*:provided");
+      includes.add("org.checkerframework:checker-qual:*:*:provided");
+    }
     if (!module.artifact().equals("skis-annotations")) includes.add("org.slf4j:slf4j-api");
     for (Module dependency : modules.values()) {
       if (!dependency.artifact().equals(module.artifact()) && permitsDependency(module, dependency)) {

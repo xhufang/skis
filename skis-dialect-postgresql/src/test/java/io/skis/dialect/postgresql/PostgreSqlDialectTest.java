@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.skis.dialect.spi.DialectFeature;
@@ -44,11 +45,35 @@ import io.skis.sql.ast.UpdateAssignment;
 import io.skis.sql.ast.UpdateStatement;
 import io.skis.testmodel.pet.Pet;
 import io.skis.testmodel.pet.skis.PetMeta;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.Test;
+import org.postgresql.jdbc.PgConnection;
 
 class PostgreSqlDialectTest {
+
+  @Test
+  void cursorPolicyRejectsUnknownWrappersAndPreservesDriverInspectionFailures() throws Exception {
+    var support = PostgreSqlDialect.INSTANCE.cursorReadSupport();
+    for (boolean failInspection : List.of(false, true)) {
+      SQLException failure = new SQLException("driver inspection failed", "08006");
+      Connection connection = (Connection) Proxy.newProxyInstance(
+          Connection.class.getClassLoader(), new Class<?>[] {Connection.class},
+          (proxy, method, arguments) -> {
+            assertEquals("isWrapperFor", method.getName(), "no unwrap, SQL or state changes allowed");
+            assertSame(PgConnection.class, arguments[0]);
+            if (failInspection) throw failure;
+            return false;
+          });
+      if (failInspection) {
+        assertSame(failure, assertThrows(SQLException.class, () -> support.supportsConnection(connection)));
+      } else {
+        assertFalse(support.supportsConnection(connection));
+      }
+    }
+  }
 
   @Test
   void rendersPostgreSqlRealSumWithInputWidening() {

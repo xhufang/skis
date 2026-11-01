@@ -115,3 +115,10 @@ PG 合同、独立消费者双路径、配置/无 Docker/消费者失败检查�
 [CI 39740005226](https://github.com/xhufang/skis/actions/runs/39740005226) 的构建、PG/消费者合同和采集仍全部通过，
 但 query 的四个并发分支未被触发，覆盖率回到 73.14%；已补充固定竞争窗口的测试并保留 73.37% 门槛。
 首次登记及其他模块行保持。未本地编译运行，新增测试、来源认证及棘轮仍待提交后 CI，T05 尚未关闭。
+
+## 0.2.10 T08 流读取套件（待 CI）
+
+新增 SkisStreamingPostgreSqlContractTest，已登记为必需报告，随现有容器/外部 URL 两条路径执行，不能跳过。
+通过服务器 nextval 证明首次默认 256 行求值、跨批补读和耗尽，覆盖显式 fetch size、直接/请求 stream、
+autoCommit/0/simple 拒绝和真实 PgJDBC logical pool 的关闭/恢复/复用。该测试不增加 benchmark。
+源码已接线，本次仅静态核对；当前真实驱动结果待 CI，不扩展上文历史运行证据。

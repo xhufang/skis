@@ -17,6 +17,13 @@ T08 已删除 23 个远期占位根模块及未就绪 Boot 示例。检查递归
 Commons Logging 门面。测试依赖按 test scope 放行，不进入运行时准入。`skis-spring` 保留实际适配职责，
 Spring Boot、其他未实现方言及可选能力继续按路线图开发，需要时再创建具有真实职责的模块。
 
+0.2.10 T08 按本地 ADR-0031 为 PostgreSQL 方言登记唯一例外：`org.postgresql:postgresql` 只能以
+provided scope 参与编译，不作为传递运行时驱动。字节码仅允许
+`PostgreSqlCursorReadSupport` 引用 `PgConnection` 和 `PreferQueryMode`，用于直接确认真实流读取的驱动模式。
+PgJDBC 42.7.14 的非可选传递注解包 `org.checkerframework:checker-qual` 在该方言中同样仅准入 provided scope，
+保留驱动发布的依赖闭包；该准入不适用于其他模块，也不准入该坐标的 compile/runtime scope 或 Checker Framework 其他坐标。
+其他类/模块、驱动类型及 scope 继续拒绝；新增精确正负例，待当前 CI 验证，不扩大历史通过证据。
+
 公开发布边界仍为 parent、BOM 和 15 个生产 Jar，共 17 个 GAV；BOM 与发布白名单不变。
 Central 排除剩余 6 个内部项目：test-support、test-model、integration-tests、benchmark、examples 和 H2 示例。
 发布检查同时拒绝 Reactor 中指向已删除 SKIS GAV 的依赖（含 dependencyManagement），并要求 test-support 的使用方
@@ -50,6 +57,9 @@ CI 使用实际 core POM 的执行配置，分别证明直接 Spring、放行直
 只有测试源码的 spi-only、listener-only 消费者检查 `target/test-classes`；H2/PG 消费者同时检查
 `target/classes` 与 `target/test-classes`，覆盖生成产物和真实调用代码。每个适用目录都必须存在且包含 class 文件，
 不以跳过缺失或空目录处理扫描范围错误。
+
+0.2.10 T08 的 Cleaner 告警已拆入静态 `JdbcExecutor$CursorLeakState`；其对 `SafeLog` 的精确授权
+随实际调用方迁移，删除原 `JdbcExecutor$CursorResources → SafeLog` 条目。资源类对监听观察对象的既有授权保持。
 
 公开 DSL 继续使用根包业务类型。描述、单列描述、派生来源及输出、排序、参数、continuation、切片请求和单行结果的实现位于 internal；
 接口不构成任意第三方实现的 SPI。内部在捕获边界核对框架实例，未增加公开 state/AST 访问器、反射访问或全局注册表。

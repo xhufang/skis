@@ -180,7 +180,7 @@ cause/suppressed 和资源释放顺序、外部 SPI 仅凭公开合同构造诊�
 ## 6. 0.2.9 分组与聚合语义扩展
 
 下表给出当前分组与聚合诊断；使用边界见[聚合与分组](aggregates-and-grouping.md)。
-SKISQ031/032 及其 AST 失败路径、SKISQ033/034 及其 DSL 构造失败路径均已接线，SkisErrorCode 当前共 88 个成员；
+SKISQ031/032 及其 AST 失败路径、SKISQ033/034 及其 DSL 构造失败路径均已接线，0.2.9 验证基线的 SkisErrorCode 共 88 个成员；
 新增实现与合同已通过 Java 21/25、PG/H2 及独立消费者验证。
 适用异常均为既有 QueryValidationException，family 为 QUERY。
 
@@ -204,3 +204,13 @@ T03 在 AST 检测点形成语义异常，受控分析及既有 query 原描述�
 AggregateGroupingTest、SkisDiagnosticsTest、CompilationPipelineTest 与 EntityPlanSetTest 覆盖新增合同，已登记必需回归清单。
 运行证据见 PR #91 合入提交 980ad24 的 [CI](https://github.com/xhufang/skis/actions/runs/40284163961)。
 本地仅静态核对，未编译运行。
+
+## 7. 0.2.10 T08 流读取诊断（待 CI）
+
+| 编码 | 枚举 | 阶段 | 触发条件 | 安全字段 |
+| --- | --- | --- | --- | --- |
+| SKISQ035 | QUERY_STREAMING_UNSUPPORTED | EXECUTION | 方言没有已验证的真实流读取策略；借连接前拒绝 | QUERY、statement-configuration、SELECT、dialectId、sqlFingerprint、detail |
+| SKISQ036 | QUERY_STREAMING_PRECONDITION | EXECUTION | 有效 fetch size 非正、autoCommit、simple/未知驱动模式、不能确认单 SQL 或实际 Statement 设置不满足前置 | 同上，不含 SQL 原文、参数或连接配置 |
+
+异常使用既有 QueryValidationException，SQLException 仍按实际 JDBC 阶段与既有分类处理；取消继续是 DB_QUERY_CANCELED，
+不归入超时。以上源码与合同测试已接线，尚无本次运行通过证据；用法见[流读取](cursor-and-stream.md)。

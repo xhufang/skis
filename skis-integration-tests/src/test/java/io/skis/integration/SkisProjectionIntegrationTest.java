@@ -2,6 +2,9 @@ package io.skis.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import io.skis.core.QueryValidationException;
+import io.skis.core.SkisErrorCode;
 
 import io.skis.dialect.h2.H2Dialect;
 import io.skis.query.PageRequest;
@@ -19,7 +22,6 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.Statement;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -28,6 +30,17 @@ import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 
 class SkisProjectionIntegrationTest {
+
+  @Test
+  void h2RejectsBothResourceRequestTerminalsAndKeepsMaterializedReads() throws Exception {
+    SkisExecutor executor = Skis.create(database(), H2Dialect.INSTANCE);
+    var query = io.skis.query.Sql.selectFrom(PetTable.petTable);
+    assertEquals(SkisErrorCode.QUERY_STREAMING_UNSUPPORTED,
+        assertThrows(QueryValidationException.class, () -> executor.run(query.cursor())).code());
+    assertEquals(SkisErrorCode.QUERY_STREAMING_UNSUPPORTED,
+        assertThrows(QueryValidationException.class, () -> executor.run(query.stream())).code());
+    assertTrue(executor.run(query.fetchList()).isEmpty());
+  }
 
   @Test
   void selectsScalarsAndUserRecordsWithoutReadingTheFullEntity() throws Exception {
@@ -165,34 +178,12 @@ class SkisProjectionIntegrationTest {
                           .fetchSlice(
                               SliceRequest.resume(first.nextContinuation().orElseThrow(), 1)))
               .items());
-      List<Long> cursorValues =
-          sharedTerminal(
-              executor,
-              warmed,
-              1,
-              "cursor",
-              () -> {
-                List<Long> values = new ArrayList<>();
-                try (var cursor = query.get().cursor()) {
-                  while (cursor.advance()) {
-                    values.add(cursor.current());
-                  }
-                }
-                return values;
-              });
-      assertEquals(expected, cursorValues);
-      assertEquals(
-          expected,
-          sharedTerminal(
-              executor,
-              warmed,
-              1,
-              "stream",
-              () -> {
-                try (var stream = query.get().stream()) {
-                  return stream.toList();
-                }
-              }));
+      assertEquals(SkisErrorCode.QUERY_STREAMING_UNSUPPORTED,
+          sharedTerminal(executor, warmed, 1, "cursor rejection",
+              () -> assertThrows(QueryValidationException.class, () -> query.get().cursor())).code());
+      assertEquals(SkisErrorCode.QUERY_STREAMING_UNSUPPORTED,
+          sharedTerminal(executor, warmed, 1, "stream rejection",
+              () -> assertThrows(QueryValidationException.class, () -> query.get().stream())).code());
       PetTable single = PetTable.petTable.as("single");
       assertEquals(
           threshold,

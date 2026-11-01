@@ -1250,8 +1250,8 @@
       "decisionVersion": "0.2.10-SNAPSHOT",
       "targetVersion": "0.2.10-SNAPSHOT",
       "implementedVersion": null,
-      "remaining": "条件写入、RETURNING及T04冲突/MERGE源码与测试已同步待验证；T05原生更新/删除、调用值重构与批量失败、三层BYPASS及真实流读取待实现和验证",
-      "task": "0.2.10:T03-T08",
+      "remaining": "条件写入、RETURNING及T04冲突/MERGE源码与测试已同步待验证；T05原生更新/删除、调用值重构与批量失败待实现和验证；T08真实流读取源码与合同已接线、待CI/真实驱动验收；T06/T07三层SQL逃生通道延后至0.3.x，未开始",
+      "task": "0.2.10:T03-T05,T08;0.3.x:原T06-T07",
       "anchors": [
         {
           "kind": "java",
@@ -1638,6 +1638,65 @@
           "kind": "java",
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
           "type": "io.skis.integration.AbstractSkisReturningContractTest"
+        }
+      ]
+    },
+    {
+      "id": "ADR-0031",
+      "title": "真实流读取驱动策略与事务资源作用域",
+      "status": "Accepted",
+      "decisionVersion": "0.2.10-SNAPSHOT",
+      "targetVersion": "0.2.10-SNAPSHOT",
+      "implementedVersion": null,
+      "remaining": "源码与合同已接线；CI/真实PG、Spring和连接池验收待完成",
+      "task": "0.2.10:T08",
+      "anchors": [
+        {
+          "type": "io.skis.dialect.spi.CursorReadSupport",
+          "kind": "java",
+          "path": "skis-dialect-api/src/main/java/io/skis/dialect/spi/CursorReadSupport.java"
+        },
+        {
+          "type": "io.skis.dialect.postgresql.PostgreSqlCursorReadSupport",
+          "kind": "java",
+          "path": "skis-dialect-postgresql/src/main/java/io/skis/dialect/postgresql/PostgreSqlCursorReadSupport.java"
+        },
+        {
+          "type": "io.skis.jdbc.internal.JdbcExecutor",
+          "kind": "java",
+          "path": "skis-jdbc/src/main/java/io/skis/jdbc/internal/JdbcExecutor.java"
+        },
+        {
+          "type": "io.skis.jdbc.internal.JdbcTransaction",
+          "kind": "java",
+          "path": "skis-jdbc/src/main/java/io/skis/jdbc/internal/JdbcTransaction.java"
+        },
+        {
+          "type": "io.skis.spring.SpringConnectionProvider",
+          "kind": "java",
+          "path": "skis-spring/src/main/java/io/skis/spring/SpringConnectionProvider.java"
+        }
+      ],
+      "contracts": [
+        {
+          "type": "io.skis.jdbc.internal.CursorExecutionContractTest",
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/internal/CursorExecutionContractTest.java"
+        },
+        {
+          "type": "io.skis.jdbc.internal.CursorSqlTest",
+          "kind": "java",
+          "path": "skis-jdbc/src/test/java/io/skis/jdbc/internal/CursorSqlTest.java"
+        },
+        {
+          "type": "io.skis.integration.SkisStreamingPostgreSqlContractTest",
+          "kind": "java",
+          "path": "skis-integration-tests/src/test/java/io/skis/integration/SkisStreamingPostgreSqlContractTest.java"
+        },
+        {
+          "type": "io.skis.spring.SpringConnectionProviderTest",
+          "kind": "java",
+          "path": "skis-spring/src/test/java/io/skis/spring/SpringConnectionProviderTest.java"
         }
       ]
     }

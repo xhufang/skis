@@ -548,10 +548,10 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.jdbc.internal.JdbcExecutor$CursorResources",
+      "caller": "io.skis.jdbc.internal.JdbcExecutor$CursorLeakState",
       "target": "io.skis.core.internal.SafeLog",
-      "reason": "Synchronous bounded string-only logging; isolates ordinary backend failure without retaining parameter values.",
-      "owner": "T06",
+      "reason": "Diagnoses abandoned cursors through bounded string-only logging without retaining JDBC resources, executors, transactions or parameter values.",
+      "owner": "T08",
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {

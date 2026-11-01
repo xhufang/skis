@@ -411,11 +411,15 @@ class ParameterLoggingTest {
       throws Exception {
     TestLoggerProvider.WARN.add("io.skis.internal");
     Driver driver = new Driver();
+    Runnable warning;
     try (JdbcCursor<String> cursor = executor(driver, SqlLoggingOptions.NONE)
         .openCursor(plan(new CountingBinder()), POISON, ExecutionContext.EMPTY)) {
       var resourcesField = cursor.getClass().getDeclaredField("resources");
       resourcesField.setAccessible(true);
-      Runnable warning = (Runnable) resourcesField.get(cursor);
+      Object resources = Objects.requireNonNull(resourcesField.get(cursor));
+      var leakStateField = resources.getClass().getDeclaredField("leakState");
+      leakStateField.setAccessible(true);
+      warning = assertInstanceOf(Runnable.class, leakStateField.get(resources));
       warning.run();
       assertFalse(message().contains("SELECT ?"));
       assertFalse(message().contains("secret"));
@@ -431,6 +435,9 @@ class ParameterLoggingTest {
     assertEquals(1, driver.resultSetCloses.get());
     assertEquals(1, driver.statementCloses.get());
     assertEquals(1, driver.releases.get());
+    int loggedEvents = TestLoggerProvider.EVENTS.size();
+    warning.run();
+    assertEquals(loggedEvents, TestLoggerProvider.EVENTS.size());
   }
 
   @Test void oneSharedPlanUsesIndependentSummariesAcrossConcurrentCalls() throws Exception {
@@ -645,7 +652,11 @@ class ParameterLoggingTest {
   }
   private static CompiledQueryPlan<String, Object> plan(ParameterBinder<Object> binder) {
     return new CompiledQueryPlan<>("test", new RenderedSql("SELECT ?",
-        List.of(new ParameterSlot<>(0, Object.class, false))), binder, (rs, context) -> "unused");
+        List.of(new ParameterSlot<>(0, Object.class, false))), binder, (rs, context) -> "unused",
+        new io.skis.dialect.spi.CursorReadSupport() {
+          @Override public int defaultFetchSize() { return 256; }
+          @Override public boolean supportsConnection(Connection connection) { return true; }
+        });
   }
 
   private static CompiledMutationPlan<Object> mutationPlan() {
@@ -689,9 +700,11 @@ class ParameterLoggingTest {
       return new ConnectionProvider() {
         @Override public Connection acquire(ExecutionContext context) {
           return proxy(Connection.class, (object, method, args) -> {
+            if (method.getName().equals("getAutoCommit")) return false;
             if (!method.getName().equals("prepareStatement")) {
               throw new AssertionError("unexpected Connection call: " + method.getName());
             }
+            AtomicInteger fetchSize = new AtomicInteger();
             return proxy(PreparedStatement.class, (statement, call, values) -> switch (call.getName()) {
               case "executeQuery" -> {
                 if (executeFailure != null) throw executeFailure;
@@ -710,7 +723,12 @@ class ParameterLoggingTest {
                 if (closeFailure != null) throw closeFailure;
                 yield null;
               }
-              case "setObject", "setFetchSize", "setMaxRows", "setQueryTimeout" -> null;
+              case "setFetchSize" -> { fetchSize.set((Integer) values[0]); yield null; }
+              case "getFetchSize" -> fetchSize.get();
+              case "getResultSetType" -> ResultSet.TYPE_FORWARD_ONLY;
+              case "getResultSetConcurrency" -> ResultSet.CONCUR_READ_ONLY;
+              case "getResultSetHoldability" -> ResultSet.CLOSE_CURSORS_AT_COMMIT;
+              case "setObject", "setMaxRows", "setQueryTimeout" -> null;
               default -> throw new AssertionError("unexpected PreparedStatement call: " + call.getName());
             });
           });

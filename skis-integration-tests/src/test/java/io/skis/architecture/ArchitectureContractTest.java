@@ -85,6 +85,12 @@ public class ArchitectureContractTest {
     assertTrue(ArchitectureRules.forbiddenRuntime("org.springframework.jdbc.ConnectionHolder", false));
     assertFalse(ArchitectureRules.forbiddenRuntime("org.springframework.jdbc.ConnectionHolder", true));
     assertTrue(ArchitectureRules.forbiddenRuntime("org.postgresql.Driver", false));
+    assertTrue(ArchitectureRules.cursorDriverAccess(
+        "io.skis.dialect.postgresql.PostgreSqlCursorReadSupport", "org.postgresql.jdbc.PgConnection"));
+    assertFalse(ArchitectureRules.cursorDriverAccess(
+        "io.skis.jdbc.internal.JdbcExecutor", "org.postgresql.jdbc.PgConnection"));
+    assertFalse(ArchitectureRules.cursorDriverAccess(
+        "io.skis.dialect.postgresql.PostgreSqlCursorReadSupport", "org.postgresql.Driver"));
     assertTrue(ArchitectureRules.forbiddenRuntime("org.slf4j.simple.SimpleLogger", false));
     assertThrows(IllegalStateException.class, () -> ModulePolicy.requireSameModules(Set.of("known"), Set.of("known", "new-module")));
     assertThrows(IllegalStateException.class, () -> ModulePolicy.requireOutput(temporary.resolve("missing-classes")));
@@ -187,10 +193,29 @@ public class ArchitectureContractTest {
     Element included = element(missingDependency, "include");
     included.getParentNode().removeChild(included);
     assertThrows(IllegalStateException.class, () -> policy.requireRuntimeEnforcer(core, missingDependency));
-    for (String extra : List.of("org.postgresql:postgresql", "*:*")) {
+    for (String extra : List.of("org.postgresql:postgresql", "*:*",
+        "org.checkerframework:checker-qual:*:*:provided")) {
       Element widened = (Element) configured.cloneNode(true);
       appendText(element(widened, "includes"), "include", extra);
       assertThrows(IllegalStateException.class, () -> policy.requireRuntimeEnforcer(core, widened), extra);
+    }
+    ModulePolicy.Module postgresql = policy.modules.get("skis-dialect-postgresql");
+    Element dialect = ModulePolicy.readPom(policy.root.resolve("skis-dialect-postgresql/pom.xml"));
+    assertDoesNotThrow(() -> policy.requireRuntimeEnforcer(postgresql, dialect));
+    String providedQualifier = "org.checkerframework:checker-qual:*:*:provided";
+    for (String invalid : List.of("org.checkerframework:checker-qual", "org.checkerframework:*:*:*:provided",
+        "org.checkerframework:checker-qual:*:*:compile", "org.checkerframework:checker-qual:*:*:runtime")) {
+      Element widened = (Element) dialect.cloneNode(true);
+      var includes = widened.getElementsByTagName("include");
+      for (int index = 0; index < includes.getLength(); index++) {
+        var entry = includes.item(index);
+        if (providedQualifier.equals(entry.getTextContent().strip())) {
+          entry.setTextContent(invalid);
+          break;
+        }
+      }
+      assertThrows(IllegalStateException.class,
+          () -> policy.requireRuntimeEnforcer(postgresql, widened), invalid);
     }
   }
 

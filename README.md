@@ -16,9 +16,11 @@ The examples and topic documents in this branch describe the current snapshot. C
 and H2 aggregate contracts have passed CI with their real JDBC drivers and independent consumers.
 The four ID strategies and JDBC generated-key baseline passed CI at `1899270`. The staged
 `insertInto` API, conditional UPDATE/DELETE and typed RETURNING are implemented in this working tree,
-with verification of these changes pending. Nonempty batch execution, UPSERT, raw SQL and
-driver-level streaming validation remain planned for this milestone; Spring Boot
-integration retains its later milestone assignment.
+with verification of these changes pending. Incremental PostgreSQL cursor/stream reads and their
+transaction/resource contracts are implemented with CI verification pending. They require a
+transaction and a positive fetch size (cursor default: 256); H2 rejects these resource terminals.
+Raw SQL entry points are deferred to the `0.3.x` development line. Spring Boot integration retains
+its later milestone assignment.
 Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
 for the published and unreleased boundaries.
 
@@ -51,6 +53,7 @@ runtime, dialect and explicit driver dependency configuration without a SKIS par
 and a non-null row; `findById` retains its `Optional<E>` contract. Values are bound separately
 from SQL structure. Shared plans have bounded ownership, real cache statistics and explicit clear
 operations. Streams and cursors must be consumed sequentially and closed on their creating thread.
+Use a transaction Session for PostgreSQL streams; see [driver conditions and examples](docs/cursor-and-stream.md).
 
 ## Documentation
 

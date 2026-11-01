@@ -1,8 +1,10 @@
 # SKIS 0.2 JDBC type mappings
 
 This document defines the JDBC mapping contract implemented by SKIS 0.2. It is intentionally
-limited to the Java types already recognized by the annotation processor. The contract tests use
-the Spring Boot 4.1.0 BOM baselines: PostgreSQL JDBC 42.7.11, PostgreSQL 16, and H2 2.4.240.
+limited to the Java types already recognized by the annotation processor. Current contract tests use
+PostgreSQL JDBC 42.7.14, PostgreSQL 16, and H2 2.4.240. The repository explicitly manages the driver
+security update above the Spring Boot 4.1.0 BOM's original 42.7.11 baseline; verification on 42.7.14
+is pending CI. Historical results retain the driver version recorded with their original evidence.
 
 Applications still own their DDL. A Java type is supported only when the database column has a
 compatible type and sufficient precision, scale, or length.

@@ -41,6 +41,8 @@
       "io.skis.dialect.spi.LoweringCorrespondenceTest"
     ],
     "skis-jdbc": [
+      "io.skis.jdbc.internal.CursorExecutionContractTest",
+      "io.skis.jdbc.internal.CursorSqlTest",
       "io.skis.jdbc.GeneratedKeysExecutionTest",
       "io.skis.jdbc.DataSourceConnectionProviderTest",
       "io.skis.jdbc.JdbcExecutorTest",

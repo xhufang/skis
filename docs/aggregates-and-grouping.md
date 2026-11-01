@@ -3,6 +3,8 @@
 These APIs are implemented in `0.2.9-SNAPSHOT` and accumulate toward public `0.3.0`.
 They are outside the published `0.2.0` API. PostgreSQL 16.15 with JDBC 42.7.11 and H2 2.4.240
 have real-driver contract evidence; H2 remains a development/test database.
+The current snapshot selects PgJDBC 42.7.14 for its security fixes; regression verification on that
+version is pending CI. The earlier evidence above retains its original driver baseline.
 
 ## Aggregate result types
 

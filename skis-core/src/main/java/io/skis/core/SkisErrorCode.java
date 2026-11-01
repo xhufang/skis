@@ -245,6 +245,17 @@ public enum SkisErrorCode {
       SkisDiagnosticStage.QUERY_CONSTRUCTION,
       "HAVING construction is null, repeated, or lacks an initial predicate"),
 
+  QUERY_STREAMING_UNSUPPORTED(
+      "SKISQ035",
+      SkisErrorFamily.QUERY,
+      SkisDiagnosticStage.EXECUTION,
+      "the dialect does not support incremental cursor reads"),
+  QUERY_STREAMING_PRECONDITION(
+      "SKISQ036",
+      SkisErrorFamily.QUERY,
+      SkisDiagnosticStage.EXECUTION,
+      "a cursor read requires a supported driver mode, transaction and positive fetch size"),
+
   // SKISD: dialect capability, rendering, lowering, and structural conversion.
   DIALECT_FEATURE_UNSUPPORTED(
       "SKISD001",
@@ -476,28 +487,44 @@ public enum SkisErrorCode {
       SkisDiagnosticStage.INPUT_CONSTRUCTION,
       "required mutation property value is null"),
   MUTATION_ID_VALUE_INVALID(
-      "SKISM014", SkisErrorFamily.MUTATION, SkisDiagnosticStage.INPUT_CONSTRUCTION,
+      "SKISM014",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.INPUT_CONSTRUCTION,
       "primary-key input is invalid for its generation strategy"),
   MUTATION_ID_GENERATION_FAILED(
-      "SKISM015", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "SKISM015",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.EXECUTION,
       "primary-key generation failed"),
   MUTATION_GENERATED_KEY_INVALID(
-      "SKISM016", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "SKISM016",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.EXECUTION,
       "JDBC generated keys violated the single non-null key contract"),
   MUTATION_ID_ACCESS_FAILED(
-      "SKISM017", SkisErrorFamily.MUTATION, SkisDiagnosticStage.INPUT_CONSTRUCTION,
+      "SKISM017",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.INPUT_CONSTRUCTION,
       "generated primary-key reader failed"),
   MUTATION_ID_APPLY_FAILED(
-      "SKISM018", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "SKISM018",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.EXECUTION,
       "successful insert primary key could not be applied to the entity"),
   MUTATION_UNSAFE(
-      "SKISM019", SkisErrorFamily.MUTATION, SkisDiagnosticStage.SEMANTIC_VALIDATION,
+      "SKISM019",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.SEMANTIC_VALIDATION,
       "conditional mutation requires WHERE or explicit full-table permission"),
   MUTATION_UNSUPPORTED(
-      "SKISM020", SkisErrorFamily.MUTATION, SkisDiagnosticStage.SEMANTIC_VALIDATION,
+      "SKISM020",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.SEMANTIC_VALIDATION,
       "requested mutation combination is not supported"),
   MUTATION_RETURNING_SHAPE(
-      "SKISM021", SkisErrorFamily.MUTATION, SkisDiagnosticStage.EXECUTION,
+      "SKISM021",
+      SkisErrorFamily.MUTATION,
+      SkisDiagnosticStage.EXECUTION,
       "mutation returned an invalid result shape");
 
   private final String code;

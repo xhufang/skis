@@ -66,7 +66,9 @@ final class ArchitectureRules {
       for (Dependency dependency : type.getDirectDependenciesFromSelf()) {
         JavaClass targetType = dependency.getTargetClass().getBaseComponentType();
         ModulePolicy.Module target = policy.classOwners.get(targetType.getName());
-        if (source.kind().equals("production") && forbiddenRuntime(targetType.getName(), source.artifact().startsWith("skis-spring"))) {
+        if (source.kind().equals("production")
+            && forbiddenRuntime(targetType.getName(), source.artifact().startsWith("skis-spring"))
+            && !cursorDriverAccess(type.getName(), targetType.getName())) {
           errors.add(dependency.getDescription());
         }
         if (target != null && !policy.permitsDependency(source, target)) errors.add(dependency.getDescription());
@@ -90,6 +92,13 @@ final class ArchitectureRules {
             "org.apache.logging.slf4j.", "org.slf4j.simple.", "org.slf4j.jul.", "org.slf4j.reload4j.",
             "com.github.benmanes.caffeine.", "redis.clients.", "io.lettuce.", "io.skis.processor.")
             .stream().anyMatch(name::startsWith);
+  }
+
+  // ADR-0031: compile-only, direct driver-mode inspection in this one dialect adapter.
+  static boolean cursorDriverAccess(String source, String target) {
+    return source.equals("io.skis.dialect.postgresql.PostgreSqlCursorReadSupport")
+        && Set.of("org.postgresql.jdbc.PgConnection", "org.postgresql.jdbc.PreferQueryMode")
+            .contains(target);
   }
 
   static List<String> hotPath(JavaClasses classes, Set<String> processorClasses) {

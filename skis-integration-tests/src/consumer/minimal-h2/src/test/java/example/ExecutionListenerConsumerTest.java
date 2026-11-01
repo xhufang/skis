@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 
@@ -98,7 +97,7 @@ class ExecutionListenerConsumerTest {
   }
 
   @Test
-  void sessionsInheritTheRegistrationSnapshotAndStreamsFinishOnlyWhenClosedOrExhausted()
+  void sessionsInheritTheRegistrationSnapshotAndH2RejectsResourceStreams()
       throws Exception {
     JdbcDataSource dataSource = dataSource();
     List<String> order = new CopyOnWriteArrayList<>();
@@ -129,34 +128,13 @@ class ExecutionListenerConsumerTest {
     first.events.clear();
     ExecutableSelectQuery<Pet> query =
         executor.selectFrom(PetTable.petTable).orderBy(PetTable.petTable.id().asc());
-    try (Stream<Pet> rows = query.stream()) {
-      assertEquals(1L, rows.findFirst().orElseThrow().id());
-      assertTrue(first.events(OperationCompletedEvent.class).isEmpty());
-    }
+    var failure = assertThrows(io.skis.core.QueryValidationException.class, query::stream);
+    assertEquals(io.skis.core.SkisErrorCode.QUERY_STREAMING_UNSUPPORTED, failure.code());
     assertEquals(1, first.events(OperationCompletedEvent.class).size());
-    assertEquals(
-        ExecutionTermination.CLOSED_EARLY,
+    assertEquals(ExecutionTermination.FAILED,
         first.events(OperationCompletedEvent.class).getFirst().termination());
-    assertEquals(1L, first.events(StatementCompletedEvent.class).getFirst().readRowCount());
-
-    first.events.clear();
-    try (Stream<Pet> rows = query.stream()) {
-      assertEquals(3, rows.toList().size());
-      assertEquals(1, first.events(OperationCompletedEvent.class).size());
-      assertEquals(1, first.events(StatementCompletedEvent.class).size());
-      assertEquals(
-          ExecutionTermination.EXHAUSTED,
-          first.events(OperationCompletedEvent.class).getFirst().termination());
-      assertEquals(
-          ExecutionTermination.EXHAUSTED,
-          first.events(StatementCompletedEvent.class).getFirst().termination());
-    }
-    assertEquals(1, first.events(OperationCompletedEvent.class).size());
-    assertEquals(1, first.events(StatementCompletedEvent.class).size());
-    assertEquals(
-        ExecutionTermination.EXHAUSTED,
-        first.events(OperationCompletedEvent.class).getFirst().termination());
-    assertEquals(3L, first.events(StatementCompletedEvent.class).getFirst().readRowCount());
+    assertTrue(first.events(StatementCompletedEvent.class).isEmpty());
+    assertEquals(3, query.fetchList().size());
   }
 
   @Test

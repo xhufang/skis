@@ -21,6 +21,7 @@ import io.skis.core.spi.OperationStartedEvent;
 import io.skis.core.spi.StatementCompletedEvent;
 import io.skis.core.spi.StatementStartedEvent;
 import io.skis.dialect.spi.Dialect;
+import io.skis.dialect.spi.CursorReadSupport;
 import io.skis.dialect.spi.DialectCapabilities;
 import io.skis.dialect.spi.DialectFeature;
 import io.skis.dialect.spi.IdentifierRules;
@@ -39,6 +40,7 @@ import io.skis.metadata.TableMeta;
 import io.skis.query.QueryPlanCacheStatistics;
 import io.skis.query.QueryCursor;
 import io.skis.query.QueryTable;
+import io.skis.query.Sql;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
@@ -282,6 +284,29 @@ class SkisPlanReuseTest {
   }
 
   @Test
+  void requestAndDirectResourcesShareTheSessionScopeAndCloseBeforeCompletion() {
+    SkisExecutor executor = Skis.builder(executionDataSource()).dialect(new CountingDialect())
+        .runtimeModels(List.of(runtimeModel())).build();
+    try (SkisSession session = executor.beginTransaction()) {
+      QueryCursor<Pet> direct = session.selectFrom(PET_TABLE).cursor();
+      QueryCursor<Pet> requested = session.run(Sql.selectFrom(PET_TABLE).cursor());
+      assertTrue(direct.advance());
+      assertTrue(requested.advance());
+      assertEquals(direct.current(), requested.current());
+      session.commit();
+      assertTrue(direct.isClosed());
+      assertTrue(requested.isClosed());
+      assertFalse(direct.advance());
+      direct.close();
+      requested.close();
+    }
+    try (var requested = executor.run(Sql.selectFrom(PET_TABLE).stream());
+        var direct = executor.selectFrom(PET_TABLE).stream()) {
+      assertEquals(direct.toList(), requested.toList());
+    }
+  }
+
+  @Test
   void propagatesListenerErrorsBeforeConnectionAcquisition() {
     AtomicInteger acquisitions = new AtomicInteger();
     AssertionError expected = new AssertionError("listener error");
@@ -482,7 +507,7 @@ class SkisPlanReuseTest {
                 return preparedStatement();
               }
               if (method.getName().equals("getAutoCommit")) {
-                return true;
+                return false;
               }
               return defaultValue(method.getReturnType());
             });
@@ -498,9 +523,17 @@ class SkisPlanReuseTest {
   }
 
   private static PreparedStatement preparedStatement() {
+    AtomicInteger fetchSize = new AtomicInteger();
     return proxy(
         PreparedStatement.class,
         (ignored, method, arguments) -> {
+          switch (method.getName()) {
+            case "setFetchSize": fetchSize.set((Integer) arguments[0]); return null;
+            case "getFetchSize": return fetchSize.get();
+            case "getResultSetType": return ResultSet.TYPE_FORWARD_ONLY;
+            case "getResultSetConcurrency": return ResultSet.CONCUR_READ_ONLY;
+            case "getResultSetHoldability": return ResultSet.CLOSE_CURSORS_AT_COMMIT;
+          }
           if (method.getName().equals("executeQuery")) {
             return oneRowResultSet();
           }
@@ -576,6 +609,16 @@ class SkisPlanReuseTest {
   }
 
   private static final class CountingDialect implements Dialect {
+
+    private static final CursorReadSupport CURSOR_SUPPORT = new CursorReadSupport() {
+      @Override public int defaultFetchSize() { return 256; }
+      @Override public boolean supportsConnection(Connection connection) { return true; }
+    };
+
+    @Override
+    public CursorReadSupport cursorReadSupport() {
+      return CURSOR_SUPPORT;
+    }
 
     private final AtomicInteger renders = new AtomicInteger();
     private final DialectCapabilities capabilities =

@@ -122,8 +122,18 @@ abstract class AbstractSkisEmployeeDepartmentScalarContractTest {
       // Two employees share department 10; the unmatched department 30 becomes one SQL NULL.
       assertEquals(Arrays.asList(10L, 20L, null), query.fetchList());
       assertEquals(Arrays.asList(10L, 20L, null), query.fetchList());
-      try (var rows = query.stream()) {
-        assertEquals(Arrays.asList(10L, 20L, null), rows.toList());
+      if (dialect.cursorReadSupport().defaultFetchSize() > 0) {
+        connection.setAutoCommit(false);
+        try (var rows = query.stream()) {
+          assertEquals(Arrays.asList(10L, 20L, null), rows.toList());
+        } finally {
+          connection.rollback();
+          connection.setAutoCommit(true);
+        }
+      } else {
+        assertEquals(io.skis.core.SkisErrorCode.QUERY_STREAMING_UNSUPPORTED,
+            org.junit.jupiter.api.Assertions.assertThrows(io.skis.core.QueryValidationException.class,
+                query::stream).code());
       }
       assertEquals(
           Arrays.asList(null, 20L, 10L),

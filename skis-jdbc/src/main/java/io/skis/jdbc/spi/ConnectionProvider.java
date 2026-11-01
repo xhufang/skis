@@ -4,6 +4,7 @@ import io.skis.core.spi.ExecutionContext;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import org.jspecify.annotations.Nullable;
 
 /** Acquires and releases JDBC connections for one execution. */
 public interface ConnectionProvider {
@@ -41,6 +42,17 @@ public interface ConnectionProvider {
   default void configureStatement(
       PreparedStatement statement, ExecutionContext context, int queryTimeoutSeconds)
       throws SQLException {}
+
+  /**
+   * Registers an open cursor with the owning transaction, if any. Its owner must close registered
+   * resources on the acquiring thread before transaction completion or connection return. Returns a
+   * non-throwing removal action, or null when the caller owns the cursor lifetime. Registration
+   * must not execute SQL, complete the transaction, or close the supplied resource.
+   */
+  default @Nullable Runnable registerCursor(
+      Connection connection, AutoCloseable cursor, ExecutionContext context) throws SQLException {
+    return null;
+  }
 
   /**
    * Releases a connection previously returned by {@link #acquire(ExecutionContext)}.
