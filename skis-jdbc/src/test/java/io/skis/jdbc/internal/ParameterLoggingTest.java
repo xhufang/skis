@@ -411,11 +411,15 @@ class ParameterLoggingTest {
       throws Exception {
     TestLoggerProvider.WARN.add("io.skis.internal");
     Driver driver = new Driver();
+    Runnable warning;
     try (JdbcCursor<String> cursor = executor(driver, SqlLoggingOptions.NONE)
         .openCursor(plan(new CountingBinder()), POISON, ExecutionContext.EMPTY)) {
       var resourcesField = cursor.getClass().getDeclaredField("resources");
       resourcesField.setAccessible(true);
-      Runnable warning = (Runnable) resourcesField.get(cursor);
+      Object resources = Objects.requireNonNull(resourcesField.get(cursor));
+      var leakStateField = resources.getClass().getDeclaredField("leakState");
+      leakStateField.setAccessible(true);
+      warning = assertInstanceOf(Runnable.class, leakStateField.get(resources));
       warning.run();
       assertFalse(message().contains("SELECT ?"));
       assertFalse(message().contains("secret"));
@@ -431,6 +435,9 @@ class ParameterLoggingTest {
     assertEquals(1, driver.resultSetCloses.get());
     assertEquals(1, driver.statementCloses.get());
     assertEquals(1, driver.releases.get());
+    int loggedEvents = TestLoggerProvider.EVENTS.size();
+    warning.run();
+    assertEquals(loggedEvents, TestLoggerProvider.EVENTS.size());
   }
 
   @Test void oneSharedPlanUsesIndependentSummariesAcrossConcurrentCalls() throws Exception {
