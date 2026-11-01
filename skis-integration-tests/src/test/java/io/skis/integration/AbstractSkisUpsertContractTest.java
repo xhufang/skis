@@ -666,7 +666,9 @@ abstract class AbstractSkisUpsertContractTest {
         var source = Sql.values(row -> row.value(id, 1L).value(nullableId, 1L));
         var update = f.executor.mergeInto(ROW).using(source).on(ROW.id().eq(source.column(id)))
             .whenMatched().thenUpdate().set(ROW.name(), "changed").expectedVersion(0L);
-        assertThrows(MutationException.class, update::write, "strict matching also requires an insertion branch");
+        assertEquals(SkisErrorCode.MUTATION_PARAMETER_SHAPE,
+            assertThrows(MutationException.class, update::write,
+                "strict matching also requires an insertion branch").code());
         assertThrows(MutationException.class, () -> update.whenNotMatched().thenInsert(row -> row
             .value(ROW.id(), Sql.value(2L)).value(ROW.name(), Sql.value("insert"))).write());
         assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
@@ -708,7 +710,7 @@ abstract class AbstractSkisUpsertContractTest {
       var source = Sql.values(row -> row.value(id, 1L));
       assertThrows(MutationException.class, () -> f.executor.mergeInto(ROW).using(source)
           .on(ROW.id().eq(source.column(id))).whenNotMatched().thenInsert(row -> row
-              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value(String.class, null))));
+              .value(ROW.id(), source.column(id)).value(ROW.name(), Sql.value(String.class, null))).write());
       assertEquals(0, f.acquisitions.get());
     }
   }

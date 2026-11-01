@@ -393,9 +393,9 @@ final class NativeMerges {
               || draft.actions().stream()
                       .filter(action -> action.kind() == MergeAction.Kind.INSERT)
                       .count()
-                  > 1))
+                  != 1))
         throw StructuredWrites.invalid(
-            "expectedVersion requires one attributable UPDATE action and at most one INSERT action");
+            "expectedVersion requires one attributable UPDATE action and one INSERT action");
       if (checking() && draft.actions().stream().anyMatch(action -> action.condition() != null))
         throw StructuredWrites.invalid(
             "strict expectedVersion cannot combine with business branch filters");

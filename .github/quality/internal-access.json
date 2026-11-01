@@ -86,13 +86,6 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.mutation.internal.EntityMutationPlanSet$UpdateExecution",
-      "target": "io.skis.jdbc.internal.CompiledMutationPlan",
-      "reason": "Carries the selected immutable update plan and optimistic-lock decision within framework execution.",
-      "owner": "T03",
-      "exit": "Review with qualified JPMS exports before 1.0"
-    },
-    {
       "caller": "io.skis.mutation.internal.EntityMutationPlanSet",
       "target": "io.skis.jdbc.internal.CompiledMutationPlan",
       "reason": "Typed framework collaboration with CompiledMutationPlan; caller and target are individually registered.",
@@ -583,13 +576,6 @@
       "exit": "Review with qualified JPMS exports before 1.0"
     },
     {
-      "caller": "io.skis.mutation.internal.MutationRequests$Batch",
-      "target": "io.skis.query.internal.MutationQuerySupport",
-      "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
-      "owner": "0.2.10:T03",
-      "exit": "Review with qualified JPMS exports before 1.0"
-    },
-    {
       "caller": "io.skis.mutation.internal.MutationRequests$Conditional",
       "target": "io.skis.query.internal.MutationQuerySupport",
       "reason": "Reuses the canonical query DSL, parameter layout and generated returning result compiler for mutation requests.",
@@ -822,20 +808,6 @@
     },
     {
       "caller": "io.skis.mutation.internal.StructuredWrites$Single",
-      "target": "io.skis.query.internal.MutationQuerySupport$Result",
-      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
-      "owner": "0.2.10:T04",
-      "exit": "Review with qualified JPMS exports before 1.0"
-    },
-    {
-      "caller": "io.skis.mutation.internal.StructuredWrites$Merge",
-      "target": "io.skis.query.internal.MutationQuerySupport",
-      "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
-      "owner": "0.2.10:T04",
-      "exit": "Review with qualified JPMS exports before 1.0"
-    },
-    {
-      "caller": "io.skis.mutation.internal.StructuredWrites$Merge",
       "target": "io.skis.query.internal.MutationQuerySupport$Result",
       "reason": "Shares typed write preparation, canonical mappings and the bounded generated execution pipeline.",
       "owner": "0.2.10:T04",

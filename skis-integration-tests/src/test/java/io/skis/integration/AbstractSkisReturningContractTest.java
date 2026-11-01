@@ -104,7 +104,7 @@ abstract class AbstractSkisReturningContractTest {
       assertMutationShapeFailure(() -> f.executor.deleteFrom(ROW)
           .where(ROW.as("other").id().eq(1L)).returning().write());
       assertThrows(RuntimeException.class, () -> f.executor.insertInto(ROW).value(new WriteRow(1L, "one", null, null))
-          .returning(WriteViewPro.of(ROW.as("other").name(), ROW.note())));
+          .returning(WriteViewPro.of(ROW.as("other").name(), ROW.note())).write());
       var ids = new ArrayList<Long>();
       for (long id = 0; id < 65536; id++) { ids.add(id); }
       assertThrows(RuntimeException.class, () -> f.executor.deleteFrom(ROW).where(ROW.id().in(ids)).write());
