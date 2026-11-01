@@ -707,14 +707,14 @@ class QueryTypeSafetyCompilationTest {
               QueryTable<Joined> table,
               DerivedRelation derived,
               QueryCondition condition) {
-            JoinOnStep<ExecutableSelectQuery<String>> tableStep = query.join(table);
-            JoinOnStep<ExecutableSelectQuery<String>> derivedStep = query.join(derived);
+            JoinOnStep<? extends ExecutableSelectQuery<String>> tableStep = query.join(table);
+            JoinOnStep<? extends ExecutableSelectQuery<String>> derivedStep = query.join(derived);
             ExecutableSelectQuery<String> tableQuery = tableStep.on(condition);
             ExecutableSelectQuery<String> derivedQuery = derivedStep.on(condition);
 
-            JoinOnStep<ExecutableSelectQuery<@Nullable String>> nullableTableStep =
+            JoinOnStep<? extends ExecutableSelectQuery<@Nullable String>> nullableTableStep =
                 nullableQuery.join(table);
-            JoinOnStep<ExecutableSelectQuery<@Nullable String>> nullableDerivedStep =
+            JoinOnStep<? extends ExecutableSelectQuery<@Nullable String>> nullableDerivedStep =
                 nullableQuery.join(derived);
             ExecutableSelectQuery<@Nullable String> nullableTableQuery =
                 nullableTableStep.on(condition);

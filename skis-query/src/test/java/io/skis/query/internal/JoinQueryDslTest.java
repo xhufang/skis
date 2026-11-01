@@ -42,6 +42,7 @@ import io.skis.query.NullPlacement;
 import io.skis.query.PageRequest;
 import io.skis.query.QueryCondition;
 import io.skis.query.QueryOperations;
+import io.skis.query.QueryRequest;
 import io.skis.query.QueryTable;
 import io.skis.query.Selectable;
 import io.skis.query.SelectQuery;
@@ -169,11 +170,16 @@ class JoinQueryDslTest {
     assertTrue(chainedSql.contains("SELECT DISTINCT"));
     assertTrue(chainedSql.contains("INNER JOIN"));
     assertTrue(chainedSql.contains("ORDER BY"));
-    for (String terminal : List.of("fetchList", "fetchPage", "cursor", "stream", "withOptions")) {
-      assertFalse(
-          Arrays.stream(SelectQuery.class.getMethods())
-              .anyMatch(method -> method.getName().equals(terminal)));
+    for (String terminal :
+        List.of("fetchOne", "fetchFirst", "fetchList", "fetchPage", "fetchSlice", "cursor", "stream")) {
+      var methods = Arrays.stream(SelectQuery.class.getMethods())
+          .filter(method -> method.getName().equals(terminal)).toList();
+      assertFalse(methods.isEmpty(), terminal);
+      assertTrue(methods.stream().allMatch(method -> method.getReturnType() == QueryRequest.class),
+          terminal);
     }
+    assertFalse(Arrays.stream(SelectQuery.class.getMethods())
+        .anyMatch(method -> method.getName().equals("withOptions")));
   }
 
   @Test
