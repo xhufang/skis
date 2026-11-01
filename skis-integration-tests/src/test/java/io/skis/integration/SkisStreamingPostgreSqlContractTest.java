@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.postgresql.ds.PGConnectionPoolDataSource;
 import org.postgresql.ds.PGSimpleDataSource;
+import org.postgresql.jdbc.PreferQueryMode;
 
 @PostgresContract
 class SkisStreamingPostgreSqlContractTest {
@@ -120,7 +121,7 @@ class SkisStreamingPostgreSqlContractTest {
     simple.setURL(source.getURL());
     simple.setUser(source.getUser());
     simple.setPassword(source.getPassword());
-    simple.setPreferQueryMode("simple");
+    simple.setPreferQueryMode(PreferQueryMode.SIMPLE);
     try (var session = Skis.create(simple, PostgreSqlDialect.INSTANCE).beginTransaction()) {
       assertEquals(SkisErrorCode.QUERY_STREAMING_PRECONDITION,
           assertThrows(QueryValidationException.class,
