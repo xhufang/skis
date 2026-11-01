@@ -133,7 +133,7 @@ class LoweringCorrespondenceTest {
   }
 
   private static void validate(StatementAst original, StatementAst replacement) {
-    LoweringCorrespondence.validate(original, replacement, false, DialectCapabilities.NONE);
+    LoweringCorrespondence.validate(original, replacement, false, DialectCapabilities.none());
   }
 
   private static final class Table extends TableExpression<Object> {
