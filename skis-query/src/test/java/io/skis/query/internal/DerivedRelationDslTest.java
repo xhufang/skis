@@ -73,7 +73,8 @@ class DerivedRelationDslTest {
           false);
 
   @Test
-  void validatesExplicitOrderedShapeHandleMembershipAndAliasReuse() {
+  void validatesExplicitOrderedShapeHandleMembershipAndAliasReuse()
+      throws ReflectiveOperationException {
     PetTable inner = new PetTable().as("inner_pet");
     SelectQuery<Pet> description = Sql.selectFrom(inner);
     NonNullDerivedOutput<Long> id = Sql.output(inner.id(), "pet_id");
@@ -87,6 +88,20 @@ class DerivedRelationDslTest {
     assertNotSame(
         QueryModels.relation(first).reference(), QueryModels.relation(second).reference());
     assertEquals(first.outputs(), second.outputs());
+
+    // Direct key comparisons keep this identity contract independent of hash table placement.
+    var selectedOrdinals = DefaultDerivedRelation.class.getDeclaredField("selectedOrdinals");
+    selectedOrdinals.setAccessible(true);
+    Map<?, ?> selections = (Map<?, ?>) selectedOrdinals.get(first);
+    assertEquals(selections, selectedOrdinals.get(second));
+    PetTable independent = new PetTable().as("inner_pet");
+    var independentSource = Sql.select(independent.id()).from(independent).as("independent_pet");
+    Object independentKey =
+        ((Map<?, ?>) selectedOrdinals.get(independentSource)).keySet().iterator().next();
+    for (Object identity : selections.keySet()) {
+      assertFalse(identity.equals(new Object()));
+      assertFalse(identity.equals(independentKey));
+    }
 
     NonNullSelectable<Long> firstId = first.column(id);
     NonNullSelectable<Long> secondId = second.column(id);
