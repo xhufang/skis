@@ -114,6 +114,7 @@ grouped/derived keyset、CTE/集合运算/窗口函数/锁语法、MySQL 正式�
 
 ### Fixed
 
+- 将 `QueryConditionCompiler`、`QueryParameterBindings` 分别放入同名源码文件，保持包级可见性和类体逻辑，修复发布 Javadoc 的源码类型定位问题。
 - 修正 0.2.9 T04 参数视图与内置列条件双向复用逻辑槽，实际自定义/委托 Codec 在计划查找前拒绝，
   原描述的映射约束不因裁剪或 count 丢失。DISTINCT 组合排序复用已选输出及最终槽，保留外连接有效可空性；
   排序参数归属仅保存独占引用，替换排序只复制一次值环境；结构、Binder、分支及两方言 JDBC 合同已通过 0.2.9 验收。
