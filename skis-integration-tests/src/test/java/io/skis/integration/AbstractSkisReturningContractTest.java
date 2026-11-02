@@ -897,8 +897,8 @@ abstract class AbstractSkisReturningContractTest {
       var selected = Sql.select(source.id(), source.name()).from(source)
           .where(source.id().eq(2L)).and(source.name().eq("copied")).as("selected_source");
       var update = f.executor.update(ROW).from(selected)
-          .join(marker).on(marker.id().eq(3L))
           .set(ROW.note(), selected.column(source.name()))
+          .join(marker).on(marker.id().eq(3L))
           .where(ROW.id().eq(1L)).and(selected.column(source.id()).eq(2L)).returning();
       var noMatch = f.executor.update(ROW).from(selected)
           .set(ROW.note(), "unmatched").where(ROW.id().eq(1L))
