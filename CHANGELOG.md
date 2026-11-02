@@ -4,7 +4,26 @@
 
 ## [Unreleased]
 
-当前仓库保持 `0.2.10-SNAPSHOT`。本版写入、SQL DSL 与真实流读取已按 PR #101 合入提交
+## [0.3.0] - 2026-11-02
+
+本版本汇总 `0.2.1`—`0.2.10` 内部开发里程碑的累计成果，仓库版本统一为非 SNAPSHOT 的 `0.3.0`。
+
+### 版本概览
+
+- 提供类型安全 SQL DSL，支持表达式、Join、子查询、派生来源、聚合、GROUP BY/HAVING 及最终结果的 offset Page/Slice/count。
+- SELECT 统一使用 `SelectQuery<R>`；executor/Session 查询直接 fetch，独立 `Sql` 查询通过 `QueryRequest<T>` 与 `run` 执行。
+  支持实体、标量、`Row2`/`Row3` 和生成式 Pro 投影，`SingleRow<R>` 保留无行、SQL NULL 与非空行的区别。
+- 提供 ASSIGNED、IDENTITY、UUID v4 和显式节点雪花主键，生成代码与运行时统一使用 ABI 9；
+  INSERT、条件 UPDATE/DELETE、实体 byId、INSERT SELECT、实体批量及 `Written<R>` 类型化 RETURNING 共用执行与映射合同。
+- PostgreSQL 提供 ON CONFLICT、UPDATE FROM/DELETE USING，H2 提供 MERGE/KEY；各语句保留数据库原生语义与支持边界。
+- PostgreSQL 支持事务内增量 cursor/stream，默认 fetch size 256；本地/Spring 事务、线程、资源关闭及连接池归还合同保持。
+  H2 仅支持物化读取，拒绝 cursor/stream 资源终点。
+- 有界共享计划缓存、结构/值隔离、生成式按列下标映射、受控方言 lowering、稳定诊断码、只读监听及默认关闭的 SQL/慢查询日志共同收口。
+- Java 21/25、APT/nullness、架构、分支覆盖率、真实 PostgreSQL/H2、独立消费者及安全/合规检查纳入累计验证范围。
+
+### 累计功能验收基线
+
+本版写入、SQL DSL 与真实流读取已按 PR #101 合入提交
 `9a7db594ced8d1a71f036b2f36ffb631f62af7d7` 的
 [CI](https://github.com/xhufang/skis/actions/runs/41395524566) 和
 [Compliance](https://github.com/xhufang/skis/actions/runs/41395524562) 验收。
@@ -13,7 +32,6 @@ Java 21 工程门禁 120 套/1387 项，Java 25 普通回归 109 套/1240 项，
 覆盖率历史/来源、APT/nullness、架构、Gradle 增量、发布边界、资源与 benchmark 冻结检查通过。
 push 跳过的依赖漏洞审查由同 Git tree 的
 [PR #101 Compliance](https://github.com/xhufang/skis/actions/runs/41383183303) 承担。
-本地仅静态核对原始工件和文档，没有编译运行。
 
 ### 0.2.10 写入与真实流读取
 
@@ -27,10 +45,16 @@ push 跳过的依赖漏洞审查由同 Git tree 的
 - PostgreSQL cursor/stream 默认 fetch size 256，要求事务、正 fetch size、extended protocol 与单 SQL；显式零、autoCommit、simple/未知驱动模式拒绝。H2 拒绝资源终点，保留物化读取。
 - 本地/Spring 事务完成前关闭活动游标；支持 Spring 挂起恢复及保存点资源边界，保持线程、连接池归还、提前关闭和异常主次合同。PgJDBC 固定 42.7.14，并限制 provided 驱动及 checker-qual 准入，见[流读取](docs/cursor-and-stream.md)。
 - 动态计划保持有界共享、值/结构/资源隔离、生成式按下标映射、命中阶段复用及锁外监听。ADR-0025—0031 按独立运行证据升级 Implemented；本轮登记变化仅静态核对，提交后仍由 Compliance 验证。
-- 用户取消0.2.11，稳定化、当前消费者、安全/合规与最终文档收口直接并入0.3.0发布准备；根README本次暂缓，在最终文档阶段处理。T06/T07 片段/整条原生 SQL、BYPASS 与原生流读取延后至 0.3.x，累计至 0.4.0；ADR-0024 保留这些未完成范围。
+- T06/T07 片段/整条原生 SQL、BYPASS 与原生流读取延后至 `0.3.x`，累计至 `0.4.0`；ADR-0024 保留这些未完成范围。
 
-当前公开版本仍为 `0.2.0`；累计成果在 `0.3.0` 正式发布，不创建本版 tag/Release、不在本轮切换版本。
-用户取消发布前性能验证；0.3.0不要求性能测量、benchmark重建/执行或性能数字门槛。benchmark继续保持空模块和发布排除，性能结构/并发/资源检查保留。
+`0.2.1`—`0.2.10` 为内部开发里程碑，不单独创建 tag 或公开发布；后续历史记录中的旧 API、生成 ABI、
+类型预算与验证状态保留各阶段当时事实，当前公共 API 以 `0.3.0` 的 README、专题文档和上述版本概览为准。
+取消 `0.2.11` 与发布前性能验证；`0.3.0` 不要求性能测量、benchmark 重建/执行或性能数字门槛。
+benchmark 继续保持空模块和发布排除，性能结构、并发与资源检查保留。
+
+grouped/derived keyset、CTE/集合运算/窗口函数/锁语法、MySQL 正式方言、Spring Boot Starter、FetchPlan、
+图写入、对象缓存与 Schema 管理不属于本版范围。非空 ADD_BATCH RETURNING、实体 byId VALUES 和 H2 MERGE/KEY
+实体集合仍拒绝，完整边界见[写入与 RETURNING](docs/mutation-returning.md)及[流读取](docs/cursor-and-stream.md)。
 
 ### 0.2.9 及更早内部里程碑记录
 
@@ -74,6 +98,8 @@ push 跳过的依赖漏洞审查由同 Git tree 的
 
 ### Changed
 
+- 根工程、子模块 parent、BOM、示例和四个独立消费者共 27 份 POM 的 SKIS 版本统一为 `0.3.0`。
+- README 对齐 `0.3.0` 的能力、数据库支持、依赖配置、查询/写入与流读取示例，清理过期验证状态和发布前性能验证要求。
 - 将 QueryRuntime、QueryPlanCatalog 及编译/缓存/执行和 DSL 状态迁入 query.internal，保留公开业务接口和生成表合同，
   删除两项根包装配例外；共享 Catalog、事务绑定、Fast Path、缓存/并发/回收和资源合同保持。
 - 数组快照/continuation 改用保持运行类型的直接数组复制与深 hash，保留嵌套/null/SQL 日期及值隔离。
@@ -98,7 +124,7 @@ push 跳过的依赖漏洞审查由同 Git tree 的
 - 修复 PowerShell XML 的 name 属性遮蔽节点 Name 导致有效报告被误拒的问题；使用原生节点 getter，
   补齐属性遮蔽、大小写及命名空间正反例，已在 PR #78 合入 CI 通过。
 
-### Earlier unreleased milestones
+### 更早内部里程碑记录
 
 - 0.2.7 T10 完成文档与内部里程碑收口：README、当前读写/投影示例、方言 SPI/编译说明、资源与诊断合同及公开
   Javadoc 与当前 API 对齐；生成 ABI 为 7，查询预算为 30/30，聚合/工程治理/写入保持后续版本归属。
@@ -718,7 +744,9 @@ PostgreSQL/H2 方言和 Spring 事务连接适配模块。
 - Maven 依赖坐标需从 `io.skis:*` 更新为 `io.github.xhufang:*`。
 - Java 根包仍为 `io.skis`，源码导入路径无需修改。
 
-[Unreleased]: https://github.com/xhufang/skis/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/xhufang/skis/compare/v0.3.0...HEAD
+
+[0.3.0]: https://github.com/xhufang/skis/compare/v0.2.0...v0.3.0
 
 [0.2.0]: https://github.com/xhufang/skis/compare/v0.1.0...v0.2.0
 
