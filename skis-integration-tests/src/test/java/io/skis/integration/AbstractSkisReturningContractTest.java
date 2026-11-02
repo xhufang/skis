@@ -801,6 +801,220 @@ abstract class AbstractSkisReturningContractTest {
     }
   }
 
+  @Test
+  void conditionalSubqueriesKeepCorrelationAndSqlNullMembership() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(
+          new WriteRow(1L, "keep", "before", null),
+          new WriteRow(2L, "keep", "before", null),
+          new WriteRow(3L, "other", "untouched", null))).write();
+      var source = ROW.as("condition_source");
+      var scalar = Sql.select(source.name()).from(source)
+          .where(source.id().eq(ROW.id())).and(source.id().eq(1L));
+      int statements = f.statements.get();
+      var updated = f.executor.update(ROW).set(ROW.note(), scalar)
+          .where(ROW.id().in(Sql.select(source.id()).from(source)
+              .where(source.name().eq("keep"))))
+          .returning().write();
+      assertEquals(statements + 1, f.statements.get());
+      assertEquals(2, updated.affectedRows());
+      assertEquals(List.of(new WriteRow(1L, "keep", "keep", 0L),
+          new WriteRow(2L, "keep", null, 0L)),
+          updated.rows().stream().sorted(java.util.Comparator.comparing(WriteRow::id)).toList());
+
+      statements = f.statements.get();
+      assertEquals(0, f.executor.deleteFrom(ROW)
+          .where(ROW.note().notIn(Sql.select(source.note()).from(source)
+              .where(source.id().eq(2L)))).write());
+      assertEquals(statements + 1, f.statements.get(), "NOT IN a NULL row stays unknown");
+
+      statements = f.statements.get();
+      assertEquals(2, f.executor.update(ROW).set(ROW.note(), "exists")
+          .where(Sql.exists(Sql.select(source.id()).from(source)
+              .where(source.id().eq(ROW.id())).and(source.name().eq("keep")))).write());
+      assertEquals(statements + 1, f.statements.get());
+      statements = f.statements.get();
+      var deleted = f.executor.deleteFrom(ROW)
+          .where(Sql.notExists(Sql.select(source.id()).from(source)
+              .where(source.id().eq(ROW.id())).and(source.name().eq("keep"))))
+          .returning().write();
+      assertEquals(statements + 1, f.statements.get());
+      assertEquals(new WriteRow(3L, "other", "untouched", 0L), deleted.one().get());
+    }
+  }
+
+  @Test
+  void scalarAssignmentsRejectMultipleRowsWithoutChoosingAValue() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(
+          new WriteRow(1L, "one", "unchanged", null),
+          new WriteRow(2L, "two", null, null))).write();
+      var source = ROW.as("scalar_source");
+      int statements = f.statements.get();
+      var failure = assertThrows(SkisException.class, () -> f.executor.update(ROW)
+          .set(ROW.note(), Sql.select(source.name()).from(source))
+          .where(ROW.id().eq(1L)).write());
+      assertEquals(statements + 1, f.statements.get());
+      Throwable original = failure;
+      while (original.getCause() != null) original = original.getCause();
+      assertInstanceOf(SQLException.class, original);
+      assertFalse(failure instanceof OptimisticLockException);
+      assertEquals(new WriteRow(1L, "one", "unchanged", 0L),
+          f.executor.findById(ROW, 1L).orElseThrow());
+    }
+  }
+
+  @Test
+  void defaultAndNullAssignmentsUseTheDatabaseDefaultWithoutAdvancingVersions() throws Exception {
+    try (var f = new Fixture()) {
+      try (var statement = f.connection.createStatement()) {
+        statement.execute("ALTER TABLE \"write_row\" ALTER COLUMN \"note\" SET DEFAULT 'database-default'");
+      }
+      f.executor.insertInto(ROW).value(new WriteRow(1L, "one", "before", null)).write();
+      int statements = f.statements.get();
+      var defaulted = f.executor.update(ROW).setDefault(ROW.note())
+          .where(ROW.id().eq(1L)).returning().write();
+      assertEquals(statements + 1, f.statements.get());
+      assertTrue(f.sqlTemplates.getLast().contains(" = DEFAULT"));
+      assertEquals(new WriteRow(1L, "one", "database-default", 0L), defaulted.one().get());
+      statements = f.statements.get();
+      var cleared = f.executor.update(ROW).setNull(ROW.note())
+          .where(ROW.id().eq(1L)).returning().write();
+      assertEquals(statements + 1, f.statements.get());
+      assertEquals(new WriteRow(1L, "one", null, 0L), cleared.one().get());
+    }
+  }
+
+  @Test
+  void derivedWriteJoinsPreserveMissingMatchesAndOuterJoinNulls() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(
+          new WriteRow(1L, "target", "before", null),
+          new WriteRow(2L, "copied", null, null),
+          new WriteRow(3L, "marker", null, null))).write();
+      var source = ROW.as("joined_source");
+      var marker = ROW.as("write_marker");
+      var selected = Sql.select(source.id(), source.name()).from(source)
+          .where(source.id().eq(2L)).and(source.name().eq("copied")).as("selected_source");
+      var update = f.executor.update(ROW).from(selected)
+          .join(marker).on(marker.id().eq(3L))
+          .set(ROW.note(), selected.column(source.name()))
+          .where(ROW.id().eq(1L)).and(selected.column(source.id()).eq(2L)).returning();
+      var noMatch = f.executor.update(ROW).from(selected)
+          .set(ROW.note(), "unmatched").where(ROW.id().eq(1L))
+          .and(selected.column(source.id()).eq(99L));
+      var delete = f.executor.deleteFrom(ROW).using(selected)
+          .leftJoin(marker).on(marker.id().eq(99L))
+          .where(ROW.id().eq(1L)).and(selected.column(source.id()).eq(2L))
+          .and(marker.id().isNull()).returning();
+      int acquisitions = f.acquisitions.get(), statements = f.statements.get();
+      if (dialect().capabilities().supports(DialectFeature.UPDATE_FROM)) {
+        assertEquals(new WriteRow(1L, "target", "copied", 0L), update.write().one().get());
+        assertEquals(statements + 1, f.statements.get());
+        assertTrue(f.sqlTemplates.getLast().contains(" FROM (SELECT "));
+        assertTrue(f.sqlTemplates.getLast().contains(" JOIN "));
+        assertEquals(0, noMatch.write());
+        assertEquals(statements + 2, f.statements.get());
+        assertEquals(new WriteRow(1L, "target", "copied", 0L), delete.write().one().get());
+        assertEquals(statements + 3, f.statements.get());
+        assertTrue(f.sqlTemplates.getLast().contains(" USING (SELECT "));
+        assertTrue(f.sqlTemplates.getLast().contains(" LEFT JOIN "));
+        assertEquals("copied", f.executor.findById(ROW, 2L).orElseThrow().name());
+        assertEquals("marker", f.executor.findById(ROW, 3L).orElseThrow().name());
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+            assertThrows(SkisException.class, update::write).code());
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+            assertThrows(SkisException.class, noMatch::write).code());
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+            assertThrows(SkisException.class, delete::write).code());
+        assertEquals(acquisitions, f.acquisitions.get());
+        assertEquals(statements, f.statements.get());
+      }
+    }
+  }
+
+  @Test
+  void querySourceMergeUpdatesInsertsAndReturnsDeletedOldRows() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(
+          new WriteRow(1L, "first", null, null),
+          new WriteRow(2L, "second", null, null),
+          new WriteRow(11L, "existing", "before", null))).write();
+      var source = ROW.as("merge_query_source");
+      var copiedId = Sql.add(source.id(), 10L).as("copied_id");
+      var selected = Sql.select(copiedId, source.name()).from(source)
+          .where(source.id().le(2L)).as("merge_selected");
+      var merge = f.executor.mergeInto(ROW).using(selected)
+          .on(ROW.id().eq(selected.column(copiedId)))
+          .whenMatched().thenUpdate().set(ROW.note(), selected.column(source.name()))
+          .whenNotMatched().thenInsert(row -> row
+              .value(ROW.id(), selected.column(copiedId))
+              .value(ROW.name(), selected.column(source.name()))
+              .value(ROW.note(), selected.column(source.name()))
+              .value(ROW.version(), Sql.value(0L))).returning();
+      var delete = f.executor.mergeInto(ROW).using(selected)
+          .on(ROW.id().eq(selected.column(copiedId)))
+          .whenMatched(ROW.id().eq(11L)).thenDelete().returning();
+      int acquisitions = f.acquisitions.get(), statements = f.statements.get();
+      if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
+        var written = merge.write();
+        assertEquals(statements + 1, f.statements.get());
+        assertTrue(f.sqlTemplates.getLast().contains(" FROM FINAL TABLE (MERGE INTO "));
+        assertTrue(f.sqlTemplates.getLast().contains(" USING (SELECT "));
+        assertEquals(2, written.affectedRows());
+        assertEquals(List.of(new WriteRow(11L, "existing", "first", 0L),
+            new WriteRow(12L, "second", "second", 0L)),
+            written.rows().stream().sorted(java.util.Comparator.comparing(WriteRow::id)).toList());
+        assertEquals(new WriteRow(11L, "existing", "first", 0L), delete.write().one().get());
+        assertEquals(statements + 2, f.statements.get());
+        assertTrue(f.sqlTemplates.getLast().contains(" FROM OLD TABLE (MERGE INTO "));
+        assertTrue(f.executor.findById(ROW, 11L).isEmpty());
+        assertEquals(new WriteRow(12L, "second", "second", 0L),
+            f.executor.findById(ROW, 12L).orElseThrow());
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+            assertThrows(SkisException.class, merge::write).code());
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED,
+            assertThrows(SkisException.class, delete::write).code());
+        assertEquals(acquisitions, f.acquisitions.get());
+        assertEquals(statements, f.statements.get());
+      }
+    }
+  }
+
+  @Test
+  void querySourceMergeRejectsRepeatedTargetMatchesWithoutRetries() throws Exception {
+    try (var f = new Fixture()) {
+      f.executor.insertInto(ROW).values(List.of(
+          new WriteRow(1L, "one", null, null),
+          new WriteRow(2L, "two", null, null),
+          new WriteRow(11L, "target", "before", null))).write();
+      var source = ROW.as("repeated_source");
+      var repeatedId = Sql.value(11L).as("repeated_id");
+      var selected = Sql.select(repeatedId, source.name()).from(source)
+          .where(source.id().le(2L)).as("repeated_targets");
+      var merge = f.executor.mergeInto(ROW).using(selected)
+          .on(ROW.id().eq(selected.column(repeatedId)))
+          .whenMatched().thenUpdate().set(ROW.note(), selected.column(source.name()));
+      int acquisitions = f.acquisitions.get(), statements = f.statements.get();
+      var failure = assertThrows(SkisException.class, merge::write);
+      if (dialect().capabilities().supports(DialectFeature.MERGE_USING)) {
+        assertEquals(statements + 1, f.statements.get());
+        Throwable original = failure;
+        while (original.getCause() != null) original = original.getCause();
+        assertInstanceOf(SQLException.class, original);
+        assertFalse(failure instanceof OptimisticLockException);
+        assertEquals(new WriteRow(11L, "target", "before", 0L),
+            f.executor.findById(ROW, 11L).orElseThrow());
+      } else {
+        assertEquals(SkisErrorCode.DIALECT_FEATURE_UNSUPPORTED, failure.code());
+        assertEquals(acquisitions, f.acquisitions.get());
+        assertEquals(statements, f.statements.get());
+      }
+    }
+  }
+
   @SuppressWarnings("unchecked")
   private static <T> T jdbcProxy(Class<T> type, InvocationHandler handler) {
     return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, handler);
@@ -822,6 +1036,7 @@ abstract class AbstractSkisReturningContractTest {
     final AtomicInteger acquisitions = new AtomicInteger();
     final AtomicInteger statements = new AtomicInteger();
     final AtomicInteger compilations = new AtomicInteger();
+    final List<String> sqlTemplates = new ArrayList<>();
 
     Fixture() throws Exception {
       source = createDataSource();
@@ -840,7 +1055,10 @@ abstract class AbstractSkisReturningContractTest {
               assertSame(connection, released);
             }
           }).listener(new ExecutionListener() {
-            @Override public void statementStarted(StatementStartedEvent event) { statements.incrementAndGet(); }
+            @Override public void statementStarted(StatementStartedEvent event) {
+              statements.incrementAndGet();
+              sqlTemplates.add(event.sqlTemplate());
+            }
             @Override public void compilationCompleted(CompilationCompletedEvent event) { compilations.incrementAndGet(); }
           }).build();
     }

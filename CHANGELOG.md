@@ -5,7 +5,10 @@
 ## [Unreleased]
 
 当前仓库为 `0.2.10-SNAPSHOT`。T02 基线 `1899270` 的 CI 40468581570 / Compliance 40468581572 已通过，
-原始 Java 21/25、PG/H2 与消费者报告已核对。T03/T04 源码、测试与文档已同步，待本次变更 CI 验证；本地未编译运行。
+原始 Java 21/25、PG/H2 与消费者报告已核对。T03/T04/T08 已按合入提交 `0a1eb73f` 的
+[CI](https://github.com/xhufang/skis/actions/runs/41328295380) 与
+[Compliance](https://github.com/xhufang/skis/actions/runs/41328295426) 及原始工件验收；
+T05/T09 新增的写入组合回归仍待后续 CI，本地未编译运行。
 前一版 `0.2.9` 聚合语义内部里程碑于 2026-10-26 完成，以下 CI 证据属于该里程碑。
 当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或 Release。
 PR #91 合入提交 `980ad24003dc3e280336ec3a1be126841f148ab8` 的
@@ -15,16 +18,21 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 本地仅静态核对文档和原始工件，未编译运行。合入后 push 按事件跳过依赖漏洞审查，
 该项已由 PR #91 的 [Compliance](https://github.com/xhufang/skis/actions/runs/40281380091) 验证。
 
-### T08 source implementation (verification pending)
+### T09 regression audit (additional contracts pending CI)
 
-- Pin PgJDBC 42.7.14 for the dialect, repository contracts and independent PostgreSQL consumer, replacing the vulnerable 42.7.11 baseline; verification on the security update is pending CI. See [GHSA-j92g-9f8w-j867](https://github.com/advisories/GHSA-j92g-9f8w-j867).
+- 核对 `0a1eb73f` 的 Java 21/25、PG 容器/外部 URL、H2、四个独立消费者、Gradle 增量、覆盖率来源、架构及资源报告；10 份原始 ZIP 的本地 SHA-256 均匹配 GitHub 元数据。
+- 在现有 PG/H2 共用套件中补充相关写入子查询、NULL/DEFAULT、标量多行失败、派生 JOIN 来源、查询来源 MERGE 与重复匹配失败的 6 个回归用例，检查原生 SQL、返回状态和语句次数。新增用例尚未执行，不将基线结果作为这些变更的通过证据。
+
+### T08 source implementation (baseline verified at 0a1eb73f)
+
+- Pin PgJDBC 42.7.14 for the dialect, repository contracts and independent PostgreSQL consumer, replacing the vulnerable 42.7.11 baseline; the security update passed PR #100 dependency review and the merged baseline CI. See [GHSA-j92g-9f8w-j867](https://github.com/advisories/GHSA-j92g-9f8w-j867).
 - PostgreSQL cursor/stream uses a cursor-only default fetch size of 256, forward-only/read-only statements and close-at-commit holdability. Explicit statement/Session/executor options retain priority; zero, auto-commit, simple protocol and unconfirmed single SQL are rejected before execution.
 - H2 explicitly rejects cursor/stream while retaining materialized queries. Existing H2 resource fixtures are covered by JDBC fakes and PostgreSQL driver contracts; H2 consumers now verify rejection.
 - Local and Spring transactions close open cursors before completion and pool return. Early closure deregisters resources; Spring scopes support suspension/resumption and retain only active cursors.
 - Spring nested/savepoint rollback closes cursors opened after the savepoint while preserving earlier cursors. Cleanup failures do not prevent the database rollback and are reported at outer completion, preventing a successful outer commit. Direct JDBC savepoints require explicit cursor cleanup.
-- Add driver policy and transaction resource registration SPIs, SKISQ035/036, deterministic server-side batch-reading and pooled-connection tests. PgJDBC is a provided dependency confined to one dialect adapter with exact architecture checks. No local compilation, tests or benchmark were run; current CI/driver evidence is pending.
+- Add driver policy and transaction resource registration SPIs, SKISQ035/036, deterministic server-side batch-reading and pooled-connection tests. PgJDBC is a provided dependency confined to one dialect adapter with exact architecture checks. The merged baseline passed CI/driver verification; no local compilation, tests or benchmark were run.
 
-### T04 source implementation (verification pending)
+### T04 source implementation (baseline verified at 0a1eb73f)
 
 - PG 冲突插入复用 insertInto，支持显式列/值、冲突目标、DO NOTHING/UPDATE、EXCLUDED、更新 WHERE 和适用版本检查。
 - H2 增加单行 VALUES 来源的 MERGE USING 分支和独立 KEY 简写；USING 返回列表，KEY 返回单行；按语句实际并发、主键及列保护约束执行。
@@ -32,9 +40,9 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 - 支持 expectedVersion(Number) 和非空来源版本表达式；严格版本检查拒绝含糊业务过滤，schema 前提见[写入用法](docs/mutation-returning.md)。
 - 保留生成式实体 Binder 与有界共享缓存，中间阶段不预分配执行请求/查找对象；单行返回不创建列表，计数不创建 Written 或整行 Decoder，生成键只按实际结果回填。
 - MERGE 插入表达式补齐类型 lowering；显式 UUID/雪花主键复用策略值校验；H2 并发用例在测试侧同步插入分支并检查唯一冲突分类。
-- 补充 SQL/类型/nullness、PG/H2 并发/资源/回滚和缓存测试，已登记必需套件；本地未编译运行，待当前 CI 验证。
+- SQL/类型/nullness、PG/H2 并发/资源/回滚和缓存必需套件通过合入基线验收；本地未编译运行，T09 新增组合用例另待 CI。
 
-### T03 source implementation (verification pending)
+### T03 source implementation (baseline verified at 0a1eb73f)
 
 - 实体插入收敛到 insertInto/value/values/write；删除 insert、insertResult、InsertResult 及旧转发。无 returning 返回 int，显式返回使用纯内存 Written。
 - INSERT/UPDATE/DELETE 的完整实体和两种 Pro 返回接入统一方言/结果管线；PG 原生 RETURNING，H2 FINAL/OLD TABLE；条件 SET、表达式、WHERE 保护和版本推进已有源码。
