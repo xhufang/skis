@@ -4,41 +4,59 @@ SKIS is an independent, type-safe Java ORM built on JDBC, immutable SQL structur
 annotation-processor-generated metadata, binders and row decoders. The technical baseline is
 Java 21 and Maven 3.9+.
 
-## Version and availability
+## Version
 
-The latest public release is **0.2.0**. This working tree is **0.2.10-SNAPSHOT** and retains the completed
-typed aggregates, GROUP BY/HAVING, generated aggregate projections and final-result offset pagination/count.
-Internal `0.2.x-SNAPSHOT`
-milestones accumulate toward the next public **0.3.0** release and do not create standalone
-releases or tags.
+The repository version is **0.3.0**. Final candidate validation and publication follow the
+[release checklist](docs/release-checklist.md).
+See [CHANGELOG](CHANGELOG.md) for the published and unreleased changes.
 
-The examples and topic documents in this branch describe the current snapshot. Current PostgreSQL
-and H2 aggregate contracts have passed CI with their real JDBC drivers and independent consumers.
-The four ID strategies and JDBC generated-key baseline passed CI at `1899270`. The staged
-`insertInto` API, conditional UPDATE/DELETE and typed RETURNING are implemented in this working tree,
-with verification of these changes pending. Incremental PostgreSQL cursor/stream reads and their
-transaction/resource contracts are implemented with CI verification pending. They require a
-transaction and a positive fetch size (cursor default: 256); H2 rejects these resource terminals.
-Raw SQL entry points are deferred to the `0.3.x` development line. Spring Boot integration retains
-its later milestone assignment.
-Grouped/derived keyset pagination remains unsupported. See [CHANGELOG](CHANGELOG.md)
-for the published and unreleased boundaries.
+The examples below describe the `0.3.0` API. Before `1.0.0`, APIs and generated-code contracts may
+change between versions. Use the annotation processor, runtime and dialect from the same SKIS version.
 
-The reactor now declares 21 root modules after removing 23 future placeholders and the unready
-Boot example. Existing production modules, the H2 example and test facilities remain. The public
-release list stays at 17 GAVs; tests, examples and the frozen empty benchmark are not published.
+## Capabilities
+
+| Area | Available in 0.3.0 |
+| --- | --- |
+| Generated models | Entity tables, metadata, binders and decoders; companion mappers for user-written records and classes |
+| Queries | Typed expressions, joins, subqueries, derived sources, aggregates, GROUP BY/HAVING and offset Page/Slice/count |
+| Results | Entities, scalars, `Row2`/`Row3`, generated projections and `SingleRow` with explicit SQL NULL semantics |
+| Writes | INSERT, conditional UPDATE/DELETE, entity operations by ID, INSERT SELECT, typed RETURNING and entity batches |
+| Keys and dialect writes | Assigned, identity, UUID v4 and Snowflake IDs; PostgreSQL ON CONFLICT and UPDATE FROM/DELETE USING; H2 MERGE |
+| Execution | Bounded shared plans, JDBC transactions, PostgreSQL cursors/streams, read-only listeners and opt-in SQL/slow logging |
+| Integration | Explicit JDBC dialects and connection providers, custom JDBC mappings and Spring transaction integration |
+
+SQL structure and invocation values are separate. The default execution path uses generated binders
+and row decoders, reads columns by index and reuses plans through bounded caches without retaining
+invocation values or JDBC resources. Applications explicitly select the data they fetch.
+
+## Database support
+
+| Database | Verified baseline | Scope |
+| --- | --- | --- |
+| PostgreSQL | PostgreSQL 16.15 / PgJDBC 42.7.14 | Primary production dialect; materialized reads, writes and incremental cursor/stream reads |
+| H2 | H2 2.4.240 | Development and tests; materialized reads and supported writes; cursor/stream terminals are rejected |
+
+Dialect-specific writes preserve each database's SQL and concurrency semantics. Choose supported
+statements using the [write support and limits](docs/mutation-returning.md).
 
 ## Query and write
 
 Applications declare entities with `@SkisEntity`. APT generates `PetTable`, `PetMeta`, binders,
 decoders and runtime models; a `Pet` entity has the table singleton `PetTable.petTable`.
-Create one thread-safe executor with an explicit dialect:
+Use the `0.3.0` BOM (`io.github.xhufang:skis-bom`) to align dependencies, add `skis-annotations`,
+`skis-runtime` and the chosen dialect, configure `skis-processor` as an annotation processor and supply
+the JDBC driver explicitly. The standalone [PostgreSQL POM](skis-integration-tests/src/consumer/minimal-postgresql/pom.xml)
+and [H2 POM](skis-integration-tests/src/consumer/minimal-h2/pom.xml) provide complete configurations
+without a SKIS parent POM.
+
+With an existing `DataSource`, schema and generated model, create one thread-safe executor with an
+explicit dialect:
 
 ```java
 SkisExecutor executor = Skis.create(dataSource, PostgreSqlDialect.INSTANCE);
 PetTable pet = PetTable.petTable;
 
-executor.insertInto(pet).value(new Pet(7L, "Mimi", null)).write();
+int inserted = executor.insertInto(pet).value(new Pet(7L, "Mimi", null)).write();
 Optional<Pet> byId = executor.findById(pet, 7L);
 SingleRow<Pet> selected = executor.selectFrom(pet).where(pet.id().eq(7L)).fetchOne();
 List<Pet> pets = executor.selectFrom(pet).orderBy(pet.id().asc()).fetchList();
@@ -46,50 +64,88 @@ List<Pet> pets = executor.selectFrom(pet).orderBy(pet.id().asc()).fetchList();
 
 This example uses the three-field `Pet` in the
 [independent PostgreSQL consumer](skis-integration-tests/src/consumer/minimal-postgresql/src/main/java/example/Pet.java).
-The [consumer projects](skis-integration-tests/src/consumer/README.md) show complete BOM, APT,
-runtime, dialect and explicit driver dependency configuration without a SKIS parent POM.
+The [consumer projects](skis-integration-tests/src/consumer/README.md) also demonstrate projections,
+extension SPIs and generated-model assembly.
 
-`SelectQuery<R>` describes the selected result. `SingleRow<R>` preserves no row, a SQL NULL row
-and a non-null row; `findById` retains its `Optional<E>` contract. Values are bound separately
-from SQL structure. Shared plans have bounded ownership, real cache statistics and explicit clear
-operations. Streams and cursors must be consumed sequentially and closed on their creating thread.
-Use a transaction Session for PostgreSQL streams; see [driver conditions and examples](docs/cursor-and-stream.md).
+Executor and Session queries execute at `fetchList()`, `fetchOne()` and other terminals. Independent
+`Sql` queries build `QueryRequest<T>` values at those terminals; pass the request to `run`:
+
+```java
+SelectQuery<Pet> namedPets = Sql.selectFrom(pet).where(pet.name().eq("Mimi"));
+List<Pet> matches = executor.run(namedPets.fetchList());
+```
+
+`SingleRow<R>` distinguishes no row, a row containing SQL NULL and a non-null row. `findById`
+returns `Optional<E>`. Two or three selected expressions produce `Row2`/`Row3`; wider projections
+use generated `*Pro` mappers for application-defined result types.
+
+Writes execute at `write()`. Without RETURNING they report affected rows; typed RETURNING produces
+`Written<R>` with `affectedRows()`, `rows()` and `one()`:
+
+```java
+var renamed = executor.update(pet)
+    .set(pet.name(), "Mimi II")
+    .where(pet.id().eq(7L))
+    .returning(pet.id(), pet.name())
+    .write();
+```
+
+Conditional UPDATE/DELETE require a WHERE clause unless `allowAllRows()` is explicit.
+`update(table)` executes the SET/WHERE clauses you specify; entity `updateById` retains metadata
+version rules. See [writes, batches and RETURNING](docs/mutation-returning.md).
+
+## PostgreSQL streams
+
+Use a transaction Session and try-with-resources. Cursors and streams must be consumed sequentially
+and closed on their creating thread:
+
+```java
+try (SkisSession session = executor.beginTransaction();
+    Stream<Pet> rows = session.selectFrom(pet).orderBy(pet.id().asc()).stream()) {
+  rows.forEach(System.out::println);
+}
+```
+
+PostgreSQL resource terminals default to a fetch size of 256 and require an active transaction,
+a positive effective fetch size and extended query protocol. H2 supports materialized reads only.
+See [driver conditions and resource ownership](docs/cursor-and-stream.md).
+
+## Current limits
+
+- Raw SQL queries/commands and typed SQL fragments are deferred to the `0.3.x` development line.
+- Grouped/derived keyset pagination, CTEs, set operations, window functions and locking syntax are
+  outside the current query API.
+- Nonempty JDBC batch RETURNING, entity-by-ID VALUES batches and H2 MERGE/KEY entity collections
+  are rejected. Use supported forms described in the [mutation guide](docs/mutation-returning.md).
+- A MySQL dialect, Spring Boot auto-configuration/Starter, FetchPlan, graph writes, object caches
+  and schema management remain future work.
 
 ## Documentation
 
-| Topic                                        | Guide                                                                                                                                                                                 |
-|----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Runtime assembly, entities and reads         | [Executor and generated models](docs/0.0.6-read-slice.md)                                                                                                                             |
-| Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md)                                                                               |
-| Primary keys and typed write results        | [ID strategies, generated keys and Snowflake deployment](docs/id-generation.md) |
-| Staged writes and RETURNING                    | [Conditional writes, results and limits](docs/mutation-returning.md) |
-| User records and classes                     | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md)                                                                |
-| SQL queries                                  | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md)                            |
-| Aggregates and grouped results               | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md)                                                                                                    |
-| Resource ownership and observation           | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md)                                                                                  |
-| SQL logging                                  | [Opt-in SQL/slow logging and parameter redaction](docs/sql-logging.md)                                                                                                                |
-| Extensions                                   | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md)                                                                               |
-| Diagnostics                                  | [Runtime errors](docs/runtime-error-codes.md), [APT errors](docs/apt-error-codes.md), [execution options and Spring translation](docs/execution-options-and-exception-translation.md) |
+| Topic | Guide |
+| --- | --- |
+| Runtime assembly, entities and reads | [Executor and generated models](docs/0.0.6-read-slice.md) |
+| Writes, optimistic versions and transactions | [Mutation guide](docs/0.0.7-write-transaction-slice.md), [transactions](docs/transaction-management.md) |
+| Primary keys | [ID strategies, generated keys and Snowflake deployment](docs/id-generation.md) |
+| Staged writes and RETURNING | [Conditional writes, results and limits](docs/mutation-returning.md) |
+| User records and classes | [Reusable projections](docs/0.0.8-projection-slice.md), [declared property sources](docs/0.0.9-projection-refactor.md) |
+| SQL queries | [Expressions](docs/sql-expressions-and-semantic-validation.md), [joins](docs/joins.md), [subqueries](docs/subqueries.md), [pagination](docs/pagination.md) |
+| Aggregates and grouped results | [Aggregate types, GROUP BY/HAVING and pagination](docs/aggregates-and-grouping.md) |
+| Resource ownership and observation | [Cursors and streams](docs/cursor-and-stream.md), [execution listeners](docs/execution-listeners.md) |
+| SQL logging | [Opt-in SQL/slow logging and parameter redaction](docs/sql-logging.md) |
+| Extensions | [Dialect SPI and compilation](docs/dialect-compilation.md), [JDBC mappings](docs/jdbc-type-mappings.md) |
+| Diagnostics | [Runtime errors](docs/runtime-error-codes.md), [APT errors](docs/apt-error-codes.md), [execution options and Spring translation](docs/execution-options-and-exception-translation.md) |
 
-The historical numeric filenames above remain stable links; their examples describe the current
-snapshot. Public application and extension contracts use API/SPI packages. `*.internal` packages
-and infrastructure assembly classes are outside the application extension contract.
+The historical numeric filenames above remain stable links. Public application and extension
+contracts use API/SPI packages. `*.internal` packages and infrastructure assembly classes are
+outside the application extension contract.
 
 ## Development and release
 
-The aggregate milestone passed
-[CI](https://github.com/xhufang/skis/actions/runs/40284163961) and
-[Compliance](https://github.com/xhufang/skis/actions/runs/40284163852) at PR #91 merge commit `980ad24`.
-Java 21/25 each executed 85 required ordinary suites (1020 tests),
-with separate real PostgreSQL container/URL paths and independent consumers. The push event skips
-dependency vulnerability review; that check passed in [PR #91 Compliance](https://github.com/xhufang/skis/actions/runs/40281380091).
-See [CONTRIBUTING](CONTRIBUTING.md) for the
-static-analysis, architecture, report-completeness and branch-coverage gates.
-
-See [CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md) and the
-[release checklist](docs/release-checklist.md). Performance benchmarks remain frozen throughout
-`0.2.x` development. A separate reviewed verification task must establish and execute performance
-measurements after feature freeze and before public `0.3.0`; structural tests are not performance
-measurements.
+CI covers Java 21/25, generated-code and nullness checks, SQL golden tests, real PostgreSQL/H2
+contracts, independent consumers, architecture, branch coverage and resource lifecycles. See
+[CONTRIBUTING](CONTRIBUTING.md) for the checks and [SECURITY](SECURITY.md) for vulnerability reporting.
+Final candidate evidence, the 17-GAV public component list, sources/Javadoc, signatures and SBOM
+are governed by the [release checklist](docs/release-checklist.md). Tests and examples are not published.
 
 Licensed under [Apache License 2.0](LICENSE); see [NOTICE](NOTICE).
