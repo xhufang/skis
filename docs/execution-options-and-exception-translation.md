@@ -60,7 +60,7 @@ The primary-key Fast Path and single-entity mutations use overloads:
 ```java
 executor.findById(PetTable.petTable, id, firstPage);
 executor.insertInto(PetTable.petTable).value(pet).write(firstPage);
-executor.updateById(PetTable.petTable, pet, firstPage);
+executor.updateById(PetTable.petTable).value(pet).write(firstPage);
 executor.deleteById(PetTable.petTable, id, firstPage);
 ```
 

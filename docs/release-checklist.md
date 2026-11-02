@@ -9,6 +9,20 @@ The Central 0.0.4 publication contains only an empty `skis-parent` POM; `0.1.0` 
 complete public release. Releases before `1.0.0` validate the current candidate and do not use
 either publication as a cross-version API/ABI baseline.
 
+Internal `0.2.10` write/stream acceptance uses `9a7db594` and its completed
+[CI](https://github.com/xhufang/skis/actions/runs/41395524566) /
+[Compliance](https://github.com/xhufang/skis/actions/runs/41395524562). On 2026-11-02 the user cancelled
+the `0.2.11` milestone and pre-release performance verification. Stabilization, fresh consumers,
+security/compliance and final documentation now belong directly to `0.3.0` release preparation.
+The root README remains deferred to the final documentation pass. The current working tree is still
+`0.2.10-SNAPSHOT`; committing, changing versions and publishing are subsequent steps.
+
+## Preparation order
+
+Save and commit current changes, switch versions, verify the final candidate, update
+README/topic documentation/Javadoc/CHANGELOG, then
+publish `0.3.0` according to this checklist. No `0.2.11` release or separate performance phase is scheduled.
+
 ## Before tagging
 
 - Confirm every project POM uses the intended non-snapshot release version and contains no SKIS
@@ -19,16 +33,12 @@ either publication as a cross-version API/ABI baseline.
 - Confirm the dialect-api-only, core-only listener, H2 and real PostgreSQL independent consumers
   pass with the release version and no reactor parent. Required reports must be non-empty with
   zero failures, errors and skipped tests.
-- Confirm every `0.2.x` development milestone is complete and the `0.3.0` candidate is under feature
-  freeze before recreating or executing any benchmark.
-- Confirm the reviewed performance-verification task has deliberately replaced the temporary `0.2.x`
-  benchmark-freeze CI guard, and repository branch protection no longer requires the retired
-  `Fast Path Smoke` check.
-- Complete the separately reviewed pre-`0.3.0` performance-verification task, recording its
-  scenarios,
-  environment, statistical method, thresholds, raw results, and disposition of any regression.
-  Deleted
-  historical benchmark results and thresholds must not be reused as current evidence without review.
+- Complete final contract, consumer, security/compliance, release-artifact and documentation checks on
+  the actual release candidate; do not use the `9a7db594` baseline as evidence for a later commit.
+- Keep `skis-benchmark` empty and excluded from publication. `0.3.0` does not require performance
+  measurements, a benchmark rebuild/run, numeric performance thresholds or a performance report.
+  Structural, concurrency, resource and correctness checks remain required; they do not establish
+  measured throughput, latency, allocation or cross-framework comparisons.
 - Confirm the `maven-central` environment contains `CENTRAL_USERNAME`, `CENTRAL_PASSWORD`,
   `MAVEN_GPG_PRIVATE_KEY`, and `MAVEN_GPG_PASSPHRASE`.
 - Confirm the signing public key is discoverable and the `io.github.xhufang` Central namespace is
@@ -39,7 +49,7 @@ either publication as a cross-version API/ABI baseline.
 
 The authoritative component list is [
 `.github/release-components.txt`](../.github/release-components.txt).
-For the current `0.2.8-SNAPSHOT` cumulative release set it contains exactly 17 GAVs; the already
+For the current `0.2.10-SNAPSHOT` cumulative release set it contains exactly 17 GAVs; the already
 published `0.2.0` component set remains a historical release fact and is not retroactively changed:
 
 - `skis-parent`, `skis-bom`;

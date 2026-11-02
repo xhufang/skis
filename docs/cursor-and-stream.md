@@ -4,8 +4,9 @@
 `Stream<R>`. Independent `SelectQuery<R>` terminals return requests, executed by executor/Session
 `run`. Both use the same incremental JDBC reader and resource lifetime. They are not thread-safe.
 
-The 0.2.10 T08 implementation and test sources are present; current CI and real-driver verification
-are pending. This section describes the source contract, not a completed driver acceptance result.
+The 0.2.10 cursor/stream contract passed [CI](https://github.com/xhufang/skis/actions/runs/41395524566)
+at PR #101 merge commit `9a7db594`, including real PostgreSQL container/URL paths, pool return,
+local/Spring transactions and independent consumers. No local build or test was run.
 
 ## Driver and transaction conditions
 
@@ -24,8 +25,8 @@ PgJDBC simple protocol and wrappers that cannot expose the supported driver conn
 The PostgreSQL dialect has a provided PgJDBC dependency for direct driver-mode inspection; applications
 still supply their own runtime driver. No runtime reflection or hidden validation SQL is used.
 The repository parent pins the dialect's provided driver and contract-test driver to 42.7.14;
-the independent consumer explicitly selects the same version. Verification on this security update
-is pending CI; earlier driver evidence does not establish acceptance of the new version.
+the independent consumer explicitly selects the same version. Current real-driver regression evidence
+uses 42.7.14; historical evidence retains its original driver version.
 The lexical single-statement check runs once when a compiled plan is assembled, never per row or
 on an execution cache hit. Ambiguous backslash string syntax is conservatively rejected by resource
 terminals; ordinary DSL values are bound parameters.

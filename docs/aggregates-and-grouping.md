@@ -3,8 +3,9 @@
 These APIs are implemented in `0.2.9-SNAPSHOT` and accumulate toward public `0.3.0`.
 They are outside the published `0.2.0` API. PostgreSQL 16.15 with JDBC 42.7.11 and H2 2.4.240
 have real-driver contract evidence; H2 remains a development/test database.
-The current snapshot selects PgJDBC 42.7.14 for its security fixes; regression verification on that
-version is pending CI. The earlier evidence above retains its original driver baseline.
+The current snapshot uses PgJDBC 42.7.14; aggregate regression and independent consumers passed
+[CI](https://github.com/xhufang/skis/actions/runs/41395524566) at `9a7db594`. The earlier evidence above
+retains its original driver baseline.
 
 ## Aggregate result types
 
@@ -63,17 +64,16 @@ three-field `Pet(id, name, version)` from the independent consumers:
 
 ```java
 PetTable pet = PetTable.petTable;
-var suffix = Sql.parameter(String.class, "suffix");
-var key = Sql.concat(pet.name(), Sql.value(suffix));
+var suffix = Sql.value("-active");
+var key = Sql.concat(pet.name(), suffix);
 var count = Sql.countAll();
-var template = executor
+var query = executor
     .select(PetAggregatePro.of(key, count, Sql.sumAsBigInteger(pet.id())))
     .from(pet)
     .groupBy(key)
     .having(count.ge(1L))
     .orderBy(key.asc());
 
-var query = template.bind(suffix, "-active");
 List<PetAggregate> rows = query.fetchList();
 ```
 
@@ -85,7 +85,7 @@ Where required, dialect lowering introduces a typed single-row parameter relatio
 that identity in JDBC SQL; it never inlines the current value.
 
 `groupBy`, `having`, `andHaving` and `orHaving` return immutable queries and also exist on
-`SelectDescription` and `SingleColumnSelect`, preserving single-column eligibility. `groupBy`
+`SelectQuery`/`ExecutableSelectQuery` and their single-column views, preserving single-column eligibility. `groupBy`
 requires at least one key and can be declared once; duplicate resolved keys fail. `having` can
 be declared once; `andHaving`/`orHaving` require an existing HAVING. Their chain is left-associated:
 `having(a).orHaving(b).andHaving(c)` means `(a OR b) AND c`. WHERE chaining remains independent.
@@ -113,17 +113,17 @@ listed above, including Boolean/UUID/byte[], and reject arbitrary subclasses and
 `Sql.cast(expr, Type.class, SqlType)` requires the exact built-in Java/SQL target pair and an
 allowed conversion; VARBINARY and OTHER are not portable public CAST targets.
 
-Pure descriptions use `Sql.value(parameter)` and receive values at the executor's binding boundary:
+Independent queries capture ordinary values when expressions are built and execute through `run`:
 
 ```java
-var suffix = Sql.parameter(String.class, "suffix");
-var key = Sql.concat(pet.name(), Sql.value(suffix));
-var description = Sql.select(PetAggregatePro.of(key, Sql.countAll(), Sql.sumAsBigInteger(pet.id())))
+var suffix = Sql.value("-active");
+var key = Sql.concat(pet.name(), suffix);
+var query = Sql.select(PetAggregatePro.of(key, Sql.countAll(), Sql.sumAsBigInteger(pet.id())))
     .from(pet).groupBy(key).orderBy(key.asc());
-var rows = executor.query(description).bind(suffix, "-active").fetchList();
+var rows = executor.run(query.fetchList());
 ```
 
-Passing a value-bearing expression to a pure description fails. Standard expressions contributing
+Both static and directly executable builders accept captured value expressions. Standard expressions contributing
 result values or comparison bindings must ultimately use built-in input mappings. A CASE condition
 or ordinary COUNT input can use a custom-mapped column without making it a contributing value.
 Direct custom-column selection retains its property Codec. Unsupported input mappings fail with

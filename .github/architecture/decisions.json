@@ -1248,10 +1248,10 @@
       "title": "写入能力、原生策略与真实流读取边界",
       "status": "Accepted",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "条件写入、RETURNING及T04冲突/MERGE源码与测试已同步待验证；T05原生更新/删除、调用值重构与批量失败待实现和验证；T08真实流读取源码与合同已接线、待CI/真实驱动验收；T06/T07三层SQL逃生通道延后至0.3.x，未开始",
-      "task": "0.2.10:T03-T05,T08;0.3.x:原T06-T07",
+      "targetVersion": "0.4.0",
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "T06/T07三层SQL逃生通道、BYPASS配置与原生流读取延后至0.3.x开发线，累计至0.4.0；未开始",
+      "task": "0.3.x:原T06-T07",
       "anchors": [
         {
           "kind": "java",
@@ -1315,12 +1315,12 @@
     {
       "id": "ADR-0025",
       "title": "唯一 insertInto 插入入口、write 执行与 Written 结果",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "源码、测试和调用方已同步；待当前变更 Java21/25、nullness、golden、PG/H2、消费者及工程门禁验证",
-      "task": "0.2.10:T03",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1384,17 +1384,24 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
           "type": "io.skis.integration.AbstractSkisReturningContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0026",
       "title": "原生删除语法与嵌入查询值捕获",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "原生删除与值捕获源码、合同已接线；PG/H2驱动、资源及消费者证据待CI验收",
-      "task": "0.2.10:T05",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1423,17 +1430,24 @@
           "path": "skis-query/src/test/java/io/skis/query/internal/ComposableQueryModelTest.java",
           "type": "io.skis.query.internal.ComposableQueryModelTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0027",
       "title": "SQL DSL 可组合性与参数使用模型重构",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "统一DSL与内部值模型源码、合同已接线；类型、缓存隔离及端到端证据待CI验收",
-      "task": "0.2.10:T05",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1467,17 +1481,24 @@
           "path": "skis-query/src/test/java/io/skis/query/internal/QueryValueSnapshotsTest.java",
           "type": "io.skis.query.internal.QueryValueSnapshotsTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0028",
       "title": "原生 UPDATE 组合与显式赋值边界",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "显式SET、FROM与MERGE源码、合同已接线；类型空性、方言及端到端证据待CI验收",
-      "task": "0.2.10:T05",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1516,17 +1537,24 @@
           "path": "skis-dialect-support/src/test/java/io/skis/dialect/support/StructuredWritePipelineTest.java",
           "type": "io.skis.dialect.support.StructuredWritePipelineTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0029",
       "title": "统一 SELECT 模型与 run 执行请求",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "双入口与run源码、旧公开API删除及合同已接线；nullness、消费者和执行上下文证据待CI验收",
-      "task": "0.2.10:T05",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1570,17 +1598,24 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
           "type": "io.skis.integration.AbstractSkisReturningContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0030",
       "title": "来源输出、行结果与集合写入定稿",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "来源、行结果、写入组合与批量源码及合同已接线；真实驱动、部分失败及资源证据待CI验收",
-      "task": "0.2.10:T05",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "kind": "java",
@@ -1639,17 +1674,24 @@
           "path": "skis-integration-tests/src/test/java/io/skis/integration/AbstractSkisReturningContractTest.java",
           "type": "io.skis.integration.AbstractSkisReturningContractTest"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     },
     {
       "id": "ADR-0031",
       "title": "真实流读取驱动策略与事务资源作用域",
-      "status": "Accepted",
+      "status": "Implemented",
       "decisionVersion": "0.2.10-SNAPSHOT",
-      "targetVersion": "0.2.10-SNAPSHOT",
-      "implementedVersion": null,
-      "remaining": "源码与合同已接线；CI/真实PG、Spring和连接池验收待完成",
-      "task": "0.2.10:T08",
+      "targetVersion": null,
+      "implementedVersion": "0.2.10-SNAPSHOT",
+      "remaining": "",
+      "task": "",
       "anchors": [
         {
           "type": "io.skis.dialect.spi.CursorReadSupport",
@@ -1698,7 +1740,14 @@
           "kind": "java",
           "path": "skis-spring/src/test/java/io/skis/spring/SpringConnectionProviderTest.java"
         }
-      ]
+      ],
+      "change": {
+        "baselineRevision": "9a7db594ced8d1a71f036b2f36ffb631f62af7d7",
+        "fromStatus": "Accepted",
+        "reason": "2026-11-02 T10 核对 PR #101 合入提交 9a7db594 的 CI 41395524566 / Compliance 41395524562、Java 21/25、PG 容器/URL、H2、消费者、资源与缓存结构报告；新增6个写入组合逐名通过，覆盖率来源/历史棘轮通过。保留全部锚点和合同，本次状态登记只做本地静态核对，提交后仍由 Compliance 验证。",
+        "removedAnchors": [],
+        "removedContracts": []
+      }
     }
   ]
 }

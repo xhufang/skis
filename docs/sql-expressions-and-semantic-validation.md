@@ -1,11 +1,30 @@
 # SQL expressions and semantic validation
 
-This document describes the expression contract implemented through the internal `0.2.9-SNAPSHOT`
-milestone. It accumulates toward the public `0.3.0` SQL DSL and
+This document describes the expression contract in the internal `0.2.10-SNAPSHOT` milestone. It accumulates toward the public `0.3.0` SQL DSL and
 is not part of the published `0.2.0` API.
 
 The current `Sql.value`, arithmetic, CASE, COALESCE, concat and CAST factories, aggregate result
 matrix and GROUP BY/HAVING rules are documented in [aggregates and grouped results](aggregates-and-grouping.md).
+
+## Query construction and execution
+
+`executor.select(...).from(...).fetchList()` executes directly through `ExecutableSelectQuery<R>`.
+`Sql.select(...).from(...).fetchList()` creates a `QueryRequest<List<R>>`; pass it to
+`executor.run(request)` or `session.run(request)` to execute. `SelectQuery<R>` is immutable and reusable.
+Constructing a query or a request does not acquire a connection. For example, with a generated table `pet`:
+
+```java
+var query = Sql.select(pet.id(), pet.name()).from(pet).where(pet.name().eq("Mimi"));
+var rows = executor.run(query.fetchList());
+var first = executor.run(query.fetchFirst());
+```
+
+The result is `Row2` with `first()`/`second()` fields; use `Row3` for three selections or generated Pro
+for wider shapes. A query's `as(alias)` forms a derived source and `column(selectedExpression)` refers
+to a unique selected output; give computed outputs an alias once. Either query entry can be embedded;
+only the outer executor/Session and its execution options control the final SQL. Ordinary values are
+captured directly, with no public parameter declaration/bind step. See [subqueries](subqueries.md),
+[joins](joins.md) and [query-source writes](mutation-returning.md).
 
 ## Expression descriptors
 
@@ -36,104 +55,48 @@ mutation Fast Path. General arithmetic should use `ArithmeticExpression<T>`.
 
 ## Parameter value capture
 
-Ordinary values remain outside the AST and plan cache key, but an immutable query must also own a
-stable value snapshot. The query layer now separates parameter identity into three levels:
+Ordinary values remain outside the AST and shared plan key. `.eq(value)`, `.between(...)`,
+`.like(...)`, membership elements and `Sql.value(value)` capture values when expressions are built.
+Both static and executable query builders use the same immutable value environment; there is no
+public QueryParameter, Sql.parameter or bind step. To supply different values, build a new query
+or use a Java factory that captures those values.
 
-1. `QueryParameter<V>` is an opaque, strongly typed reference with no value, query-block ordinal,
-   logical ordinal, or JDBC position. References use object identity; an optional name is diagnostic
-   only.
-2. `SelectQuery.bind(parameter, value)` returns an immutable query copy and captures the value at
-   the binding boundary. Missing, extra, duplicate, nullability-invalid, and runtime
-   Java-type-invalid bindings fail before JDBC work.
-3. Final statement layout assigns dense zero-based `ParameterSlot<T>` ordinals. The renderer records
-   a slot once for every physical `?`, so one logical reference may occur at several JDBC positions.
+Internal logical identities are scoped to query-block occurrences. Reusing one expression within
+a block reuses its logical identity; embedding a child twice creates independently analyzed
+occurrences. Final statement layout assigns dense logical ParameterSlot ordinals and records each
+physical JDBC `?` in SQL order. Content/count/lowered statements use their own final retained layout.
+The same property Codec source is required when a parameter identity is reused in a block.
 
-Reference reuse is scoped to one query-block occurrence. Repeating a reference inside one block
-reuses a logical slot; embedding the same parameterized block twice creates two dense statement
-slots that read the same captured binding. This keeps later nested-query occurrence identity
-separate from parameter names and object addresses in structural fingerprints.
+Capture recursively copies arrays and clones mutable java.sql.Date/Time/Timestamp values once.
+Composing environments, laying out slots, binding and reading rows do not repeat that copy.
+Other built-in values are immutable. Custom predicate Codecs must use deeply immutable values and
+must not mutate bound input; the framework cannot infer a general safe copy.
 
-The complete reusable query description validates missing and extra bindings once. Each final
-statement then projects only the references it retained, so count construction or dialect lowering
-may discard parameterized expressions without turning their otherwise valid bindings into false
-"extra binding" failures.
+## Reusable SELECT and embedding
 
-Each logical slot resolves its JDBC binder from the owning property's runtime `JdbcTypeCodec`.
-Parameter nullability—not physical column mutation nullability—controls whether a query value may be
-`null`; a nullable search parameter can therefore bind SQL `NULL` even when compared with a non-null
-column. Reusing one reference inside a query-block occurrence requires the same canonical property
-Codec source, preventing one column's custom Codec from silently binding another column's use.
-
-`Sql.parameter(Class<V>)` creates an explicit reusable reference. Existing `.eq(value)`,
-`.between(...)`, `.like(...)`, and `IN`/`NOT IN` conveniences lower to anonymous references plus an
-internal parameter environment, so their source API and SQL semantics do not change.
-
-Binding and predicate construction copy every array value recursively and clone the built-in
-mutable JDBC representations `java.sql.Date`, `Time`, and `Timestamp`. Comparison and between bounds
-as well as every `IN`/`NOT IN` element use this same query-value capture boundary. Copying
-happens once, never while composing environments, laying out slots, binding JDBC parameters, or
-reading rows.
-
-Other supported Java values are immutable and remain allocation-free at capture. A custom
-`JdbcTypeCodec` whose values participate in predicates must use a deeply immutable value type, and
-its `bind` implementation must not mutate the supplied value; SKIS cannot infer a safe copy for an
-arbitrary custom object.
-
-## Execution-free SELECT descriptions
-
-`Sql.select(...)` and `Sql.selectFrom(...)` build immutable SELECT descriptions without an
-executor, connection, Session, transaction, execution options, or terminal operation. The shared
-state records the result shape, FROM/Join tree, WHERE tree, reserved GROUP BY/HAVING containers,
-DISTINCT, ORDER BY, and the value-free SQL pagination shape used when a final statement is formed.
-Content pagination values produced by `fetchFirst`, `fetchPage`, or `fetchSlice` continue to be an
-execution-only SQL AST overlay; they are not written into a description that may later be reused in
-another position. A direct SQL limit/offset description API remains closed until its
-parameterization and embedding contract is implemented.
-
-The public result-shape types are deliberately different:
-
-- `SelectDescription<R>` is the general result description; `R` carries the declared result
-  nullability;
-- `SingleColumnSelect<R>` proves exactly one visible SQL value per returned row, but does not prove
-  one-row cardinality; its result type carries the declared nullability.
-
-Both shapes keep their contract across WHERE, Join, DISTINCT, and ORDER BY chaining. They do not
-expose `fetchList`, `fetchPage`, `cursor`, `stream`, or execution options. Top-level execution is an
-explicit adaptation through `executor.query(description)`, followed by immutable `bind(...)`
-calls when the description declares parameters. The complete binding environment is validated
-before any JDBC resource can be acquired.
+`Sql.select(...)`/`Sql.selectFrom(...)` construct SelectQuery<R>; terminals construct typed requests.
+The corresponding executor/Session builders produce ExecutableSelectQuery<R> and execute directly.
+Both are immutable, retain SQL structure separately from captured values, and can be embedded as
+SelectSource<R>. Embedded execution context and options do not propagate to the outer SQL.
 
 ```java
-QueryParameter<String> name = Sql.parameter(String.class, "name");
-SingleColumnSelect<Long> petIds =
-    Sql.select(pet.id())
-        .from(pet)
-        .where(pet.name().eq(name))
-        .orderBy(pet.id().asc());
-
-List<Long> ids = executor.query(petIds).bind(name, "Mimi").fetchList();
+var petIds = Sql.select(pet.id()).from(pet)
+    .where(pet.name().eq("Mimi")).orderBy(pet.id().asc());
+List<Long> ids = executor.run(petIds.fetchList());
 ```
 
-Reusable descriptions must use parameter-reference predicate overloads such as `eq(parameter)`,
-`between(lower, upper)`, `like(parameter)`, and `inParameters(...)`. Supplying an ordinary value to
-the static description builder is rejected, because accepting it would make the description retain
-application data. The existing executable `executor.select(...)` DSL continues to accept
-`.eq(value)`, `.between(values)`, `.like(value)`, and `.in(values)` and stores their immutable value
-snapshots only in its execution parameter environment.
+SingleColumnQuery<V> proves one visible SQL value per row, not one-row cardinality;
+SingleColumnSelect<V> and ExecutableSingleColumnSelect<V> implement that common contract.
+EXISTS/NOT EXISTS accept either entry's supported result shape. IN/NOT IN require the appropriate
+single-column Java/SQL type and preserve SQL three-valued logic. Scalar embedding preserves the
+selected type and Codec, with nullable zero-row semantics and a database error for multiple rows.
+Use `Sql.scalar(query)` when an explicit expression is useful, or pass the query directly to
+supported comparisons and SET. No child query, decoder or JDBC resource owner is created.
 
-A description can be adapted as a top-level query or embedded through `Sql.exists(...)` and
-`Sql.notExists(...)`. EXISTS accepts every result shape and preserves the complete child SELECT.
-A `SingleColumnSelect<V>` can also be passed to `Selectable<V>.in(...)` or `notIn(...)`; this
-invariant overload requires an exact boxed Java type match and equality-compatible SQL types.
-Collection membership remains a different overload and AST node.
-
-`Sql.scalar(SingleColumnSelect<V>)` embeds that description as one nullable value expression.
-`ScalarSubqueryExpression<V>` preserves the selected column's boxed Java type and SQL type, while
-its own nullability is always nullable because an empty child produces SQL NULL. Query compilation
-resolves the selected column's Codec without invoking an inner row decoder. The expression can be
-used in selection, comparison, NULL tests, HAVING, ordering, and nullable
-generated-projection positions. Derived relations reuse the same description state and publish an
-explicit ordered output shape instead of introducing a second query DSL.
+`query.as(alias)` forms a derived relation. `source.column(selectedExpression)` refers to a unique
+selected output; computed outputs need an alias once. The framework derives type/Codec/occurrence
+and effective nullability; an unselected or ambiguous expression is rejected. Ordinary derived
+sources cannot correlate to outer/sibling sources. See [subqueries](subqueries.md).
 
 `BigInteger` division is rejected because both baseline databases implement it through SQL
 `DECIMAL` division, whose result may have a fractional part that cannot be decoded exactly as a
@@ -200,9 +163,9 @@ the AST does not define a public child-traversal SPI, unknown nodes fail during 
 instead of being treated as value-only leaves. A future traversal SPI would require a separate
 architecture decision.
 
-INSERT values have no visible table-column scope. UPDATE expressions and predicates may reference
-only the target table expression. DELETE predicates may reference only the target. SELECT uses an
-ordered `FromClause`: the root and each completed Join occurrence form its visible scope.
+INSERT VALUES has no visible table-column scope. UPDATE FROM, DELETE USING and MERGE expressions
+resolve the target and explicitly declared sources; nested SELECTs retain their own correlation scope.
+SELECT uses an ordered FromClause: the root and each completed Join occurrence form its visible scope.
 
 The current AST routes the FROM root, Join right-hand sides and occurrences through sealed
 `RelationSource` nodes. Entity sources retain the original `TableExpression<?>` reference;
@@ -335,6 +298,6 @@ duplicates, ordering, and conditions; it neither injects a limit nor rewrites th
 The outer renderer shares its SQL buffer and parameter list with nested render contexts while each
 context resolves local columns before walking its validated ancestor chain.
 
-Executable query compilation runs complete semantic validation before dialect capability checks and
-SQL rendering. Renderers also perform the same validation defensively when called directly; the
-compiler does not rely on a third-party renderer to enforce query-block scope.
+Compilation runs complete semantic validation before dialect checks, lowering, post-validation and
+rendering. Renderers consume target-bound RenderInput; no direct renderer bypass accepts arbitrary
+statement/analysis pairs. Query-block scope is enforced before serialization.

@@ -1,14 +1,13 @@
 # EXISTS, IN, scalar subqueries, derived tables, and correlated SELECT descriptions
 
 This document describes the EXISTS, IN, scalar-subquery, and derived-table slices implemented by the
-internal
-`0.2.5-SNAPSHOT` milestone.
+internal `0.2.5-SNAPSHOT` milestone, with current query/value/source APIs updated in `0.2.10-SNAPSHOT`.
 It accumulates toward the public `0.3.0` SQL DSL and is not part of the published `0.2.0` API.
 
 ## Execution-free embedding
 
 `Sql.exists(description)` and `Sql.notExists(description)` accept any reusable
-`SelectDescription<?>`, including entity, scalar, multi-column generated projection, nullable, and
+`SelectSource<?>`, including entity, scalar, multi-column generated projection, nullable, and
 single-column shapes. EXISTS observes only whether the description returns a row. SKIS preserves
 the complete selected values and query tree: it does not prune selections, add `LIMIT 1`, load the
 subquery into Java, or rewrite the predicate as a Join.
@@ -40,7 +39,7 @@ The predicate is a non-null Boolean condition and composes with `QueryCondition.
 
 ## One-column IN subqueries
 
-Every `Selectable<V>` also accepts a `SingleColumnSelect<V>` through `in(...)` and `notIn(...)`.
+Every `Selectable<V>` also accepts a `SingleColumnQuery<V>` through `in(...)` and `notIn(...)`.
 The overload is separate from collection membership: the child remains a SELECT subtree in the
 one final SQL statement and is never read into a Java collection.
 
@@ -51,12 +50,10 @@ var ownerIds =
         .from(candidate);
 
 List<Owner> owners =
-    executor
-        .query(Sql.selectFrom(owner).where(owner.id().in(ownerIds)))
-        .fetchList();
+    executor.run(Sql.selectFrom(owner).where(owner.id().in(ownerIds)).fetchList());
 ```
 
-`SingleColumnSelect<V>` proves one SQL value per row, not one result row. Its invariant `V` must
+`SingleColumnQuery<V>` proves one SQL value per row, not one result row. Its invariant `V` must
 exactly match the boxed Java type on the left, and both SQL types must pass the shared equality
 compatibility rule. SKIS does not widen numbers or insert a CAST. A generated projection remains a
 general result shape even when its constructor has one argument. A low-level child with a hidden
@@ -78,7 +75,7 @@ EXISTS`; those forms are not equivalent when the child can produce NULL.
 
 ## One-column scalar subqueries
 
-`Sql.scalar(SingleColumnSelect<V>)` turns a reusable one-column description into a nullable
+`Sql.scalar(SingleColumnQuery<V>)` turns a reusable one-column description into a nullable
 `Selectable<V>` that can be selected, compared, checked for NULL, sorted, or bound to a nullable
 generated-projection parameter. It remains part of the outer SQL statement and is not executed by
 itself.
@@ -131,14 +128,14 @@ For the employee/department model in `skis-test-model`:
 ```java
 var employee = EmployeeTable.employeeTable.as("e");
 var department = DepartmentTable.departmentTable.as("d");
-var pattern = Sql.parameter(String.class, "departmentPattern");
+String pattern = "%部";
 var departmentId = Sql.scalar(
     Sql.select(department.id()).from(department)
         .where(department.id().eq(employee.departmentId())
             .and(department.name().like(pattern))));
 var description = Sql.select(departmentId).from(employee)
     .distinct().orderBy(departmentId.asc().nullsLast());
-var departmentIds = executor.query(description).bind(pattern, "%部").fetchList();
+var departmentIds = executor.run(description.fetchList());
 ```
 
 The SQL contains the department lookup once and ends with `ORDER BY 1 ASC NULLS LAST`. Employees
@@ -153,45 +150,30 @@ acquiring JDBC resources, regardless of page size or whether the data would fill
 
 ## Derived tables and explicit output shapes
 
-`Sql.derived(description, relationAlias, outputs...)` freezes a reusable description as a FROM or
-Join relation. Every visible selection needs an explicitly aliased output handle in the same order:
+`query.as(relationAlias)` forms a FROM/Join source from selected outputs. Physical selections can
+be referenced directly; give a computed output an alias once at its selection. For example:
 
 ```java
 OwnerTable inner = OwnerTable.ownerTable.as("inner_owner");
-var ownerId = Sql.output(inner.id(), "owner_id");
-var ownerName = Sql.output(inner.name(), "owner_name");
-DerivedRelation owners =
-    Sql.derived(Sql.selectFrom(inner), "visible_owner", ownerId, ownerName);
+DerivedRelation owners = Sql.select(inner.id(), inner.name()).from(inner).as("visible_owner");
+var visibleId = owners.column(inner.id());
+var visibleName = owners.column(inner.name());
 
-var visibleId = owners.column(ownerId);
-var visibleName = owners.column(ownerName);
-
-List<String> names =
-    executor
-        .selectNullable(visibleName)
-        .from(pet)
-        .leftJoin(owners)
-        .on(pet.ownerId().eq(visibleId))
-        .fetchList();
+List<String> names = executor.selectNullable(visibleName)
+    .from(pet).leftJoin(owners).on(pet.ownerId().eq(visibleId)).fetchList();
 ```
 
-`DerivedOutput<V>` preserves a nullable selection contract and `NonNullDerivedOutput<V>` preserves
-a declared non-null contract. The relation validates unique aliases, exact output count and order,
-Java/SQL types, and handle membership. It then analyzes the complete inner Join chain. If an inner
-outer Join makes a declared non-null selection effectively nullable, expose it deliberately through
-`Sql.outputNullable(...)`. An outer Join can null-extend a published non-null output again, so the
-outer result must use `selectNullable(...)` or a nullable projection parameter.
+The framework derives ordered output shape, Java/SQL types, effective nullability and Codec sources.
+`column(selectedExpression)` must identify one selected output of this occurrence; unselected and
+ambiguous outputs fail before JDBC. There is no string lookup or synthetic entity, primary key,
+runtime model or child decoder. An outer Join can null-extend a published non-null output again,
+requiring selectNullable or a nullable generated-projection parameter.
 
-Columns are resolved by concrete derived-source identity and output ordinal. There is no string
-lookup and no synthetic entity, property, primary key, runtime model, or child decoder. Result and
-parameter Codecs recursively come from the selectable bound to the output handle. A derived root
-therefore returns the same result-only `SelectQuery<R>` view as an entity root; the concrete source
-identity remains in immutable query state. `owners.as("other_owner")` creates an independent
-occurrence over the same inner description and output handles.
-
-A normal derived source is a non-correlated boundary. Its child cannot capture an outer or sibling
-source, and the outer query cannot pierce the boundary to use an unselected physical column.
-LATERAL/APPLY remains a separate future capability.
+`owners.as("other_owner")` creates an independent occurrence over the same immutable inner query.
+The same query can be embedded or executed through a typed terminal request; only the outer
+execution context owns resources. A normal derived source cannot capture an outer or sibling
+source, and the outer query cannot access unselected inner physical columns. LATERAL/APPLY remains
+a separate future capability.
 
 ## Correlation and scope
 
@@ -214,22 +196,22 @@ back to that description.
 
 ## Parameters and JDBC ownership
 
-Reusable descriptions use `QueryParameter<V>` identities and immutable query binding:
+Both query entries capture ordinary values directly while keeping them out of SQL structures and shared plans:
 
 ```java
-QueryParameter<String> name = Sql.parameter(String.class, "name");
+String name = "Mimi";
 var namedPets =
     Sql.select(pet.id())
         .from(pet)
         .where(pet.ownerId().eq(owner.id()).and(pet.name().eq(name)));
 var owners = Sql.selectFrom(owner).where(Sql.exists(namedPets));
 
-List<Owner> result = executor.query(owners).bind(name, "Mimi").fetchList();
+List<Owner> result = executor.run(owners.fetchList());
 ```
 
 The outer compiler traverses nested blocks in final SQL clause order and assigns one dense
 statement-level logical parameter layout. If the same parameterized description is embedded twice,
-its occurrences receive separate logical slots that read the same captured binding. The renderer
+its occurrences receive separate logical slots that read the captured values. The renderer
 records each physical `?` in SQL order, and execution creates only the outer `PreparedStatement`.
 There is no child decoder, child query, connection, transaction, or resource owner.
 

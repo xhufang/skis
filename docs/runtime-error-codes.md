@@ -146,7 +146,7 @@ APT 的 `SKISnnn` 编码独立，见 [`apt-error-codes.md`](apt-error-codes.md)�
 | `SKISM020` | `MUTATION_UNSUPPORTED` | MUTATION | SEMANTIC_VALIDATION | 非空集合未就绪、计数生成键能力或 RETURNING maxRows 不支持 | detail；不记录值 | 写入组合 |
 | `SKISM021` | `MUTATION_RETURNING_SHAPE` | MUTATION | EXECUTION | RETURNING 列数不符或 Decoder 返回 null 对象 | detail；不记录结果值 | RETURNING |
 
-SKISM014—018 的 T02 基线已验证；T03 新增 SKISM019—021 和入口调整待本次变更 CI 验证；用法和事务边界见[主键生成](id-generation.md)。
+SKISM014—021 与当前入口已由 `9a7db594` 的 [CI](https://github.com/xhufang/skis/actions/runs/41395524566) 验证；用法和事务边界见[主键生成](id-generation.md)。
 
 ## 4. JDBC 分类与 Spring 映射
 
@@ -205,7 +205,7 @@ AggregateGroupingTest、SkisDiagnosticsTest、CompilationPipelineTest 与 Entity
 运行证据见 PR #91 合入提交 980ad24 的 [CI](https://github.com/xhufang/skis/actions/runs/40284163961)。
 本地仅静态核对，未编译运行。
 
-## 7. 0.2.10 T08 流读取诊断（待 CI）
+## 7. 0.2.10 流读取诊断
 
 | 编码 | 枚举 | 阶段 | 触发条件 | 安全字段 |
 | --- | --- | --- | --- | --- |
@@ -213,4 +213,4 @@ AggregateGroupingTest、SkisDiagnosticsTest、CompilationPipelineTest 与 Entity
 | SKISQ036 | QUERY_STREAMING_PRECONDITION | EXECUTION | 有效 fetch size 非正、autoCommit、simple/未知驱动模式、不能确认单 SQL 或实际 Statement 设置不满足前置 | 同上，不含 SQL 原文、参数或连接配置 |
 
 异常使用既有 QueryValidationException，SQLException 仍按实际 JDBC 阶段与既有分类处理；取消继续是 DB_QUERY_CANCELED，
-不归入超时。以上源码与合同测试已接线，尚无本次运行通过证据；用法见[流读取](cursor-and-stream.md)。
+不归入超时。以上诊断已由 `9a7db594` 的真实 PG、JDBC/Spring 资源和 H2 拒绝合同验证；用法见[流读取](cursor-and-stream.md)。

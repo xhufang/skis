@@ -101,7 +101,7 @@ Application services use the normal Spring boundary:
 ```java
 @Transactional
 public void renamePet(Pet changedPet) {
-  skisExecutor.updateById(PetTable.petTable, changedPet);
+  skisExecutor.updateById(PetTable.petTable).value(changedPet).write();
 }
 ```
 
