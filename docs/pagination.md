@@ -17,7 +17,7 @@ For an ordinary entity or projection query, include the complete primary key exp
 `thenByPrimaryKey(...)`:
 
 ```java
-SelectQuery<Pet> query =
+ExecutableSelectQuery<Pet> query =
     executor.selectFrom(pet)
         .where(pet.active().eq(true))
         .orderBy(pet.createdAt().desc().nullsLast())

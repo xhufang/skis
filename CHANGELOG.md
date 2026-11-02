@@ -4,63 +4,38 @@
 
 ## [Unreleased]
 
-当前仓库为 `0.2.10-SNAPSHOT`。T02 基线 `1899270` 的 CI 40468581570 / Compliance 40468581572 已通过，
-原始 Java 21/25、PG/H2 与消费者报告已核对。T03/T04/T08 已按合入提交 `0a1eb73f` 的
-[CI](https://github.com/xhufang/skis/actions/runs/41328295380) 与
-[Compliance](https://github.com/xhufang/skis/actions/runs/41328295426) 及原始工件验收；
-T05/T09 新增的写入组合回归仍待后续 CI，本地未编译运行。
-前一版 `0.2.9` 聚合语义内部里程碑于 2026-10-26 完成，以下 CI 证据属于该里程碑。
-当前公开版本仍为 `0.2.0`，下述能力累计到未来 `0.3.0`，本次不创建 tag 或 Release。
-PR #91 合入提交 `980ad24003dc3e280336ec3a1be126841f148ab8` 的
-[CI](https://github.com/xhufang/skis/actions/runs/40284163961) 与
-[Compliance](https://github.com/xhufang/skis/actions/runs/40284163852) 通过。
-Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来源及资源合同已验收；
-本地仅静态核对文档和原始工件，未编译运行。合入后 push 按事件跳过依赖漏洞审查，
-该项已由 PR #91 的 [Compliance](https://github.com/xhufang/skis/actions/runs/40281380091) 验证。
+当前仓库保持 `0.2.10-SNAPSHOT`。本版写入、SQL DSL 与真实流读取已按 PR #101 合入提交
+`9a7db594ced8d1a71f036b2f36ffb631f62af7d7` 的
+[CI](https://github.com/xhufang/skis/actions/runs/41395524566) 和
+[Compliance](https://github.com/xhufang/skis/actions/runs/41395524562) 验收。
+Java 21 工程门禁 120 套/1387 项，Java 25 普通回归 109 套/1240 项，PG 容器/外部 URL 各 11 套/147 项，
+三类非 PG 消费者 7 套/21 项，PG 独立消费者双路径各 2 套/5 项，均零失败、错误、跳过。
+覆盖率历史/来源、APT/nullness、架构、Gradle 增量、发布边界、资源与 benchmark 冻结检查通过。
+push 跳过的依赖漏洞审查由同 Git tree 的
+[PR #101 Compliance](https://github.com/xhufang/skis/actions/runs/41383183303) 承担。
+本地仅静态核对原始工件和文档，没有编译运行。
 
-### T09 regression audit (additional contracts pending CI)
+### 0.2.10 写入与真实流读取
 
-- 核对 `0a1eb73f` 的 Java 21/25、PG 容器/外部 URL、H2、四个独立消费者、Gradle 增量、覆盖率来源、架构及资源报告；10 份原始 ZIP 的本地 SHA-256 均匹配 GitHub 元数据。
-- 在现有 PG/H2 共用套件中补充相关写入子查询、NULL/DEFAULT、标量多行失败、派生 JOIN 来源、查询来源 MERGE 与重复匹配失败的 6 个回归用例，检查原生 SQL、返回状态和语句次数。新增用例尚未执行，不将基线结果作为这些变更的通过证据。
+- `@Id(strategy = ...)` 提供 ASSIGNED、IDENTITY、UUID v4 与显式节点雪花；生成访问/绑定及 runtime 使用 ABI 9，拒绝 ABI 8。PG/H2 指定物理列读取 generated keys，保留默认值、成功后回填和失败资源合同，见[主键生成](docs/id-generation.md)。
+- INSERT 统一 insertInto/value/values/write；删除旧 insert、insertResult、InsertResult。无 returning 返回精确 int；`Written<R>` 的 R 为行，提供 affectedRows/rows/one；SELECT/RETURNING 共用实体、标量、Row2/Row3 和 Pro。
+- SELECT 共用 SelectQuery；executor/Session 的 ExecutableSelectQuery 直接 fetch，独立 Sql 查询的 fetch 构造 QueryRequest，由 run 执行。删除公开 Sql.parameter、QueryParameter、bind、SelectDescription 和旧 query 转换；来源使用 as/column。
+- 统一 SET 值/表达式/查询、NULL/DEFAULT、Sql.row 联合赋值与 INSERT SELECT；PG UPDATE FROM/DELETE USING、H2 表/查询来源 MERGE 保留一条原生 SQL。显式 UPDATE 不默认注入版本/审计，实体 byId 保留元数据规则。
+- PG ON CONFLICT、H2 MERGE/KEY 按各自 SQL、版本与并发语义执行；混合 DELETE 与其他动作的 MERGE 仅计数，returning 前置拒绝。删除旧 setExpression 条件更新用法；冲突更新仍按其专用阶段使用 setExpression。
+- 实体集合默认 ADD_BATCH，显式 VALUES 用于支持的 INSERT/PG 冲突插入；默认每块 256 行、1024 参数、估算缓冲 8 MiB。BatchWriteException/BatchResult 保留特殊计数、未知/失败/未执行与部分结果，不逐行重试或接管事务；非空 ADD_BATCH RETURNING、byId VALUES、H2 MERGE/KEY 集合拒绝。
+- 新增 6 项 PG/H2 写入组合回归覆盖相关子查询、NULL/DEFAULT、标量多行失败、派生 JOIN、查询来源 MERGE 与重复匹配失败，已在当前 Java 21/25 和 PG 双路径逐名通过。对应四模块覆盖率提高已登记并通过来源/历史认证。
+- PostgreSQL cursor/stream 默认 fetch size 256，要求事务、正 fetch size、extended protocol 与单 SQL；显式零、autoCommit、simple/未知驱动模式拒绝。H2 拒绝资源终点，保留物化读取。
+- 本地/Spring 事务完成前关闭活动游标；支持 Spring 挂起恢复及保存点资源边界，保持线程、连接池归还、提前关闭和异常主次合同。PgJDBC 固定 42.7.14，并限制 provided 驱动及 checker-qual 准入，见[流读取](docs/cursor-and-stream.md)。
+- 动态计划保持有界共享、值/结构/资源隔离、生成式按下标映射、命中阶段复用及锁外监听。ADR-0025—0031 按独立运行证据升级 Implemented；本轮登记变化仅静态核对，提交后仍由 Compliance 验证。
+- 用户取消0.2.11，稳定化、当前消费者、安全/合规与最终文档收口直接并入0.3.0发布准备；根README本次暂缓，在最终文档阶段处理。T06/T07 片段/整条原生 SQL、BYPASS 与原生流读取延后至 0.3.x，累计至 0.4.0；ADR-0024 保留这些未完成范围。
 
-### T08 source implementation (baseline verified at 0a1eb73f)
+当前公开版本仍为 `0.2.0`；累计成果在 `0.3.0` 正式发布，不创建本版 tag/Release、不在本轮切换版本。
+用户取消发布前性能验证；0.3.0不要求性能测量、benchmark重建/执行或性能数字门槛。benchmark继续保持空模块和发布排除，性能结构/并发/资源检查保留。
 
-- Pin PgJDBC 42.7.14 for the dialect, repository contracts and independent PostgreSQL consumer, replacing the vulnerable 42.7.11 baseline; the security update passed PR #100 dependency review and the merged baseline CI. See [GHSA-j92g-9f8w-j867](https://github.com/advisories/GHSA-j92g-9f8w-j867).
-- PostgreSQL cursor/stream uses a cursor-only default fetch size of 256, forward-only/read-only statements and close-at-commit holdability. Explicit statement/Session/executor options retain priority; zero, auto-commit, simple protocol and unconfirmed single SQL are rejected before execution.
-- H2 explicitly rejects cursor/stream while retaining materialized queries. Existing H2 resource fixtures are covered by JDBC fakes and PostgreSQL driver contracts; H2 consumers now verify rejection.
-- Local and Spring transactions close open cursors before completion and pool return. Early closure deregisters resources; Spring scopes support suspension/resumption and retain only active cursors.
-- Spring nested/savepoint rollback closes cursors opened after the savepoint while preserving earlier cursors. Cleanup failures do not prevent the database rollback and are reported at outer completion, preventing a successful outer commit. Direct JDBC savepoints require explicit cursor cleanup.
-- Add driver policy and transaction resource registration SPIs, SKISQ035/036, deterministic server-side batch-reading and pooled-connection tests. PgJDBC is a provided dependency confined to one dialect adapter with exact architecture checks. The merged baseline passed CI/driver verification; no local compilation, tests or benchmark were run.
+### 0.2.9 及更早内部里程碑记录
 
-### T04 source implementation (baseline verified at 0a1eb73f)
+以下数字、生成 ABI 和类型预算保留各里程碑当时事实；当前 ABI 为 9、普通查询类型预算为 35。
 
-- PG 冲突插入复用 insertInto，支持显式列/值、冲突目标、DO NOTHING/UPDATE、EXCLUDED、更新 WHERE 和适用版本检查。
-- H2 增加单行 VALUES 来源的 MERGE USING 分支和独立 KEY 简写；USING 返回列表，KEY 返回单行；按语句实际并发、主键及列保护约束执行。
-- 显式 INSERT、VALUES 来源和 MERGE 插入分支改用逐列 row.value 回调，保留类型/空性检查，删除组合重载和 8 列上限；KEY 使用 key(...).values(...)。
-- 支持 expectedVersion(Number) 和非空来源版本表达式；严格版本检查拒绝含糊业务过滤，schema 前提见[写入用法](docs/mutation-returning.md)。
-- 保留生成式实体 Binder 与有界共享缓存，中间阶段不预分配执行请求/查找对象；单行返回不创建列表，计数不创建 Written 或整行 Decoder，生成键只按实际结果回填。
-- MERGE 插入表达式补齐类型 lowering；显式 UUID/雪花主键复用策略值校验；H2 并发用例在测试侧同步插入分支并检查唯一冲突分类。
-- SQL/类型/nullness、PG/H2 并发/资源/回滚和缓存必需套件通过合入基线验收；本地未编译运行，T09 新增组合用例另待 CI。
-
-### T03 source implementation (baseline verified at 0a1eb73f)
-
-- 实体插入收敛到 insertInto/value/values/write；删除 insert、insertResult、InsertResult 及旧转发。无 returning 返回 int，显式返回使用纯内存 Written。
-- INSERT/UPDATE/DELETE 的完整实体和两种 Pro 返回接入统一方言/结果管线；PG 原生 RETURNING，H2 FINAL/OLD TABLE；条件 SET、表达式、WHERE 保护和版本推进已有源码。
-- 已有 UUID/雪花键不重复 setter，数据库返回不同键时在资源成功结束后应用实际值。动态计划复用固定 AST/请求查找，补齐 Codec 来源和 ClassLoader 身份，移除缓存命中全局锁。
-- 条件写入的纯参数表达式接入标准类型转换，AST 构造校验失败使用 SKISM012 并保留 cause；动态计划编译成功／失败均在缓存锁外通知监听器，新增回归源码待 CI 验证。
-- 修正 CASE 泛型模式的类型安全；单行 INSERT RETURNING 直接返回解码结果，省去行列表及复制，保留行数校验、资源和失败合同。
-- 迁移当前测试与独立消费者，新增阶段/nullness、结果、缓存、golden、资源及 PG/H2 合同和精确工程登记。非空集合执行留给 T05；本阶段不做 benchmark。
-
-### Added
-
-- `@Id(strategy = ...)` 支持 ASSIGNED、IDENTITY、UUID v4 与显式节点雪花；生成式主键读写和插入参数接入 ABI 9，
-  APT/手工元数据/装配执行同一策略与类型约束，拒绝 ABI 8。
-- T02 历史上增加 `insertResult(...)` 与 `InsertResult<E>`；T03 已删除并由显式 returning 的 Written 替代。T02 当时 Bean 成功后回填、record 复制保留全部 component，
-  ASSIGNED 的 int insert 保持轻量路径。生成值不提前写实体，资源或回填失败不自动重试。
-- PG/H2 声明 JDBC_GENERATED_KEYS、INSERT_DEFAULT_VALUES；指定物理主键列读取单行单列非空键，
-  DEFAULT VALUES 使用统一 AST；保留 JDBC 分类与清理异常，不额外查询主键。
-- 增加主键生成、资源、事务与消费者合同测试源码及必需套件清单，新增 SKIS042—044、SKISM014—018，
-  使用边界见[主键生成与插入结果](docs/id-generation.md)。T02 基线已验证；T03 新入口与当前改动待 CI 验证。
 - 在现有 `Sql` 门面开放 COUNT、单表达式 COUNT DISTINCT、SUM/AVG/MIN/MAX 及标准表达式工厂，
   固定跨方言结果类型、内置输入白名单与有效可空性；不新增普通查询顶层类型，查询预算保持 30/30。
 - 在执行查询、纯描述和单列描述上提供不可变 GROUP BY/HAVING、andHaving/orHaving；
@@ -108,8 +83,8 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
 - 移除 GC 夹具的 System.runFinalization，保留有界等待和 ClassLoader/映射/调用图回收断言；
   合并常量消息并说明 ASCII 标识符、无数据库长度校验及单主键最小预热边界。
 - 同步当前指南/专题文档、贡献说明、CHANGELOG 和 ADR-0018—0020 的实际落地状态。
-  聚合/类型/CAST/grouped count 已由 0.2.9 验收，写入/真实流读取归 0.2.10，稳定化归 0.2.11。
-  benchmark 继续冻结；全部 0.2.x 完成并功能冻结后另建 0.3.0 发布前性能任务。
+  聚合/类型/CAST/grouped count 已由 0.2.9 验收，写入/真实流读取归 0.2.10，稳定化现直接归0.3.0发布准备。
+  benchmark继续保持空模块；0.3.0发布前性能验证已按2026-11-02用户决定取消。
 
 ### Fixed
 
@@ -284,8 +259,8 @@ Java 21/25、PG 容器/外部 URL、H2、独立消费者、覆盖率历史/来�
   治理及 loader 测试
   改经真实查询接线；身份字段缩为构造器局部变量，公共统计/清理/失效签名不变。
 - 删除 benchmark 框架子模块、runner、源码、脚本、历史结果和执行工作流；`skis-benchmark` 保留为无子模块、
-  无依赖、无源码的空 POM。整个 `0.2.x` 开发阶段不实现或执行 benchmark；全部 `0.2.x` 里程碑完成并进入
-  功能冻结后，在 `0.3.0` 正式发布前通过新任务重新评审、建立并执行性能测试，旧结果和旧门槛不直接恢复。
+  无依赖、无源码的空POM。`0.2.x`及`0.3.0`发布准备不实现或执行benchmark，旧结果和门槛不恢复；
+  原发布前性能验证安排已于2026-11-02按用户决定取消。
 
 ### Added
 

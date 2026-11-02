@@ -22,7 +22,7 @@ provided scope 参与编译，不作为传递运行时驱动。字节码仅允�
 `PostgreSqlCursorReadSupport` 引用 `PgConnection` 和 `PreferQueryMode`，用于直接确认真实流读取的驱动模式。
 PgJDBC 42.7.14 的非可选传递注解包 `org.checkerframework:checker-qual` 在该方言中同样仅准入 provided scope，
 保留驱动发布的依赖闭包；该准入不适用于其他模块，也不准入该坐标的 compile/runtime scope 或 Checker Framework 其他坐标。
-其他类/模块、驱动类型及 scope 继续拒绝；新增精确正负例，待当前 CI 验证，不扩大历史通过证据。
+其他类/模块、驱动类型及 scope 继续拒绝。新增精确正负例已在 `9a7db594` 的 [CI](https://github.com/xhufang/skis/actions/runs/41395524566) 验证，Java 21/25 架构合同各 10 项零失败/错误/跳过；不扩大历史证据范围。
 
 公开发布边界仍为 parent、BOM 和 15 个生产 Jar，共 17 个 GAV；BOM 与发布白名单不变。
 Central 排除剩余 6 个内部项目：test-support、test-model、integration-tests、benchmark、examples 和 H2 示例。

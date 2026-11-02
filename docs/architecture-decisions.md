@@ -2,10 +2,14 @@
 
 `.github/architecture/decisions.json` 是可提交的最小决策清单，首次登记 ADR-0001—0020。
 本地 `docs/adr` 正文和索引继续由 Git 忽略；公开清单只包含必要状态、版本、未完成范围、任务、实现锚点、合同归属及处置理由。
-当前机器清单覆盖 ADR-0001—0030。T02 已按 1899270 的 CI 40468581570 / Compliance 40468581572 及下载的原始报告验收，ADR-0023 升级 Implemented。
-T03 按 ADR-0025 删除 InsertResult，清单 change 绑定可信基线 `1899270ba880601d276ed324bcbab40cb9e359fd`，逐项列出被移除锚点和唯一插入入口替代理由；首次登记及其他原合同保持。
-ADR-0024/0025 已登记当前 RETURNING/阶段源码和测试锚点，仍为 Accepted，待当前变更验证；ADR-0006/0007 追加适用管线/缓存合同，原历史状态保持。
-2026-10-30：ADR-0026—0030 的查询、写入和批量源码及合同已接线，清单追加实际 anchors/contracts，状态仍为 Accepted、落地版本为空，待本次 CI/真实驱动与消费者验收。普通查询类型预算及支持矩阵见 task0.2.10-public-surface §18、composition-contracts §10。
+当前机器清单覆盖ADR-0001—0031。ADR-0023保留T02已验收状态及旧入口移除处置；
+ADR-0025—0031已根据9a7db594的独立功能/资源报告升级Implemented，落地0.2.10-SNAPSHOT，目标为空、未完成范围/任务为空。
+ADR-0024仍为Accepted，部分落地0.2.10-SNAPSHOT，目标0.4.0，仅剩0.3.x的原T06/T07；不把延期实现标为完成。
+状态变化change绑定9a7db594、原Accepted及实际语义证据，保留所有已登记锚点/合同及首次登记。
+本地正文、索引、机器清单七字段独立静态一致，未运行local检查器。
+本地任务`docs/task/task0.2.10.md` §25的最终证据中，Compliance仅证明基线已提交清单，
+本轮新状态仍待后续用户保存提交后的Compliance；不将旧Accepted结果回填为新Implemented清单已运行。
+
 以下保留 2026-10-29 的设计登记历史，当时 anchors/contracts 为空，不代表当前源码状态。
 2026-10-29 新增 ADR-0026（Accepted），目标为 T05 原生删除与直接值子查询；该轮未实现，anchors/contracts 为空。
 用户明确不保留独立显式参数模板目标，不新增 mutation.bind；ADR-0024 的未完成范围同步，原锚点和历史状态保持。

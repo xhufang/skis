@@ -1,7 +1,8 @@
 # Explicit joins and generated result rows
 
 This guide describes the explicit Join contract implemented by the internal `0.2.4-SNAPSHOT`
-milestone. Joins use generated `QueryTable` instances only. SKIS does not infer associations,
+milestone, with current query views and derived sources updated in `0.2.10-SNAPSHOT`.
+Joins accept generated `QueryTable` instances and supported derived sources. SKIS does not infer associations,
 navigate entity properties, or issue hidden SQL.
 
 ## Join forms and ON staging
@@ -11,7 +12,7 @@ navigate entity properties, or issue hidden SQL.
 returns the next immutable query directly and never accepts an ON condition.
 
 ```java
-SelectQuery<Pet> query =
+ExecutableSelectQuery<Pet> query =
     executor
         .selectFrom(pet)
         .leftJoin(owner)
@@ -41,7 +42,7 @@ metadata and alias. WHERE, SELECT, projection selections, and ORDER BY are valid
 completed Join scope.
 
 From `0.2.5-SNAPSHOT`, complete validation records this rule through immutable query-block scope
-snapshots. A future subquery embedded in ON inherits only that exact ON snapshot and the
+snapshots. A subquery embedded in ON inherits only that exact ON snapshot and the
 pre-null-extension state of the current right occurrence; the same reusable child embedded in a
 final clause is analyzed again against the completed Join state. Diagnostics identify the stable
 query-block path, clause item, nested operand, and source occurrence rather than relying on alias
@@ -82,7 +83,7 @@ on the right side of a LEFT JOIN is effectively nullable after that Join. Select
 required result API fails before JDBC:
 
 ```java
-SelectQuery<@Nullable String> ownerNames =
+ExecutableSelectQuery<@Nullable String> ownerNames =
     executor
         .selectNullable(owner.name())
         .from(pet)

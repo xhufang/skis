@@ -56,7 +56,7 @@ javac 异常退出时也追加已收集的诊断与异常栈。所有断言失�
 Codec、Binder、Decoder、投影读取器、mutation 和事务回调；泛型/通配符正反例与单独编译的字节码 API
 另列。生成用例覆盖表、可复用/专用 Pro、Binder/Decoder、nullable 数组和调用方。
 生成代码明确声明 `@NullMarked`，同时准确保留可空读取器类型及嵌套泛型/数组注解。
-生成表的 nullable 列继续通过 `Selectable<V>` 选择为 `SelectQuery<@Nullable V>`，不改成非空选择器。
+生成表的nullable列通过Selectable<V>保留结果空性；独立查询为SelectQuery<@Nullable V>，直接执行视图为ExecutableSelectQuery<@Nullable V>，不改成非空选择器。
 实体元数据及类字面量使用无类型注解的类型名；投影源码按外层到内层保留各数组维度的可空性。
 普通 javac 的 JDBC 类型夹具覆盖可空 `byte[]`，专用投影夹具覆盖二维数组内层可空、外层可空、两层均可空及泛型内嵌数组。
 查询回调正例显式使用计算结果，继续接受 Error Prone 默认返回值检查。

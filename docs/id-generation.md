@@ -1,7 +1,7 @@
 # 主键生成与插入结果
 
-> 适用版本：`0.2.10-SNAPSHOT`，生成模型 ABI 9。T02 基线 1899270 已通过 CI/PG/H2/消费者验收；T03 唯一插入入口和 RETURNING 已实现，当前变更待验证。
-> 本地未编译运行；历史基线不证明新入口通过。完整用法见[写入阶段与 RETURNING](mutation-returning.md)。
+> 适用版本：`0.2.10-SNAPSHOT`，生成模型 ABI 9。四类主键、唯一插入入口、RETURNING 与消费者已按 `9a7db594` 的
+> [CI](https://github.com/xhufang/skis/actions/runs/41395524566) 验收。本地未编译运行；完整用法见[写入阶段与 RETURNING](mutation-returning.md)。
 
 ## 1. 显式选择策略
 
@@ -47,10 +47,10 @@ public record Ticket(@Id(strategy = IdStrategy.UUID) @Nullable UUID id, String t
 var executor = Skis.builder(dataSource).dialect(dialect).build();
 Written<Ticket> inserted = executor.insertInto(TicketTable.ticketTable)
     .value(new Ticket(null, "new")).returning().write();
-java.util.UUID id = inserted.get().id();
+java.util.UUID id = inserted.one().get().id();
 ```
 
-`Written<E>` 提供 affectedRows 和 Optional 风格结果访问；访问始终只读内存。单条 INSERT 要求恰好一行。
+`Written<E>` 的 E 是行类型，提供 affectedRows/rows/one；one 返回 SingleRow，访问始终只读内存。普通单实体 INSERT 要求恰好一行。
 生成 accessor 原有 JSpecify 可空性保持，运行成功不会改变其 Java 签名。
 
 完整 returning 读取数据库实际持久化列，包括 default/trigger/初始化版本；record 的非持久 component 使用 Decoder 缺省值。
@@ -66,7 +66,7 @@ write(options) 保持 executor/Session 默认值、单次覆盖和事务时限�
 ## 3. 生成键与资源时序
 
 IDENTITY 要求方言至少支持 JDBC_GENERATED_KEYS 或 MUTATION_RETURNING；两者都没有时装配失败。
-计数路径独立要求 JDBC_GENERATED_KEYS；显式 returning 独立要求返回能力。PG/H2 均已有接线，T03 返回路径待当前变更验证。
+计数路径独立要求 JDBC_GENERATED_KEYS；显式 returning 独立要求返回能力。PG/H2 两条路径均已由当前基线的真实驱动合同验证。
 框架使用 `prepareStatement(sql, new String[]{physicalIdColumn})` 请求受校验的物理主键列；
 驱动得到独立数组，列名不是带 SQL 引号的片段。
 
@@ -88,7 +88,7 @@ UUID/雪花值先保存在本次参数载体中，原实体保持未生成状态
 | 调用方再次插入 | ASSIGNED 用现值；IDENTITY 非空拒绝；UUID/雪花保留现值，由数据库唯一约束处理重复 |
 
 获取键属于同一 SQL 生命周期；回填失败可以使操作失败，但不会产生第二条 SQL 或重复的 SQL 结束事件。
-UPSERT 冲突时的候选键与数据库实际主键由 T04 单独处理；当前入口不提供 UPSERT。
+PG ON CONFLICT 与 H2 MERGE/KEY 的候选键及实际主键分别处理；冲突更新不把候选插入键误回填，详见[写入合同](mutation-returning.md)。
 
 ## 4. 雪花节点、并发与部署
 
@@ -124,6 +124,5 @@ APT 的 SKIS042—044 和运行时 SKISM014—018 分别见 [APT 码表](apt-err
 雪花回拨、序列耗尽和纪元越界的固定原因保留在插入异常及操作完成事件的顶层诊断中，同时附带实体、属性和策略上下文；原始异常仍保留为 cause。
 SQLState、vendor code、原始 cause 及 cleanup suppressed 异常沿用 JDBC 分类，不能把所有 JDBC 失败变成“无生成键”。
 
-当前测试源码包含策略/APT/nullness、雪花确定性状态与并发、UUID 并发、生成 Binder 槽位、资源失败、
-PG/H2、事务回滚及四个公共消费者职责检查；本次没有本地运行结果。CI 清单已登记普通回归、两条 PG 路径和独立消费者。
+当前基线已执行策略/APT/nullness、雪花状态与并发、UUID 并发、生成 Binder 槽位、资源失败、PG/H2、事务回滚及四个独立消费者职责检查；必需报告非空且零失败/错误/跳过。本地仅静态核对原始报告。
 `0.2.x` 期间不执行 benchmark，不给出吞吐或分配量结论。
